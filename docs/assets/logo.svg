@@ -1,26 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Factory">
   <title>Factory</title>
-  <defs>
-    <linearGradient id="fg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7c5cff"/>
-      <stop offset="1" stop-color="#22d3ee"/>
-    </linearGradient>
-  </defs>
+  <!-- Factory: a pipeline (P / A / T) watched over by a control node, on Gruvbox bg0 -->
   <!-- badge -->
-  <rect x="0" y="0" width="64" height="64" rx="16" fill="url(#fg)"/>
-  <!-- pipeline connectors: P -> A -> T, with the control tower above -->
-  <g stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" fill="none">
+  <rect x="0" y="0" width="64" height="64" rx="16" fill="#282828"/>
+  <!-- pipeline connectors -->
+  <g stroke="#ebdbb2" stroke-width="3.2" stroke-linecap="round" fill="none" stroke-opacity="0.55">
     <path d="M16 42 H48"/>
     <path d="M32 42 V25"/>
   </g>
-  <!-- three pipeline nodes (Plan / Act / Verify) -->
-  <g fill="#ffffff">
-    <circle cx="16" cy="42" r="4.4"/>
-    <circle cx="32" cy="42" r="4.4"/>
-    <circle cx="48" cy="42" r="4.4"/>
-    <!-- overseer node: the control tower watching the pipeline -->
-    <circle cx="32" cy="22" r="7.2"/>
-  </g>
-  <!-- aperture in the overseer node -->
-  <circle cx="32" cy="22" r="3" fill="url(#fg)"/>
+  <!-- three pipeline nodes — Plan (blue) / Act (yellow) / Verify (green) -->
+  <circle cx="16" cy="42" r="4.4" fill="#83a598"/>
+  <circle cx="32" cy="42" r="4.4" fill="#fabd2f"/>
+  <circle cx="48" cy="42" r="4.4" fill="#b8bb26"/>
+  <!-- overseer node: the control tower watching the pipeline (cream ring, dark aperture) -->
+  <circle cx="32" cy="22" r="7.2" fill="#ebdbb2"/>
+  <circle cx="32" cy="22" r="3" fill="#282828"/>
 </svg>
