@@ -23,7 +23,7 @@ CFactory can reach them all.
 | Product | Backend port(s) | Notes |
 |---|---|---|
 | **AIFactory** | **`3101`** | Act — build/QA web server |
-| **TFactory** | **`3102`** | Verify — keeps `3102` (uncontested once PFactory moved out) |
+| **TFactory** | **`3103`** | Verify — already migrated off `3102` to `3103` |
 | **CFactory** | **`3110`** / **`3111`** | Cockpit — API `3110`, realtime/stream `3111` |
 | **PFactory** | **`3114`** (API) / **`3115`** (frontend) | Plan — moved to its own pair off the `3101–3103` block |
 
@@ -39,8 +39,9 @@ Rules:
 ## How the `:3102` collision was resolved
 
 PFactory **vacated `3102`** and moved to its own **`3114` (backend) / `3115`
-(frontend)** pair. TFactory therefore keeps `3102` with no conflict and needs no
-change. PFactory's move spans its web-server default (`APP_PORT`), CORS, the Graphiti
+(frontend)** pair; **TFactory had already moved to `3103`**. So the two no longer
+collide and **`3102` is now free**. PFactory's move spans its web-server default
+(`APP_PORT`), CORS, the Graphiti
 MCP (served on the same backend port), OIDC callback URIs, Dockerfile / compose /
 helm, and the `just` recipes — see PFactory PR #54.
 
@@ -53,8 +54,8 @@ frontend. Start them in separate terminals, or use the snippet below.
 # 1) AIFactory — Act (:3101)
 ( cd AIFactory/apps/web-server && APP_PORT=3101 python -m server.main ) &
 
-# 2) TFactory — Verify (:3102)
-( cd TFactory/apps/web-server && APP_PORT=3102 python -m server.main ) &
+# 2) TFactory — Verify (:3103)
+( cd TFactory/apps/web-server && APP_PORT=3103 python -m server.main ) &
 
 # 3) PFactory — Plan (:3114 backend, :3115 frontend)
 ( cd PFactory && just backend ) &      # APP_PORT=3114
@@ -85,7 +86,7 @@ PFACTORY_COMPLETION_WEBHOOK=http://localhost:3110/api/events/completion
 
 ```
 AIFactory  :3101         (Act)
-TFactory   :3102         (Verify)
+TFactory   :3103         (Verify)
 CFactory   :3110         (Cockpit API)  + :3111 (stream)
 PFactory   :3114         (Plan API)     + :3115 (frontend)
 ```
