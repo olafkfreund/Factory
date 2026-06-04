@@ -41,6 +41,7 @@
       <a class="brand" href="{{ '/' | relative_url }}"><img class="brand-logo" src="{{ '/assets/logo.svg' | relative_url }}" alt="" width="26" height="26" aria-hidden="true">Factory</a>
       <ul class="nav-links">
         <li><a href="{{ '/' | relative_url }}"{% if page.url == '/' %} class="active"{% endif %}>Home</a></li>
+        <li><a href="{{ '/why/' | relative_url }}"{% if page.url contains '/why/' %} class="active"{% endif %}>Why Factory</a></li>
         <li><a href="{{ '/#products' | relative_url }}">Products</a></li>
         <li><a href="{{ '/#cooperation' | relative_url }}">Cooperation</a></li>
         <li><a href="{{ '/roadmap/' | relative_url }}"{% if page.url contains '/roadmap/' %} class="active"{% endif %}>Roadmap</a></li>
