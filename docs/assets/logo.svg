@@ -1,16 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" role="img" aria-label="TFactory">
-  <!-- TFactory logo: Gruvbox-green flask/test-tube on Gruvbox bg0 -->
-  <rect width="256" height="256" rx="56" fill="#282828"/>
-  <g stroke="#b8bb26" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- Flask body + neck -->
-    <path d="M 96 56 L 96 96 L 56 200 a 16 16 0 0 0 14 24 L 186 224 a 16 16 0 0 0 14 -24 L 160 96 L 160 56"/>
-    <!-- Top closure -->
-    <path d="M 88 56 L 168 56"/>
-    <!-- Liquid line -->
-    <path d="M 76 156 L 180 156" stroke="#fabd2f"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Factory">
+  <title>Factory</title>
+  <defs>
+    <linearGradient id="fg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <!-- badge -->
+  <rect x="0" y="0" width="64" height="64" rx="16" fill="url(#fg)"/>
+  <!-- pipeline connectors: P -> A -> T, with the control tower above -->
+  <g stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" fill="none">
+    <path d="M16 42 H48"/>
+    <path d="M32 42 V25"/>
   </g>
-  <!-- Bubbles -->
-  <circle cx="118" cy="186" r="5" fill="#83a598"/>
-  <circle cx="140" cy="200" r="4" fill="#d3869b"/>
-  <circle cx="152" cy="172" r="3" fill="#fe8019"/>
+  <!-- three pipeline nodes (Plan / Act / Verify) -->
+  <g fill="#ffffff">
+    <circle cx="16" cy="42" r="4.4"/>
+    <circle cx="32" cy="42" r="4.4"/>
+    <circle cx="48" cy="42" r="4.4"/>
+    <!-- overseer node: the control tower watching the pipeline -->
+    <circle cx="32" cy="22" r="7.2"/>
+  </g>
+  <!-- aperture in the overseer node -->
+  <circle cx="32" cy="22" r="3" fill="url(#fg)"/>
 </svg>
