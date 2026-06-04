@@ -47,7 +47,7 @@ pipeline, and the place the four products come together.
 ## The products {#products}
 
 <div class="prod" markdown="1">
-<div class="prod-head"><img src="{{ '/assets/logos/pfactory.png' | relative_url }}" alt="PFactory"><span class="prod-tag">Prepare / Plan + Review</span></div>
+<div class="prod-head"><img src="{{ '/assets/logos/pfactory.svg' | relative_url }}" alt="PFactory"><span class="prod-tag">Prepare / Plan + Review</span></div>
 
 ### PFactory — governed planning, grounded in your infrastructure
 
@@ -72,7 +72,7 @@ gates **with citations**, records human approval, and emits governed GitHub issu
 </div>
 
 <div class="prod" markdown="1">
-<div class="prod-head"><img src="{{ '/assets/logos/aifactory.png' | relative_url }}" alt="AIFactory"><span class="prod-tag">Act</span></div>
+<div class="prod-head"><img src="{{ '/assets/logos/aifactory.svg' | relative_url }}" alt="AIFactory"><span class="prod-tag">Act</span></div>
 
 ### AIFactory — spec-first execution that ships merge-ready code
 

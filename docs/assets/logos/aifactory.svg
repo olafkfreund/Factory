@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="AIFactory">
+  <title>AIFactory</title>
+  <!-- AIFactory: AI code generation — brackets + spark, on Gruvbox bg0 -->
+  <rect x="0" y="0" width="64" height="64" rx="16" fill="#282828"/>
+  <!-- code brackets (gruvbox bright yellow) -->
+  <g stroke="#fabd2f" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M27 21 L17 32 L27 43"/>
+    <path d="M37 21 L47 32 L37 43"/>
+  </g>
+  <!-- AI spark (gruvbox cream) -->
+  <path d="M32 24 L34 30 L40 32 L34 34 L32 40 L30 34 L24 32 L30 30 Z" fill="#ebdbb2"/>
+</svg>

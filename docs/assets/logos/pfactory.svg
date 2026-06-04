@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="PFactory">
+  <title>PFactory</title>
+  <!-- PFactory: a governed plan / checklist on Gruvbox bg0 -->
+  <rect x="0" y="0" width="64" height="64" rx="16" fill="#282828"/>
+  <!-- clipboard body -->
+  <rect x="17" y="16" width="30" height="34" rx="4" fill="none" stroke="#ebdbb2" stroke-width="2.6"/>
+  <!-- clip -->
+  <rect x="26" y="11" width="12" height="8" rx="2.5" fill="#83a598"/>
+  <!-- checklist lines (gruvbox blue) -->
+  <g stroke="#83a598" stroke-width="2.6" stroke-linecap="round">
+    <path d="M23 28 H41"/>
+    <path d="M23 35 H41"/>
+  </g>
+  <!-- approval check (gruvbox green) -->
+  <path d="M23 43 l3.5 3.5 L34 39" fill="none" stroke="#b8bb26" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
