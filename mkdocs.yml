@@ -15,3 +15,4 @@ nav:
   - Dependencies: dependencies.md
   - Decisions: decisions.md
   - API & Contracts: api.md
+  - Catalog & entities: catalog.md

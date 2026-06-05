@@ -1,0 +1,85 @@
+# Backstage catalog descriptor for AIFactory — drop at the repo root of
+# https://github.com/olafkfreund/AIFactory and register it.
+#
+# References to `factory`, `factory-suite`, `factory-completion-events` and the
+# sibling `pfactory` Component are owned by other repos; Backstage resolves them
+# globally once all are registered.
+#
+# ⚠️ When you add this, REMOVE the `aifactory` Component block from the Factory
+#    repo's catalog-info.yaml to avoid duplicate entities.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: aifactory
+  title: AIFactory
+  description: >-
+    Act. Spec-first plan → code → QA in isolated git worktrees; multi-provider
+    (Claude, OpenAI, Gemini, Ollama, vLLM, Codex, Copilot CLI); can delegate to
+    other coding agents. Enterprise auth (SAML/SCIM), HMAC-anchored audit, LiteLLM
+    gateway. Backend on :3101.
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: olafkfreund/AIFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/AIFactory/
+  tags:
+    - python
+    - fastapi
+    - mcp
+    - claude-agent-sdk
+    - parr-act
+  links:
+    - url: https://factory.freundcloud.com/
+      title: Factory suite
+      icon: web
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  dependsOn:
+    - component:pfactory
+  providesApis:
+    - aifactory-api
+    - aifactory-mcp
+  consumesApis:
+    - factory-completion-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: aifactory-api
+  title: AIFactory REST/WS API
+  description: >-
+    Agent build pipeline: planner → coder (isolated worktree) → QA. Multi-provider,
+    enterprise auth, emits RFC-0001 completion events with the v1.1 usage block.
+    Backend on :3101.
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: aifactory-mcp
+  title: AIFactory MCP control plane
+  description: >-
+    Model Context Protocol server exposing AIFactory's build/QA tools. Stdio, and
+    also a remote HTTP+SSE transport for persistent clients.
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/mcp.md

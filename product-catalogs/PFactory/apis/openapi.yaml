@@ -1,0 +1,300 @@
+openapi: 3.0.3
+info:
+  title: PFactory API
+  version: 1.0.0
+  description: |
+    **PFactory — Prepare / Plan + Review.**
+
+    Governed planning grounded in live cloud/Backstage context. A planning
+    session is ingested from an idea or spec, enriched with org/cloud context,
+    decomposed, scored by **review gates** (architecture, security,
+    best-practices, feasibility — each 0–1 with citations), gated on **human
+    approval**, and finally **emitted as governed GitHub issues**.
+
+    On a terminal status (`emitted` or `rejected`) PFactory emits an
+    [RFC-0001](https://factory.freundcloud.com/rfc/correlation-key/)
+    completion event.
+  contact:
+    name: Factory maintainers
+    url: https://factory.freundcloud.com/
+  license:
+    name: See repository
+    url: https://github.com/olafkfreund/PFactory
+servers:
+  - url: http://localhost:3114
+    description: Canonical local dev (backend; frontend on :3115)
+tags:
+  - name: plans
+    description: Planning sessions and their lifecycle
+  - name: review
+    description: Review gates and human approval
+  - name: realtime
+    description: Live planning progress
+paths:
+  /api/plans:
+    post:
+      tags: [plans]
+      summary: Create a planning session
+      operationId: createPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanRequest'
+      responses:
+        '201':
+          description: Planning session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags: [plans]
+      summary: List planning sessions
+      operationId: listPlans
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, enriched, decomposed, reviewing, awaiting_approval, emitted, rejected]
+      responses:
+        '200':
+          description: A page of planning sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Plan'
+  /api/plans/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [plans]
+      summary: Get a planning session
+      operationId: getPlan
+      responses:
+        '200':
+          description: The planning session, including review-gate scores
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/plans/{sessionId}/review:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [review]
+      summary: Run (or re-run) the review gates
+      operationId: runReview
+      responses:
+        '200':
+          description: Review-gate verdicts with citations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReviewGate'
+  /api/plans/{sessionId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [review]
+      summary: Record human approval (the governance gate)
+      operationId: approvePlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalRequest'
+      responses:
+        '200':
+          description: Approval recorded; plan is eligible to emit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '409':
+          description: Plan is not in an approvable state
+  /api/plans/{sessionId}/emit:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [plans]
+      summary: Emit governed GitHub issues
+      description: >-
+        Creates the governed GitHub issues for the approved plan. The first
+        issue number becomes the suite-wide correlation key. Emits an RFC-0001
+        `emitted` completion event.
+      operationId: emitPlan
+      responses:
+        '200':
+          description: Issues created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmitResult'
+        '409':
+          description: Plan has not been approved
+  /ws:
+    get:
+      tags: [realtime]
+      summary: WebSocket — live planning progress
+      description: >-
+        Upgrade to a WebSocket to stream enrichment, decomposition and
+        review-gate progress for a session. (Documented here for discovery;
+        not a standard HTTP operation.)
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket)
+components:
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: PFactory session id (the plan's local id, e.g. `001-refund-flow`).
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    PlanRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          example: Add a refund flow to checkout
+        description:
+          type: string
+        repo:
+          type: string
+          description: Target GitHub repo slug for emitted issues.
+          example: olafkfreund/AIFactory
+        context:
+          type: object
+          additionalProperties: true
+          description: Optional seed context (cloud/Backstage references).
+    Plan:
+      type: object
+      properties:
+        session_id:
+          type: string
+          example: 001-refund-flow
+        title:
+          type: string
+        status:
+          type: string
+          enum: [draft, enriched, decomposed, reviewing, awaiting_approval, emitted, rejected]
+        correlation_key:
+          type: string
+          nullable: true
+          description: Issue number once emitted, else a synthetic `pf-…` key.
+        review_gates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewGate'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanTask'
+        created_at:
+          type: string
+          format: date-time
+    PlanTask:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        acceptance_criteria:
+          type: array
+          items:
+            type: string
+    ReviewGate:
+      type: object
+      properties:
+        name:
+          type: string
+          enum: [architecture, security, best-practices, feasibility]
+        score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.82
+        verdict:
+          type: string
+          enum: [pass, warn, fail]
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+    Citation:
+      type: object
+      properties:
+        source:
+          type: string
+          description: Where the evidence came from (file, doc, cloud resource).
+        quote:
+          type: string
+        url:
+          type: string
+          format: uri
+    ApprovalRequest:
+      type: object
+      required: [approver, decision]
+      properties:
+        approver:
+          type: string
+          example: olaf@freundcloud.com
+        decision:
+          type: string
+          enum: [approve, reject]
+        note:
+          type: string
+    EmitResult:
+      type: object
+      properties:
+        correlation_key:
+          type: string
+          example: "142"
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              number:
+                type: integer
+                example: 142
+              url:
+                type: string
+                format: uri
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string

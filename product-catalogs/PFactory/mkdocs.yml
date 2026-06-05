@@ -1,0 +1,16 @@
+site_name: PFactory
+site_description: >-
+  Prepare / Plan + Review — governed planning for the agentic SDLC. Part of the
+  Factory suite (PARR pipeline).
+
+# Backstage TechDocs source. Keep docs_dir as techdocs/ to match the catalog
+# `backstage.io/techdocs-ref: dir:.` annotation.
+docs_dir: techdocs
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - API & Contracts: api.md

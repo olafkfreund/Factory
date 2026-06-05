@@ -108,11 +108,19 @@ AIFactory and TFactory implement the **emitter** side; CFactory implements the
 
 ## Each product's own API
 
-Factory has no API, but each product does — see its catalog entity / repo:
+Factory has no API of its own, but each product does. These are registered as
+**Backstage API entities** in this repo's catalog (machine-readable definitions in
+[`apis/`](https://github.com/olafkfreund/Factory/tree/main/apis), embedded via
+`$text`) until the product repos are onboarded — see [Catalog & entities](catalog.md).
 
-| Product | API surface |
-|---|---|
-| **PFactory** | REST + WebSocket portal (`:3114`) + `pfactory` MCP control plane — see [PFactory](https://github.com/olafkfreund/PFactory) |
-| **AIFactory** | Build/QA web server (`:3101`) + MCP control plane — see [AIFactory](https://github.com/olafkfreund/AIFactory) |
-| **TFactory** | Verify web server (`:3103`) + MCP control plane — see [TFactory](https://github.com/olafkfreund/TFactory) |
-| **CFactory** | Cockpit API (`:3110`) + stream (`:3111`); ingests completion events — see [CFactory](https://github.com/olafkfreund/CFactory) |
+| Product | API entities | Surface |
+|---|---|---|
+| **PFactory** | `pfactory-api` (openapi), `pfactory-mcp` (mcp) | REST + WebSocket portal (`:3114`) + MCP control plane — see [PFactory](https://github.com/olafkfreund/PFactory) |
+| **AIFactory** | `aifactory-api` (openapi), `aifactory-mcp` (mcp) | Build/QA web server (`:3101`) + stdio & remote HTTP+SSE MCP — see [AIFactory](https://github.com/olafkfreund/AIFactory) |
+| **TFactory** | `tfactory-api` (openapi), `tfactory-mcp` (mcp) | Verify web server (`:3103`) + MCP control plane — see [TFactory](https://github.com/olafkfreund/TFactory) |
+| **CFactory** | `cfactory-api` (openapi), `cfactory-mcp` (mcp), `factory-completion-events` (asyncapi) | Cockpit API (`:3110`) + stream (`:3111`); owns the completion-event ingress — see [CFactory](https://github.com/olafkfreund/CFactory) |
+
+The `factory-completion-events` AsyncAPI is the machine-readable form of the
+RFC-0001 envelope documented above: **provided by** CFactory (the
+`/api/events/completion` channel) and **consumed by** PFactory, AIFactory and
+TFactory.

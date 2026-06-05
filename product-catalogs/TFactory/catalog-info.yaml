@@ -1,0 +1,86 @@
+# Backstage catalog descriptor for TFactory — drop at the repo root of
+# https://github.com/olafkfreund/TFactory and register it.
+#
+# References to `factory`, `factory-suite`, `factory-completion-events` and the
+# sibling `aifactory-api` / `aifactory` Component are owned by other repos;
+# Backstage resolves them globally once all are registered.
+#
+# ⚠️ When you add this, REMOVE the `tfactory` Component block from the Factory
+#    repo's catalog-info.yaml to avoid duplicate entities.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: tfactory
+  title: TFactory
+  description: >-
+    Reflect / Verify. Autonomous test generation + execution in a Docker sandbox,
+    graded on a 5-signal verdict (coverage delta, stability, mutation, lint,
+    semantic relevance). Lanes: unit, browser, API, integration, mutation. Routes a
+    handback to AIFactory's QA fixer when tests fail. Backend on :3103.
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: olafkfreund/TFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/TFactory/
+  tags:
+    - python
+    - fastapi
+    - mcp
+    - testing
+    - parr-reflect
+  links:
+    - url: https://factory.freundcloud.com/
+      title: Factory suite
+      icon: web
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  dependsOn:
+    - component:aifactory
+  providesApis:
+    - tfactory-api
+    - tfactory-mcp
+  consumesApis:
+    - factory-completion-events
+    - aifactory-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: tfactory-api
+  title: TFactory REST/WS API
+  description: >-
+    Verification pipeline: planner → gen-functional → executor (Docker sandbox) →
+    evaluator (5-signal verdict) → triager. Posts triage to the PR and can hand a
+    correction back to AIFactory. Backend on :3103.
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: tfactory-mcp
+  title: TFactory MCP control plane
+  description: >-
+    Model Context Protocol (stdio) server exposing TFactory's test-generation,
+    execution and verdict tools.
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/mcp.md

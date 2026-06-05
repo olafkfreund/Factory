@@ -1,0 +1,283 @@
+openapi: 3.0.3
+info:
+  title: AIFactory API
+  version: 1.0.0
+  description: |
+    **AIFactory — Act.**
+
+    Spec-first build core: a task is created from a governed GitHub issue, then
+    a **planner → coder (isolated git worktree) → QA** pipeline runs against a
+    multi-provider factory (Claude, OpenAI, Gemini, Ollama, vLLM, Codex,
+    Copilot CLI). It can delegate to other coding agents. Enterprise features:
+    SAML/SCIM auth, tenant isolation, HMAC-anchored audit logs, a LiteLLM
+    gateway.
+
+    On a terminal status AIFactory emits an
+    [RFC-0001](https://factory.freundcloud.com/rfc/correlation-key/)
+    completion event **including the v1.1 `usage` block** (token/cost), derived
+    from its per-task `token_usage.json`. When TFactory hands a failure back,
+    the QA fixer reopens a bounded correction loop.
+  contact:
+    name: Factory maintainers
+    url: https://factory.freundcloud.com/
+servers:
+  - url: http://localhost:3101
+    description: Canonical local dev (backend)
+tags:
+  - name: tasks
+    description: Build tasks and their lifecycle
+  - name: qa
+    description: QA and the TFactory handback loop
+  - name: providers
+    description: The multi-provider model factory
+  - name: realtime
+    description: Live build/QA progress
+paths:
+  /api/tasks:
+    post:
+      tags: [tasks]
+      summary: Create a build task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+      responses:
+        '201':
+          description: Task accepted; build pipeline started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags: [tasks]
+      summary: List build tasks
+      operationId: listTasks
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: correlation_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+  /api/tasks/{taskId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [tasks]
+      summary: Get a build task
+      operationId: getTask
+      responses:
+        '200':
+          description: The task, including worktree and usage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/tasks/{taskId}/qa-fix:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [qa]
+      summary: Apply a QA correction (TFactory handback)
+      description: >-
+        Entry point for TFactory's handback: a bounded, closed correction loop
+        that reopens the worktree, applies fixes for the failing tests, and
+        re-runs QA.
+      operationId: applyQaFix
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QaFixRequest'
+      responses:
+        '202':
+          description: Correction accepted; QA loop reopened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+  /api/tasks/{taskId}/worktree:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [tasks]
+      summary: Get the task's isolated worktree info
+      operationId: getWorktree
+      responses:
+        '200':
+          description: Worktree branch and status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Worktree'
+  /api/providers:
+    get:
+      tags: [providers]
+      summary: List configured model providers
+      operationId: listProviders
+      responses:
+        '200':
+          description: The provider factory's configured backends
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Provider'
+  /ws/tasks/{taskId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [realtime]
+      summary: WebSocket — live build/QA stream for a task
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket)
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      description: AIFactory task id (e.g. `proj:001`).
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    TaskRequest:
+      type: object
+      required: [repo]
+      properties:
+        repo:
+          type: string
+          example: olafkfreund/AIFactory
+        issue_number:
+          type: integer
+          description: Governed issue from PFactory; becomes the correlation key.
+          example: 142
+        spec:
+          type: string
+          description: Spec text or a path/ref to the spec artifact.
+        provider:
+          type: string
+          description: Optional model override, e.g. `claude-sonnet-4-6`.
+        base_branch:
+          type: string
+          default: main
+    Task:
+      type: object
+      properties:
+        task_id:
+          type: string
+          example: proj:001
+        correlation_key:
+          type: string
+          example: "142"
+        status:
+          type: string
+          example: merged
+          description: e.g. planning, coding, qa, merged, qa_failed.
+        phase:
+          type: string
+          enum: [plan, act, qa]
+        branch:
+          type: string
+          example: af/142-refund-flow
+        pr_number:
+          type: integer
+          nullable: true
+        usage:
+          $ref: '#/components/schemas/Usage'
+        created_at:
+          type: string
+          format: date-time
+    Worktree:
+      type: object
+      properties:
+        branch:
+          type: string
+        path:
+          type: string
+        clean:
+          type: boolean
+    Provider:
+      type: object
+      properties:
+        id:
+          type: string
+          example: claude
+        models:
+          type: array
+          items:
+            type: string
+          example: [claude-sonnet-4-6, claude-opus-4-8]
+        transport:
+          type: string
+          enum: [sdk, litellm, cli, http]
+    QaFixRequest:
+      type: object
+      required: [failing_tests]
+      properties:
+        spec_id:
+          type: string
+          description: TFactory spec id that produced the failure.
+        failing_tests:
+          type: array
+          items:
+            type: string
+        report_url:
+          type: string
+          format: uri
+    Usage:
+      type: object
+      description: RFC-0001 v1.1 usage block.
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        cost_usd:
+          type: number
+          format: double
+        model:
+          type: string
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
