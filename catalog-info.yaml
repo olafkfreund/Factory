@@ -81,6 +81,7 @@ metadata:
     context; review gates with citations (architecture, security, best-practices,
     feasibility); human approval → governed GitHub issues. Backend on :3114.
   annotations:
+    backstage.io/techdocs-ref: url:https://github.com/olafkfreund/PFactory/tree/main
     github.com/project-slug: olafkfreund/PFactory
     backstage.io/source-location: url:https://github.com/olafkfreund/PFactory/
   tags:
@@ -116,6 +117,7 @@ metadata:
     other coding agents. Enterprise auth (SAML/SCIM), HMAC-anchored audit, LiteLLM
     gateway. Backend on :3101.
   annotations:
+    backstage.io/techdocs-ref: url:https://github.com/olafkfreund/AIFactory/tree/dev
     github.com/project-slug: olafkfreund/AIFactory
     backstage.io/source-location: url:https://github.com/olafkfreund/AIFactory/
   tags:
@@ -153,6 +155,7 @@ metadata:
     semantic relevance). Lanes: unit, browser, API, integration, mutation. Routes a
     handback to AIFactory's QA fixer when tests fail. Backend on :3103.
   annotations:
+    backstage.io/techdocs-ref: url:https://github.com/olafkfreund/TFactory/tree/dev
     github.com/project-slug: olafkfreund/TFactory
     backstage.io/source-location: url:https://github.com/olafkfreund/TFactory/
   tags:
@@ -192,6 +195,7 @@ metadata:
     services' REST/WS APIs and the RFC-0001 completion-event webhook; only writes
     through human-confirmed actions. API :3110 / stream :3111.
   annotations:
+    backstage.io/techdocs-ref: url:https://github.com/olafkfreund/CFactory/tree/main
     github.com/project-slug: olafkfreund/CFactory
     backstage.io/source-location: url:https://github.com/olafkfreund/CFactory/
   tags:
