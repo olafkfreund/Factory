@@ -6,7 +6,7 @@ permalink: /rfc/correlation-key/
 
 # RFC-0001 — Shared Correlation Key & Completion-Event Schema
 
-> **Status:** Accepted · **Version:** 1.0 · **Updated:** 2026-06-04
+> **Status:** Accepted · **Version:** 1.1 · **Updated:** 2026-06-05
 > Part of the **PARR spine** (issue [#1](https://github.com/olafkfreund/Factory/issues/1),
 > [#4](https://github.com/olafkfreund/Factory/issues/4)). The product repos implement
 > against this document.
@@ -76,6 +76,32 @@ The envelope has exactly these six required fields:
   "updated_at": "2026-06-04T15:14:45+00:00"
 }
 ```
+
+## 3.1 The optional `usage` block (v1.1)
+
+A service MAY include a `usage` object carrying the LLM token/cost it spent on this
+stage, so a consumer (CFactory) can aggregate spend by service, work item and total
+without polling. **Additive and optional** — consumers MUST ignore it when absent.
+
+| Field | Type | Description |
+|---|---|---|
+| `input_tokens` | int | Prompt tokens (fresh, non-cached). |
+| `output_tokens` | int | Completion tokens. |
+| `total_tokens` | int | Convenience total. |
+| `cost_usd` | number | Provider/estimated cost for the stage. |
+| `model` | string? | Model id, optional. |
+
+```json
+{
+  "correlation_key": "142", "service": "aifactory", "task_id": "proj:001",
+  "status": "done", "phase": "act", "updated_at": "2026-06-05T12:00:00+00:00",
+  "usage": { "input_tokens": 2400, "output_tokens": 100,
+             "total_tokens": 2500, "cost_usd": 1.25, "model": "claude-sonnet-4-6" }
+}
+```
+
+AIFactory derives it from its per-task `token_usage.json` (already tracked). PFactory
+and TFactory accumulate per session/spec and emit it when instrumented (pending).
 
 ## 4. The optional `correlation` block
 
