@@ -5,29 +5,6 @@
 # (PFactory · AIFactory · TFactory · CFactory) into one PARR pipeline.
 ---
 apiVersion: backstage.io/v1alpha1
-kind: Domain
-metadata:
-  name: factory-suite
-  title: Factory Suite
-  description: >-
-    The Factory family — the governance, verification & observability layer for the
-    agentic SDLC. Four composable products (PFactory · AIFactory · TFactory ·
-    CFactory) chained through the PARR pipeline (Prepare · Act · Reflect · Review),
-    threaded by a shared correlation key (the GitHub issue number) and a normalized
-    completion-event envelope (RFC-0001).
-  annotations:
-    backstage.io/source-location: url:https://github.com/olafkfreund/Factory/
-  links:
-    - url: https://factory.freundcloud.com/
-      title: Website
-      icon: web
-    - url: https://factory.freundcloud.com/why/
-      title: Why Factory
-      icon: docs
-spec:
-  owner: olafkfreund
----
-apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: factory
