@@ -1,0 +1,17 @@
+site_name: Factory
+site_description: >-
+  The governance, verification & observability layer for the agentic SDLC —
+  the program/meta repo for the Factory suite and the shared PARR pipeline.
+
+# docs/ is the public Jekyll site; Backstage TechDocs lives in techdocs/.
+docs_dir: techdocs
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - Dependencies: dependencies.md
+  - Decisions: decisions.md
+  - API & Contracts: api.md

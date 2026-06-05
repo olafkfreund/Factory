@@ -1,0 +1,4 @@
+
+# Backstage TechDocs build output + toolchain venv
+/site/
+.techdocs-venv/
