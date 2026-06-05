@@ -1,0 +1,14 @@
+site_name: AIFactory
+site_description: >-
+  Act — spec-first plan → code → QA for the agentic SDLC. Part of the Factory
+  suite (PARR pipeline).
+
+docs_dir: techdocs
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - API & Contracts: api.md

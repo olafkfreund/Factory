@@ -1,0 +1,14 @@
+site_name: CFactory
+site_description: >-
+  Review / Observe — the control tower threading plan → code → test, with an
+  advise-and-confirm copilot. Part of the Factory suite (PARR pipeline).
+
+docs_dir: techdocs
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - API & Contracts: api.md

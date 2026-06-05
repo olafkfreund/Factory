@@ -1,0 +1,14 @@
+site_name: TFactory
+site_description: >-
+  Reflect / Verify — autonomous test generation + a 5-signal verdict for the
+  agentic SDLC. Part of the Factory suite (PARR pipeline).
+
+docs_dir: techdocs
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - API & Contracts: api.md
