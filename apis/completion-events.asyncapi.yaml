@@ -1,0 +1,161 @@
+asyncapi: 2.6.0
+info:
+  title: Factory Completion-Event Contract
+  version: 1.1.0
+  description: |
+    **RFC-0001 — Shared correlation key & completion-event envelope.**
+
+    Every Factory service emits exactly **one** completion event when its stage
+    reaches a **terminal status**, threaded by a shared **correlation key** (the
+    GitHub issue number, or a synthetic `pf-/af-/tf-` fallback). CFactory ingests
+    these to build the WorkItem timeline. The six envelope fields are stable; new
+    fields are additive and optional (consumers MUST ignore unknown fields).
+
+    Authoritative spec: https://factory.freundcloud.com/rfc/correlation-key/
+
+    Delivery is **best-effort** — a failing delivery MUST NEVER break the emitting
+    pipeline. Consumers SHOULD treat events as idempotent by
+    `(service, correlation_key, status)`.
+  license:
+    name: See repository
+    url: https://github.com/olafkfreund/Factory
+defaultContentType: application/json
+servers:
+  cfactory-ingress:
+    url: localhost:3110
+    protocol: http
+    description: >-
+      CFactory's completion-event ingress. Emitters POST the envelope to
+      /api/events/completion (operator-configured per service, e.g.
+      PFACTORY_COMPLETION_WEBHOOK).
+channels:
+  api/events/completion:
+    description: >-
+      The standardized webhook transport. PFactory, AIFactory and TFactory
+      publish; CFactory subscribes (ingests). A same-host `COMPLETED.json`
+      sentinel is an optional alternative transport carrying the same payload.
+    publish:
+      operationId: emitCompletionEvent
+      summary: A service emits its terminal completion event.
+      message:
+        $ref: '#/components/messages/CompletionEvent'
+    subscribe:
+      operationId: ingestCompletionEvent
+      summary: CFactory ingests and upserts onto the WorkItem timeline.
+      message:
+        $ref: '#/components/messages/CompletionEvent'
+components:
+  messages:
+    CompletionEvent:
+      name: CompletionEvent
+      title: Completion event envelope
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CompletionEvent'
+      examples:
+        - name: pfactory-emitted
+          summary: PFactory emitted governed issues
+          payload:
+            correlation_key: "142"
+            service: pfactory
+            task_id: 001-refund-flow
+            status: emitted
+            phase: emit
+            updated_at: "2026-06-04T15:14:45+00:00"
+        - name: aifactory-done-with-usage
+          summary: AIFactory finished a build, with the v1.1 usage block
+          payload:
+            correlation_key: "142"
+            service: aifactory
+            task_id: "proj:001"
+            status: done
+            phase: act
+            updated_at: "2026-06-05T12:00:00+00:00"
+            usage:
+              input_tokens: 2400
+              output_tokens: 100
+              total_tokens: 2500
+              cost_usd: 1.25
+              model: claude-sonnet-4-6
+  schemas:
+    CompletionEvent:
+      type: object
+      additionalProperties: true
+      required:
+        - correlation_key
+        - service
+        - task_id
+        - status
+        - phase
+        - updated_at
+      properties:
+        correlation_key:
+          type: string
+          description: The shared key — issue number, or synthetic fallback (§2).
+          example: "142"
+        service:
+          type: string
+          enum: [pfactory, aifactory, tfactory, cfactory]
+          description: The emitting service.
+        task_id:
+          type: string
+          description: >-
+            The emitter's local id (PFactory session_id, AIFactory task_id,
+            TFactory spec_id).
+        status:
+          type: string
+          description: Terminal status this service landed on (vocabulary is per-service).
+          example: emitted
+        phase:
+          type: string
+          description: Pipeline phase the status belongs to (falls back to the status string).
+          example: emit
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO-8601 UTC timestamp of the terminal transition.
+        usage:
+          $ref: '#/components/schemas/Usage'
+        correlation:
+          $ref: '#/components/schemas/CorrelationBlock'
+        schema_version:
+          type: string
+          description: Absent implies v1. Present only when a breaking change ships.
+    Usage:
+      type: object
+      description: Optional, additive (v1.1) — per-stage LLM token/cost.
+      properties:
+        input_tokens:
+          type: integer
+          description: Prompt tokens (fresh, non-cached).
+        output_tokens:
+          type: integer
+          description: Completion tokens.
+        total_tokens:
+          type: integer
+          description: Convenience total.
+        cost_usd:
+          type: number
+          format: double
+          description: Provider/estimated cost for the stage.
+        model:
+          type: string
+          description: Model id (optional).
+    CorrelationBlock:
+      type: object
+      description: Optional upstream/downstream chain links (all additive).
+      properties:
+        session_id:
+          type: string
+        issue_number:
+          type: integer
+          nullable: true
+        aifactory_task_id:
+          type: string
+          nullable: true
+        branch:
+          type: string
+        pr_number:
+          type: integer
+        tfactory_spec_id:
+          type: string

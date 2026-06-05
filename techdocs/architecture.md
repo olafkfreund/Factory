@@ -91,7 +91,8 @@ or a new field never forces a breaking change.
 
 ```
 Factory/
-├── catalog-info.yaml      # Backstage catalog: Domain factory-suite + Component factory
+├── catalog-info.yaml      # Backstage catalog: System factory-suite + Components + APIs
+├── apis/                  # OpenAPI / AsyncAPI / MCP definitions (embedded via $text)
 ├── mkdocs.yml             # Backstage TechDocs config (docs_dir: techdocs)
 ├── techdocs/              # Backstage TechDocs (this site)
 ├── docs/                  # Jekyll site → https://factory.freundcloud.com/

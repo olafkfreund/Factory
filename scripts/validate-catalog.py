@@ -49,15 +49,25 @@ def load_catalog() -> list[dict]:
                     err(f"{meta.get('name')}: {rel} -> '{ref}' not defined in catalog")
 
         if d.get("kind") == "API":
+            api_type = spec.get("type", "")
             definition = spec.get("definition")
             if isinstance(definition, dict) and "$text" in definition:
                 target = (ROOT / definition["$text"]).resolve()
                 if not target.exists():
                     err(f"{meta['name']}: $text -> {definition['$text']} missing")
-                else:
+                elif api_type == "openapi":
                     api_doc = yaml.safe_load(target.read_text())
                     if not str(api_doc.get("openapi", "")).startswith("3"):
                         err(f"{target.name}: not an OpenAPI 3.x document")
+                elif api_type == "asyncapi":
+                    api_doc = yaml.safe_load(target.read_text())
+                    if not str(api_doc.get("asyncapi", "")).startswith(("2", "3")):
+                        err(f"{target.name}: not an AsyncAPI 2.x/3.x document")
+                elif api_type == "mcp":
+                    # MCP definitions are markdown tool catalogs; require non-empty.
+                    if not target.read_text().strip():
+                        err(f"{target.name}: empty MCP definition")
+                # other types: existence of the $text target is sufficient
             elif not definition:
                 err(f"{meta['name']}: API spec.definition is required")
     return docs

@@ -6,8 +6,10 @@ shared contracts that let them cooperate.
 
 ## The four products (Factory family)
 
-Each is a standalone repo with its own Backstage catalog entity; Factory is the
-`Domain` (`factory-suite`) that groups them.
+Each has its own GitHub repo; in the catalog they are Components grouped by the
+`factory-suite` **System** and modelled as subcomponents of `factory` (see
+[Catalog & entities](catalog.md)). While the product repos are being onboarded,
+the four Components are catalogued in this repo's `catalog-info.yaml`.
 
 | Product | Stage | Repo | Relationship |
 |---|---|---|---|
@@ -50,7 +52,15 @@ forces a breaking change.
 
 ## Cross-service dependency graph (catalog)
 
-In the Backstage catalog, the cross-product relationships live on each product's own
-entity (e.g. AIFactory `dependsOn` PFactory; CFactory consumes all three). This repo's
-`factory` Component declares only the `factory-suite` Domain it belongs to — it owns
-the contracts, not the dependency edges.
+The Backstage catalog encodes these relationships directly (defined in this repo's
+`catalog-info.yaml` while the product repos are onboarded):
+
+- **AIFactory** `dependsOn` PFactory; **TFactory** `dependsOn` AIFactory;
+  **CFactory** `dependsOn` PFactory, AIFactory and TFactory.
+- Each product **provides** its REST/WS API and MCP control plane, and **consumes**
+  the `factory-completion-events` contract (CFactory provides that channel).
+- All four are **subcomponents of** `factory` and members of the `factory-suite`
+  System.
+
+The `factory` Component itself owns the contracts, not the dependency edges. See
+[Catalog & entities](catalog.md) for the full entity model.

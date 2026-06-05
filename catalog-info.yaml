@@ -3,6 +3,14 @@
 # workflow). Factory is a documentation / program repository — it has NO services
 # and NO REST API of its own; it is the meta-repo that threads the four products
 # (PFactory · AIFactory · TFactory · CFactory) into one PARR pipeline.
+#
+# This single file is self-contained (the validator and Backstage read it whole):
+#   * Component `factory`     — this documentation repo (no API of its own)
+#   * System    `factory-suite` — groups the family
+#   * Components pfactory / aifactory / tfactory / cfactory — the four products,
+#     each a subcomponent of `factory`, wired by the PARR handoff chain
+#   * 9 API entities — 4 REST (openapi) · 1 completion-event contract (asyncapi)
+#     · 4 MCP control planes (mcp); definitions embedded from ./apis via $text
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -12,7 +20,8 @@ metadata:
   description: >-
     Program/meta repository for the Factory suite (PFactory · AIFactory · TFactory ·
     CFactory). Cross-cutting plans, epics, RFCs and the PARR pipeline that spans all
-    products. Documentation-only: no services, no API.
+    products. Documentation-only: no services, no API of its own — the four product
+    Components below carry the services and APIs.
   annotations:
     backstage.io/techdocs-ref: dir:.
     github.com/project-slug: olafkfreund/Factory
@@ -40,4 +49,352 @@ spec:
   type: documentation
   lifecycle: production
   owner: olafkfreund
-  domain: public
+  # Grouped under the suite System (Domain is rejected by the catalog rules).
+  system: factory-suite
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: factory-suite
+  title: Factory suite
+  description: >-
+    Four composable products implementing the PARR loop (Prepare · Act · Reflect ·
+    Review): PFactory plans, AIFactory builds, TFactory verifies, CFactory observes
+    & steers — plus the Factory program/meta repo that threads them together.
+  tags:
+    - parr
+    - agentic-sdlc
+  links:
+    - url: https://factory.freundcloud.com/
+      title: Website
+      icon: web
+spec:
+  owner: olafkfreund
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: pfactory
+  title: PFactory
+  description: >-
+    Prepare / Plan + Review. Governed planning grounded in live cloud/Backstage
+    context; review gates with citations (architecture, security, best-practices,
+    feasibility); human approval → governed GitHub issues. Backend on :3114.
+  annotations:
+    github.com/project-slug: olafkfreund/PFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/PFactory/
+  tags:
+    - python
+    - fastapi
+    - mcp
+    - planning
+    - parr-prepare
+  links:
+    - url: https://github.com/olafkfreund/PFactory
+      title: Source
+      icon: github
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  providesApis:
+    - pfactory-api
+    - pfactory-mcp
+  consumesApis:
+    - factory-completion-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: aifactory
+  title: AIFactory
+  description: >-
+    Act. Spec-first plan → code → QA in isolated git worktrees; multi-provider
+    (Claude, OpenAI, Gemini, Ollama, vLLM, Codex, Copilot CLI); can delegate to
+    other coding agents. Enterprise auth (SAML/SCIM), HMAC-anchored audit, LiteLLM
+    gateway. Backend on :3101.
+  annotations:
+    github.com/project-slug: olafkfreund/AIFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/AIFactory/
+  tags:
+    - python
+    - fastapi
+    - mcp
+    - claude-agent-sdk
+    - parr-act
+  links:
+    - url: https://github.com/olafkfreund/AIFactory
+      title: Source
+      icon: github
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  dependsOn:
+    - component:pfactory
+  providesApis:
+    - aifactory-api
+    - aifactory-mcp
+  consumesApis:
+    - factory-completion-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: tfactory
+  title: TFactory
+  description: >-
+    Reflect / Verify. Autonomous test generation + execution in a Docker sandbox,
+    graded on a 5-signal verdict (coverage delta, stability, mutation, lint,
+    semantic relevance). Lanes: unit, browser, API, integration, mutation. Routes a
+    handback to AIFactory's QA fixer when tests fail. Backend on :3103.
+  annotations:
+    github.com/project-slug: olafkfreund/TFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/TFactory/
+  tags:
+    - python
+    - fastapi
+    - mcp
+    - testing
+    - parr-reflect
+  links:
+    - url: https://github.com/olafkfreund/TFactory
+      title: Source
+      icon: github
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  dependsOn:
+    - component:aifactory
+  providesApis:
+    - tfactory-api
+    - tfactory-mcp
+  consumesApis:
+    - factory-completion-events
+    - aifactory-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: cfactory
+  title: CFactory
+  description: >-
+    Review / Observe — the control tower. One cockpit threading plan → code → test
+    via a WorkItem correlation store keyed by the GitHub issue number, plus an
+    advise-and-confirm agentic copilot. Pure consumer: observes through the other
+    services' REST/WS APIs and the RFC-0001 completion-event webhook; only writes
+    through human-confirmed actions. API :3110 / stream :3111.
+  annotations:
+    github.com/project-slug: olafkfreund/CFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/CFactory/
+  tags:
+    - python
+    - fastapi
+    - claude-agent-sdk
+    - observability
+    - parr-review
+  links:
+    - url: https://github.com/olafkfreund/CFactory
+      title: Source
+      icon: github
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  dependsOn:
+    - component:pfactory
+    - component:aifactory
+    - component:tfactory
+  providesApis:
+    - cfactory-api
+    - factory-completion-events
+    - cfactory-mcp
+  consumesApis:
+    - pfactory-api
+    - aifactory-api
+    - tfactory-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: pfactory-api
+  title: PFactory REST/WS API
+  description: >-
+    Planning pipeline: ingest → enrich (cloud/Backstage) → decompose → review gates
+    → emit governed GitHub issues. Backend on :3114 (dev frontend :3115).
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/pfactory.openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: aifactory-api
+  title: AIFactory REST/WS API
+  description: >-
+    Agent build pipeline: planner → coder (isolated worktree) → QA. Multi-provider,
+    enterprise auth, emits RFC-0001 completion events with the v1.1 usage block.
+    Backend on :3101.
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/aifactory.openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: tfactory-api
+  title: TFactory REST/WS API
+  description: >-
+    Verification pipeline: planner → gen-functional → executor (Docker sandbox) →
+    evaluator (5-signal verdict) → triager. Posts triage to the PR and can hand a
+    correction back to AIFactory. Backend on :3103.
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/tfactory.openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: cfactory-api
+  title: CFactory Cockpit & Observer API
+  description: >-
+    Control tower: completion-event ingress (/api/events/completion), WorkItem
+    correlation store + timeline, aggregated spend, and the advise-and-confirm
+    copilot. API on :3110, realtime stream on :3111.
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/cfactory.openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: factory-completion-events
+  title: Factory Completion-Event Contract (RFC-0001)
+  description: >-
+    The normalized, additive completion-event envelope every service emits on a
+    terminal status, threaded by the GitHub-issue correlation key. Delivered to
+    CFactory's ingress by webhook (or COMPLETED.json sentinel).
+  tags:
+    - asyncapi
+    - events
+    - rfc-0001
+  links:
+    - url: https://factory.freundcloud.com/rfc/correlation-key/
+      title: RFC-0001 (authoritative)
+      icon: docs
+spec:
+  type: asyncapi
+  lifecycle: production
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/completion-events.asyncapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: pfactory-mcp
+  title: PFactory MCP control plane
+  description: >-
+    Model Context Protocol (stdio) server exposing PFactory's planning tools so
+    MCP-aware editors/agents can drive governed planning.
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/pfactory.mcp.md
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: aifactory-mcp
+  title: AIFactory MCP control plane
+  description: >-
+    Model Context Protocol server exposing AIFactory's build/QA tools. Stdio, and
+    also a remote HTTP+SSE transport for persistent clients.
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/aifactory.mcp.md
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: tfactory-mcp
+  title: TFactory MCP control plane
+  description: >-
+    Model Context Protocol (stdio) server exposing TFactory's test-generation,
+    execution and verdict tools.
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/tfactory.mcp.md
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: cfactory-mcp
+  title: CFactory MCP control plane
+  description: >-
+    Model Context Protocol (stdio) server exposing CFactory's WorkItem/observer
+    tools (the persistent cockpit itself uses REST/WS).
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/cfactory.mcp.md
