@@ -41,3 +41,9 @@ spec:
   lifecycle: production
   owner: olafkfreund
   domain: public
+  dependsOn:
+    # The program/meta repo threads the four products of the PARR pipeline.
+    - component:default/pfactory
+    - component:default/aifactory
+    - component:default/tfactory
+    - component:default/cfactory
