@@ -1,0 +1,83 @@
+# Backstage catalog descriptor for PFactory — drop this at the repo root of
+# https://github.com/olafkfreund/PFactory and register it (or let the org's
+# GitHub discovery pick it up).
+#
+# It defines the `pfactory` Component and its two API entities. The references to
+# `factory` (parent), `factory-suite` (System) and `factory-completion-events`
+# (the RFC-0001 contract) are owned by the Factory program repo — Backstage
+# resolves them globally once both repos are registered.
+#
+# ⚠️ When you add this, REMOVE the `pfactory` Component block (and you may keep or
+#    remove the `pfactory-api` / `pfactory-mcp` API blocks) from the Factory repo's
+#    catalog-info.yaml to avoid duplicate entities.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: pfactory
+  title: PFactory
+  description: >-
+    Prepare / Plan + Review. Governed planning grounded in live cloud/Backstage
+    context; review gates with citations (architecture, security, best-practices,
+    feasibility); human approval → governed GitHub issues. Backend on :3114.
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: olafkfreund/PFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/PFactory/
+  tags:
+    - python
+    - fastapi
+    - mcp
+    - planning
+    - parr-prepare
+  links:
+    - url: https://factory.freundcloud.com/
+      title: Factory suite
+      icon: web
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  providesApis:
+    - pfactory-api
+    - pfactory-mcp
+  consumesApis:
+    - factory-completion-events
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: pfactory-api
+  title: PFactory REST/WS API
+  description: >-
+    Planning pipeline: ingest → enrich → decompose → review gates → emit governed
+    GitHub issues. Backend on :3114 (dev frontend :3115).
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: pfactory-mcp
+  title: PFactory MCP control plane
+  description: >-
+    Model Context Protocol (stdio) server exposing PFactory's planning tools.
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/mcp.md

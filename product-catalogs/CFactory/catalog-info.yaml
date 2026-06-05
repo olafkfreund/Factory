@@ -1,0 +1,95 @@
+# Backstage catalog descriptor for CFactory — drop at the repo root of
+# https://github.com/olafkfreund/CFactory and register it.
+#
+# CFactory provides the `factory-completion-events` contract (it owns the
+# /api/events/completion ingress channel), but that API entity is DEFINED in the
+# Factory program repo (RFC-0001 lives there) — here it is only referenced.
+# References to `factory`, `factory-suite`, the sibling product APIs and that
+# contract are resolved globally by Backstage once all repos are registered.
+#
+# ⚠️ When you add this, REMOVE the `cfactory` Component block from the Factory
+#    repo's catalog-info.yaml. Keep `factory-completion-events` defined in the
+#    Factory repo (do not redefine it here) to avoid duplicate entities.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: cfactory
+  title: CFactory
+  description: >-
+    Review / Observe — the control tower. One cockpit threading plan → code → test
+    via a WorkItem correlation store keyed by the GitHub issue number, plus an
+    advise-and-confirm agentic copilot. Pure consumer: observes through the other
+    services' REST/WS APIs and the RFC-0001 completion-event webhook; only writes
+    through human-confirmed actions. API :3110 / stream :3111.
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: olafkfreund/CFactory
+    backstage.io/source-location: url:https://github.com/olafkfreund/CFactory/
+  tags:
+    - python
+    - fastapi
+    - claude-agent-sdk
+    - observability
+    - parr-review
+  links:
+    - url: https://factory.freundcloud.com/
+      title: Factory suite
+      icon: web
+spec:
+  type: service
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  subcomponentOf: factory
+  dependsOn:
+    - component:pfactory
+    - component:aifactory
+    - component:tfactory
+  providesApis:
+    - cfactory-api
+    - cfactory-mcp
+    # Defined in the Factory program repo; CFactory owns the ingress channel.
+    - factory-completion-events
+  consumesApis:
+    - pfactory-api
+    - aifactory-api
+    - tfactory-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: cfactory-api
+  title: CFactory Cockpit & Observer API
+  description: >-
+    Control tower: completion-event ingress (/api/events/completion), WorkItem
+    correlation store + timeline, aggregated spend, and the advise-and-confirm
+    copilot. API on :3110, realtime stream on :3111.
+  tags:
+    - openapi
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: cfactory-mcp
+  title: CFactory MCP control plane
+  description: >-
+    Model Context Protocol (stdio) server exposing CFactory's WorkItem/observer
+    tools (the persistent cockpit itself uses REST/WS).
+  tags:
+    - mcp
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/mcp.md
