@@ -106,6 +106,25 @@ PFactory implements this RFC today (envelope + transport in
 AIFactory and TFactory implement the **emitter** side; CFactory implements the
 **consumer** side (idempotent ingest).
 
+## Task Contract v2 — RFC-0002
+
+Where RFC-0001 lets the family *track* one unit of work, **RFC-0002** lets it
+*hand the work off in full*. The **Task Contract v2** is one canonical, signed
+document carrying **WHAT** (the plan), **HOW** (the execution profile) and
+**VERIFY** (the test profile), so PFactory computes the profile once, AIFactory
+executes it without re-planning (`skip_planning`), and TFactory tests it without
+guessing.
+
+- Specification: [RFC-0002](https://github.com/olafkfreund/Factory/blob/main/docs/rfc/0002-task-contract.md)
+- Machine-readable JSON Schema: [`apis/task-contract.schema.json`](https://github.com/olafkfreund/Factory/blob/main/apis/task-contract.schema.json)
+- Trust: signed with AIFactory's `trusted_plan` HMAC envelope; the signature
+  covers the execution and test profiles, not just the plan.
+- Sync: status flows back via the RFC-0001 completion-event envelope keyed by the
+  same `correlation_key`.
+
+Adoption is tracked by cross-linked epics in each repo (PFactory emits + signs;
+AIFactory ingests + skips planning; TFactory consumes the `tfactory` block).
+
 ## Each product's own API
 
 Factory has no API of its own, but each product does. These are registered as
