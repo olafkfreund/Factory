@@ -86,13 +86,13 @@ able to **delegate** to GitHub Copilot or GitLab Duo, and enterprise-grade.
 - Enterprise: SAML/SCIM, tenant isolation, audit, LiteLLM gateway
 
 <div class="prod-shots">
-  <figure><img src="{{ '/assets/screenshots/aifactory/kanban.png' | relative_url }}" alt="AIFactory kanban"><figcaption>mission-control task board</figcaption></figure>
-  <figure><img src="{{ '/assets/screenshots/aifactory/task-wizard.png' | relative_url }}" alt="AIFactory task wizard"><figcaption>task wizard — spec-first intake</figcaption></figure>
-  <figure><img src="{{ '/assets/screenshots/aifactory/editor.png' | relative_url }}" alt="AIFactory editor"><figcaption>spec &amp; plan editor</figcaption></figure>
-  <figure><img src="{{ '/assets/screenshots/aifactory/terminal.png' | relative_url }}" alt="AIFactory live terminal"><figcaption>live agent console</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/aifactory/board-parr-pipeline.png' | relative_url }}" alt="AIFactory mission control"><figcaption>mission control — the PARR pipeline over the board</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/aifactory/task-logs.png' | relative_url }}" alt="AIFactory PARR logs"><figcaption>the PARR loop, streamed live</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/aifactory/task-observability.png' | relative_url }}" alt="AIFactory observability"><figcaption>per-task token &amp; resource observability</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/aifactory/task-live-console-tests.png' | relative_url }}" alt="AIFactory live console"><figcaption>live agent console — QA suite passing</figcaption></figure>
 </div>
 
-[Visit AIFactory →](https://aifactory.freundcloud.com/) · [GitHub](https://github.com/olafkfreund/AIFactory)
+[See the full AIFactory tour →]({{ '/aifactory/' | relative_url }}) · [Visit AIFactory →](https://aifactory.freundcloud.com/) · [GitHub](https://github.com/olafkfreund/AIFactory)
 </div>
 
 <div class="prod" markdown="1">
@@ -135,11 +135,14 @@ that explains pipeline state and proposes human-confirmed actions.
 - Advise + confirm: the copilot prepares actions; a human always clicks
 - Built on the family skeleton; reuses AIFactory's enterprise security
 
-<p><em>CFactory is early — screenshots land as the cockpit ships. Follow the
-<a href="https://github.com/olafkfreund/CFactory">repo</a> and its
-<a href="https://github.com/olafkfreund/CFactory/blob/main/docs/roadmap.md">roadmap</a>.</em></p>
+<div class="prod-shots">
+  <figure><img src="{{ '/assets/screenshots/cfactory/mission-control.png' | relative_url }}" alt="CFactory mission control"><figcaption>mission control — Plan · Code · Test, live</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/cfactory/pipeline.png' | relative_url }}" alt="CFactory pipeline"><figcaption>one work item threaded by GitHub issue</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/cfactory/copilot.png' | relative_url }}" alt="CFactory copilot"><figcaption>agentic copilot — advise &amp; confirm</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/cfactory/audit.png' | relative_url }}" alt="CFactory audit"><figcaption>HMAC-chained audit of every action</figcaption></figure>
+</div>
 
-[CFactory on GitHub →](https://github.com/olafkfreund/CFactory)
+[See the full CFactory tour →]({{ '/cfactory/' | relative_url }}) · [CFactory on GitHub →](https://github.com/olafkfreund/CFactory)
 </div>
 
 ---
