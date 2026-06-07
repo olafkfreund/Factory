@@ -68,7 +68,7 @@ gates **with citations**, records human approval, and emits governed GitHub issu
   <figure><img src="{{ '/assets/screenshots/pfactory/14-approval.png' | relative_url }}" alt="PFactory approval"><figcaption>human approval gate</figcaption></figure>
 </div>
 
-[Visit PFactory →](https://pfactory.freundcloud.com/) · [GitHub](https://github.com/olafkfreund/PFactory)
+[See the full PFactory tour →]({{ '/pfactory/' | relative_url }}) · [Visit PFactory →](https://pfactory.freundcloud.com/) · [GitHub](https://github.com/olafkfreund/PFactory)
 </div>
 
 <div class="prod" markdown="1">
@@ -117,7 +117,7 @@ posts a ranked triage report to your PR.
   <figure><img src="{{ '/assets/screenshots/tfactory/python-unit.png' | relative_url }}" alt="TFactory verdict"><figcaption>graded, ranked triage report</figcaption></figure>
 </div>
 
-[Visit TFactory →](https://tfactory.freundcloud.com/) · [GitHub](https://github.com/olafkfreund/TFactory)
+[See the full TFactory tour →]({{ '/tfactory/' | relative_url }}) · [Visit TFactory →](https://tfactory.freundcloud.com/) · [GitHub](https://github.com/olafkfreund/TFactory)
 </div>
 
 <div class="prod" markdown="1">
