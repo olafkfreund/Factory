@@ -10,14 +10,34 @@ a single unit of work is threaded across the family.
 **P**repare · **A**ct · **R**eflect · **R**eview — one stage per product, each useful
 on its own, each designed to hand off to the next.
 
-```
-ingest plan ─▶ PFactory ─governed issues─▶ AIFactory ─branch/PR─▶ TFactory
-  (Prepare)                  (Act)                       (Reflect/Verify)
-                  ▲                                          │
-                  └──────────── handback (failures) ─────────┘
+```mermaid
+flowchart LR
+    subgraph P["🧭 Prepare"]
+        PF["PFactory<br/>:3114 · :3115"]
+    end
+    subgraph A["🛠️ Act"]
+        AF["AIFactory<br/>:3101"]
+    end
+    subgraph R["🧪 Reflect / Verify"]
+        TF["TFactory<br/>:3103"]
+    end
 
-           every stage observed & steered by CFactory  (Review)
+    PF -- "governed GitHub issue" --> AF
+    AF -- "merge-ready branch / PR" --> TF
+    TF -. "handback · failing verdict" .-> AF
+
+    CF["🛰️ CFactory — control tower<br/>:3110 API · :3111 stream"]
+    PF -. "completion event" .-> CF
+    AF -. "completion event" .-> CF
+    TF -. "completion event" .-> CF
+
+    classDef tower fill:#1d2b3a,stroke:#5aa9e6,color:#cde4ff;
+    class CF tower;
 ```
+
+*Prepare → Act → Reflect run left to right; the dotted return arrow is the
+TFactory→AIFactory handback. Every stage emits a completion event to CFactory,
+which observes and steers the whole pipeline from the side.*
 
 | Stage | Product | Inputs → Outputs |
 |---|---|---|
@@ -81,6 +101,26 @@ collector so all terminal events report to one cockpit, e.g. for PFactory:
 
 ```bash
 PFACTORY_COMPLETION_WEBHOOK=http://localhost:3110/api/events/completion
+```
+
+```mermaid
+flowchart TB
+    PF["PFactory"] -- "POST /api/events/completion" --> COL
+    AF["AIFactory"] -- "POST /api/events/completion" --> COL
+    TF["TFactory"] -- "POST /api/events/completion" --> COL
+    TF -. "COMPLETED.json sentinel<br/>(same-host fallback)" .-> COL
+
+    subgraph CF["CFactory control tower · :3110 / :3111"]
+        direction TB
+        COL["Completion-event collector"]
+        IDEM["Idempotent dedup<br/>(service, correlation_key, status)"]
+        STORE["WorkItem store<br/>keyed by correlation key"]
+        COCKPIT["Cockpit + advise-and-confirm copilot"]
+        COL --> IDEM --> STORE --> COCKPIT
+    end
+
+    classDef tower fill:#1d2b3a,stroke:#5aa9e6,color:#cde4ff;
+    class CF tower;
 ```
 
 Consumers (CFactory) treat events as **idempotent** by

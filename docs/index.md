@@ -174,4 +174,4 @@ The connective tissue — a shared correlation key, a normalized completion-even
 schema, and a canonical local port map — is tracked as the **PARR-spine epic** in
 this repo.
 
-[See the program roadmap →](/roadmap/) · [Follow the blog →](/blog/)
+[See the full architecture →](/architecture/) · [Program roadmap →](/roadmap/) · [Follow the blog →](/blog/)

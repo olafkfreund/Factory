@@ -66,6 +66,7 @@
           </ul>
         </li>
         <li><a href="{{ '/#cooperation' | relative_url }}">Cooperation</a></li>
+        <li><a href="{{ '/architecture/' | relative_url }}"{% if page.url contains '/architecture/' %} class="active"{% endif %}>Architecture</a></li>
         <li><a href="{{ '/roadmap/' | relative_url }}"{% if page.url contains '/roadmap/' %} class="active"{% endif %}>Roadmap</a></li>
         <li><a href="{{ '/run-locally/' | relative_url }}"{% if page.url contains '/run-locally/' %} class="active"{% endif %}>Run Locally</a></li>
         <li><a href="{{ '/blog/' | relative_url }}"{% if page.url contains '/blog' %} class="active"{% endif %}>Blog</a></li>
@@ -81,6 +82,24 @@
   </main>
 
   <script src="{{ '/assets/js/factory.js' | relative_url }}" defer></script>
+
+  {% if page.mermaid %}
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        background: '#282828',
+        primaryColor: '#1b1b1b',
+        primaryTextColor: '#ebdbb2',
+        primaryBorderColor: 'rgba(255,255,255,.18)',
+        lineColor: '#83a598',
+        fontFamily: "'IBM Plex Sans', sans-serif"
+      }
+    });
+  </script>
+  {% endif %}
 
   <footer class="site-footer" role="contentinfo">
     <div class="container site-footer__inner">
