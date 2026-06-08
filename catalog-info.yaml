@@ -61,9 +61,16 @@ metadata:
     Four composable products implementing the PARR loop (Prepare · Act · Reflect ·
     Review): PFactory plans, AIFactory builds, TFactory verifies, CFactory observes
     & steers — plus the Factory program/meta repo that threads them together.
+  annotations:
+    factory.io/github-agentic-rfc: https://factory.freundcloud.com/rfc/github-agentic/
+    factory.io/github-agentic-design: https://github.com/olafkfreund/AIFactory/blob/dev/docs/plans/2026-06-07-github-agentic-integration-design.md
+    factory.io/github-agentic-mcp-endpoints: "aifactory=:3101/mcp, tfactory=:3103/mcp, pfactory=:3114/mcp"
+    factory.io/github-agentic-models-catalog: https://models.github.ai/catalog/models
+    factory.io/github-agentic-labels: "copilot:delegate, aifactory:run, aifactory:review, pfactory:run, tfactory:run"
   tags:
     - parr
     - agentic-sdlc
+    - github-agentic
   links:
     - url: https://factory.freundcloud.com/
       title: Website

@@ -15,4 +15,5 @@ nav:
   - Dependencies: dependencies.md
   - Decisions: decisions.md
   - API & Contracts: api.md
+  - GitHub Agentic Integration: github-agentic.md
   - Catalog & entities: catalog.md
