@@ -125,6 +125,28 @@ guessing.
 Adoption is tracked by cross-linked epics in each repo (PFactory emits + signs;
 AIFactory ingests + skips planning; TFactory consumes the `tfactory` block).
 
+## GitHub Agentic Integration — RFC-0003
+
+Where RFC-0001 and RFC-0002 are about the family talking to *itself*, **RFC-0003**
+is about the family talking to **GitHub's native agentic surface** — the Copilot
+cloud agent, the free GitHub Models inference API, MCP call-home for the cloud
+agent, and Copilot automations in Actions. Each product adopted these independently
+and converged on the same conventions; RFC-0003 names them once.
+
+- Specification: [RFC-0003](https://github.com/olafkfreund/Factory/blob/main/docs/rfc/0003-github-agentic-integration.md)
+- Shared label taxonomy (the trigger contract): `copilot:delegate`, `aifactory:run`,
+  `aifactory:review`, `pfactory:run`, `tfactory:run`.
+- Provider: a `github-models` alias routes through each product's existing
+  OpenAI-compatible backend (`models.github.ai/inference`, `GITHUB_TOKEN` auth) —
+  no new provider class.
+- Call-home: the cloud agent reaches each product's existing `*-mcp` surface during
+  a coding session for spec/plan/test context.
+- Threading: a Copilot-authored PR is threaded by the same RFC-0001 correlation key
+  as any other work item.
+
+Adoption shipped across all three product repos (epics AIFactory#456, PFactory#87,
+TFactory#277 — all closed).
+
 ## Each product's own API
 
 Factory has no API of its own, but each product does. These are registered as
