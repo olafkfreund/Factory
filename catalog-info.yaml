@@ -103,6 +103,7 @@ spec:
   providesApis:
     - pfactory-api
     - pfactory-mcp
+    - factory-task-contract
   consumesApis:
     - factory-completion-events
 ---
@@ -143,6 +144,7 @@ spec:
     - aifactory-mcp
   consumesApis:
     - factory-completion-events
+    - factory-task-contract
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -181,6 +183,7 @@ spec:
     - tfactory-mcp
   consumesApis:
     - factory-completion-events
+    - factory-task-contract
     - aifactory-api
 ---
 apiVersion: backstage.io/v1alpha1
@@ -330,6 +333,32 @@ spec:
   system: factory-suite
   definition:
     $text: ./apis/completion-events.asyncapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: factory-task-contract
+  title: Factory Task Contract v2 (RFC-0002)
+  description: >-
+    The canonical, signed task contract carrying WHAT (plan) + HOW (execution
+    profile) + VERIFY (tfactory test profile). PFactory computes it once and
+    emits it; AIFactory executes without re-planning; TFactory tests without
+    guessing. Builds on the RFC-0001 correlation key.
+  tags:
+    - json-schema
+    - contract
+    - rfc-0002
+  links:
+    - url: https://factory.freundcloud.com/rfc/task-contract/
+      title: RFC-0002 (authoritative)
+      icon: docs
+spec:
+  type: json-schema
+  lifecycle: production
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/task-contract.schema.json
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
