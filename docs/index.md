@@ -76,9 +76,12 @@ gates **with citations**, records human approval, and emits governed GitHub issu
 
 ### AIFactory — spec-first execution that ships merge-ready code
 
-The execution engine. A planner writes a reviewable spec, a coder implements it in
-an isolated git worktree, and a QA agent validates against the spec — multi-provider,
-able to **delegate** to GitHub Copilot or GitLab Duo, and enterprise-grade.
+The **swappable execution core** — the Act stage of the pipeline. A planner writes a
+reviewable spec, a coder implements it in an isolated git worktree, and a QA agent
+validates against the spec — multi-provider, able to **delegate** to GitHub Copilot
+or GitLab Duo, and enterprise-grade. Because Prepare, Reflect and Review live in
+separate products, the engine that actually writes code can be replaced without
+touching the governance, verification or observability around it.
 
 - Spec-first: every run starts from a written, editable spec
 - Isolated worktrees — nothing touches main until you merge
