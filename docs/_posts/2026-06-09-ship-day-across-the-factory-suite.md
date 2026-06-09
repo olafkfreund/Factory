@@ -2,7 +2,7 @@
 layout: post
 title: "Ship day: the Hermes learnings land — and a lot more"
 subtitle: "In a single day the four-product suite shipped agent-loop hardening, CI-parity verification, per-user API keys, an Ollama Cloud provider in every product, and a cockpit that finally tells the truth. A grounded changelog — with what's on main and what's still on dev."
-date: 2026-06-09 21:00:00 +0000
+date: 2026-06-09 12:00:00 +0000
 author: Olaf Freund
 ---
 
