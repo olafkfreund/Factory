@@ -75,6 +75,9 @@ metadata:
     - url: https://factory.freundcloud.com/
       title: Website
       icon: web
+    - url: https://factory.freundcloud.com/rfc/trajectory-capture/
+      title: RFC-0004 — Governed-Trajectory Capture (Proposed)
+      icon: docs
 spec:
   owner: olafkfreund
 ---
