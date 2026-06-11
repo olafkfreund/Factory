@@ -2,7 +2,7 @@
 layout: post
 title: "The guards behind the pipeline: how Factory turns agents into a process"
 subtitle: "A new reference page maps every step and decision from handover to merge — and the fifteen guards that make AI-built code something an enterprise can actually adopt. Plus four real adoption scenarios, from the solo builder to the regulated enterprise."
-date: 2026-06-11 12:00:00 +0000
+date: 2026-06-11 09:00:00 +0000
 author: Olaf Freund
 mermaid: true
 ---
