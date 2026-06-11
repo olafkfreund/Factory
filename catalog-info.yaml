@@ -441,3 +441,36 @@ spec:
   system: factory-suite
   definition:
     $text: ./apis/cfactory.mcp.md
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: factory-vscode
+  title: factory-vscode
+  description: >-
+    VS Code (and OpenVSX-compatible IDE) extension that brings the live PARR
+    pipeline into the editor — pipeline tree, animated cockpit, live agent
+    console, and notifications. Consumes CFactory's REST + WebSocket API.
+  annotations:
+    github.com/project-slug: olafkfreund/factory-vscode
+    backstage.io/source-location: url:https://github.com/olafkfreund/factory-vscode/
+  tags:
+    - vscode
+    - extension
+    - cockpit
+    - parr
+    - observability
+  links:
+    - url: https://olafkfreund.github.io/factory-vscode/
+      title: Project site and blog
+      icon: web
+    - url: https://github.com/olafkfreund/factory-vscode
+      title: Repository
+      icon: github
+spec:
+  type: tool
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  dependsOn:
+    - component:cfactory
