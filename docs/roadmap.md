@@ -11,6 +11,24 @@ Factory is managed as one program across five repositories, tracked on the
 sequencing principle is **spine first**: make the pipeline traceable end-to-end
 before building deep on top of it.
 
+## Recently shipped (June 2026)
+
+The PARR spine is now proven end-to-end on real infrastructure:
+
+- **Trusted-plan fast path** — PFactory signs an RFC-0002 contract; AIFactory
+  verifies it and **skips planning** (proven: build codes to completion). Gemini
+  is selectable through the contract (`PFACTORY_EXECUTION_MODEL`).
+- **Verify leg closed** — TFactory's planner auto-runs on ingest (#347) and the
+  handoff carries the signed contract + deployed URL (#547), so it tests the
+  **declared** acceptance criteria against the **real** build.
+- **Deploy-then-verify on real AWS** — deterministic, cost-guarded App Runner
+  deploys (teardown always ships with deploy); the live API and **authenticated
+  web UIs** are tested against the running deployment, with **screenshots +
+  findings** as proof. See the [Pipeline & Guards](/pipeline/) reference and the
+  [blog](/blog/).
+- **OAuth-only by default** — agents never silently bill a stray API key
+  (direct-key billing is an explicit opt-in).
+
 ## Now — standardize the PARR spine
 
 The connective tissue that lets the four products cooperate, tracked as the
