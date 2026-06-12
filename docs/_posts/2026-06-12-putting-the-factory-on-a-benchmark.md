@@ -120,13 +120,34 @@ handback loop meaningful.
   measured from the SDK's own cost figures. ✅
 - **Harness:** six seam bugs fixed; the token/cost capture now works (that's
   where the $1.88 comes from).
-- **Verify leg:** the code-carrying gap is closed in code on both sides; the
-  fix is merging now, so on the deployed cluster verification is still landing
-  the last seam (the materialized-branch path isn't deployed yet).
+- **Verify leg:** the code-carrying gap is closed on both sides, and the last
+  seam turned out to be the harness, not the loop — see below.
 - **Plan leg:** hit a known PFactory emit-idempotency issue under GitHub rate
   limits — already tracked, and the build proceeds without it.
 
-We said we'd prove it in the open — numbers, warts, and all. This is the first
-installment. The number we care about next is the full green PARR run: plan →
-build → deploy → verify the live deployment → merge, with a time and a cost
-attached. That run is cooking.
+## Update: the first fully-green build → verify row
+
+The "clean green run" landed, and it came with a twist worth telling. When we
+first wired up the verify stage it kept timing out as `error` — so we assumed
+verification was failing. It wasn't. The runs were reaching a passing verdict
+(`triaged`) all along; the harness was polling a task endpoint that **404s for
+ingested specs**, because their status lives in the spec's workspace
+(`/api/tfactory/tasks/{spec_id}`), not the global task path. One more seam bug —
+in our own tooling, not the pipeline. Fixed.
+
+With the harness reading the right place, here's the row:
+
+| Scenario | Code | Verify | Tokens | Cost | Overall |
+|---|---|---|---|---|---|
+| FastAPI API gateway w/ rate limiting | passed (29.8 min) | passed (23.2 min) | 6,482,337 | **$3.12** | **✅ passed** |
+
+Plan → build → verify, on the live cluster, with a time and a dollar figure
+attached. The verify leg ran the `unit` and `api` lanes against the build and
+returned a passing verdict. (Cost varies run to run with how many turns the
+build takes — an earlier run came in at $1.88; this one, longer, at $3.12. Both
+are the SDK's real numbers.)
+
+We said we'd prove it in the open — numbers, warts, and all. This is that proof:
+the loop closes, and now it has a scoreboard. Next we widen the matrix — more
+scenarios, more providers (Claude vs. Ollama vs. Gemini) — and publish the
+table.
