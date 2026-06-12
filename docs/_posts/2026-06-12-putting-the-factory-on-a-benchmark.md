@@ -2,7 +2,7 @@
 layout: post
 title: "Field report: we put the Factory on a benchmark — and it found six bugs in our own harness first"
 subtitle: "Phase 1 of the make-it-great plan was 'prove it.' So we pointed our PARR benchmark at the live deployed fleet for the first time. The build leg works — a real autonomous service in ~23 minutes on the cluster — but first contact surfaced six cross-service seam bugs the per-repo unit tests never could. That's exactly what the benchmark is for. Here's the honest scorecard, and the verify-leg gap we closed the same day."
-date: 2026-06-12 16:00:00 +0000
+date: 2026-06-12 07:00:00 +0000
 author: Olaf Freund
 ---
 

@@ -2,7 +2,7 @@
 layout: post
 title: "The honest scorecard: we reviewed all four factories against the market"
 subtitle: "A full code review of PFactory, AIFactory, TFactory and CFactory against our goals and against Devin, Factory.ai, OpenHands and the cloud agents. The verdict: the spine is closed and we're ahead on the axis that matters — but we have zero published proof, zero design partners, and one security item we refuse to hand-wave. Here's the plan."
-date: 2026-06-12 12:00:00 +0000
+date: 2026-06-12 06:00:00 +0000
 author: Olaf Freund
 ---
 
