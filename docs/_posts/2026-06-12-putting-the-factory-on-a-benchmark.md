@@ -24,10 +24,41 @@ a brief, on the cluster, end to end.
 ## The result that matters
 
 **The build leg works.** AIFactory took the api-gateway brief and produced a
-complete, QA-passed service in **~23 minutes** (1,397 seconds) on the deployed
-cluster — autonomously, no hand on the wheel. That's the proof point we'd never
-actually measured: not "it builds locally," but "it builds *on the running
-platform*, start to finish, in a quantified time."
+complete, QA-passed service on the deployed cluster — autonomously, no hand on
+the wheel. After we fixed the harness (more on that below), a clean build run
+came back with the number we'd never actually measured:
+
+| Metric | Value |
+|---|---|
+| Build time (on-cluster, autonomous) | **~28 min** (1,665 s) |
+| Tokens (real, from the SDK) | **3,701,472** |
+| **Cost** | **$1.88** |
+
+That's the proof point: not "it builds locally," but "it builds *on the running
+platform*, start to finish, with a time and a dollar figure attached."
+
+## How we measure cost (and why we trust the number)
+
+We don't estimate the cost — the **Claude Agent SDK reports it**. Every turn of
+a build, the SDK returns real usage on `ResultMessage.usage`: input tokens,
+output tokens, cache-read and cache-creation tokens, and a real
+`total_cost_usd` (the SDK knows the model and its pricing, including the cheaper
+rates for cache reads). AIFactory simply **aggregates** those authoritative
+per-turn totals across the whole build session into `totalTokens` and
+`totalCostUsd`, and exposes them at `GET /api/tasks/{id}/token-usage`. The
+benchmark reads the dollar figure straight from there.
+
+The only *estimated* part is the per-category breakdown the portal shows — "how
+much of the context went to the system prompt vs. file context vs. thinking" —
+which uses a documented char-based heuristic for the *relative* split. The
+**totals are always the SDK's real numbers**, so that heuristic never moves the
+headline. When we say $1.88, that's what the model run actually cost.
+
+(Footnote for the curious: 3.7M tokens for $1.88 is an effective ~$0.51 per
+million — well under raw input pricing — because most of that volume is
+cache reads. A long autonomous build re-reads the same spec, plan, and file
+context every turn, and prompt caching makes that cheap. The benchmark makes
+that visible.)
 
 ## The result that's more interesting
 
@@ -85,10 +116,13 @@ handback loop meaningful.
 
 ## Where this leaves us
 
-- **Build leg:** proven on the live cluster, ~23 min, quantified. ✅
-- **Harness:** six seam bugs fixed; a clean green run is back in flight as this
-  publishes, and the public results table updates when it lands.
-- **Verify leg:** the code-carrying gap is closed on both sides.
+- **Build leg:** proven on the live cluster — **~28 min, 3.7M tokens, $1.88**,
+  measured from the SDK's own cost figures. ✅
+- **Harness:** six seam bugs fixed; the token/cost capture now works (that's
+  where the $1.88 comes from).
+- **Verify leg:** the code-carrying gap is closed in code on both sides; the
+  fix is merging now, so on the deployed cluster verification is still landing
+  the last seam (the materialized-branch path isn't deployed yet).
 - **Plan leg:** hit a known PFactory emit-idempotency issue under GitHub rate
   limits — already tracked, and the build proceeds without it.
 
