@@ -1,0 +1,85 @@
+name: PARR nightly regression
+
+# Phase 1 of the make-it-great plan (Factory#41): drive the deployed PARR fleet
+# nightly and fail loudly at any cross-service boundary. The June 2026 review
+# found that nearly every production bug lived at a factory *seam* — the class
+# unit tests can't see. This catches them with a gate instead of a user.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 03:00 UTC nightly
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Also drive a real build lifecycle end-to-end (slow)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  seams:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Guard — require the fleet token
+        id: guard
+        env:
+          FACTORY_TOKEN: ${{ secrets.FACTORY_TOKEN }}
+        run: |
+          if [ -z "${FACTORY_TOKEN}" ]; then
+            echo "FACTORY_TOKEN secret not set — skipping (set it to enable the gate)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the PARR seam regression
+        if: steps.guard.outputs.skip == 'false'
+        id: regression
+        env:
+          FACTORY_TOKEN: ${{ secrets.FACTORY_TOKEN }}
+          # Override endpoints here if the fleet moves; defaults point at the
+          # deployed *.freundcloud.org.uk services.
+          PFACTORY_API: ${{ vars.PFACTORY_API }}
+          AIFACTORY_API: ${{ vars.AIFACTORY_API }}
+          TFACTORY_API: ${{ vars.TFACTORY_API }}
+          CFACTORY_API: ${{ vars.CFACTORY_API }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.full }}" = "true" ]; then ARGS="--full"; fi
+          python3 scripts/parr_regression.py $ARGS | tee regression.out
+
+      - name: Open / refresh a tracking issue on failure
+        if: failure() && steps.guard.outputs.skip == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = "The nightly PARR seam regression failed — a cross-service boundary regressed.\n\n";
+            try { body += "```\n" + fs.readFileSync('regression.out','utf8').slice(-4000) + "\n```\n"; }
+            catch (e) { body += "_(no output captured)_\n"; }
+            body += `\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = "PARR nightly regression failing";
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'parr-regression',
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['parr-regression'],
+              });
+            }
