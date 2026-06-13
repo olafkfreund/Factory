@@ -167,6 +167,11 @@
         "skip_planning": {
           "type": "boolean",
           "description": "When true AND signature+completeness verify, AIFactory goes straight to the wave executor."
+        },
+        "budget_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "OPTIONAL soft cost budget in USD for the task. OBSERVE-ONLY: when AIFactory's rolled-up spend exceeds it, the terminal completion event carries a usage.budget warning block (limit_usd/spent_usd/exceeded) and an OTel budget.exceeded metric fires. NEVER aborts, pauses, or kills the build. Absent => no budget tracking (back-compat)."
         }
       }
     },

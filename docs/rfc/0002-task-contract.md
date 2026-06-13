@@ -108,7 +108,8 @@ human summary.
       "subagents": ["codebase_analyzer"]
     },
     "skills": [{ "id": "python/fastapi", "name": "FastAPI", "category": "python" }],
-    "skip_planning": true
+    "skip_planning": true,
+    "budget_usd": 5.00              // OPTIONAL soft cost budget (observe-only; never aborts)
   },
 
   // -- VERIFY: TFactory test profile (NEW, PFactory-computed) --
@@ -138,6 +139,16 @@ human summary.
 A v2 contract **without** `execution`/`tfactory` is a valid signed plan that
 behaves like v1 plus richer correlation. A v2 contract **with** them is the full
 skip-planning, no-guessing fast-path.
+
+### `execution.budget_usd` (optional soft budget)
+
+`execution.budget_usd` is an OPTIONAL soft cost budget (USD) for the task. It is
+**observe-only**: when AIFactory's rolled-up spend for the task exceeds it, the
+terminal RFC-0001 completion event carries an additive `usage.budget` warning
+block (`{limit_usd, spent_usd, exceeded}`) and an OTel `budget.exceeded` metric
+fires. It **never** aborts, pauses, or kills the build — the task always runs to
+its natural terminal state. Absent => no budget tracking (back-compat). See the
+per-worker observability design (P2 soft budget alert).
 
 ## 3. Signing & trust
 
