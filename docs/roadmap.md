@@ -37,16 +37,17 @@ The connective tissue that lets the four products cooperate, tracked as the
 - **PFactory → AIFactory** inbound handoff with issue-number provenance
 - A shared **correlation key** (the GitHub issue number) threaded end-to-end
 - A normalized **completion-event** envelope across all three services
-- A canonical local **port map** (AIFactory 3101 · PFactory 3102 · TFactory 3103 ·
+- A canonical local **port map** (AIFactory 3101 · PFactory 3114/3115 · TFactory 3103 ·
   CFactory 3110/3111)
 
 ## Next — CFactory cockpit
 
-Deliver the control tower in phases (tracked in the
-[CFactory repo](https://github.com/olafkfreund/CFactory/issues)):
+The control tower shipped as a multi-view cockpit (Services, Pipeline board,
+Copilot, Audit — see the [cockpit tour](/cfactory/)). Phases, tracked in the
+[CFactory repo](https://github.com/olafkfreund/CFactory/issues):
 
-- **P1** — skeleton, WorkItem correlation store, read-only pipeline board
-- **P2** — agentic copilot (read tools, timeline summaries, anomaly detection)
+- **P1 (shipped)** — skeleton, WorkItem correlation store, read-only pipeline board
+- **P2 (shipped)** — agentic copilot (read tools, timeline summaries, anomaly detection)
 - **P3** — advise + confirm actions, audit, scoped keys
 - **P4** — hardening for hosted / multi-tenant
 

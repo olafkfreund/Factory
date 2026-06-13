@@ -1,0 +1,114 @@
+name: PARR seam regression (reusable)
+
+# Reusable PARR cross-service seam regression (Factory#44). The job logic that
+# used to live in parr-nightly.yml now lives here behind `on: workflow_call`, so
+# the same gate can be invoked from the nightly cron *and* as a pre-merge /
+# post-deploy gate in each service repo's deploy.yml. The actual regression
+# behavior is unchanged — it just drives scripts/parr_regression.py.
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "smoke (fast, read-only) or full (real build lifecycle)"
+        type: string
+        required: false
+        default: "smoke"
+      pfactory_api:
+        description: "PFactory base URL (defaults to the deployed fleet)"
+        type: string
+        required: false
+        default: ""
+      aifactory_api:
+        description: "AIFactory base URL"
+        type: string
+        required: false
+        default: ""
+      tfactory_api:
+        description: "TFactory base URL"
+        type: string
+        required: false
+        default: ""
+      cfactory_api:
+        description: "CFactory base URL"
+        type: string
+        required: false
+        default: ""
+      open_issue_on_failure:
+        description: "Open / refresh a tracking issue when the gate fails"
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      FACTORY_TOKEN:
+        description: "Fleet token (fallback for all four service tokens)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  seams:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Guard — require the fleet token
+        id: guard
+        env:
+          FACTORY_TOKEN: ${{ secrets.FACTORY_TOKEN }}
+        run: |
+          if [ -z "${FACTORY_TOKEN}" ]; then
+            echo "FACTORY_TOKEN secret not set — skipping (set it to enable the gate)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the PARR seam regression
+        if: steps.guard.outputs.skip == 'false'
+        id: regression
+        env:
+          FACTORY_TOKEN: ${{ secrets.FACTORY_TOKEN }}
+          # Endpoints come from the caller's inputs when set, else from repo vars,
+          # else the script's defaults (the deployed *.freundcloud.org.uk fleet).
+          PFACTORY_API: ${{ inputs.pfactory_api != '' && inputs.pfactory_api || vars.PFACTORY_API }}
+          AIFACTORY_API: ${{ inputs.aifactory_api != '' && inputs.aifactory_api || vars.AIFACTORY_API }}
+          TFACTORY_API: ${{ inputs.tfactory_api != '' && inputs.tfactory_api || vars.TFACTORY_API }}
+          CFACTORY_API: ${{ inputs.cfactory_api != '' && inputs.cfactory_api || vars.CFACTORY_API }}
+        run: |
+          ARGS="--smoke"
+          if [ "${{ inputs.mode }}" = "full" ]; then ARGS="--full"; fi
+          python3 scripts/parr_regression.py $ARGS | tee regression.out
+
+      - name: Open / refresh a tracking issue on failure
+        if: failure() && steps.guard.outputs.skip == 'false' && inputs.open_issue_on_failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = "The PARR seam regression failed — a cross-service boundary regressed.\n\n";
+            try { body += "```\n" + fs.readFileSync('regression.out','utf8').slice(-4000) + "\n```\n"; }
+            catch (e) { body += "_(no output captured)_\n"; }
+            body += `\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = "PARR nightly regression failing";
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'parr-regression',
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['parr-regression'],
+              });
+            }
