@@ -171,16 +171,18 @@ A typical build leg is ~20-28 min; verify is ~20-25 min. `BENCH_BUILD_TIMEOUT`
    This will recur whenever the token expires — it is the first thing to check if
    builds finish in ~30s with 0 tokens.
 
-2. **Missing `plan-type:*` GitHub label.** PFactory's plan `emit` step runs
-   `gh issue create` with a `plan-type:<type>` label and **hard-fails (500) if the
-   label does not exist** in the target repo. `olafkfreund/aifactory-demo` had the
-   `scenario:*`/`lang:*`/`epic` labels but no `plan-type:*`. **Fix:** the 11
-   `plan-type:*` labels now exist in the repo (`software-service`, `feature`,
-   `software`, `infrastructure`, `infra`, `hosting`, `testing`, `cicd`, `product`,
-   `data`, `generic`). Recreate them if the repo's labels are ever reset:
-   `gh label create "plan-type:<t>" --repo olafkfreund/aifactory-demo --color 5319e7 --force`.
-   *Better long-term fix (not done): make PFactory's emitter create-or-skip
-   missing labels instead of 500.*
+2. **PFactory `emit` 500s on any missing GitHub label.** The plan `emit` step runs
+   `gh issue create --label <type:/plan-type:/priority:/sev:/area:...>` and
+   **hard-fails (500) on the first label the target repo is missing**. The label
+   set is open-ended and **dynamic** — `plan-type:*` and `area:*`/`service:*` are
+   generated from plan content/children — so manual label creation never converges
+   (we hit `plan-type:software-service` → `priority:p2` → `area:testing` →
+   `plan-type:generic-deliverable` → `area:cicd` → ...). **Real fix:** PFactory PR
+   #139 (`fix/emit-bootstrap-labels`) makes `GhCliRunner.create_issue`
+   `gh label create --force` each label first (idempotent, best-effort) so emit
+   self-bootstraps the taxonomy. A broad set of labels was also pre-created in
+   `olafkfreund/aifactory-demo` as a stopgap, but **the durable fix is the PR** —
+   without it, any fresh target repo re-hits the cascade.
 
 3. **Gemini CLI trust guard.** The gemini/antigravity CLI refuses to run in an
    "untrusted" workspace and exits before any API call. **Fix:**
