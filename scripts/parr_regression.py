@@ -23,6 +23,13 @@ Modes:
              end-to-end nightly (tens of minutes).
   --dry-run  print the seam plan and exit 0 (wiring check, no calls).
 
+Teardown: the smoke probe creates a PFactory plan session, and --full creates an
+AIFactory task. Both are cleaned up best-effort after the run (the AIFactory task
+is DELETEd; the PFactory session is rejected/closed, since PFactory has no
+plan-session DELETE endpoint). Cleanup never fails the gate — a teardown error is
+logged, not raised — so it is safe to point at a live environment.
+Set PARR_NO_TEARDOWN=1 to keep probe artifacts (e.g. to debug a failure).
+
 Endpoints + auth come from the environment (same names the benchmark uses):
   PFACTORY_API / AIFACTORY_API / TFACTORY_API / CFACTORY_API
   AIFACTORY_TOKEN / TFACTORY_TOKEN / PFACTORY_TOKEN / CFACTORY_TOKEN
@@ -106,6 +113,39 @@ def _call(svc: str, method: str, path: str, body: dict | None = None, timeout: i
     return 0, {"error": last or "unreachable"}
 
 
+# ── Teardown ─────────────────────────────────────────────────────────────────
+
+# Best-effort cleanup actions for probe artifacts created during the run. Each is
+# an (svc, method, path, body) call replayed after the seams run. Never raises.
+_CLEANUP: list[tuple[str, str, str, dict | None]] = []
+
+
+def _register_cleanup(svc: str, method: str, path: str, body: dict | None = None) -> None:
+    _CLEANUP.append((svc, method, path, body))
+
+
+def _teardown() -> None:
+    """Remove probe artifacts created during the run, best-effort.
+
+    A cleanup failure MUST NOT fail the gate, so everything here is swallowed and
+    logged. PFactory has no plan-session DELETE, so its probe session is rejected
+    (closed) rather than hard-deleted; the AIFactory task is DELETEd."""
+    if os.environ.get("PARR_NO_TEARDOWN"):
+        if _CLEANUP:
+            print(f"\nTeardown skipped (PARR_NO_TEARDOWN); {len(_CLEANUP)} probe artifact(s) left.")
+        return
+    if not _CLEANUP:
+        return
+    print("\nTeardown (best-effort cleanup of probe artifacts):")
+    for svc, method, path, body in reversed(_CLEANUP):
+        try:
+            code, _ = _call(svc, method, path, body, timeout=15)
+            ok = bool(code) and 200 <= code < 300
+            print(f"  [{'ok  ' if ok else 'skip'}] {method} {svc}{path} -> {code}")
+        except Exception as exc:  # noqa: BLE001 — cleanup must never fail the gate
+            print(f"  [err ] {method} {svc}{path} -> {exc}")
+
+
 # ── Seam checks ──────────────────────────────────────────────────────────────
 
 
@@ -129,7 +169,11 @@ def check_pfactory_ingest_shape() -> Seam:
         "text": "# probe\n\n## Acceptance Criteria\n- AC#1: GET /healthz returns 200",
     }, timeout=30)
     if code == 200 and (body.get("session_id") or body.get("id")):
-        return s.passed(f"session={body.get('session_id') or body.get('id')}")
+        sid = body.get("session_id") or body.get("id")
+        # PFactory has no plan-session DELETE; reject closes the probe session.
+        _register_cleanup("pfactory", "POST", f"/api/plan/sessions/{sid}/reject",
+                          {"reason": "parr-regression teardown"})
+        return s.passed(f"session={sid}")
     return s.failed(f"ingest-text -> {code}: {str(body)[:160]}")
 
 
@@ -179,6 +223,7 @@ def check_build_lifecycle(timeout: int) -> Seam:
     tid = task.get("task_id") or task.get("id")
     if not tid:
         return s.failed(f"task create -> {code}: {str(task)[:140]}")
+    _register_cleanup("aifactory", "DELETE", f"/api/tasks/{tid}")
     _call("aifactory", "POST", f"/api/tasks/{tid}/start", {"auto_continue": True}, timeout=30)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -225,13 +270,17 @@ def main() -> int:
         return 0
 
     seams: list[Seam] = []
-    for svc in ("pfactory", "aifactory", "tfactory", "cfactory"):
-        seams.append(check_health(svc))
-    seams.append(check_pfactory_ingest_shape())
-    seams.append(check_tfactory_ingest_shape())
-    seams.append(check_cfactory_threading())
-    if args.full:
-        seams.append(check_build_lifecycle(args.build_timeout))
+    try:
+        for svc in ("pfactory", "aifactory", "tfactory", "cfactory"):
+            seams.append(check_health(svc))
+        seams.append(check_pfactory_ingest_shape())
+        seams.append(check_tfactory_ingest_shape())
+        seams.append(check_cfactory_threading())
+        if args.full:
+            seams.append(check_build_lifecycle(args.build_timeout))
+    finally:
+        # Always clean up probe artifacts, even if a seam raised mid-run.
+        _teardown()
 
     failed = [s for s in seams if not s.ok]
     print("\nPARR cross-service seam regression")
