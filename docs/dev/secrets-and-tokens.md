@@ -148,9 +148,48 @@ GitHub Actions. Listed so you know they exist and where to rotate them:
 | `PFACTORY_MCP_SECRET` | PFactory | bearer for the `/mcp` endpoint (fails closed when unset, post-#128) |
 | `CFACTORY_AUDIT_HMAC_SECRET` | CFactory | tamper-evidence for the audit chain (must not be the dev default in prod) |
 | `JWT_SECRET`, OIDC client id/secret | all portals | session + SSO |
+| `CLAUDE_CODE_OAUTH_TOKEN` | AIFactory/PFactory/TFactory | **LLM auth for the `claude` CLI.** Planning is pinned to Claude (`phase_config.DEFAULT_PHASE_MODELS` → `sonnet`), so when this expires **every build fails** at planning with a 0-token stub plan — see the refresh procedure below. |
+| `GEMINI_API_KEY` | AIFactory | LLM auth for the `gemini`/`antigravity` CLI (Gemini-provider builds) |
 
-Rotate these in `factory-gitops` (or your secret store) and redeploy; they are not
-touched by `wire-tokens.sh`.
+All three factories share one `factory-secrets` k8s Secret in namespace `factory`.
+Rotate these in `factory-gitops` (or directly on the cluster Secret) and restart the
+pods; they are not touched by `wire-tokens.sh`.
+
+### Refreshing the Claude / Gemini provider credentials
+
+`CLAUDE_CODE_OAUTH_TOKEN` is a `claude setup-token` OAuth token (`sk-a…`, ~108 chars)
+and **expires**. When it lapses, the `claude` CLI returns `401 Invalid authentication
+credentials`; because planning is Claude-pinned, the symptom is that *all* AIFactory
+builds finish in ~30s having produced `implementation_plan.json = {"phase":
+"spec_creation"}` and the log line `Invalid or minimal implementation plan detected`.
+
+Refresh it (operator-only — a bot cannot mint an OAuth token):
+
+```bash
+# 1. On a trusted machine, generate a fresh token (interactive browser login):
+claude setup-token          # prints the new sk-a... token
+
+# 2. Put it in a file (no trailing newline issues — the patch below strips it):
+printf '%s' '<paste-token>' > /tmp/token.txt
+
+# 3. Patch the live Secret WITHOUT echoing the value (stringData → k8s base64-encodes):
+python3 -c 'import json;print(json.dumps({"stringData":{"CLAUDE_CODE_OAUTH_TOKEN":open("/tmp/token.txt").read().strip()}}))' > /tmp/p.json
+kubectl patch secret factory-secrets -n factory --type merge --patch-file /tmp/p.json
+rm -f /tmp/p.json /tmp/token.txt
+
+# 4. Restart the factories so the new env is picked up:
+kubectl rollout restart deploy/aifactory deploy/pfactory deploy/tfactory -n factory
+
+# 5. Verify (must print PONG, no 401):
+kubectl exec -n factory deploy/aifactory -- claude -p 'reply with exactly: PONG' --model claude-sonnet-4-6
+```
+
+Gemini: the API key rarely changes, but headless builds also need
+`GEMINI_CLI_TRUST_WORKSPACE=true` on the AIFactory deployment env (set in
+`factory-gitops apps/aifactory/manifests/manifests.yaml`) — without it the
+gemini/antigravity CLI refuses to run in an "untrusted" workspace and exits before
+any API call. Verify with `kubectl exec -n factory deploy/aifactory -- gemini
+--skip-trust -m gemini-2.5-pro -p 'say PONG'`.
 
 ---
 
