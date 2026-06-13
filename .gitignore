@@ -2,3 +2,6 @@
 # Backstage TechDocs build output + toolchain venv
 /site/
 .techdocs-venv/
+
+# local pre-wipe data-dir snapshots (large tarballs; restore steps in docs/dev/benchmark-matrix-runbook.md)
+backups/
