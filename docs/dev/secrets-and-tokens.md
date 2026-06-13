@@ -102,8 +102,12 @@ at deploy time.
 - `pfactory POST /api/plan/sessions/ingest-text` (creates a probe plan session)
 - `tfactory POST /api/specs/ingest` (shape/validation probe)
 
-So the token needs **write** scope, and **every deploy will leave probe artifacts on
-the live fleet** (teardown is not yet implemented — tracked). Before activating:
+So the token needs **write** scope. The probes now **clean up after themselves**
+(best-effort): the AIFactory `--full` task is DELETEd and the PFactory probe session
+is rejected/closed (PFactory has no plan-session DELETE). Cleanup never fails the
+gate; set `PARR_NO_TEARDOWN=1` to keep artifacts when debugging. Note the PFactory
+session is *closed*, not hard-deleted, so it still persists in the DB — so for a
+fully clean prod you may still prefer a disposable target. Before activating:
 - point the gate at a **disposable project** by setting the `*_API` repo *variables*
   (below), **and/or**
 - add a teardown step to `parr_regression.py`.
