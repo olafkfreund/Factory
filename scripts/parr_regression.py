@@ -16,6 +16,8 @@ Modes:
   (default)  fast seam checks — health + auth + ingest-shape + cockpit threading.
              ~30s. Catches the regression class the first benchmark run hit
              (Cloudflare UA block, auth, endpoint drift, project resolution).
+  --smoke    explicit alias for the default read-only fast path, for use as a
+             pre-merge / post-deploy gate.
   --full     also drive a real create-and-run build through AIFactory to a
              terminal state and a TFactory ingest to terminal — the full
              end-to-end nightly (tens of minutes).
@@ -193,9 +195,19 @@ def check_build_lifecycle(timeout: int) -> Seam:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--full", action="store_true", help="also drive a real build lifecycle")
+    ap.add_argument(
+        "--smoke",
+        action="store_true",
+        help="fast, read-only seam-shape checks only (the default mode; explicit "
+        "for use as a pre-merge / post-deploy gate). Ignored if --full is set.",
+    )
     ap.add_argument("--dry-run", action="store_true", help="print the seam plan, no calls")
     ap.add_argument("--build-timeout", type=int, default=3600)
     args = ap.parse_args()
+
+    # --smoke is the read-only fast path (the default); --full wins if both given.
+    if args.smoke and not args.full:
+        args.full = False
 
     plan = [
         "health: pfactory, aifactory, tfactory, cfactory reachable + authed",
