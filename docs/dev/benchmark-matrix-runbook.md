@@ -202,12 +202,29 @@ A typical build leg is ~20-28 min; verify is ~20-25 min. `BENCH_BUILD_TIMEOUT`
 - **`build_report.json` parallelism not wired.** It reports
   `parallel:false, workers_max:1, total_waves:0` even when the workers map shows 4
   parallel workers. (Owner: AIFactory build-report writer.)
-- **Terminal OTel rollup may not fire at `human_review`.** The completion event +
-  OTel worker-metrics batch fire on `TaskPhase.COMPLETED`; a build that parks at
-  `human_review` (auto-merge off) may never emit them, so OpenObserve fleet
-  aggregates can stay empty for benchmark builds. Live per-worker sub-events may
-  still flow. **Verify by querying OpenObserve after a run.** (Owner: AIFactory
-  `services/completion.py` / `agent_service.py` terminal block.)
+- **OpenObserve per-worker dashboard — two bugs (one FIXED, one open).** The
+  "Factory — Per-worker cost & tokens" dashboard showed "Search stream not found"
+  on every panel. Diagnosed 2026-06-13:
+  - **(FIXED) Stream-name mismatch.** OTLP→OpenObserve sanitizes metric names
+    dots→underscores, so the streams are `gen_ai_cost_usd`, `gen_ai_input_tokens`,
+    `gen_ai_output_tokens`, `worker_duration_ms` — but the dashboard panels queried
+    the dotted names. The dashboard (id `7471604705878081536`, version `v8`) was
+    rewritten to the underscore names via the OpenObserve API and now renders. The
+    OTLP **export path itself works** — a direct `record_worker_metrics_batch(...)`
+    call created the streams immediately (traces were already flowing).
+  - **(OPEN) Real builds don't emit worker metrics.** The OTel worker-metrics
+    batch (`completion.py:_emit_worker_metrics`) only runs inside the terminal
+    completion event, which `agent_service.py` gates on
+    `emit_events and phase_enum in (COMPLETED, FAILED)`. A successful build
+    terminates via the `_monitor_process` path with `emit_events=False` and ends at
+    **`human_review`** (auto-merge off), so the completion event + worker metrics
+    **never fire** — the dashboard stays empty of real data (only the live
+    per-worker sub-events to CFactory flow). **Fix:** emit the worker-metrics batch
+    (and ideally the terminal completion event) on the build's done transition
+    regardless of `emit_events`/`human_review`, the same way the #71 side-effects
+    block was moved off the `emit_events` gate. (Owner: AIFactory
+    `services/completion.py` + `agent_service.py` terminal block.) Until then, the
+    OpenObserve dashboard only shows the synthetic diagnostic point.
 - **Harness edits not upstreamed.** The `BENCH_MODEL` override + the two
   false-positive fixes exist only in this working tree and in the pod clone. They
   should be committed/pushed to `olafkfreund/aifactory-demo` so a fresh pod clone
