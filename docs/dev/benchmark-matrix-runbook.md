@@ -123,14 +123,20 @@ A typical build leg is ~20-28 min; verify is ~20-25 min. `BENCH_BUILD_TIMEOUT`
 ## The provider matrix (Claude vs Gemini)
 
 - **Claude**: omit `BENCH_MODEL`. All phases use `claude-sonnet-4-6` (the default).
-- **Gemini**: `BENCH_MODEL=gemini-2.5-pro`. This sets the task `model`, which
-  drives the **coding** phase to Gemini, but **planning stays Claude** because
-  `phase_config.DEFAULT_PHASE_MODELS` pins every phase to `sonnet` and the
-  `model` field does not override it. So a "Gemini run" is really
-  *Claude-plans, Gemini-codes* — a legitimate heterogeneous test.
-- **Pure Gemini** (planning too): the task must carry
-  `metadata.phaseModels = {spec,planning,coding,qa,qa_fixer: "gemini-2.5-pro"}`.
-  The harness does not send this yet — see "Known gaps / follow-ups".
+- **IMPORTANT — `BENCH_MODEL` alone does NOT switch provider.** The task `model`
+  field does not override the per-phase model pins: `phase_config`
+  `DEFAULT_PHASE_MODELS` pins every phase (spec/planning/coding/qa/qa_fixer) to
+  `sonnet`, and the `start` payload's `model` is ignored for phase routing.
+  Verified 2026-06-13: a run with `BENCH_MODEL=gemini-2.5-pro` still produced an
+  all-Claude build (4 coding workers, all `claude` haiku/sonnet, 1.47M tokens).
+- **To actually use Gemini** the task must carry
+  `metadata.phaseModels = {coding: "gemini-2.5-pro", ...}` (add `planning`/`spec`
+  too for a pure-Gemini build). The harness does **not** send `phaseModels` today —
+  to drive Gemini you must either (a) extend the harness to forward a
+  `phaseModels` map into the `/api/tasks` metadata, or (b) start a task directly
+  against `/api/tasks/{id}/start` with the `phaseModels` field. See
+  "Known gaps / follow-ups". The Gemini coding path was therefore NOT yet
+  exercised end-to-end as of 2026-06-13.
 - The Gemini path runs `antigravity --yolo` (the gemini->antigravity alias) and
   needs `GEMINI_CLI_TRUST_WORKSPACE=true` on the deployment env (already set).
 
