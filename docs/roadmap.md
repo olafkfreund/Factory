@@ -15,6 +15,23 @@ before building deep on top of it.
 
 The PARR spine is now proven end-to-end on real infrastructure:
 
+- **Security + CI hardening wave** — a 16-agent deep audit (epic Factory#45)
+  drove GitHub Actions script-injection fixes and the CVE-2025-66032 `[bot]`-suffix
+  copilot fix across repos, PFactory's bashlex command-allowlist AST parser
+  (closing a `$()`/pipe IMDS-exfil bypass), fail-closed `/mcp` and `DISABLE_AUTH`
+  boot guards, TFactory SSRF guards, and CFactory's first test CI gate.
+  **Branch protection is on**, so "auto-merge on green" can no longer merge red,
+  and a reusable PARR seam-regression check became a post-deploy gate.
+- **Per-worker, per-provider observability** — AIFactory already ran parallel
+  multi-provider coding workers; now you can **see** them. Per-worker capture in
+  the v1.3 completion event (`workers[]` / `by_provider` / `by_model`), real
+  OpenTelemetry per-worker metrics from the web-server (bounded cardinality, no
+  `task_id`), live worker + 10s heartbeat events, a **soft (observe-only) budget
+  alert**, and a **live CFactory cockpit** with a ticking per-task cost stamp and
+  per-worker drill-down. **OpenObserve** is bundled as the OTLP backend behind
+  CFactory's ingress (Keycloak SSO + Cloudflare tunnel), so
+  `OTEL_EXPORTER_OTLP_ENDPOINT` points at CFactory without it reinventing a TSDB.
+  See the [blog](/blog/2026/06/13/seeing-the-factory-think-per-worker-observability/).
 - **Trusted-plan fast path** — PFactory signs an RFC-0002 contract; AIFactory
   verifies it and **skips planning** (proven: build codes to completion). Gemini
   is selectable through the contract (`PFACTORY_EXECUTION_MODEL`).
