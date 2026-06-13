@@ -59,4 +59,19 @@ and token spend is tracked across the whole pipeline.
   <figure><img src="{{ '/assets/screenshots/cfactory/tokens.png' | relative_url }}" alt="CFactory Tokens &amp; cost"><figcaption><b>Tokens &amp; cost</b>LLM usage across the pipeline, per stage, from the RFC-0001 usage block.</figcaption></figure>
 </div>
 
+<div class="tour-sec" markdown="1">
+
+## Watch the build cost accrue, live
+
+The cockpit now carries a **live per-task cost stamp with a ticking graph** —
+you watch a build's cost rise in real time as its workers report in, then
+**drill down per worker** to see which provider and model spent what. AIFactory
+already ran heterogeneous parallel coders (Claude, Gemini, Ollama); the cockpit
+makes that parallelism visible and accountable. For the fleet-wide view, a link
+takes you straight to **OpenObserve** — bundled as the OTLP backend behind
+CFactory's own ingress (Keycloak SSO + Cloudflare tunnel), so the cockpit stays
+the one pane of glass without growing a time-series database of its own.
+
+</div>
+
 [← Back to the products]({{ '/#products' | relative_url }})

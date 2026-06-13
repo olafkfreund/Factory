@@ -69,6 +69,22 @@ terminal you can attach to at any time.
 
 <div class="tour-sec" markdown="1">
 
+## Per-worker, per-provider observability
+
+AIFactory runs **parallel coding workers across providers** — Claude, Gemini,
+and local Ollama models side by side. Now it emits **real OpenTelemetry
+per-worker metrics** from the web-server (labelled by provider and model, with
+bounded cardinality), streams **live worker events** with a 10-second heartbeat,
+and reports cost per worker through the v1.3 completion event
+(`workers[]` / `by_provider` / `by_model`) instead of collapsing it to a single
+model string. A **soft, observe-only budget alert** surfaces when a task crosses
+a threshold without ever killing the run. The result: you can finally answer, per
+task and live, what a build cost, on which model, and where the time went.
+
+</div>
+
+<div class="tour-sec" markdown="1">
+
 ## Memory &amp; settings
 
 AIFactory keeps **persistent cross-session memory** so agents carry context forward — backed by
