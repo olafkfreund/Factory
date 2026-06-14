@@ -31,13 +31,19 @@ cards, gruvbox palette — no graph lib (matches the cockpit's no-dependency eth
 - **Tests:** CFactory backend 255 pass (9 in `test_task_process.py`, incl. plan
   fallback + test-stage + furthest-stage-wins). Frontend `tsc`+`vite build` green.
 
+**Shipped since v1:**
+- **Per-node live status on the plan stage** (CFactory #95) — plan children now
+  light up from their downstream WorkItem. PFactory's session exposes
+  `emit_result.child_numbers` (child key to issue#); CFactory looks each child's
+  issue up in the store and derives status (failed / completed / in_progress) plus
+  timing. Backend-only and additive — the renderer already classified `node.status`.
+
 **Deferred (no rework cost — purely additive):**
 - **Zoom / abstraction levels** (collapse-expand for large plans) — the one good
   idea borrowed from CodeBoarding research; presentation layer over the same
   `graph` contract.
-- **Per-node live status on the plan stage** (children currently render as the
-  static planned shape) + **TFactory liveness-watchdog** task-level `stalled`
-  signal (today only subtask-level `stuck` drives the amber state).
+- **TFactory liveness-watchdog** task-level `stalled` signal (today only
+  subtask-level `stuck` drives the amber state).
 
 ## Refinement v2 (agreed scope — 2026-06-14)
 
