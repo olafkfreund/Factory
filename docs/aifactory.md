@@ -85,6 +85,21 @@ task and live, what a build cost, on which model, and where the time went.
 
 <div class="tour-sec" markdown="1">
 
+## Feeds the live build map, and proves it ran
+
+The build stage now exposes per-subtask `depends_on` and `started_at` /
+`completed_at` timing on `/api/tasks/{id}`, which CFactory turns into the
+code-stage of its [live execution diagram](cfactory.md) — the same DAG you watch
+in the cockpit. AIFactory also honours the
+[RFC-0001a evidence gates](rfc/0001a-completion-evidence-gates.md): a build only
+claims "passed" when it carries proof it ran — non-zero tokens and completed
+phases — so an expired-credential build that consumes zero tokens is reported as
+failed, not silently green.
+
+</div>
+
+<div class="tour-sec" markdown="1">
+
 ## Memory &amp; settings
 
 AIFactory keeps **persistent cross-session memory** so agents carry context forward — backed by

@@ -85,6 +85,13 @@ Events are **idempotent** by `(service, correlation_key, status)` and consumers
 must ignore unknown fields, so adding a new product — or a new field — never forces
 a breaking change. See [RFC-0001](rfc/0001-correlation-key-and-completion-event.md).
 
+A successful terminal event must also carry **evidence** that the stage really ran —
+issues created (plan), non-zero tokens and completed phases (build), a non-null
+verdict and executed tests (verify). Consumers treat a "passed" without satisfying
+evidence as **unproven**, never green. This rule is implemented across all three
+producers; see
+[RFC-0001a — completion-event evidence gates](rfc/0001a-completion-evidence-gates.md).
+
 ## The correlation key — the thread through everything
 
 The connective tissue is a single **correlation key: the GitHub issue number** of
@@ -104,7 +111,11 @@ flowchart LR
 </div>
 
 That one key is what lets CFactory show — and steer — `plan → code → branch/PR →
-tests` from a single place.
+tests` from a single place. It is also what lets the cockpit draw a **live
+execution diagram** per unit of work: each producer exposes its subtask graph and
+timing on a shared `graph` field of `/api/workitems/{key}/process`, and the
+task-detail view animates whichever stage is furthest along (test → code → plan).
+See the [live execution diagrams design](plans/2026-06-14-live-execution-diagrams.md).
 
 ## Canonical local port map
 

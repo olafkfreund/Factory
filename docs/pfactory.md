@@ -44,4 +44,19 @@ anything is emitted downstream.
   <figure><img src="{{ '/assets/screenshots/pfactory/14-approval.png' | relative_url }}" alt="PFactory human approval"><figcaption><b>Human approval</b>Nothing is emitted downstream until a person signs off.</figcaption></figure>
 </div>
 
+<div class="tour-sec" markdown="1">
+
+## Feeds the live plan map, and proves the emit
+
+The plan is already a dependency graph: the epic's `children` (each with `kind`
+and `depends_on`) are consumed by CFactory to render the plan-stage of its
+[live execution diagram](cfactory.md), the fallback view shown before any code
+task exists. PFactory also honours the
+[RFC-0001a evidence gates](rfc/0001a-completion-evidence-gates.md): a plan only
+claims success when the emit actually created issues — an epic issue plus at
+least one child — so a plan that governs but emits nothing is reported as
+failed, not green.
+
+</div>
+
 [← Back to the products]({{ '/#products' | relative_url }})

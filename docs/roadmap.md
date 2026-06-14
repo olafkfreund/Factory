@@ -15,6 +15,19 @@ before building deep on top of it.
 
 The PARR spine is now proven end-to-end on real infrastructure:
 
+- **Live execution diagrams** — clicking any plan, coding, or testing task in the
+  CFactory cockpit opens an animated dependency-graph of that work, rendering
+  whichever stage is furthest along (test → code → plan) from a shared `graph`
+  field on `/api/workitems/{key}/process`. PFactory exposes the epic-children DAG,
+  AIFactory the per-subtask `depends_on` + timing, TFactory the per-subtask lane +
+  timing; the cockpit animates nodes (done / active / failed / stalled) with live
+  per-node timers. See the
+  [design](plans/2026-06-14-live-execution-diagrams.md) (shipped v1).
+- **Completion evidence gates** — a stage may claim "passed" only with proof it ran
+  (issues created · non-zero tokens + phases · non-null verdict + tests executed),
+  implemented across PFactory, AIFactory and TFactory; consumers treat
+  success-without-evidence as unproven, never green. See
+  [RFC-0001a](rfc/0001a-completion-evidence-gates.md).
 - **Security + CI hardening wave** — a 16-agent deep audit (epic Factory#45)
   drove GitHub Actions script-injection fixes and the CVE-2025-66032 `[bot]`-suffix
   copilot fix across repos, PFactory's bashlex command-allowlist AST parser

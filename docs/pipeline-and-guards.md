@@ -120,6 +120,7 @@ flowchart TD
 | G13 | **Reviewer-gated merge** | Nothing merges unreviewed | Merge needs the configured reviewer's verdict; changes-requested → bounded auto-fix |
 | G14 | **Never force-merge** | Protect `main` from unsafe automation | On a true conflict: `update-branch` once, then **human-stop** — never `--force` |
 | G15 | **Full audit trail** | Enterprises need provenance | Every transition emits RFC-0001 events in the CFactory cockpit, keyed by `correlation_key` |
+| G16 | **Completion evidence gates** | "Reached a terminal state" must not be mistaken for "did the work" | A stage claims success only with proof — issues created (plan), non-zero tokens + completed phases (build), non-null verdict + executed tests (verify); consumers render success-without-evidence as unproven. [RFC-0001a](rfc/0001a-completion-evidence-gates.md) |
 
 ---
 
