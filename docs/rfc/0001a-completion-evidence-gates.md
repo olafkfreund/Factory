@@ -6,7 +6,7 @@ permalink: /rfc/evidence-gates/
 
 # RFC-0001a — Completion-Event Evidence Gates (addendum to RFC-0001)
 
-> **Status:** Proposed · **Extends:** [RFC-0001](./0001-correlation-key-and-completion-event.md) v1.1 → v1.2 · **Created:** 2026-06-14
+> **Status:** Implemented (PFactory · AIFactory · TFactory) · **Extends:** [RFC-0001](./0001-correlation-key-and-completion-event.md) v1.1 → v1.2 · **Created:** 2026-06-14
 > Additive. Old consumers ignore the new `evidence` block; producers that omit it
 > are treated as "unproven" (see §4), never as "passed".
 

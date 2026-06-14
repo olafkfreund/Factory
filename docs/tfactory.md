@@ -44,4 +44,20 @@ coverage number.
   <figure><img src="{{ '/assets/screenshots/tfactory/python-unit.png' | relative_url }}" alt="TFactory graded triage report"><figcaption><b>Verdict</b>A graded, ranked triage report — the 5-signal score, not coverage theatre.</figcaption></figure>
 </div>
 
+<div class="tour-sec" markdown="1">
+
+## Feeds the live verify map, and proves the verdict
+
+TFactory exposes per-subtask lane and `started_at` / `completed_at` timing on
+`/api/tasks/{id}`, which CFactory aggregates into the test-stage of its
+[live execution diagram](cfactory.md) — a lane pipeline
+(unit → browser → api → integration → mutation) you watch fill in live, with a
+subtask `stuck` driving the stalled state. The verify leg also honours the
+[RFC-0001a evidence gates](rfc/0001a-completion-evidence-gates.md): reaching a
+terminal phase is not a pass — a verify only claims success with a non-null
+verdict and tests actually executed, so a null-verdict run is reported as
+failed.
+
+</div>
+
 [← Back to the products]({{ '/#products' | relative_url }})

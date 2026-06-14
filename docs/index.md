@@ -43,7 +43,7 @@ This is the repository for the **whole program** — cross-cutting plans, the sh
 pipeline, and the place the four products come together.
 
 👉 **New:** [**The Guarded PARR Pipeline**](/pipeline/) — every step and decision
-from handover to merge, the fifteen guards that protect task & execution, and
+from handover to merge, the sixteen guards that protect task & execution, and
 real adoption scenarios from solo builders to regulated enterprises.
 
 ---

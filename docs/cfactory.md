@@ -49,7 +49,11 @@ stage, a live agent roster, and an anomaly feed — so you always know where eve
 
 An agentic copilot explains pipeline state from real cross-service data and proposes actions —
 but a human always confirms. Every confirmed write is recorded in an HMAC-chained audit log,
-and token spend is tracked across the whole pipeline.
+and token spend is tracked across the whole pipeline. As a consumer of the completion event,
+the cockpit also enforces the
+[RFC-0001a evidence gates](rfc/0001a-completion-evidence-gates.md): a terminal "passed" that
+carries no proof (a zero-token build, a verify with a null verdict) is rendered as unproven,
+never green.
 
 </div>
 
@@ -57,6 +61,27 @@ and token spend is tracked across the whole pipeline.
   <figure><img src="{{ '/assets/screenshots/cfactory/copilot.png' | relative_url }}" alt="CFactory Copilot"><figcaption><b>Copilot</b>Ask "where is #142 and why is it stuck?" — answered from live state, with insights and recent actions alongside.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/audit.png' | relative_url }}" alt="CFactory Audit"><figcaption><b>Audit</b>Live pipeline activity plus every confirmed action executed against an upstream — HMAC-chained.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/tokens.png' | relative_url }}" alt="CFactory Tokens &amp; cost"><figcaption><b>Tokens &amp; cost</b>LLM usage across the pipeline, per stage, from the RFC-0001 usage block.</figcaption></figure>
+</div>
+
+<div class="tour-sec" markdown="1">
+
+## Live execution diagrams — one map per unit of work
+
+Click any plan, coding, or testing task and the task-detail view opens an
+**animated dependency graph (DAG)** of that work. It renders whichever stage is
+furthest along — **test, then code, then plan** — from a shared `graph` field on
+`GET /api/workitems/{key}/process`. Nodes light up as workers pick them up
+(active pulse), fill green with a robot stamp when done, shake red on failure,
+and go amber when stalled; the edge to the next eligible node animates so "what
+runs next" is unmistakable, and each node shows live `mm:ss` time spent. The
+producers feed it directly: AIFactory exposes per-subtask `depends_on` and
+timing for the code stage, TFactory exposes per-subtask lane and timing for a
+lane pipeline (unit → browser → api → integration → mutation), and PFactory's
+`epic.children` DAG drives the plan view. The renderer is hand-rolled SVG plus
+framer-motion in the cockpit's own gruvbox language — no graph library. See the
+[live execution diagrams design](plans/2026-06-14-live-execution-diagrams.md)
+(shipped v1).
+
 </div>
 
 <div class="tour-sec" markdown="1">
