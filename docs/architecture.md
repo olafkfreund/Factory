@@ -133,4 +133,7 @@ CFactory reach them all.
 
 - [RFC-0001 — correlation key & completion event](rfc/0001-correlation-key-and-completion-event.md)
 - [RFC-0002 — Factory Task Contract v2](rfc/0002-task-contract.md)
+- [RFC-0005 — environment manifest & toolchain provisioning](rfc/0005-environment-manifest-and-toolchain-provisioning.md)
+- [RFC-0006 — verification assurance levels & honest reporting](rfc/0006-verification-assurance-levels.md)
+- [RFC-0007 — access discovery & authenticated-test provisioning](rfc/0007-access-and-credential-provisioning.md)
 - [How they cooperate](/#cooperation) · [Run locally](run-locally.md) · [Roadmap](roadmap.md)
