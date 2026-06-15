@@ -171,6 +171,44 @@ planning.
   visible to PFactory by the same key. "100% mutual understanding" = both sides
   validate against this one schema and reconcile on the one key.
 
+## 4b. Verification block (RFC-0006) — honest reporting
+
+The optional `verification` block records, per [RFC-0006](./0006-verification-assurance-levels.md),
+**how much was actually proven** using the Verification Assurance Levels
+(`VAL-0` static · `VAL-1` unit · `VAL-2` ephemeral integration · `VAL-3` sandbox
+target · `VAL-4` production, never autonomous). It extends the
+[RFC-0001a](./0001a-completion-evidence-gates.md) evidence gate from "no green
+without proof" to "**never claim a higher assurance than was achieved**".
+
+```json
+"verification": {
+  "target_level": "VAL-3",
+  "achieved_level": "VAL-2",
+  "levels": [
+    {"level": "VAL-0", "status": "passed", "ran": ["ansible-lint"]},
+    {"level": "VAL-2", "status": "passed", "evidence": "idempotence: 0 changed"},
+    {"level": "VAL-3", "status": "not_run",
+     "reason": "no sandbox target provisioned", "risk": "unproven on real hosts"}
+  ],
+  "claim": "Verified to VAL-2; NOT verified against real hosts (VAL-3)."
+}
+```
+
+Normative rules (the never-overclaim gate):
+1. A status is reported **only at `achieved_level`**; `achieved_level` is the
+   highest `passed` level, **capped below the lowest `failed` level**.
+2. Every `failed`/`not_run`/`skipped` level **MUST carry a `reason`** (enforced by
+   the schema) and SHOULD carry a `risk`.
+3. A producer that **omits** this block is treated as **VAL-0** ("not tested"),
+   never as passed.
+4. A declared `achieved_level` above the computed truth is **downgraded** and
+   flagged (an overclaim), mirroring RFC-0001a's no-evidence downgrade.
+
+The reference enforcement is [`scripts/verification_gate.py`](../../scripts/verification_gate.py)
+(`normalize_verification()`), pure and dependency-free so each service vendors it.
+The machine-readable shape is `$defs.verification` in
+[`apis/task-contract.schema.json`](../../apis/task-contract.schema.json).
+
 ## 5. Versioning
 
 `contract_version` is bumped when the envelope or block shapes change in a
