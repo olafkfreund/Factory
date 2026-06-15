@@ -8,6 +8,12 @@
 > login + contact-form app on App Runner; the browser test logged in, caught a
 > deliberate email-validation fault, and recorded 3 screenshots. Reusable command:
 > **`/run-aws-webtest`**.
+>
+> This runbook covers form/token logins the factory can drive non-interactively
+> today. The broader model for *classifying* test-target access — including
+> MFA-gated targets that need a one-time human-verified bootstrap or that cannot be
+> automated at all — and *discovering* it at planning time is specified in
+> [RFC-0007](../docs/rfc/0007-access-and-credential-provisioning.md) (**proposed**).
 
 ---
 

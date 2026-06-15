@@ -15,6 +15,24 @@ before building deep on top of it.
 
 The PARR spine is now proven end-to-end on real infrastructure:
 
+- **In-cluster ephemeral verification** — the verification ladder
+  ([RFC-0006](rfc/0006-verification-assurance-levels.md)) now runs on the shared
+  `factory-sandbox` primitive ([RFC-0005](rfc/0005-environment-manifest-and-toolchain-provisioning.md)),
+  with a reference stack landed in the hub (`scripts/verification_{profiles,gate,runner}.py`,
+  `scripts/factory_sandbox.py`). AIFactory — whose pod has no container runtime —
+  runs each trailing gate as an ephemeral **Kubernetes Job** under a least-privilege
+  `aifactory-sandbox` ServiceAccount, **co-mounting the task worktree** so
+  lint/test/build gates run against real files. Proven live: a gate Job ran
+  `go test -v ./...` green against a real worktree, result flowing through the
+  never-overclaim gate. Opt-in/default-off; honest caveats (one toolchain image
+  per Job, synthetic exit code, single-node co-mount) are tracked in RFC-0005 §3.3.
+- **Access discovery for authenticated testing (design)** — a new
+  [RFC-0007](rfc/0007-access-and-credential-provisioning.md) (proposed; epic with
+  sub-issues filed) tackles the MFA/credentialed-target question: classify each
+  test target into four access classes (machine-native federation / bootstrap-once
+  / ephemeral target / un-automatable), discover them at planning time, curate the
+  human-verified ones, and keep VAL-3 honest when access can't be obtained — never
+  faking a login. Reuses the existing credential vault and the never-overclaim gate.
 - **Live execution diagrams** — clicking any plan, coding, or testing task in the
   CFactory cockpit opens an animated dependency-graph of that work, rendering
   whichever stage is furthest along (test → code → plan) from a shared `graph`

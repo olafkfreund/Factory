@@ -11,6 +11,13 @@ its five repositories (Factory + AIFactory + PFactory + TFactory + CFactory) and
 the deployed fleet. It explains, for each token: **what it is**, **where the value
 comes from**, **how to set it**, and **how to rotate or react if it leaks**.
 
+> This runbook covers credentials that **already exist** and how they are wired at
+> runtime. How the factory *discovers at planning time* what access a feature needs
+> in order to be tested — and curates (human-verified when required) credentials for
+> authenticated or MFA-gated test targets — is the subject of
+> [RFC-0007](../rfc/0007-access-and-credential-provisioning.md) (**proposed**, not
+> yet implemented).
+
 > One-command setup: `scripts/wire-tokens.sh` (in this repo) sets the CI tokens
 > across all repos consistently. Read this page first so you know which values to
 > hand it.

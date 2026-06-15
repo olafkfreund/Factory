@@ -6,7 +6,7 @@ permalink: /rfc/verification-assurance/
 
 # RFC-0006 — Verification Assurance Levels & Honest Reporting
 
-> **Status:** Proposed · **Created:** 2026-06-15 · **Extends:** [RFC-0001a](./0001a-completion-evidence-gates.md) (evidence gates), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (provisioning) · **Affects:** PFactory, AIFactory, TFactory, CFactory
+> **Status:** Proposed · **Created:** 2026-06-15 · **Updated:** 2026-06-15 · **Extends:** [RFC-0001a](./0001a-completion-evidence-gates.md) (evidence gates), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (provisioning) · **Extended by:** [RFC-0007](./0007-access-and-credential-provisioning.md) (access discovery for VAL-3) · **Affects:** PFactory, AIFactory, TFactory, CFactory
 > RFC-0001a said *no green without proof*. This RFC says *declare **how much** was
 > proven, and **never** present a lower assurance level as a higher one.* The
 > single rule: **we never tell the user something is tested when it isn't.**
@@ -115,7 +115,9 @@ Rules:
 
 - **PFactory / planner** — emit the Verification Plan (target level + per-level
   requirements) into the RFC-0002 contract; flag when the target needs a sandbox
-  cloud/VM so the user can decide up front.
+  cloud/VM so the user can decide up front. How that access is discovered,
+  classified, and curated (including MFA-gated targets) is specified in
+  [RFC-0007](./0007-access-and-credential-provisioning.md).
 - **AIFactory** — produce the test scaffolding the levels need (e.g. a
   `molecule/` scenario), and the RFC-0005 env to run them.
 - **TFactory** — run the ladder bottom-up, stop at the highest satisfiable level,
@@ -137,3 +139,5 @@ RFC-0005 prototype (`prototypes/env-provisioning/`) already proves the substrate
 `nix develop` materializes toolchains (VAL-0/1) and **`devenv test` ran a real
 ephemeral Postgres and a query against it (VAL-2), then tore it down** — locally,
 no cloud.
+
+The reference implementation has since landed in the hub (`scripts/verification_{profiles,gate,runner}.py` + `scripts/factory_sandbox.py`) and the ladder now runs **in-cluster**: AIFactory executes trailing gates as ephemeral k8s Jobs that co-mount the task worktree (RFC-0005 §3.3), proven live with `go test -v ./...` passing against a real worktree and the result flowing through the never-overclaim gate. Access for the credentialed/sandbox levels (VAL-3) is the subject of [RFC-0007](./0007-access-and-credential-provisioning.md).

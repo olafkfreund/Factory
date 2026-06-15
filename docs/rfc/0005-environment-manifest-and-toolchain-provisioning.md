@@ -6,7 +6,8 @@ permalink: /rfc/environment-provisioning/
 
 # RFC-0005 — Environment Manifest & Ephemeral Toolchain Provisioning
 
-> **Status:** Proposed · **Created:** 2026-06-15 · **Affects:** PFactory (planner), AIFactory (coder), TFactory (verifier), RFC-0002 Task Contract
+> **Status:** Proposed · **Created:** 2026-06-15 · **Updated:** 2026-06-15 · **Affects:** PFactory (planner), AIFactory (coder), TFactory (verifier), RFC-0002 Task Contract
+> **Implementation note (2026-06-15):** the sandbox substrate is no longer just a proposal. The `factory-sandbox` primitive (`scripts/factory_sandbox.py`) and the verification runner/gate/profiles (`scripts/verification_{runner,gate,profiles}.py`) are landed, and the **k8s Job-per-task backend is live in AIFactory** (`core/kube_sandbox.py`) — originally scoped as Phase 5, it was brought forward (see §3.3 and the phase table). The contract `environment` block (Phase 0) is **not yet** in `apis/task-contract.schema.json`.
 > The single biggest gap in "we control the whole process": a task that needs a
 > toolchain or library we did not pre-install fails silently or not at all. This
 > RFC makes the **environment a declared, contracted, verifiable artifact** that
@@ -141,8 +142,28 @@ already hardened) into a **shared `factory-sandbox` primitive**.
 > **Container vs fresh k8s Pod/Job?** Start with `DockerRunner`-style ephemeral
 > containers on the node — it is proven in TFactory today, SDK-free, and
 > podman-rootless capable. A **k8s Job-per-task** is the heavier alternative for
-> stronger isolation and horizontal scale; keep it as an opt-in backend behind the
-> same `factory-sandbox` interface (Phase 5), not a prerequisite.
+> stronger isolation and horizontal scale, behind the same `factory-sandbox`
+> interface.
+>
+> **Shipped (2026-06-15):** the k8s Job backend is live in AIFactory
+> (`core/kube_sandbox.py` + `agents/gate_runner.py`), because the AIFactory pod has
+> no container runtime of its own — so the in-cluster path was needed before the
+> node-container path. Each gate runs as an ephemeral Job (`backoffLimit: 0`,
+> `ttlSecondsAfterFinished: 120`, `restartPolicy: Never`,
+> `automountServiceAccountToken: false`, `ghcr-pull` secret, CPU/mem limits) under
+> a dedicated `aifactory-sandbox` ServiceAccount + Role (create/get/list/watch/
+> delete jobs; read pod logs) provisioned in gitops. The Job **co-mounts the task
+> worktree** at `/work` via the `aifactory-data` PVC `subPath` — derived by
+> stripping the data root (`AIFACTORY_DATA_ROOT`, default
+> `/home/nonroot/.aifactory`) from the gate's cwd — so code-reading gates
+> (lint/test/build) run against real files, not just toolchain checks. Proven live:
+> a gate Job ran `go test -v ./...` green against a real co-mounted worktree.
+> Routing is opt-in/default-off via `AIFACTORY_SANDBOX_GATES` +
+> `AIFACTORY_SANDBOX_BACKEND` (`docker`|`kubejob`) + `AIFACTORY_SANDBOX_IMAGE`.
+> Honest caveats: the kubejob backend takes **one** toolchain image per call (no
+> per-language multiplexing yet), reports a synthetic 0/1 rather than the
+> container's real exit code, and the PVC co-mount relies on a single-node /
+> `local-path` cluster.
 
 ### 3.4 The evidence gate — materialize-or-HALT
 
@@ -176,7 +197,7 @@ RFC-0001a: no environment, no green.
 | **2** | **Nix engine** (Tier A): `nix develop` provisioning; planner generates a `flake.nix` when absent. Hermetic, pinned, cached. | med | The "control everything + reproducible" tier; removes the static image entirely over time. |
 | **3** | On-demand image build + content-addressed cache (Tier C) for the long tail. | med | Any toolchain, no rebuild-the-fleet. |
 | **4** | TFactory: app build runs in the manifest env; catalog becomes extensible/on-demand; unify the engine with AIFactory. | med | Closes build/verify drift; no more `UnsupportedLanguageError` dead-ends. |
-| **5** (opt-in) | k8s **Job-per-task** backend behind `factory-sandbox` for heavy isolation/scale. | high | Scale + hard isolation when needed. |
+| **5** (opt-in) | k8s **Job-per-task** backend behind `factory-sandbox` for heavy isolation/scale. **Shipped early (2026-06-15)** in AIFactory with worktree co-mount — see §3.3; the AIFactory pod has no node runtime, so this path landed first. | high | Scale + hard isolation when needed. |
 
 **Start at Phase 0** — it is small, additive, and immediately converts today's
 silent failures into controlled, visible ones, while the schema it lands is the
