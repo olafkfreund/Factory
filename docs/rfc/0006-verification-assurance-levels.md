@@ -57,6 +57,13 @@ The planner emits a **Verification Plan** in the RFC-0002 contract:
 service / target / credentials). TFactory executes the **highest level whose
 requirements are satisfied**, and records where it stopped.
 
+The reference registry is [`scripts/verification_profiles.py`](../../scripts/verification_profiles.py)
+(`detect_artifact_type()` + `plan_verification(files, available)`): it detects the
+artifact type, returns the ladder with each un-achievable level pre-marked
+`not_run` + `reason`, and composes directly with the #72 gate
+(`verification_gate.normalize_verification`) to produce an honest, never-overclaiming
+result.
+
 ## 4. The decision: simulate locally, sandbox-cloud only when justified
 
 - **Default: climb as high as is achievable locally/ephemerally (up to VAL-2).**
