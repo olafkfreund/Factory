@@ -28,6 +28,8 @@ PROFILES: dict[str, dict] = {
     "ansible": {
         "detect": ["**/playbook*.yml", "**/site.yml", "**/roles/**/tasks/*.yml",
                    "ansible.cfg", "**/molecule/**"],
+        # RFC-0007: VAL-3 applies to disposable sandbox hosts the pipeline owns.
+        "credential_class": "C-ephemeral-target",
         "levels": {
             "VAL-0": {"commands": ["ansible-lint", "ansible-playbook --syntax-check"],
                       "requires": ["ansible"]},
@@ -41,6 +43,10 @@ PROFILES: dict[str, dict] = {
     },
     "terraform": {
         "detect": ["*.tf", "*.tf.json", "**/*.tf"],
+        # RFC-0007: cloud auth should be machine-native (workload identity / OIDC
+        # federation / scoped token) — no MFA in the path. The VAL-3 target is an
+        # ephemeral project, but the credential the planner needs is class A.
+        "credential_class": "A-machine-native",
         "levels": {
             "VAL-0": {"commands": ["terraform validate", "tflint"],
                       "requires": ["terraform"]},
@@ -54,6 +60,8 @@ PROFILES: dict[str, dict] = {
     },
     "kubernetes": {
         "detect": ["**/Chart.yaml", "**/kustomization.yaml", "k8s/**/*.yaml"],
+        # RFC-0007: VAL-3 applies to an ephemeral cluster the pipeline provisions.
+        "credential_class": "C-ephemeral-target",
         "levels": {
             "VAL-0": {"commands": ["kubeconform", "helm lint"], "requires": ["kubeconform"]},
             "VAL-2": {"commands": ["helm template | kubeconform", "kind load + apply --dry-run"],
@@ -132,6 +140,21 @@ def detect_artifact_type(files: list[str]) -> str:
     return "generic"
 
 
+def credential_class_for(artifact_type: str) -> str | None:
+    """RFC-0007 access class an artifact's credentialed level needs (#85).
+
+    Returns one of the four access classes (A-machine-native / B-bootstrap-once /
+    C-ephemeral-target / D-un-automatable) for artifacts whose effectful (VAL-3)
+    verification requires reaching a credentialed/sandbox resource — terraform's
+    cloud auth is machine-native (A); ansible hosts and k8s clusters are ephemeral
+    targets the pipeline provisions (C). Returns None for artifacts whose highest
+    level is satisfiable locally/ephemerally (go/rust/python/node/java/generic) —
+    they need no external access. PFactory uses this as the per-technology default
+    when seeding an `access` requirement (RFC-0007 / #84).
+    """
+    return PROFILES.get(artifact_type, {}).get("credential_class")
+
+
 def plan_verification(files: list[str], available: set[str]) -> dict:
     """Build a verification-plan skeleton for the detected artifact.
 
@@ -204,6 +227,15 @@ def _test() -> None:
         for l in p["levels"]:
             if l["status"] == "not_run":
                 assert l.get("reason"), l
+
+    # RFC-0007 (#85): per-technology credential class for the credentialed level.
+    assert credential_class_for("terraform") == "A-machine-native"
+    assert credential_class_for("ansible") == "C-ephemeral-target"
+    assert credential_class_for("kubernetes") == "C-ephemeral-target"
+    # Locally/ephemerally satisfiable artifacts need no external access.
+    for t in ("go", "rust", "python-library", "node-web", "java", "generic"):
+        assert credential_class_for(t) is None, t
+    assert credential_class_for("unknown-type") is None
 
     print("verification_profiles self-tests: passed")
 
