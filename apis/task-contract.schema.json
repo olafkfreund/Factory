@@ -323,6 +323,10 @@
           "items": { "type": "string" },
           "description": "Commands TFactory runs to verify in the SAME materialized env (no drift)."
         },
+        "serve_command": {
+          "type": ["string", "null"],
+          "description": "How to start the app inside the materialized env for a lane that needs it running (browser/api against a live URL), e.g. 'python -m uvicorn app:app --port 8099'. Optional: when absent the consumer detects it from the checkout. Backgrounded by the runner, with a readiness wait, before the browser/api verify commands."
+        },
         "provisioning": {
           "type": "object",
           "additionalProperties": false,
