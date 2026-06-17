@@ -28,7 +28,8 @@ comes from**, **how to set it**, and **how to rotate or react if it leaks**.
 
 | Secret | Repo(s) | Set today | What it does |
 |---|---|---|---|
-| `GITHUB_TOKEN` | all | **auto** (no action) | per-run token GitHub Actions injects |
+| `GITHUB_TOKEN` (CI) | all | **auto** (no action) | per-run token GitHub Actions injects into a workflow; short-lived, no rotation |
+| `GITHUB_TOKEN` (runtime) | `factory-secrets` (cluster) | **set** | long-lived PAT the *deployed* services use to read/write GitHub at run time — see "The runtime GitHub PAT" below; **rotate on leak** |
 | `GHCR_PAT` | AIF, PF, TF, CF | **set** | push container images to GHCR |
 | `GITOPS_PAT` | AIF, PF, TF, CF | **set** | commit image-tag bumps to `factory-gitops` (ArgoCD then syncs) |
 | `FACTORY_TOKEN` | Factory (nightly) | **MISSING** | fleet bearer token the PARR seam-regression uses to call the live services |
@@ -64,6 +65,55 @@ work; documented here for rotation.
 
 **Create/rotate:** GitHub → Settings → Developer settings → Personal access tokens
 → generate with the scope above → `gh secret set GHCR_PAT --repo olafkfreund/<repo>`.
+
+---
+
+## The runtime GitHub PAT (`factory-secrets/GITHUB_TOKEN`)
+
+Separate from the CI `GITHUB_TOKEN` above: the **deployed** services read a
+long-lived PAT from the shared `factory-secrets` Secret in namespace `factory`
+(env var `GITHUB_TOKEN`). All five workloads mount it — `aifactory`, `pfactory`,
+`tfactory`, `cfactory`, `keycloak` — so a leak of this one value exposes the whole
+fleet's GitHub access.
+
+As deployed today it is a **classic** PAT (`ghp_…`) carrying near-admin scope
+(`repo, workflow, admin:org, admin:enterprise, delete_repo, admin:repo_hook,
+write:packages, …`). That is far more than any service needs and is the maximum
+blast radius if it leaks. **Prefer replacing it with a fine-grained token** scoped
+to only the repos/permissions the runners actually use (Contents + PRs + Actions
+read on the service repos), with a short expiry.
+
+> **Leak status (#599).** AIFactory's coder passed this token *inline* in the
+> `claude --mcp-config <json>` argv, where it was visible to any `ps`/proc reader in
+> the pod. The code path is fixed — the catalog server's `env` is now externalised
+> into the SDK subprocess `options.env` instead of the CLI argv (AIFactory PR #607),
+> so the value no longer appears on the command line. **The token itself still must
+> be rotated**, because it was exposed while the old code ran.
+
+**Rotate (operator action — a bot cannot mint or revoke a PAT):**
+```bash
+# 1. GitHub → Settings → Developer settings → Personal access tokens → generate a
+#    replacement (fine-grained preferred; least-privilege scope; short expiry).
+#    Do NOT revoke the old one yet — revoking first breaks every running build.
+
+# 2. Patch the live Secret without echoing the value (stringData → k8s base64-encodes):
+printf '%s' '<paste-new-token>' > /tmp/ght.txt
+python3 -c 'import json;print(json.dumps({"stringData":{"GITHUB_TOKEN":open("/tmp/ght.txt").read().strip()}}))' > /tmp/p.json
+kubectl patch secret factory-secrets -n factory --type merge --patch-file /tmp/p.json
+rm -f /tmp/p.json /tmp/ght.txt
+
+# 3. Restart every consumer so the new env is picked up:
+kubectl rollout restart deploy/aifactory deploy/pfactory deploy/tfactory deploy/cfactory deploy/keycloak -n factory
+
+# 4. Verify the new token is live (prints the authenticated login, no 401):
+kubectl exec -n factory deploy/aifactory -- sh -c \
+  'curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user | python3 -c "import sys,json;print(json.load(sys.stdin)[\"login\"])"'
+
+# 5. ONLY after step 4 passes: revoke the OLD token in GitHub Developer settings.
+```
+
+Also update CI if the same PAT was mirrored there:
+`gh secret set GHCR_PAT/GITOPS_PAT --repo olafkfreund/<repo>` as applicable.
 
 ---
 
