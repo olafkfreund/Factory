@@ -6,7 +6,7 @@ permalink: /rfc/environment-provisioning/
 
 # RFC-0005 — Environment Manifest & Ephemeral Toolchain Provisioning
 
-> **Status:** Proposed · **Created:** 2026-06-15 · **Updated:** 2026-06-15 · **Affects:** PFactory (planner), AIFactory (coder), TFactory (verifier), RFC-0002 Task Contract
+> **Status:** Implemented · **Created:** 2026-06-15 · **Updated:** 2026-06-17 · **Affects:** PFactory (planner), AIFactory (coder), TFactory (verifier), RFC-0002 Task Contract
 > **Implementation note (2026-06-15):** the sandbox substrate is no longer just a proposal. The `factory-sandbox` primitive (`scripts/factory_sandbox.py`) and the verification runner/gate/profiles (`scripts/verification_{runner,gate,profiles}.py`) are landed, and the **k8s Job-per-task backend is live in AIFactory** (`core/kube_sandbox.py`) — originally scoped as Phase 5, it was brought forward (see §3.3 and the phase table). The contract `environment` block (Phase 0) is **landed (2026-06-16)** as `$defs.environment` in `apis/task-contract.schema.json` (optional, additive; constraints exercised by `scripts/validate_task_contract.py`).
 > The single biggest gap in "we control the whole process": a task that needs a
 > toolchain or library we did not pre-install fails silently or not at all. This

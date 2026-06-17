@@ -6,7 +6,7 @@ permalink: /rfc/access-provisioning/
 
 # RFC-0007 — Access Discovery & Authenticated-Test Provisioning
 
-> **Status:** Proposed · **Created:** 2026-06-15 · **Extends:** [RFC-0002](./0002-task-contract.md) (task contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (provisioning), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0001a](./0001a-completion-evidence-gates.md) (evidence gates) · **Affects:** PFactory, AIFactory, TFactory, CFactory
+> **Status:** Implemented · **Created:** 2026-06-15 · **Updated:** 2026-06-17 · **Extends:** [RFC-0002](./0002-task-contract.md) (task contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (provisioning), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0001a](./0001a-completion-evidence-gates.md) (evidence gates) · **Affects:** PFactory, AIFactory, TFactory, CFactory
 > RFC-0005 said *provision the toolchain*. RFC-0006 said *declare how much was proven, never overclaim*. This RFC fills the gap between them: **discover what access a feature needs to be tested, curate that access (human-verified when it must be), and let the assurance ladder stay honest when access cannot be obtained.** The single rule carried forward: we never claim something is tested when the access to test it was never available.
 
 ## 1. The problem — the access ceiling
