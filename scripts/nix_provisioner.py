@@ -29,9 +29,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-# nixpkgs pin for generated flakes. A specific commit keeps generated flakes
-# reproducible across the fleet; bump deliberately (Renovate can automate).
-DEFAULT_NIXPKGS = "github:NixOS/nixpkgs/nixos-unstable"
+# nixpkgs pin for generated flakes. A FULL commit rev (not a branch) keeps
+# generated flakes reproducible AND avoids a GitHub API call to resolve the
+# branch — which anonymously rate-limits inside a token-less k8s-Job container
+# (proven 2026-06-17: a branch ref 403'd; the pinned rev fetches the tarball
+# directly). Bump deliberately (Renovate can automate).
+DEFAULT_NIXPKGS = "github:NixOS/nixpkgs/567a49d1913ce81ac6e9582e3553dd90a955875f"
 
 # language -> (nix python attr | node attr). Extend as the fleet grows.
 _PY_ATTR = {
@@ -135,20 +138,31 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS) -> str:
     sys_attrs_with_node = list(sys_attrs)
     browser = _needs_browser(m)
     if browser:
-        sys_attrs_with_node += ["nodejs_22", "playwright-test"]
+        # dejavu_fonts + a FONTCONFIG_FILE so headless chromium actually renders
+        # text in a minimal Nix container (without it, screenshots come out
+        # textless — proven in-container 2026-06-17).
+        sys_attrs_with_node += ["nodejs_22", "playwright-test", "dejavu_fonts"]
     for a in sys_attrs_with_node:
         pkg_lines.append(f"pkgs.{a}")
 
     packages = "\n          ".join(pkg_lines)
 
+    let_lines = ""
     env_lines = ""
     if browser:
+        let_lines = (
+            "\n      fontsConf = pkgs.makeFontsConf "
+            "{ fontDirectories = [ pkgs.dejavu_fonts ]; };"
+        )
         env_lines = (
             '\n        # Nix-provided, version-matched browsers — no network '
             "download.\n"
             '        PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";\n'
             '        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";\n'
-            '        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";'
+            '        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";\n'
+            "        # Headless chromium needs fontconfig to find a font, else "
+            "text won't render.\n"
+            "        FONTCONFIG_FILE = fontsConf;"
         )
 
     return f"""{{
@@ -160,7 +174,7 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS) -> str:
   outputs = {{ self, nixpkgs }}:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs {{ inherit system; }};
+      pkgs = import nixpkgs {{ inherit system; }};{let_lines}
     in {{
       devShells.${{system}}.default = pkgs.mkShell {{
         packages = [
@@ -233,6 +247,9 @@ def _test() -> None:
     assert "PLAYWRIGHT_BROWSERS_PATH" in flake, flake
     assert "pkgs.chromium" not in flake, "bare chromium must be dropped for the pw stack"
     assert "fastapi" in flake and "pytest" in flake, flake  # web+test libs inferred
+    # fonts: headless chromium needs them to render text in a minimal container.
+    assert "dejavu_fonts" in flake and "FONTCONFIG_FILE" in flake, flake
+    assert "makeFontsConf" in flake, flake
 
     # 2. non-browser python manifest -> no playwright, no browser env.
     env_plain = {
