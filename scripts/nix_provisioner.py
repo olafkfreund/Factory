@@ -73,7 +73,7 @@ class Manifest:
     provisioning_generated: bool = False
 
     @classmethod
-    def from_contract(cls, env: dict) -> "Manifest":
+    def from_contract(cls, env: dict) -> Manifest:
         prov = env.get("provisioning") or {}
         return cls(
             language=env.get("language"),
