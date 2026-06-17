@@ -84,6 +84,7 @@ if __name__ == "__main__":
         "system_packages": ["chromium"],
         "build_commands": ["true"],
         "verify_commands": ["pytest -q", "npx playwright test"],
+        "serve_command": "python -m uvicorn app:app --port 8099",
         "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
         "network": "restricted",
         "proof": {"verify": ["python --version", "chromium --version"]},
