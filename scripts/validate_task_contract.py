@@ -73,4 +73,37 @@ if __name__ == "__main__":
     empty_block = dict(_base(), access={})  # requirements is required
     assert _errors(v, empty_block), "access without requirements must be rejected"
 
-    print("OK: task-contract schema valid; RFC-0007 $defs.access optional + constraints enforced.")
+    # --- RFC-0005 environment manifest --------------------------------------
+    # environment is optional — a contract without it validates.
+    assert "environment" not in schema.get("required", []), "environment must not be required"
+
+    # a well-formed Nix-provisioned environment (browser lane) validates.
+    env_ok = dict(_base(), environment={
+        "language": "python",
+        "toolchain": {"python": "3.13"},
+        "system_packages": ["chromium"],
+        "build_commands": ["true"],
+        "verify_commands": ["pytest -q", "npx playwright test"],
+        "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
+        "network": "restricted",
+        "proof": {"verify": ["python --version", "chromium --version"]},
+    })
+    assert _errors(v, env_ok) == [], f"well-formed environment should validate, got {_errors(v, env_ok)}"
+
+    # malformed environment is rejected.
+    bad_method = dict(_base(), environment={"provisioning": {"method": "conda"}})
+    assert _errors(v, bad_method), "unknown provisioning.method must be rejected"
+
+    missing_method = dict(_base(), environment={"provisioning": {"ref": "flake.nix"}})
+    assert _errors(v, missing_method), "provisioning without method must be rejected"
+
+    bad_network = dict(_base(), environment={"network": "open"})
+    assert _errors(v, bad_network), "unknown network posture must be rejected"
+
+    env_unknown_prop = dict(_base(), environment={"junk": 1})
+    assert _errors(v, env_unknown_prop), "unknown environment property must be rejected"
+
+    print(
+        "OK: task-contract schema valid; RFC-0007 $defs.access + "
+        "RFC-0005 $defs.environment optional + constraints enforced."
+    )
