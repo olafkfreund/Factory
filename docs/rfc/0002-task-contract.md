@@ -6,7 +6,7 @@ permalink: /rfc/task-contract/
 
 # RFC-0002 — Factory Task Contract v2
 
-> **Status:** Proposed · **Version:** 2.0 · **Created:** 2026-06-06
+> **Status:** Implemented · **Version:** 2.0 · **Created:** 2026-06-06 · **Updated:** 2026-06-17
 > Builds on [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation
 > key + completion-event envelope). The product repos implement against this
 > document. Machine-readable schema: [`apis/task-contract.schema.json`](../../apis/task-contract.schema.json).
