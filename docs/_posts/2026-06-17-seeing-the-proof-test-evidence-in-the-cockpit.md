@@ -54,7 +54,7 @@ Here is the page the browser actually rendered, captured by the run:
 And here is AC#3 — after the click, the `#result` element shows the JSON the button
 fetched from the API:
 
-![The Ping button result showing the API response]({{ '/assets/screenshots/evidence/028-ping-result.png' | relative_url }})
+![The Ping button result showing the API response]({{ '/assets/screenshots/evidence/028-ping-response.png' | relative_url }})
 
 Those are not mockups. They are the exact bytes the test produced, pulled straight from the
 run.
