@@ -63,6 +63,12 @@ The PARR spine is now proven end-to-end on real infrastructure:
   CFactory's ingress (Keycloak SSO + Cloudflare tunnel), so
   `OTEL_EXPORTER_OTLP_ENDPOINT` points at CFactory without it reinventing a TSDB.
   See the [blog](/blog/2026/06/13/seeing-the-factory-think-per-worker-observability/).
+- **Code-aware planning** ([RFC-0010](rfc/0010-code-aware-planning-and-behavioral-equivalence.md)) —
+  PFactory reads the target repo statically (never executing it) and emits a
+  *delta-aware* plan: real `files_to_modify`, language taken from the repo (not
+  guessed), a grounded change footprint the human approves, and — for a language
+  rewrite — a behavioral-equivalence lane that proves the new impl matches the
+  original. Brownfield + Python→Rust.
 - **Trusted-plan fast path** — PFactory signs an RFC-0002 contract; AIFactory
   verifies it and **skips planning** (proven: build codes to completion). Gemini
   is selectable through the contract (`PFACTORY_EXECUTION_MODEL`).

@@ -49,7 +49,7 @@ CFactory, which observes and steers the whole pipeline from the side.
 
 | Stage | Product | Inputs → Outputs |
 |---|---|---|
-| Prepare | **PFactory** | plan (docx/pdf/md, MCP, issue) → enrich (live cloud/Backstage) → review gates (cited) → human approval → **governed GitHub issues** |
+| Prepare | **PFactory** | plan (docx/pdf/md, MCP, issue) → enrich (live cloud/Backstage) → **reconnoiter the target repo statically** (RFC-0010, code-aware) → review gates (cited) → human approval → **governed GitHub issues** |
 | Act | **AIFactory** | governed issue → spec → code in isolated worktree → QA → **merge-ready branch / PR** |
 | Reflect | **TFactory** | finished feature on a branch → generate + run tests across modality lanes → **5-signal verdict + triage report** |
 | Review | **CFactory** | reads completion events + state from all three → **one cockpit `WorkItem` view + advise-and-confirm copilot** |
@@ -136,4 +136,5 @@ CFactory reach them all.
 - [RFC-0005 — environment manifest & toolchain provisioning](rfc/0005-environment-manifest-and-toolchain-provisioning.md)
 - [RFC-0006 — verification assurance levels & honest reporting](rfc/0006-verification-assurance-levels.md)
 - [RFC-0007 — access discovery & authenticated-test provisioning](rfc/0007-access-and-credential-provisioning.md)
+- [RFC-0010 — code-aware planning over existing repositories](rfc/0010-code-aware-planning-and-behavioral-equivalence.md)
 - [How they cooperate](/#cooperation) · [Run locally](run-locally.md) · [Roadmap](roadmap.md)

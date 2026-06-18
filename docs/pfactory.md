@@ -36,6 +36,15 @@ Every plan is enriched from real cloud + catalog state, decomposed into governed
 through review gates whose every verdict is cited, and gated on explicit human approval before
 anything is emitted downstream.
 
+When the plan targets an existing repository, PFactory also **reads the code** ([RFC-0010](/rfc/code-aware-planning/)).
+A read-only reconnaissance pass — static only, it never executes the repo — maps the languages,
+frameworks and infrastructure (e.g. the existing Terraform EKS resources and the files they live
+in), so the plan is *delta-aware*: it lists the real files each task will modify, takes its language
+from the repo rather than guessing, and surfaces the change footprint and blast radius for the human
+to approve. For a language rewrite ("port this from Python to Rust") it captures both the source and
+target language and a behavioral contract, so the build generates the new language against the
+original as a reference oracle and TFactory proves the two behave the same.
+
 </div>
 
 <div class="gallery" markdown="0">
