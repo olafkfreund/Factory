@@ -36,9 +36,14 @@ def fee(amount):
     return round(amount * 0.029 + 0.30, 2)
 PY
 cat > "$LOOP/legacy/tests/test_refund.py" <<'PY'
+import pytest
 from pay.refund import refund, fee
 def test_refund(): assert refund(100, "x")["refunded"] == 100
+def test_refund_negative():
+    with pytest.raises(ValueError):
+        refund(-5, "y")
 def test_fee(): assert fee(100) == 3.20
+def test_fee_fraction(): assert fee(7.5) == 0.52
 PY
 
 # ---- P: PFactory plans the migration -> contract.json --------------------
