@@ -27,21 +27,12 @@ s = svc.ingest_text(spec, title="Port payments", channel="cli", repo="acme/payme
 out = svc.process(s.session_id)
 contract = assemble_contract(out.plan, out.epic, repo="acme/payments")
 
-# Concrete golden-corpus input vectors (authored here from the existing tests;
-# the planner-side extraction of these from pytest cases is a tracked refinement).
-contract["tfactory"]["equivalence"]["manifest"] = {
-    "functions": [
-        {"module": "pay/refund.py", "name": "refund"},
-        {"module": "pay/refund.py", "name": "fee"},
-    ],
-    "input_vectors": [
-        {"id": "refund-ok", "module": "pay/refund.py", "function": "refund", "args": [100, "x"], "critical": True},
-        {"id": "refund-neg", "module": "pay/refund.py", "function": "refund", "args": [-5, "y"], "critical": True},
-        {"id": "fee-100", "module": "pay/refund.py", "function": "fee", "args": [100], "critical": True},
-        {"id": "fee-7", "module": "pay/refund.py", "function": "fee", "args": [7.5]},
-    ],
-}
+# The golden-corpus input vectors are now EXTRACTED from the existing tests by
+# the planner (no hand-authoring) — they ride on tfactory.equivalence.manifest.
 (loop / "contract.json").write_text(json.dumps(contract, indent=2))
+eq = contract["tfactory"]["equivalence"]
+ivs = eq.get("manifest", {}).get("input_vectors", [])
 print("   change_mode:", contract.get("change_mode"), "| workflow:", contract["workflow_type"])
-print("   module_map:", contract["tfactory"]["equivalence"]["module_map"])
+print("   module_map:", eq["module_map"])
+print("   extracted input_vectors:", [(v["function"], v["args"]) for v in ivs])
 print("   schema-valid:", tc.validate_contract(contract) == [])
