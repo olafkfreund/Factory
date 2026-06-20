@@ -39,6 +39,40 @@ replacing the per-pod in-memory stores (PFactory `_sessions`, AIFactory/TFactory
   `DATABASE_URL` is unset (single-pod dev), and that mode MUST log that it is not
   multi-replica safe.
 
+### 1a. Autoscaling the control plane on queue depth (KEDA)
+
+Because the admission queue is **durable in Postgres**, the control plane scales
+on it directly — no separate broker. KEDA's PostgreSQL scaler polls
+
+```sql
+SELECT count(*) FROM job_states WHERE service = '<svc>' AND lifecycle_state = 'queued'
+```
+
+and scales the service's Deployment between `minReplicaCount: 1` (never scale to
+zero — the API is always-on) and a bounded `maxReplicaCount`, targeting ~1-2
+queued jobs per replica. The scaler reuses the **same Postgres** connection the
+service uses (a `TriggerAuthentication` reading `DATABASE_URL` from the service's
+DB Secret).
+
+**Separation of concerns — KEDA does NOT bound concurrency, the in-app cap does.**
+KEDA only moves *replica count* in reaction to queue depth. The **hard global
+concurrency cap** is enforced **in-app** at admission (`MAX_CONCURRENT_TASKS` /
+`PFACTORY_MAX_CONCURRENT_PLANS`), and because a slot is granted inside the
+`SELECT ... FOR UPDATE` transaction above, the cap holds **across replicas** — two
+pods cannot jointly exceed it. So: KEDA scales out to drain the queue faster;
+the per-replica + global admission cap bounds the actual work in flight; excess
+work stays `queued` (backpressure, no OOM).
+
+**A service is only safe to scale >1 once its state is in shared Postgres AND it
+has no pod-local fan-out.** A service with a WebSocket fan-out that keeps
+per-connection state in-pod (e.g. AIFactory's rmux Live Agent Console) MUST stay
+capped at `maxReplicaCount: 1` until that fan-out runs over a shared bus
+(Redis pub/sub); KEDA may be wired for it but capped. The Deployment's hard
+`replicas:` pin must also be removed for the KEDA-managed HPA to own replica count.
+
+Cluster wiring (operator install + per-service `ScaledObject`s) lives in
+`factory-gitops` (`apps/keda/`). RFC-0016 #192.
+
 ## 2. Object-store interface (workspaces + artifacts)
 
 Workspaces and artifacts MUST move off `ReadWriteOnce` `local-path` PVCs (which
