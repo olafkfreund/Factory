@@ -22,3 +22,4 @@ nav:
   - Catalog & entities: catalog.md
   - RFCs:
       - RFC-0011 Label-Driven Intake & Difficulty Tiers: https://factory.freundcloud.com/rfc/label-driven-intake/
+      - RFC-0012 External-Knowledge Grounding from Backstage: https://factory.freundcloud.com/rfc/external-knowledge-grounding/
