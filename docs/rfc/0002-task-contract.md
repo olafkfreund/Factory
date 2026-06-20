@@ -138,6 +138,7 @@ human summary.
 | `tfactory` | PFactory | TFactory (via AIFactory handover) | optional (TFactory falls back to inference) |
 | `epic_context.house_standards` | PFactory (retrieves) | AIFactory/TFactory (follow), `standards_conformance` gate (verifies) | optional (RFC-0012; absent => no external standards to enforce) |
 | `deployment` | PFactory (discovers) | AIFactory/TFactory (honor risk/scan/gate + DRY-RUN policy), CFactory (surfaces) | optional (RFC-0013; absent => no deployment dimension) |
+| `execution.routing` / `execution.runtime` / `execution.budget_mode` | PFactory (cost router) | AIFactory (per-role models + gated runtime + budget enforce), TFactory (test-model), CFactory (cost) | optional (RFC-0014; absent => today's behaviour) |
 
 A v2 contract **without** `execution`/`tfactory` is a valid signed plan that
 behaves like v1 plus richer correlation. A v2 contract **with** them is the full
@@ -152,6 +153,25 @@ block (`{limit_usd, spent_usd, exceeded}`) and an OTel `budget.exceeded` metric
 fires. It **never** aborts, pauses, or kills the build — the task always runs to
 its natural terminal state. Absent => no budget tracking (back-compat). See the
 per-worker observability design (P2 soft budget alert).
+
+### `execution.routing` / `execution.runtime` / `execution.budget_mode` (optional, RFC-0014)
+
+These three OPTIONAL, additive `execution` fields
+([RFC-0014](./0014-cost-aware-model-and-runtime-routing.md)) carry the cost-aware,
+capability-aware routing decision. `execution.routing` records WHY the per-role
+models were chosen — its `class` (`economy|standard|premium|governed`), the
+`cost_estimate_usd` (null for subscription/local), `cost_ceiling_usd`, `policy`,
+and a human `rationale`. `execution.runtime`
+(`claude|codex|antigravity|ollama|ollama-cloud|claude-subagents|dynamic-workflow`)
+selects the execution runtime — default `claude`; every other runtime is **gated
+OFF** unless the operator enables it and the contract opts in.
+`execution.budget_mode` (`observe|enforce`) governs whether the router may refuse
+an over-ceiling selection (`enforce`) or only warns (`observe`, default). The
+router never drops below the RFC-0011 tier's capability floor, and a `governed`
+task is never silently degraded. `contract_version` stays `"2"` (additive, open
+objects; consumers ignore unknown keys). The single price/capability source is
+`apis/model-catalog.json` and the reference router is
+`scripts/cost_router_core.py`.
 
 ### `epic_context.house_standards` (optional, RFC-0012)
 
