@@ -26,19 +26,30 @@ import fnmatch
 # artifact type -> { detect: [globs], levels: {VAL-x: {commands, requires, risk}} }
 PROFILES: dict[str, dict] = {
     "ansible": {
-        "detect": ["**/playbook*.yml", "**/site.yml", "**/roles/**/tasks/*.yml",
-                   "ansible.cfg", "**/molecule/**"],
+        "detect": [
+            "**/playbook*.yml",
+            "**/site.yml",
+            "**/roles/**/tasks/*.yml",
+            "ansible.cfg",
+            "**/molecule/**",
+        ],
         # RFC-0007: VAL-3 applies to disposable sandbox hosts the pipeline owns.
         "credential_class": "C-ephemeral-target",
         "levels": {
-            "VAL-0": {"commands": ["ansible-lint", "ansible-playbook --syntax-check"],
-                      "requires": ["ansible"]},
-            "VAL-2": {"commands": ["molecule test"],
-                      "requires": ["ansible", "molecule", "container_runtime"],
-                      "risk": "role not converged anywhere; task logic unproven"},
-            "VAL-3": {"commands": ["ansible-playbook -i <sandbox-inventory> --diff"],
-                      "requires": ["sandbox_target", "credentials"],
-                      "risk": "not applied to real hosts; apply-time failures possible"},
+            "VAL-0": {
+                "commands": ["ansible-lint", "ansible-playbook --syntax-check"],
+                "requires": ["ansible"],
+            },
+            "VAL-2": {
+                "commands": ["molecule test"],
+                "requires": ["ansible", "molecule", "container_runtime"],
+                "risk": "role not converged anywhere; task logic unproven",
+            },
+            "VAL-3": {
+                "commands": ["ansible-playbook -i <sandbox-inventory> --diff"],
+                "requires": ["sandbox_target", "credentials"],
+                "risk": "not applied to real hosts; apply-time failures possible",
+            },
         },
     },
     "terraform": {
@@ -48,14 +59,17 @@ PROFILES: dict[str, dict] = {
         # ephemeral project, but the credential the planner needs is class A.
         "credential_class": "A-machine-native",
         "levels": {
-            "VAL-0": {"commands": ["terraform validate", "tflint"],
-                      "requires": ["terraform"]},
-            "VAL-2": {"commands": ["terraform plan"],
-                      "requires": ["terraform", "credentials"],
-                      "risk": "plan not generated; drift/diff unknown"},
-            "VAL-3": {"commands": ["terraform apply", "terraform destroy"],
-                      "requires": ["sandbox_cloud", "credentials"],
-                      "risk": "not applied; real provisioning unproven"},
+            "VAL-0": {"commands": ["terraform validate", "tflint"], "requires": ["terraform"]},
+            "VAL-2": {
+                "commands": ["terraform plan"],
+                "requires": ["terraform", "credentials"],
+                "risk": "plan not generated; drift/diff unknown",
+            },
+            "VAL-3": {
+                "commands": ["terraform apply", "terraform destroy"],
+                "requires": ["sandbox_cloud", "credentials"],
+                "risk": "not applied; real provisioning unproven",
+            },
         },
     },
     "kubernetes": {
@@ -64,12 +78,16 @@ PROFILES: dict[str, dict] = {
         "credential_class": "C-ephemeral-target",
         "levels": {
             "VAL-0": {"commands": ["kubeconform", "helm lint"], "requires": ["kubeconform"]},
-            "VAL-2": {"commands": ["helm template | kubeconform", "kind load + apply --dry-run"],
-                      "requires": ["kind", "container_runtime"],
-                      "risk": "manifests not applied to a live cluster"},
-            "VAL-3": {"commands": ["apply to ephemeral cluster + assert ready"],
-                      "requires": ["sandbox_cluster"],
-                      "risk": "rollout behavior unproven"},
+            "VAL-2": {
+                "commands": ["helm template | kubeconform", "kind load + apply --dry-run"],
+                "requires": ["kind", "container_runtime"],
+                "risk": "manifests not applied to a live cluster",
+            },
+            "VAL-3": {
+                "commands": ["apply to ephemeral cluster + assert ready"],
+                "requires": ["sandbox_cluster"],
+                "risk": "rollout behavior unproven",
+            },
         },
     },
     "python-library": {
@@ -77,9 +95,11 @@ PROFILES: dict[str, dict] = {
         "levels": {
             "VAL-0": {"commands": ["ruff check", "mypy"], "requires": ["ruff"]},
             "VAL-1": {"commands": ["pytest"], "requires": ["pytest"]},
-            "VAL-2": {"commands": ["pytest -m integration (testcontainers/devenv services)"],
-                      "requires": ["pytest", "container_runtime"],
-                      "risk": "integration paths exercised only if such tests exist"},
+            "VAL-2": {
+                "commands": ["pytest -m integration (testcontainers/devenv services)"],
+                "requires": ["pytest", "container_runtime"],
+                "risk": "integration paths exercised only if such tests exist",
+            },
         },
     },
     "node-web": {
@@ -87,9 +107,11 @@ PROFILES: dict[str, dict] = {
         "levels": {
             "VAL-0": {"commands": ["eslint", "tsc --noEmit"], "requires": ["node"]},
             "VAL-1": {"commands": ["npm test"], "requires": ["node"]},
-            "VAL-2": {"commands": ["playwright test (ephemeral browser)"],
-                      "requires": ["node", "playwright", "container_runtime"],
-                      "risk": "no end-to-end browser run"},
+            "VAL-2": {
+                "commands": ["playwright test (ephemeral browser)"],
+                "requires": ["node", "playwright", "container_runtime"],
+                "risk": "no end-to-end browser run",
+            },
         },
     },
     "go": {
@@ -125,8 +147,7 @@ PROFILES: dict[str, dict] = {
 }
 
 # Detection priority (most specific / most effectful first).
-_ORDER = ["ansible", "terraform", "kubernetes", "java", "go", "rust",
-          "node-web", "python-library"]
+_ORDER = ["ansible", "terraform", "kubernetes", "java", "go", "rust", "node-web", "python-library"]
 
 _LADDER = ["VAL-0", "VAL-1", "VAL-2", "VAL-3", "VAL-4"]
 
@@ -218,8 +239,9 @@ def _test() -> None:
     assert by["VAL-3"]["status"] == "not_run", by["VAL-3"]
 
     # Provision a sandbox target + creds: full ladder achievable.
-    p = plan_verification(ans, available={"ansible", "molecule", "container_runtime",
-                                          "sandbox_target", "credentials"})
+    p = plan_verification(
+        ans, available={"ansible", "molecule", "container_runtime", "sandbox_target", "credentials"}
+    )
     assert p["achievable_level"] == "VAL-3", p
 
     # Every not_run level carries a reason (feeds the #72 gate's schema requirement).

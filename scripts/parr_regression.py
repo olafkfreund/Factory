@@ -70,11 +70,11 @@ class Seam:
         self.ok: bool | None = None
         self.detail = ""
 
-    def passed(self, detail: str = "") -> "Seam":
+    def passed(self, detail: str = "") -> Seam:
         self.ok, self.detail = True, detail
         return self
 
-    def failed(self, detail: str) -> "Seam":
+    def failed(self, detail: str) -> Seam:
         self.ok, self.detail = False, detail
         return self
 
@@ -164,15 +164,27 @@ def check_pfactory_ingest_shape() -> Seam:
     """PFactory accepts the documented ingest-text contract (catches the
     'no acceptance criteria' / payload-shape drift that 400s the plan leg)."""
     s = Seam("pfactory:ingest-accepts")
-    code, body = _call("pfactory", "POST", "/api/plan/sessions/ingest-text", {
-        "title": "parr-regression probe", "category": "software", "channel": "portal",
-        "text": "# probe\n\n## Acceptance Criteria\n- AC#1: GET /healthz returns 200",
-    }, timeout=30)
+    code, body = _call(
+        "pfactory",
+        "POST",
+        "/api/plan/sessions/ingest-text",
+        {
+            "title": "parr-regression probe",
+            "category": "software",
+            "channel": "portal",
+            "text": "# probe\n\n## Acceptance Criteria\n- AC#1: GET /healthz returns 200",
+        },
+        timeout=30,
+    )
     if code == 200 and (body.get("session_id") or body.get("id")):
         sid = body.get("session_id") or body.get("id")
         # PFactory has no plan-session DELETE; reject closes the probe session.
-        _register_cleanup("pfactory", "POST", f"/api/plan/sessions/{sid}/reject",
-                          {"reason": "parr-regression teardown"})
+        _register_cleanup(
+            "pfactory",
+            "POST",
+            f"/api/plan/sessions/{sid}/reject",
+            {"reason": "parr-regression teardown"},
+        )
         return s.passed(f"session={sid}")
     return s.failed(f"ingest-text -> {code}: {str(body)[:160]}")
 
@@ -211,15 +223,28 @@ def check_build_lifecycle(timeout: int) -> Seam:
     s = Seam("aifactory:build-lifecycle")
     code, projs = _call("aifactory", "GET", "/api/projects", timeout=20)
     items = projs if isinstance(projs, list) else projs.get("projects", [])
-    pid = next((p.get("id") or p.get("project_id") for p in items
-                if "aifactory-demo" in str(p.get("name", ""))), None)
+    pid = next(
+        (
+            p.get("id") or p.get("project_id")
+            for p in items
+            if "aifactory-demo" in str(p.get("name", ""))
+        ),
+        None,
+    )
     if not pid:
         return s.failed("no aifactory-demo project to build in")
-    code, task = _call("aifactory", "POST", "/api/tasks", {
-        "title": "PARR regression: /healthz endpoint",
-        "description": "Add a GET /healthz endpoint returning {\"status\":\"ok\"}.",
-        "project_id": pid, "metadata": {"scenario": "parr-regression"},
-    }, timeout=30)
+    code, task = _call(
+        "aifactory",
+        "POST",
+        "/api/tasks",
+        {
+            "title": "PARR regression: /healthz endpoint",
+            "description": 'Add a GET /healthz endpoint returning {"status":"ok"}.',
+            "project_id": pid,
+            "metadata": {"scenario": "parr-regression"},
+        },
+        timeout=30,
+    )
     tid = task.get("task_id") or task.get("id")
     if not tid:
         return s.failed(f"task create -> {code}: {str(task)[:140]}")

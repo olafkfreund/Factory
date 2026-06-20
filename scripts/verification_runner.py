@@ -47,12 +47,16 @@ def run_verification(plan: dict, backend) -> dict:
         if lvl.get("status") == "planned":
             ok, output = backend(lvl["level"], lvl["commands"])
             if ok:
-                entry.update(status="passed", ran=lvl["commands"],
-                             evidence=(output or "ok").strip()[:200])
+                entry.update(
+                    status="passed", ran=lvl["commands"], evidence=(output or "ok").strip()[:200]
+                )
             else:
-                entry.update(status="failed", ran=lvl["commands"],
-                             reason="command failed: " + (output or "").strip()[:200],
-                             risk=lvl.get("risk", "behavior unproven"))
+                entry.update(
+                    status="failed",
+                    ran=lvl["commands"],
+                    reason="command failed: " + (output or "").strip()[:200],
+                    risk=lvl.get("risk", "behavior unproven"),
+                )
         else:
             entry.update(status="not_run", reason=lvl["reason"])
             if "risk" in lvl:
@@ -65,16 +69,19 @@ def run_verification(plan: dict, backend) -> dict:
 
 def nix_backend(env_pkgs: list[str], cwd: str = "."):
     """A real RFC-0005 sandbox backend: run each command in `nix shell`."""
+
     def run(level: str, commands: list[str]):
         outs = []
         for cmd in commands:
-            wrapped = (["nix", "shell"] + [f"nixpkgs#{p}" for p in env_pkgs]
-                       + ["-c", "bash", "-c", cmd])
+            wrapped = (
+                ["nix", "shell"] + [f"nixpkgs#{p}" for p in env_pkgs] + ["-c", "bash", "-c", cmd]
+            )
             r = subprocess.run(wrapped, cwd=cwd, capture_output=True, text=True)
             outs.append(r.stdout + r.stderr)
             if r.returncode != 0:
                 return False, "\n".join(outs)
         return True, "\n".join(outs)
+
     return run
 
 

@@ -51,7 +51,6 @@ Run:  python3 scripts/verify_rfc0011_e2e.py            # human-readable report
 
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -343,7 +342,9 @@ def main(argv=None) -> int:
     print("RFC-0011 E2E tier-policy harness")
     print("  source modules:")
     for name, real in using_real.items():
-        print(f"    - {name}: {'REAL (' + name + ')' if real else 'LOCAL SHIM (sibling repo not importable)'}")
+        print(
+            f"    - {name}: {'REAL (' + name + ')' if real else 'LOCAL SHIM (sibling repo not importable)'}"
+        )
     print()
 
     failed = [r for r in results if not r.ok]

@@ -1,0 +1,133 @@
+name: code-quality (ratchet)
+
+# Factory code-quality ratchet (epic Factory#154; issues #156, #161).
+#
+# Per standards/coding-standards.md section 4.6, the strict bar is adopted as a
+# no-regression RATCHET on the PR DIFF, not a whole-repo gate: legacy hotspots
+# are allowed until touched, and a touched file's pre-existing legacy backlog
+# does not block. What IS blocked is any NET-NEW ruff violation a changed file
+# introduces relative to the PR base. A whole-repo strict `ruff check` would be
+# instantly red (the hub's scripts/ carry ~198 legacy S/BLE/PL/T20 violations at
+# adoption), so the ratchet (scripts/ratchet_lint.py) is used instead.
+#
+# mypy --strict on changed files is INFORMATIONAL (continue-on-error): the legacy
+# scripts are largely untyped, so it surfaces type debt without making the
+# adoption PR red. A whole-repo `ruff format --check scripts/` stays blocking
+# because formatting is mechanical and already clean.
+#
+# The hub owns standards/ — these jobs reference standards/ruff.toml /
+# standards/mypy.ini directly via the vendored-at-root ruff.toml / mypy.ini.
+#
+# ratchet_lint.py is vendored verbatim from CFactory (cross-service reuse of the
+# proven Factory ratchet); only the package scope differs (flat scripts/ dir).
+
+on:
+  pull_request:
+    paths:
+      - "**.py"
+      - "ruff.toml"
+      - "mypy.ini"
+      - "standards/**"
+      - ".github/workflows/code-quality.yml"
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Must match the ruff that formatted scripts/ (hub pin, standards section 4.5).
+  RUFF_VERSION: "0.15.17"
+  MYPY_VERSION: "1.18.2"
+  PACKAGE_DIR: "scripts"
+
+jobs:
+  ratchet:
+    name: ruff ratchet (diff-scoped, blocking) + mypy (informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need history back to the PR base for the diff-scoped ratchet.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pin the toolchain (standards section 4.5)
+        run: pip install "ruff==${RUFF_VERSION}" "mypy==${MYPY_VERSION}"
+
+      - name: Determine base ref
+        id: base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ratchet (ruff on changed files; blocks net-new violations)
+        # No-regression gate: a changed file may not GAIN ruff violations vs base.
+        # Pure cleanup/formatting can never increase the count, so this stays green
+        # for the adoption PR while catching genuinely new violations.
+        run: python scripts/ratchet_lint.py --base "${{ steps.base.outputs.ref }}" --package "${PACKAGE_DIR}"
+
+      - name: mypy --strict on changed files (informational)
+        # Non-blocking: the legacy scripts are largely untyped, so mypy --strict
+        # over touched files reports a large existing backlog. This surfaces type
+        # debt without making the adoption PR red. Promoting this to a blocking
+        # per-file ratchet is tracked as follow-up.
+        continue-on-error: true
+        run: |
+          mapfile -t files < <(git diff --name-only --diff-filter=AM "${{ steps.base.outputs.ref }}...HEAD" -- "${PACKAGE_DIR}" | grep '\.py$' || true)
+          if [ ${#files[@]} -eq 0 ]; then echo "no changed Python files"; exit 0; fi
+          mypy --config-file mypy.ini "${files[@]}" || true
+
+  format-check:
+    name: ruff format --check (scripts, blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pin the toolchain (must match the formatter, section 4.5)
+        run: pip install "ruff==${RUFF_VERSION}"
+
+      - name: ruff format --check
+        # Formatting is mechanical and already clean under scripts/ (the hub's
+        # first-class Python). Scoped here rather than whole-repo because the
+        # prototypes/, backups/, and review/ trees carry pre-existing unformatted
+        # legacy that is out of this ratchet's adoption scope (allowed until
+        # touched, per section 4.6); widening this to "." would make the gate
+        # instantly red.
+        run: ruff format --check scripts/
+
+  config-drift:
+    name: vendored baseline matches standards/ (drift gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: root ruff.toml must extend the canonical baseline
+        run: grep -q 'extend = "standards/ruff.toml"' ruff.toml
+
+      - name: root mypy.ini must not loosen the strict baseline
+        run: |
+          # Tighten-only: the hub copy may not drop strict or any spelled-out flag
+          # present in the canonical baseline (standards section 0 / 1.2).
+          for key in $(grep -E '^[a-z_]+ = True' standards/mypy.ini | cut -d' ' -f1); do
+            grep -qE "^${key} = True" mypy.ini || {
+              echo "mypy.ini is missing strict flag: ${key}"; exit 1; }
+          done
+          grep -qE '^strict = True' mypy.ini
+
+      - name: root .editorconfig matches the fleet baseline
+        run: diff -u standards/.editorconfig .editorconfig

@@ -47,27 +47,53 @@ if __name__ == "__main__":
     assert _errors(v, _base()) == [], "minimal contract (no access) should validate"
 
     # a well-formed access block validates (A: machine-native, D: un-automatable).
-    ok = dict(_base(), access={"requirements": [
-        {"resource": "sandbox-aws", "auth_class": "A-machine-native", "bootstrap": "none",
-         "credential_ref": None},
-        {"resource": "keycloak", "auth_class": "D-un-automatable", "bootstrap": "human",
-         "curated": False,
-         "human_approval": {"approved_by": "op", "approved_at": "2026-06-16", "scope": "test realm"},
-         "mvp_note": "push-approval MFA, human-driven"},
-    ]})
+    ok = dict(
+        _base(),
+        access={
+            "requirements": [
+                {
+                    "resource": "sandbox-aws",
+                    "auth_class": "A-machine-native",
+                    "bootstrap": "none",
+                    "credential_ref": None,
+                },
+                {
+                    "resource": "keycloak",
+                    "auth_class": "D-un-automatable",
+                    "bootstrap": "human",
+                    "curated": False,
+                    "human_approval": {
+                        "approved_by": "op",
+                        "approved_at": "2026-06-16",
+                        "scope": "test realm",
+                    },
+                    "mvp_note": "push-approval MFA, human-driven",
+                },
+            ]
+        },
+    )
     assert _errors(v, ok) == [], f"well-formed access should validate, got {_errors(v, ok)}"
 
     # malformed access is rejected.
-    bad_enum = dict(_base(), access={"requirements": [
-        {"resource": "x", "auth_class": "E-nope", "bootstrap": "none"}]})
+    bad_enum = dict(
+        _base(),
+        access={"requirements": [{"resource": "x", "auth_class": "E-nope", "bootstrap": "none"}]},
+    )
     assert _errors(v, bad_enum), "unknown auth_class must be rejected"
 
-    missing_required = dict(_base(), access={"requirements": [
-        {"resource": "x", "auth_class": "A-machine-native"}]})  # no bootstrap
+    missing_required = dict(
+        _base(), access={"requirements": [{"resource": "x", "auth_class": "A-machine-native"}]}
+    )  # no bootstrap
     assert _errors(v, missing_required), "missing bootstrap must be rejected"
 
-    unknown_prop = dict(_base(), access={"requirements": [
-        {"resource": "x", "auth_class": "A-machine-native", "bootstrap": "none", "junk": 1}]})
+    unknown_prop = dict(
+        _base(),
+        access={
+            "requirements": [
+                {"resource": "x", "auth_class": "A-machine-native", "bootstrap": "none", "junk": 1}
+            ]
+        },
+    )
     assert _errors(v, unknown_prop), "unknown property must be rejected"
 
     empty_block = dict(_base(), access={})  # requirements is required
@@ -78,18 +104,23 @@ if __name__ == "__main__":
     assert "environment" not in schema.get("required", []), "environment must not be required"
 
     # a well-formed Nix-provisioned environment (browser lane) validates.
-    env_ok = dict(_base(), environment={
-        "language": "python",
-        "toolchain": {"python": "3.13"},
-        "system_packages": ["chromium"],
-        "build_commands": ["true"],
-        "verify_commands": ["pytest -q", "npx playwright test"],
-        "serve_command": "python -m uvicorn app:app --port 8099",
-        "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
-        "network": "restricted",
-        "proof": {"verify": ["python --version", "chromium --version"]},
-    })
-    assert _errors(v, env_ok) == [], f"well-formed environment should validate, got {_errors(v, env_ok)}"
+    env_ok = dict(
+        _base(),
+        environment={
+            "language": "python",
+            "toolchain": {"python": "3.13"},
+            "system_packages": ["chromium"],
+            "build_commands": ["true"],
+            "verify_commands": ["pytest -q", "npx playwright test"],
+            "serve_command": "python -m uvicorn app:app --port 8099",
+            "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
+            "network": "restricted",
+            "proof": {"verify": ["python --version", "chromium --version"]},
+        },
+    )
+    assert _errors(v, env_ok) == [], (
+        f"well-formed environment should validate, got {_errors(v, env_ok)}"
+    )
 
     # malformed environment is rejected.
     bad_method = dict(_base(), environment={"provisioning": {"method": "conda"}})
