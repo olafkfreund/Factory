@@ -49,33 +49,37 @@ The services deliberately vendor **different subsets** at **different paths**:
 We are **not** rewriting imports across the repos in this change. Full package
 consumption (publishing `verification-core` as an installable package and deleting
 the per-repo copies) is a tracked follow-on; it is deferred here because it is a
-cross-repo, behaviour-affecting change that deserves its own staged PRs. The
-per-repo CI drift-gate **workflows** are likewise a fast follow (deferred): this
-increment ships the canonical source-of-truth statement plus the gate + tests in
-the hub only.
+cross-repo, behaviour-affecting change that deserves its own staged PRs.
 
-## Honest status: known drift (the gate will flag TFactory)
+The per-repo CI drift-gate **workflows** ship alongside the reconciliation
+(Factory#158): each affected service now runs the hub drift gate in its own CI
+(`.github/workflows/verification-core-drift.yml`, blocking) so the copies cannot
+silently re-diverge.
 
-Because these modules were vendored at different times and lightly edited
-in-place, the live service copies do **not** all match this canonical
-byte-for-byte yet. In particular:
+## Status: reconciled (the gate is green fleet-wide)
 
-- **TFactory `verification_gate.py`** was reconciled to its local lint bar rather
-  than to the hub: the loop variable was renamed (`l` -> `lvl`, for E741), the
-  `TypedDict` definitions were dropped in favour of plain `dict` type hints, and
-  the module-level self-tests were removed. These are **behaviour-equivalent**
-  changes, but they make the file byte-divergent, so the drift gate **will flag
-  TFactory's gate copy** until it is reconciled.
-- The other existing copies (AIFactory `factory_sandbox.py` / `nix_provisioner.py`,
-  TFactory `nix_provisioner.py`) similarly carry minor local edits and will flag
-  until reconciled.
+The live service copies were reconciled to this canonical, byte-for-byte, as part
+of Factory#158. The reconciliation was **behaviour-preserving** and, where a
+service copy genuinely carried *more* than the hub, the canonical adopted the
+superset rather than deleting tested behaviour:
 
-This is expected and intentional: this PR establishes the source of truth and the
-gate. **Reconciling each live service copy back to the canonical (or, where a
-service edit is genuinely wanted, landing it in the hub canonical first and
-re-vendoring) is a deferred, behaviour-checked follow-on** — done per service so
-each change is small, reviewable and verified, not a risky cross-repo rewrite in
-one shot.
+- **TFactory `verification_gate.py`** had been edited to its local lint bar
+  (loop variable `l` -> `lvl` for E741, `TypedDict` definitions dropped for plain
+  `dict` hints, module self-tests removed). The hub canonical already carries the
+  `lvl` name; the service copy was restored to the canonical (TypedDicts and the
+  module self-tests re-added) — all behaviour-equivalent.
+- **`nix_provisioner.py`** (TFactory `tools/runners/`, AIFactory `core/`) carried
+  the `_PY_PKG_ALIASES` pip->nixpkgs map and the RFC-0005 §3.2 Tier C content-
+  addressing layer (`_TIER_BY_METHOD`, `resolve_tier`, `manifest_digest`), with
+  passing tests in TFactory `tests/test_nix_provisioner.py`. These are genuine,
+  tested functionality, so the **canonical adopted the superset** and both copies
+  were re-vendored byte-identical to it.
+- **AIFactory `factory_sandbox.py`** carried only a cosmetic line-wrap; it was
+  restored to the canonical byte-for-byte.
+
+Going forward, a change to a canonical module is a fleet change: land it here
+first (CODEOWNERS-reviewed), then re-vendor the service copies and re-pin. The
+per-repo `verification-core-drift.yml` CI gate blocks any silent re-divergence.
 
 ## CODEOWNERS note
 
