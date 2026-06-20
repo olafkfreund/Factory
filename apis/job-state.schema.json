@@ -79,7 +79,7 @@
         "additionalProperties": false,
         "required": ["role", "uri"],
         "properties": {
-          "role": { "type": "string", "description": "e.g. workspace, build, test-report, evidence, log." },
+          "role": { "type": "string", "description": "e.g. workspace, build, test-report, evidence, log, doc." },
           "uri": { "type": "string", "description": "Object-store URI, e.g. s3://factory-artifacts/<service>/<correlation_key>/<job_id>/<role>." },
           "content_type": { "type": ["string", "null"] },
           "bytes": { "type": ["integer", "null"], "minimum": 0 }
