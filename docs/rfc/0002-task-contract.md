@@ -102,6 +102,7 @@ human summary.
     "parallel": true,
     "workers": 4,
     "review_tier": "async",
+    "autonomy_tier": "medium",     // RFC-0011 difficulty tier (low|medium|hard) from factory:* labels; drives model/planning/human-gate/verification/merge. Absent => derived from complexity.
     "agents": {
       "planner": false,            // skip — plan is pre-computed
       "coder": true, "qa_reviewer": true, "qa_fixer": true,
