@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/olafkfreund/Factory/blob/main/apis/job-state.schema.json",
+  "title": "Factory Shared Job-State Record (RFC-0016)",
+  "description": "The durable, shared representation of one in-flight or completed PARR job (a plan, a build, or a verify). RFC-0016 Phase 1 replaces each service's per-pod in-memory store (PFactory `_sessions`, AIFactory/TFactory `running_tasks`) and pod-local SQLite/emptyDir with a row of this shape in shared Postgres, so (a) any control-plane replica can read/advance any job, (b) the admission cap/queue survive a pod restart, and (c) Phase 2 k8s Jobs report progress back to the same record. Artifacts are NOT inlined here; they live in object storage and are referenced by `artifacts[]`. Lifecycle classification reuses apis/status-taxonomy.json.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "job_id", "service", "kind", "lifecycle_state", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1",
+      "description": "Job-state record version. Additive changes keep this; breaking changes bump it."
+    },
+    "job_id": {
+      "type": "string",
+      "description": "Stable unique id for this job (service-assigned, e.g. a UUID or the service's task_id/session_id). Primary key."
+    },
+    "correlation_key": {
+      "type": ["string", "integer", "null"],
+      "description": "RFC-0001 correlation key (the upstream GitHub issue number) threading this job across PFactory/AIFactory/TFactory/CFactory. Null until known."
+    },
+    "service": {
+      "type": "string",
+      "enum": ["pfactory", "aifactory", "tfactory"],
+      "description": "Which service owns this job."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["plan", "build", "verify"],
+      "description": "PARR stage this job performs."
+    },
+    "lifecycle_state": {
+      "type": "string",
+      "enum": ["queued", "running", "review", "done", "failed", "stuck"],
+      "description": "Canonical lifecycle state from apis/status-taxonomy.json. `queued` covers admission-queued jobs waiting for a concurrency slot (RFC-0016)."
+    },
+    "service_status": {
+      "type": ["string", "null"],
+      "description": "The raw service-native status string (e.g. PFactory 'emitted', AIFactory 'human_review', TFactory 'review_initial_complete'), mapped to lifecycle_state via the status taxonomy."
+    },
+    "phase": {
+      "type": ["string", "null"],
+      "description": "Optional finer-grained phase within the job (e.g. AIFactory 'coding', TFactory 'review_initial_complete')."
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Execution attempt counter (RFC-0008 provider failover / restart increments this)."
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "RFC-0016 admission-control bookkeeping so the cap/queue are durable, not in-memory.",
+      "properties": {
+        "enqueued_at": { "type": ["string", "null"], "format": "date-time" },
+        "queue_position": { "type": ["integer", "null"], "minimum": 0 },
+        "started_at": { "type": ["string", "null"], "format": "date-time", "description": "When a concurrency slot was granted and execution began." }
+      }
+    },
+    "worker_ref": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Phase 2 execution-unit reference. Null in Phase 1 (in-pod subprocess). Set when the job runs as a k8s Job.",
+      "properties": {
+        "kind": { "type": "string", "enum": ["subprocess", "k8s-job"], "description": "subprocess = Phase 1 in-pod; k8s-job = Phase 2." },
+        "namespace": { "type": ["string", "null"] },
+        "job_name": { "type": ["string", "null"], "description": "k8s Job name (Phase 2)." },
+        "node": { "type": ["string", "null"] }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Object-store references to this job's outputs (workspace tarball, build artifacts, test reports, evidence). Never inline blobs. See apis/concurrency-conventions.md for the key layout.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "uri"],
+        "properties": {
+          "role": { "type": "string", "description": "e.g. workspace, build, test-report, evidence, log." },
+          "uri": { "type": "string", "description": "Object-store URI, e.g. s3://factory-artifacts/<service>/<correlation_key>/<job_id>/<role>." },
+          "content_type": { "type": ["string", "null"] },
+          "bytes": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      }
+    },
+    "result": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "Terminal result payload (service-specific): e.g. PFactory emitted epic/issue numbers, AIFactory PR url, TFactory verdict + VAL level + per-lane pass/fail. MUST be set when lifecycle_state is terminal (done/failed)."
+    },
+    "usage": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Resource/cost accounting, aligned with RFC-0014 billing modes.",
+      "properties": {
+        "input_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "output_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "total_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0, "description": "Null for subscription/local billing modes (RFC-0014)." },
+        "model": { "type": ["string", "null"] }
+      }
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Human-readable failure reason when lifecycle_state is failed/stuck. Required when failed (never-overclaim: a terminal failure must carry a reason)."
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "ended_at": { "type": ["string", "null"], "format": "date-time", "description": "Set when lifecycle_state becomes terminal." }
+  }
+}
