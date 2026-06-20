@@ -135,6 +135,7 @@ human summary.
 | plan (`feature`…`phases`…`required_commands`) | PFactory | AIFactory | yes |
 | `execution` | PFactory | AIFactory | optional (AIFactory falls back to its defaults / own planning if absent) |
 | `tfactory` | PFactory | TFactory (via AIFactory handover) | optional (TFactory falls back to inference) |
+| `epic_context.house_standards` | PFactory (retrieves) | AIFactory/TFactory (follow), `standards_conformance` gate (verifies) | optional (RFC-0012; absent => no external standards to enforce) |
 
 A v2 contract **without** `execution`/`tfactory` is a valid signed plan that
 behaves like v1 plus richer correlation. A v2 contract **with** them is the full
@@ -149,6 +150,18 @@ block (`{limit_usd, spent_usd, exceeded}`) and an OTel `budget.exceeded` metric
 fires. It **never** aborts, pauses, or kills the build — the task always runs to
 its natural terminal state. Absent => no budget tracking (back-compat). See the
 per-worker observability design (P2 soft budget alert).
+
+### `epic_context.house_standards` (optional, RFC-0012)
+
+`epic_context.house_standards` is an OPTIONAL, additive block
+([RFC-0012](./0012-external-knowledge-grounding.md)) carrying the team's house
+standards — RFC-0010 repo `conventions` plus best-effort Backstage
+catalog/TechDocs/scaffolder-template references — each with a `content_hash`.
+Retrieval degrades, never raises: `available: false` means it could not be
+retrieved and the fail-closed `standards_conformance` gate scores it
+`not_applicable` (never a false pass). `contract_version` stays `"2"` (additive,
+open object). See `$defs.house_standards` in
+`apis/task-contract.schema.json`.
 
 ## 3. Signing & trust
 
