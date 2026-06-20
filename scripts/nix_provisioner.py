@@ -26,6 +26,7 @@ Run directly for the self-tests: `python3 scripts/nix_provisioner.py`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 
@@ -42,6 +43,14 @@ _PY_ATTR = {
     "3.12": "python312",
     "3.13": "python313",
     "3.14": "python314",
+}
+
+# common pip/distribution names -> the nixpkgs pythonPackages attr when they
+# differ. Anything not here is passed through unchanged (most match).
+_PY_PKG_ALIASES = {
+    "pyyaml": "pyyaml",
+    "beautifulsoup4": "beautifulsoup4",
+    "scikit-learn": "scikit-learn",
 }
 
 
@@ -81,6 +90,52 @@ class Manifest:
         )
 
 
+# RFC-0005 §3.2 provisioning tiers. Resolved from the manifest's
+# provisioning.method; the value is the engine that materializes the env.
+_TIER_BY_METHOD = {
+    "nix": "nix",  # Tier A — hermetic Nix flake (preferred)
+    "image": "catalog",  # Tier B — prebuilt catalog image by (language, version)
+    "catalog": "catalog",
+    "build": "build",  # Tier C — on-demand build, content-addressed + cached
+    "on-demand": "build",
+    "setup": "setup",  # Tier D — in-container setup script (last resort)
+}
+
+
+def resolve_tier(env: dict) -> str:
+    """Resolve the provisioning tier (RFC-0005 §3.2) for a contract environment.
+
+    Returns one of ``nix`` | ``catalog`` | ``build`` | ``setup``. Defaults to
+    ``nix`` — the hermetic, content-addressed, any-toolchain tier — so an
+    unrecognised method degrades to the reproducible path rather than failing.
+    """
+    method = (Manifest.from_contract(env).provisioning_method or "nix").lower()
+    return _TIER_BY_METHOD.get(method, "nix")
+
+
+def manifest_digest(env: dict, *, length: int = 16) -> str:
+    """Content-addressed digest of a manifest's *environment-defining* fields.
+
+    This is the cache key / image tag that makes Tier B/C "second run is instant"
+    explicit: two manifests that describe the same toolchain (same language,
+    toolchain versions, system_packages, network class, browser need) hash to the
+    same value — regardless of build/verify *commands*, which don't change the
+    environment. (Tier A's Nix store content-addresses the build itself; this is
+    the manifest-level key the image tiers need.) Deterministic + pure.
+    """
+    m = Manifest.from_contract(env)
+    key = {
+        "language": (m.language or "").lower(),
+        "toolchain": {k: str(v) for k, v in sorted(m.toolchain.items())},
+        "system_packages": sorted(p.lower() for p in m.system_packages),
+        "network": m.network or "",
+        "browser": _needs_browser(m),
+        "nixpkgs": DEFAULT_NIXPKGS if resolve_tier(env) == "nix" else "",
+    }
+    blob = json.dumps(key, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(blob).hexdigest()[:length]
+
+
 def _needs_browser(m: Manifest) -> bool:
     """A browser lane is implied by a browser system package or a playwright/
     chromium reference in the verify commands or proof checks."""
@@ -113,7 +168,7 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS) -> str:
     """
     m = Manifest.from_contract(env)
     py = _python_attr(m)
-    py_pkgs = list(_python_libs(m))
+    py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m)]
     sys_attrs = _system_pkg_attrs(m)
 
     pkg_lines: list[str] = []
