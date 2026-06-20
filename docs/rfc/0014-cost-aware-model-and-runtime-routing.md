@@ -90,6 +90,53 @@ on the plan/contract** and emits a `routing_class` + a cost ceiling:
 `routing_class ∈ {economy, standard, premium, governed}` — `governed` (high
 risk/production) forces a frontier model for **planning** even if cheap elsewhere.
 
+## 4b. No effort estimates — difficulty, risk, and the autonomy verdict
+
+**Plans MUST NOT carry effort points, story points, or dev-day/t-shirt
+estimates.** With LLM agents a task's wall-clock is minutes-to-hours, not
+weeks — sizing in human dev-days is meaningless and misleading. The scorer
+therefore emits exactly **two scores plus one verdict**, and the old
+`EffortEstimate`/`story_points` surface is removed from PFactory's plan/epic/issue
+output (decompose models, `feasibility/effort.py`, `emit/docs/render.py`,
+`emit/labels.py`, `agent_api.py`).
+
+The scorer outputs, per task:
+
+- `difficulty ∈ {low, medium, high}` — capability needed (drives the model).
+- `risk ∈ {low, medium, high}` — blast radius / reversibility / production /
+  security (drives the gate).
+- `autonomy ∈ {autonomous, review, approval}` — **can AI ship this alone, or is a
+  human needed?** — written to `execution.routing.autonomy` with a `reason`.
+
+**Autonomy decision (difficulty × risk, with hard overrides):**
+
+| autonomy | when | human role |
+|---|---|---|
+| `autonomous` | difficulty low **and** risk low, not production, no irreversible/destructive/secret/access op, VAL floor met | none — plan→code→test→**auto-merge when green** (RFC-0011 low / RFC-0009) |
+| `review` | difficulty medium **or** risk medium | AI executes; human reviews **async before merge** (RFC-0011 medium) |
+| `approval` | difficulty high **or** risk high **or** production **or** rewrite/migration **or** security/secrets/access | **blocking** human approval at plan **and** before merge (RFC-0011 hard) |
+
+**Always-human overrides (regardless of score):** production deploy
+([RFC-0006](./0006-verification-assurance-levels.md) VAL-4 is never autonomous),
+credential/secret changes, access-control changes, destructive data operations,
+financial actions. These force `approval` and are enforced by `merge_policy`
+([RFC-0009](./0009-ci-gated-auto-merge.md)) + the VAL gates, not just advised.
+
+The verdict reuses the existing wiring — `autonomy_tier` (RFC-0011) already drives
+model/planning/merge, `risk_class` (RFC-0013) carries production/risk, and
+`merge_policy` enforces the gate — so this RFC makes the verdict **explicit and
+effort-free**, it does not invent a new control plane.
+
+```mermaid
+flowchart LR
+    S["difficulty score"] --> V{"autonomy verdict"}
+    R["risk score"] --> V
+    O["hard overrides:<br/>prod / secrets / access /<br/>destructive / migration"] --> V
+    V -->|"low+low, no override"| A["autonomous<br/>(auto-merge when green)"]
+    V -->|"medium"| RV["review<br/>(async, pre-merge)"]
+    V -->|"high / override"| AP["approval<br/>(blocking, plan + merge)"]
+```
+
 ## 5. The cost-aware router
 
 `PFactory plan/emit/cost_router.py` runs in `contract_emit.assemble_contract`
