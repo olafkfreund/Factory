@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cost_router_core import (  # noqa: E402 - sibling script import
+from cost_router_core import (
     capability_floor_class,
     cheapest_capable_model,
     estimate_cost,
