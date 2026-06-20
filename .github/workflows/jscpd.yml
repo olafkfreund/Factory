@@ -1,0 +1,101 @@
+name: jscpd (duplication, advisory)
+
+# Cross-repo / in-repo copy-paste detection for the Factory code-quality program
+# (epic Factory#154, issue Factory#161).
+#
+# WHY ADVISORY, FOR NOW
+# ---------------------
+# The fleet still carries known, deliberate-for-now duplication: ~1,800 LOC of
+# VCS-client code is vendored across four repos behind a byte-exact drift gate
+# (shared/factory-github/), and the Backstage catalog-info.yaml descriptors share
+# large structural blocks by design. A hard whole-repo jscpd gate would be
+# instantly red and would punish the very vendor-canonical pattern the dedup
+# program is using on purpose. So this job is REPORT-ONLY today: it always exits
+# 0 and surfaces the clone report (console + JSON artifact + job summary) so
+# reviewers can see duplication trends on every PR without blocking merges.
+#
+# DETECTION BAR
+# -------------
+# Clones are >= 8 lines AND >= 50 tokens (.jscpd.json). This is the same bar the
+# per-repo dedup work targets, so what this reports lines up with what the
+# program is extracting into the hub (factory_common, factory-github).
+#
+# RATCHET-DOWN PLAN (the path from advisory -> blocking)
+# ------------------------------------------------------
+#  1. NOW (this PR): advisory. Report clones; never fail. Establish the baseline
+#     number (~14% duplicated tokens at adoption; see the run summary).
+#  2. NEXT: pin a per-format ceiling slightly ABOVE today's baseline in
+#     .jscpd.json ("threshold") and flip this job to BLOCKING (drop
+#     continue-on-error). New duplication that pushes a format over its ceiling
+#     then fails the PR (a no-regression ratchet), while existing debt is
+#     grandfathered. Lower the ceiling as each extraction (factory_common,
+#     factory-github full consumption, catalog templating) removes clones.
+#  3. GOAL: a low, fleet-wide ceiling once the known duplication is extracted to
+#     the hub and the per-repo copies consume it (the deferred full-consumption
+#     follow-ons tracked under epic Factory#154).
+
+on:
+  pull_request:
+    paths:
+      - "**.py"
+      - "**.ts"
+      - "**.js"
+      - "**.yaml"
+      - "**.yml"
+      - "**.md"
+      - ".jscpd.json"
+      - ".github/workflows/jscpd.yml"
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jscpd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  duplication:
+    name: jscpd clone report (advisory, non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run jscpd (report-only)
+        # Advisory today: never fail the PR (see header). The .jscpd.json
+        # threshold is also set to 100 so the tool itself does not exit non-zero;
+        # continue-on-error is belt-and-braces for when the ratchet is tightened.
+        continue-on-error: true
+        run: npx --yes jscpd@4 --config .jscpd.json .
+
+      - name: Publish clone report to the run summary
+        if: always()
+        run: |
+          report="reports/jscpd/jscpd-report.json"
+          {
+            echo "## jscpd duplication report (advisory)"
+            echo ""
+            if [ -f "$report" ]; then
+              dup_lines=$(python3 -c "import json,sys; d=json.load(open('$report')); s=d.get('statistics',{}).get('total',{}); print(s.get('percentage','?'))" 2>/dev/null || echo "?")
+              clones=$(python3 -c "import json,sys; d=json.load(open('$report')); print(len(d.get('duplicates',[])))" 2>/dev/null || echo "?")
+              echo "- Clones found (>=8 lines, >=50 tokens): **${clones}**"
+              echo "- Duplicated lines: **${dup_lines}%**"
+              echo ""
+              echo "This gate is **advisory** (report-only). See the workflow header for the ratchet-down plan to a blocking ceiling."
+            else
+              echo "No report produced (jscpd found nothing or failed to run)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload jscpd JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jscpd-report
+          path: reports/jscpd/
+          if-no-files-found: ignore
