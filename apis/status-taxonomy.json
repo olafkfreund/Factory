@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/olafkfreund/Factory/blob/main/apis/status-taxonomy.json",
+  "title": "Factory Status Taxonomy",
+  "description": "Canonical lifecycle classification of the divergent per-service status vocabularies (PFactory board states, AIFactory backlog/in_progress/ai_review/human_review/done, TFactory triaged/passed/...). The cockpit and any consumer maps an arbitrary status string to ONE lifecycle state by EXACT, normalized-token match (never loose substring containment, which previously made 'ready' match 'already' and 'fail' match a status merely containing those letters). This document mirrors CFactory's canonical status_taxonomy.py token sets (apps/backend/cfactory/status_taxonomy.py, #114) so the hub is the single source of truth from which the shared models are generated.",
+  "version": "1.0.0",
+  "normalization": {
+    "description": "How a raw status string is reduced to tokens before matching: lowercased, stripped, then split on whitespace, '_' and '-'. A classification matches when ANY resulting token is in the relevant token set. A compound status like 'human_review' or 'qa-approved' yields its parts (human, review / qa, approved).",
+    "split_pattern": "[\\s_\\-]+",
+    "case": "lower"
+  },
+  "states": {
+    "failed": {
+      "description": "Failure / rejection / abort markers. A failed stage is terminal AND unhealthy.",
+      "tokens": [
+        "fail", "failed", "failure",
+        "reject", "rejected",
+        "block", "blocked",
+        "error", "errored",
+        "cancel", "cancelled", "canceled",
+        "discard", "discarded",
+        "abort", "aborted"
+      ]
+    },
+    "done": {
+      "description": "Successful / completed-OK markers. A done stage is terminal AND healthy. 'skip'/'skipped' fold into healthy-terminal so a skipped stage is preserved as finished history during reconciliation.",
+      "tokens": [
+        "done", "merged", "triaged", "emitted",
+        "complete", "completed",
+        "accept", "accepted",
+        "passed", "approved", "shipped",
+        "succeeded", "success",
+        "ready", "closed",
+        "skip", "skipped"
+      ]
+    },
+    "review": {
+      "description": "Parked-for-review markers — finished executing, awaiting a human/AI decision. NOT terminal: the work item is still in flight.",
+      "tokens": ["review", "reviewing", "awaiting"]
+    },
+    "queued": {
+      "description": "Queued / not-started markers — no agent attached yet. NOT terminal.",
+      "tokens": ["backlog", "pending", "queued", "todo", "icebox", "draft"]
+    },
+    "running": {
+      "description": "Actively-executing markers. Used to disambiguate a present-but-unknown status: a just-started agent often has no canonical mark yet and reads as running.",
+      "tokens": [
+        "running", "executing", "working",
+        "coding", "planning", "generating", "building",
+        "act", "in_progress", "inprogress", "progress", "started"
+      ]
+    },
+    "stuck": {
+      "description": "A stage explicitly marked stuck by an upstream (anomaly heuristic). Exposed via dedicated helpers (is_stuck / is_failure_or_stuck) so the anomaly detector keeps its reach without polluting the terminal check.",
+      "tokens": ["stuck"]
+    }
+  },
+  "classification_rules": {
+    "terminal": "done OR failed (review/queued/running are NOT terminal; a terminal stage is preserved during reconciliation)",
+    "failure_or_stuck": "failed OR stuck",
+    "running_fallback": "a present-but-unrecognized status reads as running (not terminal, not review, not queued); a falsy status is NOT running",
+    "active_fallback": "a missing status reads as active (a just-started agent often has no mark yet); false for terminal, review, and queued statuses"
+  }
+}
