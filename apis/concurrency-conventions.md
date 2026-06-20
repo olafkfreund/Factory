@@ -53,6 +53,14 @@ GCS) or, where a shared filesystem is required, an RWX volume.
   - Example: `aifactory/482/9d2c…/build/app.tar.zst`.
 - **References, not blobs:** the job-state `result`/`artifacts[]` carry **URIs**
   only; never inline large content into Postgres or the contract.
+- **Endpoint + credentials (env):** the store is reached over an S3 API. Services
+  read connection config from the environment (set on the pods by the cluster
+  MinIO deploy in `factory-gitops`); the shared client is
+  [`scripts/artifact_store.py`](../scripts/artifact_store.py):
+  - `S3_ENDPOINT` — e.g. `http://minio.factory.svc.cluster.local:9000`
+  - `S3_BUCKET` — default `factory-artifacts`
+  - `S3_ACCESS_KEY` / `S3_SECRET_KEY` — credentials (from the `minio-creds` Secret)
+  - `S3_REGION` — default `us-east-1` (MinIO ignores it; boto3 requires a value)
 - **Lifecycle:** apply a retention/TTL policy per `role` (e.g. logs 30d, evidence
   90d); evidence referenced by a VAL claim (RFC-0006) MUST outlive the claim.
 - **Workspace handoff:** a Phase-2 Job clones/fetches its inputs and writes
