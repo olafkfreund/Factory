@@ -137,6 +137,7 @@ human summary.
 | `execution` | PFactory | AIFactory | optional (AIFactory falls back to its defaults / own planning if absent) |
 | `tfactory` | PFactory | TFactory (via AIFactory handover) | optional (TFactory falls back to inference) |
 | `epic_context.house_standards` | PFactory (retrieves) | AIFactory/TFactory (follow), `standards_conformance` gate (verifies) | optional (RFC-0012; absent => no external standards to enforce) |
+| `deployment` | PFactory (discovers) | AIFactory/TFactory (honor risk/scan/gate + DRY-RUN policy), CFactory (surfaces) | optional (RFC-0013; absent => no deployment dimension) |
 
 A v2 contract **without** `execution`/`tfactory` is a valid signed plan that
 behaves like v1 plus richer correlation. A v2 contract **with** them is the full
@@ -163,6 +164,23 @@ retrieved and the fail-closed `standards_conformance` gate scores it
 `not_applicable` (never a false pass). `contract_version` stays `"2"` (additive,
 open object). See `$defs.house_standards` in
 `apis/task-contract.schema.json`.
+
+### `deployment` (optional, RFC-0013)
+
+`deployment` is an OPTIONAL, additive top-level block
+([RFC-0013](./0013-deployment-aware-planning.md)) carrying what PFactory
+discovered about how the change ships — the detected CI system and deploy
+mechanism, the target environments and `production_classification`, the
+`risk_class`-derived `required_scans` and `system_gates`, best-effort
+`dora_context` from the deployment-metrics MCP, a `readiness` checklist, and the
+DRY-RUN `deploy_verification` policy. Discovery degrades, never fabricates:
+`dora_context.available: false` means delivery metrics were unreachable — treated
+as UNKNOWN, never healthy — and every non-passing `readiness` check MUST carry a
+`reason`. Production deploys are **VAL-4 and never autonomous**: deploy
+verification stops at a dry-run/plan, and the real production apply is held behind
+the `human-approval` system gate. `contract_version` stays `"2"` (additive, open
+object). See `$defs.deployment` in `apis/task-contract.schema.json` and the
+deployment-metrics MCP contract in `apis/deployment-metrics.mcp.md`.
 
 ## 3. Signing & trust
 

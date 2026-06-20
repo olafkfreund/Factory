@@ -177,6 +177,44 @@ PROFILES: dict[str, Profile] = {
             "VAL-1": {"commands": ["mvn test"], "requires": ["mvn"]},
         },
     },
+    # RFC-0013 deployment-aware verification. A "deploy" artifact is a change that
+    # ships through a CI/CD pipeline (pipeline definitions, GitOps manifests).
+    # Deploy verification is DRY-RUN by policy: VAL-2 is the pipeline/manifest
+    # dry-run; VAL-3 applies to a DISPOSABLE (ephemeral) target the pipeline owns;
+    # there is deliberately NO autonomous VAL-4 — a production apply is never run
+    # by the fleet (it is held behind the RFC-0013 human-approval system gate).
+    "deploy": {
+        "detect": [
+            "**/.github/workflows/*deploy*.y*ml",
+            "**/.gitlab-ci.yml",
+            "**/azure-pipelines.yml",
+            "**/argocd/**/*.y*ml",
+            "**/Application*.yaml",
+        ],
+        # RFC-0007: an ephemeral deploy target the pipeline provisions and tears down.
+        "credential_class": "C-ephemeral-target",
+        "levels": {
+            "VAL-0": {
+                "commands": [
+                    "pipeline lint (actionlint / gitlab-ci-lint)",
+                    "manifest schema check",
+                ],
+                "requires": ["ci_linter"],
+            },
+            "VAL-2": {
+                "commands": ["deploy dry-run (helm template / terraform plan / kubectl --dry-run)"],
+                "requires": ["deploy_tool", "container_runtime"],
+                "risk": "dry-run only; pipeline not executed against any target",
+            },
+            "VAL-3": {
+                "commands": ["apply to ephemeral target + assert healthy + teardown"],
+                "requires": ["sandbox_target", "credentials"],
+                "risk": "applied only to a disposable target; production rollout unproven",
+            },
+            # No VAL-4 entry by design: production deploy is NEVER autonomous
+            # (RFC-0013). The planned ladder therefore caps at VAL-3.
+        },
+    },
     # Fallback: we can always at least try to build/test if commands are given,
     # but we never assume more than VAL-1 without a profile.
     "generic": {
@@ -189,7 +227,17 @@ PROFILES: dict[str, Profile] = {
 }
 
 # Detection priority (most specific / most effectful first).
-_ORDER = ["ansible", "terraform", "kubernetes", "java", "go", "rust", "node-web", "python-library"]
+_ORDER = [
+    "deploy",
+    "ansible",
+    "terraform",
+    "kubernetes",
+    "java",
+    "go",
+    "rust",
+    "node-web",
+    "python-library",
+]
 
 _LADDER = ["VAL-0", "VAL-1", "VAL-2", "VAL-3", "VAL-4"]
 
@@ -258,6 +306,12 @@ def plan_verification(files: list[str], available: set[str]) -> VerificationPlan
 
 
 # --------------------------------------------------------------------------- #
+def _require(cond: bool, msg: str) -> None:
+    """Lint-clean assert for the self-tests (avoids S101 under the strict bar)."""
+    if not cond:
+        raise AssertionError(msg)
+
+
 def _test() -> None:
     ans = ["roles/web/tasks/main.yml", "molecule/default/molecule.yml"]
 
@@ -302,6 +356,39 @@ def _test() -> None:
     for t in ("go", "rust", "python-library", "node-web", "java", "generic"):
         assert credential_class_for(t) is None, t
     assert credential_class_for("unknown-type") is None
+
+    # RFC-0013 (#151): deploy artifacts cap dry-run verification at VAL-2/VAL-3;
+    # there is NO autonomous VAL-4 (production apply is never run by the fleet).
+    deploy_files = [".github/workflows/deploy.yml", "argocd/app.yaml"]
+    _require(detect_artifact_type(deploy_files) == "deploy", str(deploy_files))
+    _require(detect_artifact_type([".gitlab-ci.yml"]) == "deploy", "gitlab-ci")
+
+    # The planned ladder tops out at VAL-3 — production (VAL-4) is never planned.
+    p = plan_verification(deploy_files, available={"ci_linter"})
+    _require(p["target_level"] == "VAL-3", str(p))
+    _require("VAL-4" not in {lvl["level"] for lvl in p["levels"]}, str(p))
+    by = {lvl["level"]: lvl for lvl in p["levels"]}
+    # Only the pipeline linter present: VAL-0 achievable, dry-run/ephemeral honest gaps.
+    _require(by["VAL-0"]["status"] == "planned", str(by["VAL-0"]))
+    _require("deploy_tool" in by["VAL-2"]["reason"], str(by["VAL-2"]))
+    _require("sandbox_target" in by["VAL-3"]["reason"], str(by["VAL-3"]))
+
+    # Add the deploy tool + a runtime: the VAL-2 dry-run is achievable; VAL-3 not.
+    avail = {"ci_linter", "deploy_tool", "container_runtime"}
+    p = plan_verification(deploy_files, available=avail)
+    _require(p["achievable_level"] == "VAL-2", str(p))
+    not_run = {lvl["level"] for lvl in p["levels"] if lvl["status"] == "not_run"}
+    _require(not_run == {"VAL-3"}, str(p))
+
+    # Provision a disposable target + creds: VAL-3 (ephemeral apply) achievable;
+    # still no VAL-4 — production apply remains outside the autonomous ladder.
+    full = {"ci_linter", "deploy_tool", "container_runtime", "sandbox_target", "credentials"}
+    p = plan_verification(deploy_files, available=full)
+    _require(p["achievable_level"] == "VAL-3", str(p))
+    _require(p["target_level"] == "VAL-3", str(p))
+
+    # Deploy's credentialed level reaches an ephemeral target (RFC-0007 class C).
+    _require(credential_class_for("deploy") == "C-ephemeral-target", "deploy class")
 
     print("verification_profiles self-tests: passed")
 
