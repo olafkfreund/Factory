@@ -90,12 +90,56 @@ flowchart TD
   the Job pod runs the existing `run.py` (AIFactory/TFactory) or PFactory
   `process()`, gets its own resources + network (no port/name/`.git` collisions),
   clones fresh, writes results to Postgres + object store, and exits. Reuses
-  RFC-0005 substrate + TFactory `kube_sandbox` (`tfsbx-<uuid>`).
+  RFC-0005 substrate + the live `kube_sandbox` (AIFactory `core/kube_sandbox.py`,
+  TFactory `tools/runners/kube_sandbox.py`). **The Job image is the thin nix-base
+  image, not a toolchain-bundled image — see §4.1.**
 - **State**: Postgres for job/session/status (replaces `_sessions` /
   `running_tasks` dicts and the SQLite/emptyDir stores); object storage (S3/MinIO)
   or an RWX volume for workspaces + artifacts (replaces RWO local-path).
 - **Autoscaling**: Redis queue + KEDA scales Job dispatch on queue depth; a global
   concurrency cap and per-task resource requests govern fan-out.
+
+### 4.1 Job pods are Nix-provisioned per task (RFC-0005 Tier A) — NORMATIVE
+
+Phase-2 Job pods MUST get their toolchain from **Nix per task**, not from a
+toolchain-bundled image. This converges RFC-0016 Phase 2 with
+[RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) Tier A —
+they are the **same Job substrate**, so we build it once. The mechanism already
+exists, is wired default-off, and is **proven live in TFactory (2026-06-17)**;
+this RFC makes it the Phase-2 default rather than re-bundling toolchains.
+
+**Mechanism (the chosen path, not a proposal):**
+
+1. **Thin nix-base Job image.** The Job runs `tfactory-runner-nix`
+   (`FROM nixos/nix` + flakes + `filter-syscalls = false`, **nothing else** — no
+   `apk add go/rust/maven/jdk`). The control-plane image shrinks to no bundled
+   toolchains; every toolchain comes from the per-task flake.
+2. **Per-task flake from the contract.** `nix_provisioner.generate_flake()` derives
+   a `flake.nix` (pinned to a **full nixpkgs commit rev**, never a branch) purely
+   from the contract's RFC-0005 `environment` block, written into the co-mounted
+   worktree. Build and verify share the same generated `flake.lock`, so the build
+   env and the verify env **cannot drift**.
+3. **Materialize at Job start.** The Job executes the task's build/verify commands
+   via `nix develop path:/work#default --command …` (the `path:` ref is mandatory —
+   a bare ref triggers Nix's git fetcher and breaks on the Job-root vs
+   worktree-uid mismatch). Toolchains realise from substituters; only those tools
+   land on `PATH`.
+4. **Warm shared `/nix/store` (the one real gap to close).** Today each Job's
+   `/nix/store` is ephemeral, so every Job cold-fetches the closure. Phase 2 MUST
+   mount a **warm RWX `/nix/store` (+ `/nix/var`) PVC** across Jobs, backed by
+   `cache.nixos.org` **+ a fleet cachix** substituter, with a size-capped
+   `nix store gc` CronJob. This is what makes "second run is instant" real.
+5. **Materialize-or-HALT.** Run `environment.proof.verify` (`cargo --version`, …)
+   first; a missing toolchain surfaces as a structured `environment_unavailable`
+   HALT (RFC-0005 §3.4 / RFC-0001a), never a silent fail.
+
+**Why this is the design law:** it (a) kills the Trivy-CVE-on-fat-base problem —
+the `apk add` toolchain block + its CVE-patch lines leave the control-plane image
+entirely; (b) ends missing-toolchain build failures and `UnsupportedLanguageError`
+dead-ends — any declared toolchain materializes on demand; (c) guarantees
+build/verify reproducibility via one pinned flake; (d) GCs cleanly. Fallbacks
+remain (RFC-0005 Tier B catalog image → Tier C on-demand build → Tier D
+setup-script) behind the same `factory-sandbox` interface for the long tail.
 
 ## 5. Per-service plan
 
@@ -109,13 +153,16 @@ flowchart TD
   admission control. (b) Eliminate shared base-repo `.git` contention — clone or
   worktree-per-Job in an isolated checkout, or a cross-process git lock. (c)
   **Claude token pool** so concurrent builds don't collide on one OAuth token /
-  rate limit. (d) `running_tasks` → Postgres. (e) `run.py` as a k8s Job.
+  rate limit. (d) `running_tasks` → Postgres. (e) `run.py` as a **Nix-provisioned
+  k8s Job** (§4.1) — live-validate the already-wired `nixjob` path, then shrink the
+  coder Dockerfile to the thin control-plane image.
 - **TFactory**: (a) **dynamic/auto-free ports** (the `KubernetesRuntime
   local_port=0` path already exists — make it the default) + **per-task compose
   project namespace** + **per-task runtime container names** (replace fixed
   `tfactory-run-{target}`). (b) Admission control + per-task resource requests so
-  N test containers don't exhaust the pod. (c) `run.py` as a k8s Job (extend
-  `kube_sandbox`). (d) State → Postgres (replace SQLite emptyDir). This also
+  N test containers don't exhaust the pod. (c) `run.py` as a **Nix-provisioned k8s
+  Job** (§4.1) — the `nixjob` path is already proven live here (2026-06-17); make it
+  the default. (d) State → Postgres (replace SQLite emptyDir). This also
   mitigates [#464](https://github.com/olafkfreund/TFactory/issues/464): resource
   starvation under naive in-pod concurrency is a cause of lanes never reaching a
   verdict.
@@ -126,10 +173,18 @@ flowchart TD
    concurrent now without the full Job model: Postgres-backed state, object/RWX
    artifacts, admission caps, PFactory event-loop offload, AIFactory `.git`/token
    fixes, TFactory ports/namespacing.
-2. **Phase 2 — Control/execution split → Job-per-task.** Dispatcher + RBAC +
-   result-callback convention; `run.py`/`process()` wrapped as k8s Jobs (reuse
-   RFC-0005 + `kube_sandbox`). Control plane scales to N replicas. Deploys stop
-   killing running jobs.
+2. **Phase 2 — Control/execution split → Nix-provisioned Job-per-task.** Dispatcher
+   + RBAC + result-callback convention; `run.py`/`process()` wrapped as k8s Jobs on
+   the **thin nix-base image with per-task `nix develop`** (§4.1, RFC-0005 Tier A —
+   reuse `kube_sandbox` + `nix_provisioner`). Control plane scales to N replicas;
+   deploys stop killing running jobs. Concrete enabling work (mostly consolidate +
+   flip-on, since the path is wired default-off and live-proven in TFactory):
+   publish `tfactory-runner-nix` to ghcr + add the fleet cachix substituter;
+   provision the sandbox ServiceAccount/Role + a **warm RWX `/nix/store` PVC** in
+   gitops; live-validate the AIFactory `nixjob` path (flip
+   `AIFACTORY_SANDBOX_GATES=1 / BACKEND=nixjob`); then **shrink the coder Dockerfile**
+   to the thin control-plane image (drop the six bundled toolchains + CVE patches)
+   and make `nixjob` the default backend.
 3. **Phase 3 — Autoscaling + concurrency budget.** Redis + KEDA scale on queue
    depth; global cap + per-task resources; concurrency cost folded into RFC-0014.
 
@@ -142,6 +197,12 @@ flowchart TD
   (detached) and results still land in Postgres/object store.
 - **Backpressure proof:** submit beyond the cap; excess queues (no OOM), KEDA
   scales out, queue drains.
+- **Nix-per-task proof (§4.1):** a task declaring a non-default toolchain (e.g. Go,
+  Rust) builds + verifies green in a thin nix-base Job with NO toolchain baked into
+  the image; the control-plane image carries no `apk`-added toolchains; a warm
+  `/nix/store` makes the second same-toolchain Job materially faster than the first;
+  a missing/undeclared toolchain HALTs with `environment_unavailable` (never a
+  silent fail).
 
 ## 8. Adoption (tracked by the epic)
 
