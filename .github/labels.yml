@@ -1,0 +1,86 @@
+# Canonical Factory label set (RFC-0011 + carried-through governance/descriptive).
+#
+# This is the single source of truth for Factory intake/routing labels.
+# - On GitHub it is reconciled by .github/workflows/label-sync.yml.
+# - On GitLab / Azure DevOps it is created/synced by scripts/sync_labels.py
+#   (via the AIFactory GitProvider.create_label abstraction).
+#
+# Colors are 6-hex (no leading '#') so they work with both micnncim/action-label-syncer
+# and the GitLab/ADO REST APIs (sync_labels.py adds the '#' where a host needs it).
+
+# --- RFC-0011 difficulty tiers (drive model/planning/human-gate/VAL/merge) ---
+- name: "factory:low"
+  color: "0e8a16"
+  description: "RFC-0011 tier: cheap/local model (ollama->haiku), skip planning, no human, auto-merge when green."
+
+- name: "factory:medium"
+  color: "fbca04"
+  description: "RFC-0011 tier: sonnet, skip-lite planning, async human approval, VAL-2."
+
+- name: "factory:hard"
+  color: "b60205"
+  description: "RFC-0011 tier: opus, PFactory full decompose, blocking human approval, VAL-3 (+equivalence if rewrite). Rewrites force this tier."
+
+# --- RFC-0011 intake lifecycle (idempotency + never-silently-drop) ---
+- name: "factory:queued"
+  color: "1d76db"
+  description: "RFC-0011: poller accepted this item (idempotency marker; excluded from re-fetch)."
+
+- name: "factory:failed"
+  color: "d93f0b"
+  description: "RFC-0011: terminal intake/routing failure; see the explanatory comment. Item never silently dropped."
+
+# --- Governance / routing (carried through; existing behaviour) ---
+- name: "pfactory"
+  color: "1a7f37"
+  description: "Governance: PFactory enriches/decomposes into a governed plan."
+
+- name: "handoff:aifactory"
+  color: "1f6feb"
+  description: "Routing: handed off to AIFactory to build."
+
+- name: "handoff:tfactory"
+  color: "9e6a03"
+  description: "Routing: handed off to TFactory to verify."
+
+- name: "epic"
+  color: "6f42c1"
+  description: "Epic: large body of work tracked via sub-issues."
+
+# --- On-label fast paths (existing GH Actions intake; kept alongside the poller) ---
+- name: "pfactory:run"
+  color: "1a7f37"
+  description: "PFactory picks up and enriches/decomposes into a governed plan."
+
+- name: "aifactory:run"
+  color: "1f6feb"
+  description: "AIFactory picks up and runs its build pipeline."
+
+- name: "tfactory:run"
+  color: "9e6a03"
+  description: "TFactory generates and grades tests for the change."
+
+# --- Descriptive (passed through to the contract; do NOT change tier routing) ---
+- name: "type:feature"
+  color: "a2eeef"
+  description: "Descriptive: new feature or capability."
+
+- name: "type:bugfix"
+  color: "d73a4a"
+  description: "Descriptive: bug fix."
+
+- name: "type:chore"
+  color: "cfd3d7"
+  description: "Descriptive: maintenance / housekeeping."
+
+- name: "plan-type:create"
+  color: "c5def5"
+  description: "Descriptive: greenfield create (change_mode=create)."
+
+- name: "plan-type:modify"
+  color: "c5def5"
+  description: "Descriptive: modify existing code (change_mode=modify)."
+
+- name: "plan-type:migration"
+  color: "e99695"
+  description: "Descriptive: rewrite/migration (change_mode=migration). Forces factory:hard + equivalence (RFC-0011/0010)."
