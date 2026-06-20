@@ -20,3 +20,5 @@ nav:
   - API & Contracts: api.md
   - GitHub Agentic Integration: github-agentic.md
   - Catalog & entities: catalog.md
+  - RFCs:
+      - RFC-0011 Label-Driven Intake & Difficulty Tiers: https://factory.freundcloud.com/rfc/label-driven-intake/
