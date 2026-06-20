@@ -88,7 +88,7 @@ def nix_develop_wrap(commands: list[str]) -> str:
     bare flake ref triggers Nix's git fetcher and breaks on the Job-root vs
     worktree-uid mismatch (RFC-0016 §4.1 gotcha)."""
     joined = " && ".join(commands)
-    return f'nix develop path:/work#default --command bash -c {_shq(joined)}'
+    return f"nix develop path:/work#default --command bash -c {_shq(joined)}"
 
 
 def _shq(s: str) -> str:
