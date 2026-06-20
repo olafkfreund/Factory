@@ -45,7 +45,7 @@ from pathlib import Path
 DEFAULT_BUCKET = "factory-artifacts"
 # service / role enums match job-state.schema.json (artifacts[].role).
 SERVICES = ("pfactory", "aifactory", "tfactory")
-ROLES = ("workspace", "build", "test-report", "evidence", "log")
+ROLES = ("workspace", "build", "test-report", "evidence", "log", "doc")
 
 
 def _clean_segment(value: str | int) -> str:
@@ -68,7 +68,7 @@ class ArtifactRef:
 
     service: str  # pfactory | aifactory | tfactory
     job_id: str
-    role: str  # workspace | build | test-report | evidence | log
+    role: str  # workspace | build | test-report | evidence | log | doc
     correlation_key: str | int | None = None
     path: str | None = None  # optional sub-path under the role prefix
     bucket: str = DEFAULT_BUCKET

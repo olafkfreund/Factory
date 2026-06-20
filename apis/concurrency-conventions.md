@@ -83,7 +83,8 @@ GCS) or, where a shared filesystem is required, an RWX volume.
 - **Key layout (stable, joinable):**
   `<service>/<correlation_key>/<job_id>/<role>[/<path>]`
   - `service ∈ {pfactory, aifactory, tfactory}`; `role ∈ {workspace, build,
-    test-report, evidence, log}` (matches `artifacts[].role` in the schema).
+    test-report, evidence, log, doc}` (matches `artifacts[].role` in the schema;
+    `doc` = rendered plan/spec/audit markdown).
   - Example: `aifactory/482/9d2c…/build/app.tar.zst`.
 - **References, not blobs:** the job-state `result`/`artifacts[]` carry **URIs**
   only; never inline large content into Postgres or the contract.
