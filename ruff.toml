@@ -1,0 +1,18 @@
+# Factory hub ruff config.
+#
+# Factory is the baseline OWNER (standards/ruff.toml is the single source of
+# truth for the whole fleet — see standards/coding-standards.md section 1.1).
+# Per the standard, services may only TIGHTEN. The hub therefore points directly
+# at its own canonical baseline rather than vendoring a second copy that could
+# drift from the source of truth in the same repo.
+extend = "standards/ruff.toml"
+
+# Repo-local scope: this hub's first-class Python lives under scripts/. The
+# prototypes/, backups/, and review/ trees are scratch/exploratory and are not
+# governed by the strict bar yet (legacy ratchet applies on touch via CI).
+extend-exclude = [
+    "prototypes",
+    "backups",
+    "review",
+    ".ruff_cache",
+]

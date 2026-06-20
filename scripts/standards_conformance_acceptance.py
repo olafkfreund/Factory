@@ -106,9 +106,7 @@ def _negative_unwaived_deviation() -> dict:
     """A declared deviation whose waiver hash matches no retrieved standard."""
     c = _positive_contract()
     hs = c["epic_context"]["house_standards"]
-    hs["deviations"] = [
-        {"rule": "skip-mypy", "waiver": {"content_hash": "sha256:does-not-match"}}
-    ]
+    hs["deviations"] = [{"rule": "skip-mypy", "waiver": {"content_hash": "sha256:does-not-match"}}]
     return c
 
 

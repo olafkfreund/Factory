@@ -92,9 +92,7 @@ class Manifest:
 def _needs_browser(m: Manifest) -> bool:
     """A browser lane is implied by a browser system package or a playwright/
     chromium reference in the verify commands or proof checks."""
-    hay = " ".join(
-        m.system_packages + m.verify_commands + m.proof_verify
-    ).lower()
+    hay = " ".join(m.system_packages + m.verify_commands + m.proof_verify).lower()
     return any(t in hay for t in ("playwright", "chromium", "browser"))
 
 
@@ -110,10 +108,7 @@ _DROP_SYSTEM_PKGS = {"chromium", "playwright", "browser", "playwright-driver"}
 
 
 def _system_pkg_attrs(m: Manifest) -> list[str]:
-    return [
-        p for p in m.system_packages
-        if p.lower() not in _DROP_SYSTEM_PKGS
-    ]
+    return [p for p in m.system_packages if p.lower() not in _DROP_SYSTEM_PKGS]
 
 
 def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS) -> str:
@@ -151,11 +146,10 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS) -> str:
     env_lines = ""
     if browser:
         let_lines = (
-            "\n      fontsConf = pkgs.makeFontsConf "
-            "{ fontDirectories = [ pkgs.dejavu_fonts ]; };"
+            "\n      fontsConf = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };"
         )
         env_lines = (
-            '\n        # Nix-provided, version-matched browsers — no network '
+            "\n        # Nix-provided, version-matched browsers — no network "
             "download.\n"
             '        PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";\n'
             '        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";\n'
@@ -206,8 +200,12 @@ def _python_libs(m: Manifest) -> list[str]:
 
 
 def nix_develop_argv(
-    flake_dir: str, commands: list[str], *, binary: str = "nix",
-    attr: str = "default", path_ref: bool = False,
+    flake_dir: str,
+    commands: list[str],
+    *,
+    binary: str = "nix",
+    attr: str = "default",
+    path_ref: bool = False,
 ) -> list[str]:
     """argv that materializes `flake_dir`'s devShell and runs `commands` in it.
 
@@ -226,8 +224,13 @@ def nix_develop_argv(
     joined = " && ".join(commands)
     ref = f"path:{flake_dir}#{attr}" if path_ref else f"{flake_dir}#{attr}"
     return [
-        binary, "develop", ref,
-        "--command", "bash", "-c", joined,
+        binary,
+        "develop",
+        ref,
+        "--command",
+        "bash",
+        "-c",
+        joined,
     ]
 
 
@@ -272,8 +275,11 @@ def _test() -> None:
     assert "pytest" in f2, f2
 
     # 3. system packages pass through (minus browser drops).
-    env_sys = {"language": "python", "system_packages": ["pkg-config", "openssl"],
-               "verify_commands": ["pytest"]}
+    env_sys = {
+        "language": "python",
+        "system_packages": ["pkg-config", "openssl"],
+        "verify_commands": ["pytest"],
+    }
     f3 = generate_flake(env_sys)
     assert "pkgs.pkg-config" in f3 and "pkgs.openssl" in f3, f3
 
@@ -304,6 +310,7 @@ def _test() -> None:
     print("nix_provisioner self-tests: passed")
     # Emit a sample for eyeballing when run with --print.
     import sys
+
     if "--print" in sys.argv:
         print("\n--- sample generated flake (browser manifest) ---\n")
         print(flake)

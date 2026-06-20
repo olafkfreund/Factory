@@ -37,11 +37,14 @@ def normalize_verification(block: dict | None) -> dict:
         return {
             "target_level": (block or {}).get("target_level", "VAL-0"),
             "achieved_level": "VAL-0",
-            "levels": [{
-                "level": "VAL-0", "status": "not_run",
-                "reason": "no verification block declared by the producer",
-                "risk": "nothing was proven; treat as unverified",
-            }],
+            "levels": [
+                {
+                    "level": "VAL-0",
+                    "status": "not_run",
+                    "reason": "no verification block declared by the producer",
+                    "risk": "nothing was proven; treat as unverified",
+                }
+            ],
             "claim": "NOT VERIFIED — no verification was declared; treat as unproven.",
             "_gate": {"violations": ["missing_verification_block"], "downgraded": True},
         }
@@ -75,7 +78,8 @@ def normalize_verification(block: dict | None) -> dict:
     ]
     if achieved == "VAL-0" and not passed:
         claim = "NOT VERIFIED beyond static at best — " + (
-            "; ".join(gaps) if gaps else "no level passed")
+            "; ".join(gaps) if gaps else "no level passed"
+        )
     else:
         claim = f"Verified to {achieved}."
         if gaps:
@@ -94,14 +98,17 @@ def normalize_verification(block: dict | None) -> dict:
 # --------------------------------------------------------------------------- #
 def _test() -> None:
     # 1. Overclaim is downgraded to the truth.
-    r = normalize_verification({
-        "target_level": "VAL-3", "achieved_level": "VAL-3",
-        "levels": [
-            {"level": "VAL-0", "status": "passed"},
-            {"level": "VAL-2", "status": "passed"},
-            {"level": "VAL-3", "status": "not_run", "reason": "no sandbox target"},
-        ],
-    })
+    r = normalize_verification(
+        {
+            "target_level": "VAL-3",
+            "achieved_level": "VAL-3",
+            "levels": [
+                {"level": "VAL-0", "status": "passed"},
+                {"level": "VAL-2", "status": "passed"},
+                {"level": "VAL-3", "status": "not_run", "reason": "no sandbox target"},
+            ],
+        }
+    )
     assert r["achieved_level"] == "VAL-2", r
     assert any(v.startswith("overclaim") for v in r["_gate"]["violations"]), r
     assert "NOT verified: VAL-3 not_run" in r["claim"], r["claim"]
@@ -111,31 +118,40 @@ def _test() -> None:
     assert r["achieved_level"] == "VAL-0" and "NOT VERIFIED" in r["claim"], r
 
     # 3. A failure caps the ceiling (cannot "pass" above a broken floor).
-    r = normalize_verification({
-        "target_level": "VAL-2", "achieved_level": "VAL-2",
-        "levels": [
-            {"level": "VAL-0", "status": "failed", "reason": "lint errors"},
-            {"level": "VAL-2", "status": "passed"},
-        ],
-    })
+    r = normalize_verification(
+        {
+            "target_level": "VAL-2",
+            "achieved_level": "VAL-2",
+            "levels": [
+                {"level": "VAL-0", "status": "failed", "reason": "lint errors"},
+                {"level": "VAL-2", "status": "passed"},
+            ],
+        }
+    )
     assert r["achieved_level"] == "VAL-0", r
 
     # 4. Missing reason on a gap is injected + flagged.
-    r = normalize_verification({
-        "target_level": "VAL-2", "achieved_level": "VAL-0",
-        "levels": [{"level": "VAL-2", "status": "not_run"}],
-    })
+    r = normalize_verification(
+        {
+            "target_level": "VAL-2",
+            "achieved_level": "VAL-0",
+            "levels": [{"level": "VAL-2", "status": "not_run"}],
+        }
+    )
     assert any(v.startswith("missing_reason") for v in r["_gate"]["violations"]), r
     assert r["levels"][0]["reason"] == "(no reason provided)", r
 
     # 5. Honest happy path: no overclaim, clean claim.
-    r = normalize_verification({
-        "target_level": "VAL-2", "achieved_level": "VAL-2",
-        "levels": [
-            {"level": "VAL-0", "status": "passed"},
-            {"level": "VAL-2", "status": "passed", "evidence": "idempotence: 0 changed"},
-        ],
-    })
+    r = normalize_verification(
+        {
+            "target_level": "VAL-2",
+            "achieved_level": "VAL-2",
+            "levels": [
+                {"level": "VAL-0", "status": "passed"},
+                {"level": "VAL-2", "status": "passed", "evidence": "idempotence: 0 changed"},
+            ],
+        }
+    )
     assert r["achieved_level"] == "VAL-2" and not r["_gate"]["downgraded"], r
     assert r["claim"] == "Verified to VAL-2.", r["claim"]
 

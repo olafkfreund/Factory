@@ -123,8 +123,10 @@ def evaluate_standards_conformance(contract: dict | None) -> dict:
             "status": FAIL,
             "reasons": [f"gate_error: {type(exc).__name__}: {exc}"],
             "checks": {
-                "retrieved": FAIL, "declared": FAIL,
-                "waived": FAIL, "executed": FAIL,
+                "retrieved": FAIL,
+                "declared": FAIL,
+                "waived": FAIL,
+                "executed": FAIL,
             },
         }
 
@@ -142,7 +144,7 @@ def _evaluate(contract: dict | None) -> dict:
         return {
             "status": FAIL,
             "reasons": ["malformed_contract: not an object"],
-            "checks": {k: FAIL for k in checks},
+            "checks": dict.fromkeys(checks, FAIL),
         }
 
     epic_context = contract.get("epic_context")
@@ -175,8 +177,7 @@ def _evaluate(contract: dict | None) -> dict:
         }
 
     sources = [
-        s for s in _as_list(house.get("sources"))
-        if isinstance(s, dict) and s.get("content_hash")
+        s for s in _as_list(house.get("sources")) if isinstance(s, dict) and s.get("content_hash")
     ]
     if not sources:
         return {
@@ -264,11 +265,14 @@ def _evaluate(contract: dict | None) -> dict:
 def _baseline(tools, hash_="sha256:abc"):
     return {
         "available": True,
-        "sources": [{
-            "source": "baseline", "kind": "conventions",
-            "conventions": {"code_quality_tools": tools},
-            "content_hash": hash_,
-        }],
+        "sources": [
+            {
+                "source": "baseline",
+                "kind": "conventions",
+                "conventions": {"code_quality_tools": tools},
+                "content_hash": hash_,
+            }
+        ],
     }
 
 
@@ -293,15 +297,21 @@ def _test() -> None:
     contract = {
         "epic_context": {"house_standards": _baseline(["ruff", "mypy"])},
         "required_commands": ["uv", "ruff", "mypy", "pytest"],
-        "verification": {"levels": [
-            {"level": "VAL-0", "status": "passed", "ran": ["ruff", "mypy"]},
-            {"level": "VAL-1", "status": "passed", "ran": ["pytest"]},
-        ]},
+        "verification": {
+            "levels": [
+                {"level": "VAL-0", "status": "passed", "ran": ["ruff", "mypy"]},
+                {"level": "VAL-1", "status": "passed", "ran": ["pytest"]},
+            ]
+        },
     }
     r = evaluate_standards_conformance(contract)
     assert r["status"] == PASS, r
-    assert r["checks"] == {"retrieved": PASS, "declared": PASS,
-                           "waived": NOT_APPLICABLE, "executed": PASS}, r
+    assert r["checks"] == {
+        "retrieved": PASS,
+        "declared": PASS,
+        "waived": NOT_APPLICABLE,
+        "executed": PASS,
+    }, r
 
     # 5. NEGATIVE (the key case): standard retrieved but ignored in the config.
     ignored = dict(contract, required_commands=["uv", "pytest"])  # no ruff/mypy
@@ -313,9 +323,11 @@ def _test() -> None:
     not_run = {
         "epic_context": {"house_standards": _baseline(["ruff"])},
         "required_commands": ["ruff", "pytest"],
-        "verification": {"levels": [
-            {"level": "VAL-0", "status": "not_run", "reason": "skipped lint"},
-        ]},
+        "verification": {
+            "levels": [
+                {"level": "VAL-0", "status": "not_run", "reason": "skipped lint"},
+            ]
+        },
     }
     r = evaluate_standards_conformance(not_run)
     assert r["status"] == FAIL and r["checks"]["executed"] == FAIL, r
@@ -323,10 +335,12 @@ def _test() -> None:
 
     # 7. Deviation without a matching waiver -> FAIL.
     dev = {
-        "epic_context": {"house_standards": {
-            **_baseline(["ruff"]),
-            "deviations": [{"rule": "no-ruff-here", "waiver": {"content_hash": "sha256:nope"}}],
-        }},
+        "epic_context": {
+            "house_standards": {
+                **_baseline(["ruff"]),
+                "deviations": [{"rule": "no-ruff-here", "waiver": {"content_hash": "sha256:nope"}}],
+            }
+        },
         "required_commands": ["ruff"],
         "verification": {"levels": [{"level": "VAL-0", "status": "passed", "ran": ["ruff"]}]},
     }
@@ -335,10 +349,12 @@ def _test() -> None:
 
     # 8. Deviation WITH a matching waiver hash -> passes the waiver check.
     ok_dev = {
-        "epic_context": {"house_standards": {
-            **_baseline(["ruff"], hash_="sha256:abc"),
-            "deviations": [{"rule": "x", "waiver": {"content_hash": "sha256:abc"}}],
-        }},
+        "epic_context": {
+            "house_standards": {
+                **_baseline(["ruff"], hash_="sha256:abc"),
+                "deviations": [{"rule": "x", "waiver": {"content_hash": "sha256:abc"}}],
+            }
+        },
         "required_commands": ["ruff"],
         "verification": {"levels": [{"level": "VAL-0", "status": "passed", "ran": ["ruff"]}]},
     }
@@ -350,11 +366,21 @@ def _test() -> None:
     assert r["status"] == FAIL, r
 
     # 10. Only advisory (backstage) source, no checkable tools -> pass (N/A checks).
-    adv = {"epic_context": {"house_standards": {
-        "available": True,
-        "sources": [{"source": "backstage", "kind": "component",
-                     "entity_ref": "component:default/x", "content_hash": "sha256:z"}],
-    }}}
+    adv = {
+        "epic_context": {
+            "house_standards": {
+                "available": True,
+                "sources": [
+                    {
+                        "source": "backstage",
+                        "kind": "component",
+                        "entity_ref": "component:default/x",
+                        "content_hash": "sha256:z",
+                    }
+                ],
+            }
+        }
+    }
     r = evaluate_standards_conformance(adv)
     assert r["status"] == PASS and r["checks"]["declared"] == NOT_APPLICABLE, r
 

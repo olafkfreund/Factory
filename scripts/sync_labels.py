@@ -55,9 +55,9 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent.parent / ".github" / "labels.yml"
 
@@ -351,8 +351,13 @@ def _require(args, field: str):
 def _selftest() -> int:
     labels = load_manifest()
     names = {lb.name for lb in labels}
-    for required in ("factory:low", "factory:medium", "factory:hard",
-                     "factory:queued", "factory:failed"):
+    for required in (
+        "factory:low",
+        "factory:medium",
+        "factory:hard",
+        "factory:queued",
+        "factory:failed",
+    ):
         assert required in names, f"manifest missing {required}"
     low = next(lb for lb in labels if lb.name == "factory:low")
     assert low.color and low.description, "factory:low must have color + description"
@@ -374,7 +379,9 @@ def _selftest() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Sync Factory labels to GitLab / Azure DevOps (RFC-0011).")
+    ap = argparse.ArgumentParser(
+        description="Sync Factory labels to GitLab / Azure DevOps (RFC-0011)."
+    )
     ap.add_argument("--provider", choices=["gitlab", "azure_devops"])
     ap.add_argument("--project", help="GitLab project path or ADO project name")
     ap.add_argument("--org", help="ADO org URL, e.g. https://dev.azure.com/myorg")
@@ -382,7 +389,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     group = ap.add_mutually_exclusive_group()
     group.add_argument("--apply", action="store_true", help="Perform writes (default is dry-run)")
-    group.add_argument("--dry-run", action="store_true", help="Print intended changes only (default)")
+    group.add_argument(
+        "--dry-run", action="store_true", help="Print intended changes only (default)"
+    )
     ap.add_argument("--selftest", action="store_true", help="Run offline self-tests and exit")
     args = ap.parse_args(argv)
 

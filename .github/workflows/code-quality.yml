@@ -1,0 +1,118 @@
+name: code-quality (ratchet)
+
+# Factory code-quality ratchet (epic Factory#154; issues #156, #161).
+#
+# Per standards/coding-standards.md section 4.6, the strict bar runs on the PR
+# DIFF, not the whole repo: legacy hotspots are allowed until touched, but any
+# Python file a PR changes must pass the full shared baseline (ruff strict select
+# set + mypy --strict). A whole-repo `ruff format --check` is also enforced
+# because formatting is cheap, mechanical, and already clean.
+#
+# The hub owns standards/ — these jobs reference standards/ruff.toml /
+# standards/mypy.ini directly via the vendored-at-root ruff.toml / mypy.ini.
+
+on:
+  pull_request:
+    paths:
+      - "**.py"
+      - "ruff.toml"
+      - "mypy.ini"
+      - "standards/**"
+      - ".github/workflows/code-quality.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ratchet:
+    name: ruff + mypy on changed Python (diff-scoped, blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the merge-base to diff the PR against its target branch.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pin the toolchain (standards section 4.5)
+        run: pip install "ruff==0.15.17" "mypy==1.18.2"
+
+      - name: Collect changed Python files
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Added/Copied/Modified/Renamed (drop deletions) Python files in the diff.
+          git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" \
+            | grep -E '\.py$' \
+            | { grep -Ev '^(prototypes|backups|review)/' || true; } > changed_py.txt || true
+          echo "----- changed Python files -----"
+          cat changed_py.txt || true
+          if [ -s changed_py.txt ]; then
+            echo "have_files=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_files=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: ruff check (strict baseline, changed files only)
+        if: steps.changed.outputs.have_files == 'true'
+        run: |
+          # Root ruff.toml extends standards/ruff.toml (the fleet baseline).
+          xargs -a changed_py.txt ruff check --no-fix
+
+      - name: mypy --strict (changed files only)
+        if: steps.changed.outputs.have_files == 'true'
+        run: |
+          # mypy.ini at root reproduces standards/mypy.ini (strict).
+          xargs -a changed_py.txt mypy --config-file mypy.ini
+
+  format-check:
+    name: ruff format --check (whole repo, blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pin the toolchain
+        run: pip install "ruff==0.15.17"
+
+      - name: ruff format --check
+        # Formatting is mechanical and already clean under scripts/ (the hub's
+        # first-class Python). Scoped here rather than whole-repo because the
+        # product-catalogs/ trees carry pre-existing unformatted legacy that is
+        # out of this ratchet's adoption scope (allowed until touched, per
+        # section 4.6); widening this to "." would make the gate instantly red.
+        run: ruff format --check scripts/
+
+  config-drift:
+    name: vendored baseline matches standards/ (drift gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: root ruff.toml must extend the canonical baseline
+        run: grep -q 'extend = "standards/ruff.toml"' ruff.toml
+
+      - name: root mypy.ini must not loosen the strict baseline
+        run: |
+          # Tighten-only: the hub copy may not drop strict or any spelled-out flag
+          # present in the canonical baseline (standards section 0 / 1.2).
+          for key in $(grep -E '^[a-z_]+ = True' standards/mypy.ini | cut -d' ' -f1); do
+            grep -qE "^${key} = True" mypy.ini || {
+              echo "mypy.ini is missing strict flag: ${key}"; exit 1; }
+          done
+          grep -qE '^strict = True' mypy.ini
+
+      - name: root .editorconfig matches the fleet baseline
+        run: diff -u standards/.editorconfig .editorconfig
