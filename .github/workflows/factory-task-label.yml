@@ -1,0 +1,86 @@
+name: Factory task label
+
+# GitHub issue forms cannot label conditionally, so this workflow reads the
+# rendered "Difficulty" (and "Change mode") fields from a Factory task issue and
+# applies the matching factory:<tier> label (RFC-0011). A migration change mode
+# forces factory:hard (precedence: a rewrite is never run cheap).
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  apply-tier-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Derive and apply tier label
+        # actions/github-script@v7.0.1
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const body = context.payload.issue.body || "";
+
+            // Only act on issues filed via the Factory task form (it sets the
+            // pfactory label and renders a "### Difficulty" section).
+            const labels = (context.payload.issue.labels || []).map(l => l.name);
+            const isFactoryTask = body.includes("### Difficulty") || labels.includes("pfactory");
+            if (!isFactoryTask) {
+              core.info("Not a Factory task issue; skipping.");
+              return;
+            }
+
+            // Issue-form fields render as:  ### <Label>\n\n<value>\n
+            const section = (name) => {
+              const re = new RegExp("###\\s*" + name + "\\s*\\n+([^\\n#]+)", "i");
+              const m = body.match(re);
+              return m ? m[1].trim() : "";
+            };
+
+            const difficulty = section("Difficulty").toLowerCase();
+            const changeMode = section("Change mode").toLowerCase();
+
+            let tier = null;
+            if (difficulty.startsWith("low")) tier = "low";
+            else if (difficulty.startsWith("medium")) tier = "medium";
+            else if (difficulty.startsWith("hard")) tier = "hard";
+
+            // Precedence: a rewrite/migration forces hard (RFC-0011/0010).
+            if (changeMode.startsWith("migration")) tier = "hard";
+
+            if (!tier) {
+              core.info("No recognizable Difficulty field; leaving labels unchanged.");
+              return;
+            }
+
+            const want = "factory:" + tier;
+            const tierLabels = ["factory:low", "factory:medium", "factory:hard"];
+
+            // Remove any stale tier labels (e.g. on edit), then apply the right one.
+            for (const l of labels) {
+              if (tierLabels.includes(l) && l !== want) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.payload.issue.number,
+                    name: l,
+                  });
+                } catch (e) { core.info(`could not remove ${l}: ${e.message}`); }
+              }
+            }
+
+            if (!labels.includes(want)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                labels: [want],
+              });
+              core.info(`Applied ${want}.`);
+            } else {
+              core.info(`${want} already present.`);
+            }

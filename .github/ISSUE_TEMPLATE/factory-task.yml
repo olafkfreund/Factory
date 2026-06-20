@@ -1,0 +1,80 @@
+name: Factory task
+description: File a task for the Factory fleet to plan, build, test, and merge (RFC-0011).
+title: "[task] "
+labels: ["pfactory"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is intake for the Factory fleet (PARR: plan → code → test → observe).
+        Pick a **Difficulty** below — it drives the model, planning depth, human gate,
+        verification floor, and merge behaviour (see
+        [RFC-0011](https://factory.freundcloud.com/rfc/label-driven-intake/)).
+        A workflow stamps the matching `factory:<tier>` label after you submit.
+
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      description: One-line summary of the task (also used as the issue title).
+      placeholder: "Add a /healthz endpoint to the payments service"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What needs to happen and why. Link any relevant code, docs, or prior issues.
+      placeholder: "The load balancer needs a liveness probe. Today there is none, so..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: Bullet list of testable conditions. These become the verification targets.
+      placeholder: |
+        - GET /healthz returns 200 with {"status":"ok"} when the DB is reachable
+        - GET /healthz returns 503 when the DB is unreachable
+        - An integration test covers both cases
+    validations:
+      required: true
+
+  - type: input
+    id: target_repo
+    attributes:
+      label: Target repository
+      description: The repo the change lands in (owner/repo, or a GitLab/ADO project path).
+      placeholder: "olafkfreund/aifactory-demo"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Difficulty
+      description: |
+        Low — cheap/local model, no planning, no human, auto-merge when green.
+        Medium — sonnet, light planning, async human approval.
+        Hard — opus, full PFactory plan, blocking human approval, deepest verification
+        (required for rewrites/migrations).
+      options:
+        - Low
+        - Medium
+        - Hard
+    validations:
+      required: true
+
+  - type: dropdown
+    id: change_mode
+    attributes:
+      label: Change mode
+      description: A rewrite/migration forces the Hard tier and an equivalence check (RFC-0010/0011).
+      options:
+        - create (new functionality)
+        - modify (change existing code)
+        - migration (rewrite / port — forces Hard)
+    validations:
+      required: true
