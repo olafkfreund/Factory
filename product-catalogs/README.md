@@ -53,14 +53,15 @@ registered:
 | `api:factory-completion-events` | Factory repo (CFactory only *provides* it) |
 | sibling `component:*` / `api:*-api` (dependsOn / consumesApis) | the sibling product repo |
 
-> **Offline validator note.** If a product repo uses the strict, single-file
-> `scripts/validate-catalog.py` (the one that requires every `providesApis` /
-> `consumesApis` target to be defined *in the same file*), it will flag the
-> cross-repo references above. They are valid in Backstage. Either (a) treat those
-> names as known-external in that repo's validator, or (b) drop the cross-repo
-> `consumesApis` / `dependsOn` lines locally and let the relationships live on the
-> providing side. The Factory repo's validator already accepts `openapi`,
-> `asyncapi` and `mcp` `$text` types.
+> **Offline validator (single source of truth).** Every catalog here is checked
+> by the same canonical validator, `scripts/validate_catalog.py` in the Factory
+> hub. The per-product `product-catalogs/*/scripts/validate-catalog.py` files are
+> thin shims that import `validate(root)` from it and pass their own catalog
+> directory. The canonical validator already treats the cross-repo references
+> above (`factory-completion-events` and the sibling `*-api` entities) as
+> known-external so they are not flagged, and it accepts `openapi`, `asyncapi`
+> and `mcp` `$text` types. When a product repo is checked out standalone, vendor
+> `validate_catalog.py` next to its shim (or onto `PYTHONPATH`).
 
 ## Ports (canonical)
 
