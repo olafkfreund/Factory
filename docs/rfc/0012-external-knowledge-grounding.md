@@ -6,7 +6,7 @@ permalink: /rfc/external-knowledge-grounding/
 
 # RFC-0012 — External-Knowledge Grounding from Backstage
 
-> **Status:** Proposed · **Created:** 2026-06-20 · **Extends:** [RFC-0002](./0002-task-contract.md) (contract), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (baseline reconnaissance) · **Affects:** PFactory (planning), AIFactory (coding/QA), TFactory (testing)
+> **Status:** Implemented (epic #124 closed — house-standards adapter, fail-closed standards_conformance gate + acceptance, coder/QA/planner prompt injection) · **Created:** 2026-06-20 · **Updated:** 2026-06-20 · **Extends:** [RFC-0002](./0002-task-contract.md) (contract), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (baseline reconnaissance) · **Affects:** PFactory (planning), AIFactory (coding/QA), TFactory (testing)
 >
 > A team has a house wiki: best-practices, code-style, testing guides, golden-path service templates. Today the fleet plans, codes, and verifies **without ever reading them** — it follows whatever it infers from the spec and the repo, and the team's standards are silently absent from the work. This RFC pulls those standards from the live **Backstage** (Software Catalog + TechDocs + Scaffolder templates, reachable over the connected MCP) into the contract, injects them into the planning/coding/testing prompts, and then **proves** they were both retrieved AND applied with a fail-closed `standards_conformance` gate. The gate is the bar the fleet must clear before we let it trust any external knowledge source.
 

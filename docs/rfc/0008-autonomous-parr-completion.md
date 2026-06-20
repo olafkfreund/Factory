@@ -6,7 +6,7 @@ permalink: /rfc/autonomous-completion/
 
 # RFC-0008 — Autonomous PARR Completion
 
-> **Status:** Proposed · **Created:** 2026-06-18 · **Extends:** [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation key), [RFC-0002](./0002-task-contract.md) (task contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (toolchain), [RFC-0006](./0006-verification-assurance-levels.md) (assurance), [RFC-0007](./0007-access-and-credential-provisioning.md) (access) · **Affects:** PFactory, AIFactory, TFactory, CFactory
+> **Status:** Partially Implemented (the seven robustness fixes shipped in AIFactory; remaining autonomy gaps tracked) · **Created:** 2026-06-18 · **Updated:** 2026-06-20 · **Extends:** [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation key), [RFC-0002](./0002-task-contract.md) (task contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (toolchain), [RFC-0006](./0006-verification-assurance-levels.md) (assurance), [RFC-0007](./0007-access-and-credential-provisioning.md) (access) · **Affects:** PFactory, AIFactory, TFactory, CFactory
 >
 > A team submits **intent**. The pipeline must return a working, tested artifact **with no human in the happy path**, and **bounded auto-correction** in the unhappy path. Human review is reserved for ambiguous *intent* — never for engineering mechanics the user should not have to know about. The rule carried forward from RFC-0006: never claim something works when it was never verified; this RFC adds that we must also never *stall silently* or *escalate to a human for something the pipeline could have fixed itself*.
 

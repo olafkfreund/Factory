@@ -6,7 +6,7 @@ permalink: /rfc/ci-gated-auto-merge/
 
 # RFC-0009 — Provider-Agnostic CI-Gated Auto-Merge
 
-> **Status:** Proposed · **Created:** 2026-06-18 · **Extends:** [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation key), [RFC-0002](./0002-task-contract.md) (contract), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0008](./0008-autonomous-parr-completion.md) (autonomous completion) · **Affects:** AIFactory, TFactory, CFactory, PFactory
+> **Status:** Partially Implemented (`merge_policy` + risk class landed via RFC-0011; full CI-parity gate + provider auto-merge wiring still open) · **Created:** 2026-06-18 · **Updated:** 2026-06-20 · **Extends:** [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation key), [RFC-0002](./0002-task-contract.md) (contract), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0008](./0008-autonomous-parr-completion.md) (autonomous completion) · **Affects:** AIFactory, TFactory, CFactory, PFactory
 >
 > A team submits intent; the pipeline builds it, the host's **own CI pipeline** runs on the PR, TFactory adds an independent verification **check**, and — when every required check is green and the change's assurance level clears the policy — the PR **auto-merges, with a human in the loop only where risk demands it.** The gate lives in the PR people already trust, and it works the same across **GitHub, GitLab, Azure DevOps, Bitbucket, Gitea** (and future hosts) behind one provider abstraction.
 
