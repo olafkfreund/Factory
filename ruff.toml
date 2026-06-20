@@ -10,9 +10,17 @@ extend = "standards/ruff.toml"
 # Repo-local scope: this hub's first-class Python lives under scripts/. The
 # prototypes/, backups/, and review/ trees are scratch/exploratory and are not
 # governed by the strict bar yet (legacy ratchet applies on touch via CI).
+#
+# shared/factory-github/ is a VENDORED MIRROR: the canonical copy of the deduped
+# VCS-client layer (epic Factory#154, issue Factory#157), copied byte-for-byte
+# from a service repo. It is intentionally NOT reformatted here — it is governed
+# by the byte-exact drift gate (scripts/check_factory_github_drift.py), not the
+# hub style bar. Reflowing it under the hub config would create permanent drift
+# against the live service copies and defeat the source-of-truth contract.
 extend-exclude = [
     "prototypes",
     "backups",
     "review",
+    "shared/factory-github",
     ".ruff_cache",
 ]
