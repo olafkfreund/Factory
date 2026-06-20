@@ -70,6 +70,12 @@ builds on RFC-0005 sandbox + TFactory `kube_sandbox`).
   `factory-<service>-<job_id-short>` with the contract mounted/passed and the
   artifacts bucket creds, and (c) records `worker_ref={kind:"k8s-job", namespace,
   job_name}`. Admission/KEDA (Phase 3) governs how many Jobs run at once.
+- **Job image = thin nix-base (RFC-0016 §4.1, RFC-0005 Tier A):** the Job runs the
+  `tfactory-runner-nix` image (nix only, no bundled toolchains) and materializes the
+  task's toolchain via `nix develop path:/work#default` against the per-task
+  `flake.nix` generated from the contract `environment` block. Mount the warm RWX
+  `/nix/store` PVC so toolchains are cached across Jobs. Toolchains MUST come from
+  Nix, not from a fat image.
 - **Execution:** the Job pod runs the existing entrypoint (`run.py` for
   AIFactory/TFactory; PFactory `process()` or a pool worker), isolated network +
   resources. It updates its own `job-state` row (`running` → terminal) and writes
