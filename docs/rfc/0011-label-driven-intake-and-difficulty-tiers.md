@@ -6,7 +6,7 @@ permalink: /rfc/label-driven-intake/
 
 # RFC-0011 — Label-Driven Intake & Difficulty Tiers across the Fleet
 
-> **Status:** Proposed · **Created:** 2026-06-20 · **Extends:** [RFC-0002](./0002-task-contract.md) (task contract), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0009](./0009-ci-gated-auto-merge.md) (CI-gated auto-merge), [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (code-aware planning + equivalence) · **Affects:** PFactory, AIFactory, TFactory, CFactory
+> **Status:** Implemented (epic #123 — tiers classifier, poller, /from-issue, tier_profile/tier_floor, autonomy_tier, merge_policy) · **Created:** 2026-06-20 · **Updated:** 2026-06-20 · **Extends:** [RFC-0002](./0002-task-contract.md) (task contract), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0009](./0009-ci-gated-auto-merge.md) (CI-gated auto-merge), [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (code-aware planning + equivalence) · **Affects:** PFactory, AIFactory, TFactory, CFactory
 >
 > Create an issue or work-item, label it `factory:low | factory:medium | factory:hard`, and the fleet picks it up, classifies its difficulty, routes it through PARR (plan → code → test → observe), and delivers a review-ready, correct result — uniformly across **GitHub, GitLab, and Azure DevOps**. The difficulty tier is the single knob that drives **model, planning depth, human gate, verification floor, and merge behaviour**. Rewrites and hard implementation/testing get the heaviest treatment.
 

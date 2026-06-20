@@ -6,7 +6,7 @@ permalink: /rfc/code-aware-planning/
 
 # RFC-0010 — Code-Aware Planning over Existing Repositories (Brownfield + Migration)
 
-> **Status:** Proposed · **Created:** 2026-06-18 · **Extends:** [RFC-0002](./0002-task-contract.md) (contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (environment), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels) · **Affects:** PFactory (planner), AIFactory (coder), TFactory (verifier)
+> **Status:** Implemented (epic #105 closed across PFactory/AIFactory/TFactory) · **Created:** 2026-06-18 · **Updated:** 2026-06-20 · **Extends:** [RFC-0002](./0002-task-contract.md) (contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (environment), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels) · **Affects:** PFactory (planner), AIFactory (coder), TFactory (verifier)
 >
 > A team submits a plan to **change code that already exists** — "modify our AWS EKS Terraform" or "rewrite the payments module from Python to Rust." Today PFactory plans **blind**: it reads the spec document and never the target repository, so it guesses the language, emits empty file footprints, and the human approves a plan that isn't grounded in what is actually there. This RFC makes PFactory **read the repo statically, react to what exists, and emit a delta-aware contract** — and adds a behavioral-**equivalence** lane so a language rewrite is proven against the original, not just asserted.
 

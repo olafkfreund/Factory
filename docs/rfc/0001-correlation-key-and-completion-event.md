@@ -6,7 +6,7 @@ permalink: /rfc/correlation-key/
 
 # RFC-0001 — Shared Correlation Key & Completion-Event Schema
 
-> **Status:** Accepted · **Version:** 1.1 · **Updated:** 2026-06-05
+> **Status:** Implemented (PFactory · AIFactory · TFactory emitters + CFactory collector) · **Version:** 1.1 · **Updated:** 2026-06-20
 > Part of the **PARR spine** (issue [#1](https://github.com/olafkfreund/Factory/issues/1),
 > [#4](https://github.com/olafkfreund/Factory/issues/4)). The product repos implement
 > against this document.
