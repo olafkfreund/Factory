@@ -13,6 +13,7 @@ nav:
   - Overview: index.md
   - Architecture: architecture.md
   - Pipeline & Guards: pipeline-and-guards.md
+  - Creating Issues & Work-items: creating-issues-and-workitems.md
   - Testing Authenticated Web Apps: testing-authenticated-web-apps.md
   - Dependencies: dependencies.md
   - Decisions: decisions.md
