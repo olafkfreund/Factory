@@ -22,9 +22,51 @@ Run directly for the self-tests: `python3 scripts/verification_profiles.py`.
 from __future__ import annotations
 
 import fnmatch
+from typing import TypedDict
+
+
+class LevelSpec(TypedDict, total=False):
+    """What one assurance level would run and what it needs to run it."""
+
+    commands: list[str]
+    requires: list[str]
+    risk: str
+
+
+class Profile(TypedDict, total=False):
+    """A per-artifact-type verification profile.
+
+    `detect` (globs) and `levels` (the assurance ladder) are present on every
+    profile; `credential_class` only on artifacts whose credentialed level
+    needs external access, so the TypedDict is `total=False`.
+    """
+
+    detect: list[str]
+    credential_class: str
+    levels: dict[str, LevelSpec]
+
+
+class PlanLevel(TypedDict, total=False):
+    """One rung of the planned ladder emitted by `plan_verification`."""
+
+    level: str
+    commands: list[str]
+    status: str
+    reason: str
+    risk: str
+
+
+class VerificationPlan(TypedDict):
+    """The verification-plan skeleton `plan_verification` returns."""
+
+    artifact_type: str
+    target_level: str
+    achievable_level: str
+    levels: list[PlanLevel]
+
 
 # artifact type -> { detect: [globs], levels: {VAL-x: {commands, requires, risk}} }
-PROFILES: dict[str, dict] = {
+PROFILES: dict[str, Profile] = {
     "ansible": {
         "detect": [
             "**/playbook*.yml",
@@ -173,10 +215,11 @@ def credential_class_for(artifact_type: str) -> str | None:
     they need no external access. PFactory uses this as the per-technology default
     when seeding an `access` requirement (RFC-0007 / #84).
     """
-    return PROFILES.get(artifact_type, {}).get("credential_class")
+    profile = PROFILES.get(artifact_type)
+    return profile.get("credential_class") if profile else None
 
 
-def plan_verification(files: list[str], available: set[str]) -> dict:
+def plan_verification(files: list[str], available: set[str]) -> VerificationPlan:
     """Build a verification-plan skeleton for the detected artifact.
 
     `available` = capabilities the environment provides (toolchains/runtimes/
@@ -189,17 +232,18 @@ def plan_verification(files: list[str], available: set[str]) -> dict:
     ladder = [l for l in _LADDER if l in profile]
     target_level = ladder[-1] if ladder else "VAL-0"
 
-    levels: list[dict] = []
+    levels: list[PlanLevel] = []
     achievable = "VAL-0"
     for lvl in ladder:
         spec = profile[lvl]
         missing = [r for r in spec.get("requires", []) if r not in available]
-        entry = {"level": lvl, "commands": spec["commands"]}
+        entry: PlanLevel = {"level": lvl, "commands": spec["commands"]}
         if missing:
             entry["status"] = "not_run"
             entry["reason"] = "requires " + ", ".join(missing)
-            if spec.get("risk"):
-                entry["risk"] = spec["risk"]
+            risk = spec.get("risk")
+            if risk:
+                entry["risk"] = risk
         else:
             entry["status"] = "planned"  # runner will execute -> passed/failed
             achievable = lvl

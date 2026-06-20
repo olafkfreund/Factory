@@ -21,15 +21,54 @@ Run directly to execute the self-tests: `python3 scripts/verification_gate.py`.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 LEVELS = ["VAL-0", "VAL-1", "VAL-2", "VAL-3", "VAL-4"]
 _NON_PASSED = {"failed", "not_run", "skipped"}
+
+
+class LevelEntry(TypedDict, total=False):
+    """One rung of the assurance ladder in a verification block.
+
+    `level` and `status` are expected on every entry; the remainder
+    (`reason`/`risk`/`evidence` and any producer extras) are optional, so the
+    whole TypedDict is `total=False`.
+    """
+
+    level: str
+    status: str
+    reason: str
+    risk: str
+    evidence: str
+
+
+class GateResult(TypedDict):
+    """The `_gate` audit stamp recording how the block was normalized."""
+
+    violations: list[str]
+    downgraded: bool
+
+
+class VerificationBlock(TypedDict, total=False):
+    """A producer's verification block (input) / the normalized copy (output).
+
+    Loose by design (`total=False`): producers may omit fields, and the gate
+    fills/overwrites `achieved_level`, `claim`, `levels`, and `_gate` so the
+    result can never overclaim.
+    """
+
+    target_level: str
+    achieved_level: str
+    levels: list[LevelEntry]
+    claim: str
+    _gate: GateResult
 
 
 def _idx(level: str) -> int:
     return LEVELS.index(level) if level in LEVELS else -1
 
 
-def normalize_verification(block: dict | None) -> dict:
+def normalize_verification(block: VerificationBlock | None) -> VerificationBlock:
     """Return an honest, never-overclaiming copy of a verification block."""
     violations: list[str] = []
 
@@ -49,7 +88,7 @@ def normalize_verification(block: dict | None) -> dict:
             "_gate": {"violations": ["missing_verification_block"], "downgraded": True},
         }
 
-    levels = [dict(l) for l in block["levels"]]
+    levels: list[LevelEntry] = [lvl.copy() for lvl in block["levels"]]
 
     # Force a reason on every gap (honesty: a gap with no explanation is itself a gap).
     for lvl in levels:
@@ -85,7 +124,7 @@ def normalize_verification(block: dict | None) -> dict:
         if gaps:
             claim += " NOT verified: " + "; ".join(gaps) + "."
 
-    out = dict(block)
+    out: VerificationBlock = block.copy()
     out["levels"] = levels
     out["achieved_level"] = achieved
     out["claim"] = claim
