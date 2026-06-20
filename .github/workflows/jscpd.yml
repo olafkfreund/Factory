@@ -1,38 +1,41 @@
-name: jscpd (duplication, advisory)
+name: jscpd (duplication, ratcheting budget)
 
 # Cross-repo / in-repo copy-paste detection for the Factory code-quality program
 # (epic Factory#154, issue Factory#161).
 #
-# WHY ADVISORY, FOR NOW
-# ---------------------
-# The fleet still carries known, deliberate-for-now duplication: ~1,800 LOC of
-# VCS-client code is vendored across four repos behind a byte-exact drift gate
-# (shared/factory-github/), and the Backstage catalog-info.yaml descriptors share
-# large structural blocks by design. A hard whole-repo jscpd gate would be
-# instantly red and would punish the very vendor-canonical pattern the dedup
-# program is using on purpose. So this job is REPORT-ONLY today: it always exits
-# 0 and surfaces the clone report (console + JSON artifact + job summary) so
-# reviewers can see duplication trends on every PR without blocking merges.
+# FROM ADVISORY TO ENFORCING (the ratchet)
+# ----------------------------------------
+# This gate started advisory (report-only) because the fleet carries known,
+# deliberate-for-now duplication: ~1,800 LOC of VCS-client code vendored across
+# repos behind a byte-exact drift gate (shared/factory-github/), and Backstage
+# catalog descriptors that share structural blocks by design. A hard whole-repo
+# jscpd gate would be instantly red and would punish the very vendor-canonical
+# pattern the dedup program uses on purpose.
 #
-# DETECTION BAR
-# -------------
-# Clones are >= 8 lines AND >= 50 tokens (.jscpd.json). This is the same bar the
-# per-repo dedup work targets, so what this reports lines up with what the
-# program is extracting into the hub (factory_common, factory-github).
+# It is now ENFORCING via a BUDGET rather than a clean-slate bar: the existing
+# clones are grandfathered, but the clone COUNT may not increase. The current
+# count (73 clones, >=8 lines / >=50 tokens) is the ceiling in
+# scripts/check_jscpd_budget.py (CLONE_BUDGET). A PR that adds a clone (count 74+)
+# fails the gate; existing debt does not. This is a no-regression ratchet.
 #
-# RATCHET-DOWN PLAN (the path from advisory -> blocking)
-# ------------------------------------------------------
-#  1. NOW (this PR): advisory. Report clones; never fail. Establish the baseline
-#     number (~14% duplicated tokens at adoption; see the run summary).
-#  2. NEXT: pin a per-format ceiling slightly ABOVE today's baseline in
-#     .jscpd.json ("threshold") and flip this job to BLOCKING (drop
-#     continue-on-error). New duplication that pushes a format over its ceiling
-#     then fails the PR (a no-regression ratchet), while existing debt is
-#     grandfathered. Lower the ceiling as each extraction (factory_common,
-#     factory-github full consumption, catalog templating) removes clones.
-#  3. GOAL: a low, fleet-wide ceiling once the known duplication is extracted to
-#     the hub and the per-repo copies consume it (the deferred full-consumption
-#     follow-ons tracked under epic Factory#154).
+# WHY A CLONE-COUNT BUDGET (not jscpd's percentage threshold)
+# ----------------------------------------------------------
+# jscpd's own threshold is a coarse whole-run duplicated-token percentage that
+# moves when unrelated files are added/removed. A clone *count* is the unit the
+# dedup work operates in, so the budget gate (scripts/check_jscpd_budget.py)
+# fails precisely on net-new clones. See that script's header for details.
+#
+# RATCHET-DOWN PLAN (the path to a low fleet-wide ceiling)
+# -------------------------------------------------------
+#  1. DONE: advisory baseline established (~14.6% duplicated tokens, 73 clones).
+#  2. NOW (this PR): ENFORCING. CLONE_BUDGET=73; the gate blocks net-new clones.
+#  3. ONGOING: each extraction that removes clones (factory_common /
+#     factory-github full service consumption, catalog templating - tracked under
+#     epic Factory#154) LOWERS CLONE_BUDGET to the new count in the SAME PR. The
+#     budget only ever moves down, so the ceiling tracks reality and can never
+#     silently drift up.
+#  4. GOAL: a low, fleet-wide ceiling once the known duplication is extracted to
+#     the hub and the per-repo copies consume it.
 
 on:
   pull_request:
@@ -45,6 +48,7 @@ on:
       - "**.md"
       - ".jscpd.json"
       - ".github/workflows/jscpd.yml"
+      - "scripts/check_jscpd_budget.py"
   push:
     branches: [main]
 
@@ -57,7 +61,7 @@ concurrency:
 
 jobs:
   duplication:
-    name: jscpd clone report (advisory, non-blocking)
+    name: jscpd clone budget (enforcing, no net-new)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,27 +70,33 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Run jscpd (report-only)
-        # Advisory today: never fail the PR (see header). The .jscpd.json
-        # threshold is also set to 100 so the tool itself does not exit non-zero;
-        # continue-on-error is belt-and-braces for when the ratchet is tightened.
-        continue-on-error: true
+      - name: Run jscpd (writes JSON report)
+        # The .jscpd.json threshold stays high so the tool itself does not exit
+        # non-zero on the percentage; enforcement is done by the budget gate below
+        # (a clone-count ceiling), which is the unit the ratchet operates in.
         run: npx --yes jscpd@4 --config .jscpd.json .
+
+      - name: Verify the jscpd budget self-test
+        run: python3 scripts/check_jscpd_budget.py --self-test
+
+      - name: Enforce the clone budget (fail on net-new duplication)
+        run: python3 scripts/check_jscpd_budget.py
 
       - name: Publish clone report to the run summary
         if: always()
         run: |
           report="reports/jscpd/jscpd-report.json"
           {
-            echo "## jscpd duplication report (advisory)"
+            echo "## jscpd duplication report (enforcing budget)"
             echo ""
             if [ -f "$report" ]; then
               dup_lines=$(python3 -c "import json,sys; d=json.load(open('$report')); s=d.get('statistics',{}).get('total',{}); print(s.get('percentage','?'))" 2>/dev/null || echo "?")
-              clones=$(python3 -c "import json,sys; d=json.load(open('$report')); print(len(d.get('duplicates',[])))" 2>/dev/null || echo "?")
+              clones=$(python3 -c "import json,sys; d=json.load(open('$report')); s=d.get('statistics',{}).get('total',{}); print(s.get('clones', len(d.get('duplicates',[]))))" 2>/dev/null || echo "?")
               echo "- Clones found (>=8 lines, >=50 tokens): **${clones}**"
-              echo "- Duplicated lines: **${dup_lines}%**"
+              echo "- Duplicated tokens: **${dup_lines}%**"
+              echo "- Budget (ceiling, ratchets down only): **73**"
               echo ""
-              echo "This gate is **advisory** (report-only). See the workflow header for the ratchet-down plan to a blocking ceiling."
+              echo "This gate is **enforcing**: it fails on any clone beyond the budget. See the workflow header for the ratchet-down plan."
             else
               echo "No report produced (jscpd found nothing or failed to run)."
             fi
