@@ -44,14 +44,6 @@ _PY_ATTR = {
     "3.14": "python314",
 }
 
-# common pip/distribution names -> the nixpkgs pythonPackages attr when they
-# differ. Anything not here is passed through unchanged (most match).
-_PY_PKG_ALIASES = {
-    "pyyaml": "pyyaml",
-    "beautifulsoup4": "beautifulsoup4",
-    "scikit-learn": "scikit-learn",
-}
-
 
 class ProvisionError(RuntimeError):
     pass
@@ -121,7 +113,7 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS) -> str:
     """
     m = Manifest.from_contract(env)
     py = _python_attr(m)
-    py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m)]
+    py_pkgs = list(_python_libs(m))
     sys_attrs = _system_pkg_attrs(m)
 
     pkg_lines: list[str] = []
