@@ -40,19 +40,25 @@ At extraction time the three repos were *not* byte-identical:
 - **PFactory** had been reformatted under a different line-length / `datetime`
   style (e.g. `from datetime import UTC` vs `timezone.utc`, bare `TimeoutError`
   vs `asyncio.TimeoutError`) — behaviour-equivalent, formatting-only drift.
-- **`gitlab_provider.py`** additionally carries a genuine per-service identity
-  token: the Duo-Workflow "goal" string references "the <Service> enrichment
-  comment", so each repo names *itself*. This is real divergence, not copy-drift.
+- **`gitlab_provider.py`** additionally carried a genuine per-service identity
+  token: the Duo-Workflow "goal" string referenced "the <Service> enrichment
+  comment", so each repo named *itself*. This is real divergence, not copy-drift.
+  It is now **parameterised** (Factory#157): the canonical reads the service name
+  from the `FACTORY_SERVICE_NAME` environment variable (default `"the Factory"`),
+  so the file stays byte-identical across the fleet while each service supplies
+  its own identity at runtime. The Duo "goal" is a human-readable hint and the
+  Duo agent reads the issue regardless, so a neutral default is behaviour-equivalent.
 
 AIFactory was chosen as the canonical because it is the functional superset (it
 has the complete RFC-0011 auto-merge surface). It was vendored **byte-for-byte**
-from AIFactory commit `e8da3df` (`v3.6.26-120-ge8da3df2`).
+from AIFactory commit `e8da3df` (`v3.6.26-120-ge8da3df2`), then the GitLab
+enrichment service-name was parameterised as described above (Factory#157).
 
-> Honest status: because of the divergences above, the three live copies do **not**
-> currently all match this canonical byte-for-byte. This PR establishes the source
-> of truth and the drift gate; reconciling each live copy back to the canonical
-> (and the per-service enrichment token — likely parameterised rather than
-> hard-coded) is the tracked follow-on, together with full package consumption.
+> Status: as of the Factory#157 reconciliation, PFactory / AIFactory / TFactory
+> all carry this canonical byte-for-byte and each runs the drift gate in its own
+> CI (`.github/workflows/factory-github-drift.yml`). Full package consumption
+> (publishing `factory-github` as an installable package and deleting the
+> per-repo copies) remains a tracked follow-on.
 
 ## Consumption model (pinned-SHA, not a rewrite — yet)
 
@@ -70,8 +76,10 @@ package consumption (publishing `factory-github` as an installable package and
 deleting the per-repo copies) is a tracked follow-on; it is deferred here because
 it is a cross-repo, behaviour-affecting change that deserves its own staged PRs.
 
-The per-repo CI drift-gate **workflows** are also a fast follow (deferred): this
-PR ships the canonical + the gate script + tests in the hub only.
+The per-repo CI drift-gate **workflows** were added in the Factory#157
+reconciliation: each service repo carries
+`.github/workflows/factory-github-drift.yml`, which fetches this canonical at a
+pinned hub SHA and runs the gate against its `apps/backend/runners/github/` tree.
 
 ## CODEOWNERS note
 
