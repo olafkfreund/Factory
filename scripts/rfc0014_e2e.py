@@ -72,12 +72,13 @@ def _test() -> None:
     _require(local is None, "local model must have no $ estimate (costed as time)")
     _require(sub is None, "subscription model must have no $ estimate")
 
-    # 5. ceiling is respected: with a tiny ceiling the router cannot pick an
-    #    over-budget metered frontier model for a downgradable role.
-    cheap_only = cheapest_capable_model("coding", "cheap", 0.001, _TOK, _CATALOG)
+    # 5. ceiling is respected: under a tiny ceiling, any chosen metered model's
+    #    estimate must stay within it (local/subscription have no $ and are allowed).
+    tiny_ceiling = 0.001
+    cheap_only = cheapest_capable_model("coding", "cheap", tiny_ceiling, _TOK, _CATALOG)
     if cheap_only is not None:
         c = estimate_cost(cheap_only, _TOK[0], _TOK[1], _CATALOG)
-        _require(c is None or c <= 0.001 or True, "ceiling honored where a $ estimate exists")
+        _require(c is None or c <= tiny_ceiling, "metered selection must stay under the ceiling")
 
     sys.stdout.write(
         "rfc0014 e2e: PASS — "
