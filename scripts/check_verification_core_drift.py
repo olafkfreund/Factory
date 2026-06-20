@@ -27,13 +27,12 @@ its absence).
 This mirrors ``scripts/check_factory_github_drift.py``: pure stdlib, no third-
 party imports, hard-fail (exit 1) on real drift.
 
-KNOWN DRIFT (documented, not a bug in this gate): TFactory's
-``verification_gate.py`` was reconciled to its local lint bar — the loop variable
-was renamed (``l`` -> ``lvl`` for E741), the TypedDict definitions were dropped in
-favour of plain ``dict`` hints, and the module-level self-tests were removed. The
-gate will therefore flag TFactory's gate copy until it is reconciled back to the
-hub canonical. Reconciling the service copy (behaviour-preserving) is a tracked,
-deferred follow-on — see ``scripts/README-verification-core.md``.
+RECONCILED (Factory#158): the live service copies were restored to byte-match
+this canonical, behaviour-preserving — where a service copy genuinely carried more
+than the hub (the nix_provisioner Tier C helpers), the canonical adopted the
+superset rather than dropping tested behaviour. The gate is green fleet-wide and
+each affected service runs it in its own CI to block re-divergence. See
+``scripts/README-verification-core.md``.
 
 Usage:
     # Check a known service checkout against the hub canonical:
