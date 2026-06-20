@@ -24,14 +24,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from job_dispatch import JobSpec, build_job_manifest, job_name
+# Reuse the shared builder + its assertion helper (no copy-paste — jscpd budget).
+from job_dispatch import JobSpec, _require, build_job_manifest, job_name
 
 _DEFAULT_N = 8  # "5-10+ concurrent tasks" (RFC-0016 §1)
-
-
-def _require(cond: bool, msg: str) -> None:
-    if not cond:
-        raise AssertionError(msg)
 
 
 def make_fleet(n: int, service: str = "aifactory") -> list[JobSpec]:
