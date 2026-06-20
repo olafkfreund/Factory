@@ -53,7 +53,8 @@ and TFactory (they publish to it). See [API & Contracts](api.md) and
 | `apis/*.openapi.yaml` | Per-product REST/WS OpenAPI 3.0 specs |
 | `apis/completion-events.asyncapi.yaml` | RFC-0001 completion-event AsyncAPI 2.6 |
 | `apis/*.mcp.md` | Per-product MCP control-plane tool catalogs |
-| `scripts/validate-catalog.py` | Offline validator (`catalog-validate` in the Nix devShell) |
+| `scripts/validate_catalog.py` | Canonical offline validator (single source of truth) |
+| `scripts/validate-catalog.py` | Hub entrypoint shim (`catalog-validate` in the Nix devShell) |
 | `mkdocs.yml` + `techdocs/` | This TechDocs site |
 
 ## Import into Backstage
@@ -86,3 +87,9 @@ nix develop -c catalog-validate   # runs scripts/validate-catalog.py
 Checks that every entity has the required envelope, `providesApis`/`consumesApis`
 resolve to defined APIs, each API's `$text` target exists and parses for its type
 (OpenAPI 3.x / AsyncAPI 2–3 / MCP markdown), and the mkdocs nav targets all exist.
+
+**Single source of truth.** The validation logic lives once in
+`scripts/validate_catalog.py`. The hub entrypoint `scripts/validate-catalog.py`
+and each `product-catalogs/*/scripts/validate-catalog.py` are thin shims that
+import `validate(root)` from it with their own catalog root, so all five
+validators share one implementation (covered by `scripts/tests/test_validate_catalog.py`).
