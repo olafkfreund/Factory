@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/kucherenko/jscpd/master/packages/jscpd/schema.json",
+  "minLines": 8,
+  "minTokens": 50,
+  "mode": "strict",
+  "gitignore": true,
+  "absolute": false,
+  "format": ["python", "typescript", "javascript", "yaml", "markup"],
+  "reporters": ["console", "json"],
+  "output": "reports/jscpd",
+  "ignore": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/.ruff_cache/**",
+    "**/__pycache__/**",
+    "prototypes/**",
+    "backups/**",
+    "review/**",
+    "reports/**",
+    "**/*.lock",
+    "**/dist/**",
+    "**/build/**"
+  ],
+  "threshold": 100
+}

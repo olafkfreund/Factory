@@ -43,8 +43,19 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
+from pathlib import Path
+
+# factory-common is the deduped hub utility layer (epic Factory#154, issue
+# Factory#161): the Cloudflare-friendly urllib JSON client used to live inline
+# here as _call(); it is now the shared HttpClient. The hub's scripts/ dir is
+# flat (not an installed package), so the sibling shared/ package is added to the
+# path the same way the test-suite imports the hub scripts.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "shared" / "factory-common"))
+
+from factory_common.http import (
+    HttpClient,
+    bearer_auth,
+)
 
 DEFAULTS = {
     "pfactory": "https://pfactory.freundcloud.org.uk",
@@ -81,36 +92,21 @@ class Seam:
 
 def _call(svc: str, method: str, path: str, body: dict | None = None, timeout: int = 30):
     """JSON request with the Cloudflare-friendly UA + bearer auth + 5xx retry the
-    live fleet needs (the exact lessons from the first benchmark run)."""
-    url = f"{_endpoint(svc)}{path}"
-    data = json.dumps(body).encode() if body is not None else None
-    headers = {
-        "Content-Type": "application/json",
-        # Cloudflare 403s the default Python-urllib UA as a bot.
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) factory-parr-regression/1.0",
-    }
-    tok = _token(svc)
-    if tok:
-        headers["Authorization"] = f"Bearer {tok}"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    last = None
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
-                raw = resp.read().decode() or "{}"
-            body_out = json.loads(raw) if raw.strip().startswith(("{", "[")) else {"raw": raw}
-            return resp.status, body_out
-        except urllib.error.HTTPError as exc:
-            if exc.code >= 500 and attempt < 2:
-                time.sleep(5 * (attempt + 1))
-                continue
-            return exc.code, {"error": exc.read().decode()[:300]}
-        except urllib.error.URLError as exc:
-            last = str(exc)
-            if attempt < 2:
-                time.sleep(5 * (attempt + 1))
-                continue
-    return 0, {"error": last or "unreachable"}
+    live fleet needs (the exact lessons from the first benchmark run).
+
+    This delegates to the shared :class:`factory_common.http.HttpClient`, which is
+    the deduped home of the urllib JSON helper this seam probe and sync_labels.py
+    both used to hand-roll. Behaviour is preserved: Mozilla UA, bearer auth from
+    the service token, a 3-attempt bounded retry on 5xx / network error with a 5s
+    linear backoff, and the same ``(status, parsed_json)`` return shape (status 0
+    on a network failure)."""
+    client = HttpClient(
+        base_url=_endpoint(svc),
+        auth=bearer_auth(_token(svc)),
+        timeout=timeout,
+    )
+    resp = client.request(method, path, body=body)
+    return resp.status, resp.json
 
 
 # ── Teardown ─────────────────────────────────────────────────────────────────

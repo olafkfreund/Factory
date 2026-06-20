@@ -49,15 +49,22 @@ from __future__ import annotations
 
 import argparse
 import base64
-import json
 import os
 import sys
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+# factory-common is the deduped hub utility layer (epic Factory#154, issue
+# Factory#161): the urllib JSON helper this script used to hand-roll as
+# _http_json() now delegates to the shared HttpClient (the same primitive
+# parr_regression.py consumes). The hub's scripts/ dir is flat (not an installed
+# package), so the sibling shared/ package is added to the path the same way the
+# test-suite imports the hub scripts.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "shared" / "factory-common"))
+
+from factory_common.http import HttpClient, is_success
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent.parent / ".github" / "labels.yml"
 
@@ -135,14 +142,31 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> list[LabelData]:
 # Providers (slice of GitProvider: list_labels / create_label / update_label)
 # ---------------------------------------------------------------------------
 def _http_json(method: str, url: str, headers: dict, data: dict | None = None):
-    body = None
-    if data is not None:
-        body = json.dumps(data).encode("utf-8")
-        headers = {**headers, "Content-Type": "application/json"}
-    req = urllib.request.Request(url, data=body, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 (trusted host arg)
-        payload = resp.read().decode("utf-8")
-        return json.loads(payload) if payload else None
+    """JSON request via the shared :class:`factory_common.http.HttpClient`.
+
+    Behaviour-preserving wrapper over the deduped hub HTTP helper (epic
+    Factory#154, issue Factory#161). As before: 30s timeout, the auth header the
+    caller supplies (PRIVATE-TOKEN / Basic), Content-Type set automatically when a
+    body is present, and the parsed JSON returned (or None for an empty body). The
+    one difference from raw urllib is the Cloudflare-friendly default User-Agent
+    the shared client adds, which is strictly additive for these API hosts.
+
+    Failures raise: the original urlopen raised on any non-2xx / network error and
+    these providers do not catch it (a sync error must fail loudly). The shared
+    client returns a status instead of raising, so a non-2xx status (or the
+    status-0 network failure) is re-raised here as a RuntimeError to keep the
+    "fail loudly" contract.
+    """
+    client = HttpClient(auth=lambda: dict(headers), max_attempts=1, timeout=30)
+    resp = client.request(method, url, body=data)
+    if not is_success(resp.status):
+        detail = resp.json.get("error") or resp.json
+        raise RuntimeError(f"{method} {url} -> HTTP {resp.status}: {detail}")
+    # A JSON array response (e.g. GitLab's list_labels) is wrapped as {"items": ...}
+    # by the shared client; the providers expect the bare list back.
+    if "items" in resp.json:
+        return resp.json["items"]
+    return resp.json
 
 
 class Provider:
