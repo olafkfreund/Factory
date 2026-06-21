@@ -21,10 +21,16 @@ Design (matches apis/concurrency-conventions.md §3 + the proven kube_sandbox sh
   ``nix_develop_wrap``).
 - Warm ``/nix/store`` mounted from the per-service nix-store PVC (RFC-0016 #197) so
   Jobs don't cold-fetch the closure.
-- The task worktree co-mounted at ``/work`` from the data PVC via ``subPath``.
+- The task worktree co-mounted at ``/work`` from the data PVC via ``subPath`` —
+  OR, for multi-node scale-out (RFC-0017 §2.3), fetched from object storage: set
+  ``workspace_uri`` and the Job receives ``WORKSPACE_URI`` to ``unpack_workspace``
+  into ``/work`` at start and ``pack_workspace`` its outputs back at the end
+  (scripts/artifact_store.py). That replaces the RWO worktree co-mount, which pins
+  the Job to one node; the RWO mount stays available for the single-node path and
+  is removed only by the gitops rollout (out of scope here).
 - Env carries the short scalar identifiers + shared-state coordinates: ``JOB_ID``,
   ``CORRELATION_KEY``, ``DATABASE_URL`` (the job writes its own job-state row),
-  ``ARTIFACTS_URI`` (object-store prefix).
+  ``ARTIFACTS_URI`` (object-store prefix), ``WORKSPACE_URI`` (packed-workspace URI).
 
 Run ``python3 scripts/job_dispatch.py`` for the self-test.
 """
@@ -63,6 +69,10 @@ class JobSpec:
     nix_store_pvc: str | None = None  # warm /nix/store (RFC-0016 #197)
     database_url_env: str = "DATABASE_URL"
     artifacts_uri: str | None = None
+    # RFC-0017 §2.3: packed-workspace object URI. When set, the Job unpacks it into
+    # /work at start (no RWO worktree co-mount needed) and packs outputs back — the
+    # mechanism that unblocks multi-node scheduling. See scripts/artifact_store.py.
+    workspace_uri: str | None = None
     cpu_limit: str = "2"
     mem_limit: str = "4Gi"
     ttl_seconds: int = 300
@@ -109,6 +119,8 @@ def build_job_manifest(spec: JobSpec) -> dict:
         env.append({"name": "CORRELATION_KEY", "value": str(spec.correlation_key)})
     if spec.artifacts_uri:
         env.append({"name": "ARTIFACTS_URI", "value": spec.artifacts_uri})
+    if spec.workspace_uri:
+        env.append({"name": "WORKSPACE_URI", "value": spec.workspace_uri})
     # DATABASE_URL is injected by the consumer (often from a secretKeyRef); we only
     # name it so the Job knows to write its own job-state row.
     for k, v in spec.extra_env.items():
@@ -186,6 +198,7 @@ def _selftest() -> None:
         worktree_subpath="workspaces/x/worktrees/tasks/042-go-hello",
         nix_store_pvc="aifactory-nix-store",
         artifacts_uri="s3://factory-artifacts/aifactory/482/proj-abc/",
+        workspace_uri="s3://factory-artifacts/aifactory/482/proj-abc/workspace/workspace.tar.gz",
     )
     m = build_job_manifest(spec)
     name = m["metadata"]["name"]
@@ -206,7 +219,10 @@ def _selftest() -> None:
     mount_paths = {mt["mountPath"] for mt in c["volumeMounts"]}
     _require(mount_paths == {"/work", "/nix/store"}, f"mounts: {mount_paths}")
     names = {e["name"] for e in c["env"]}
-    _require({"JOB_ID", "CORRELATION_KEY", "ARTIFACTS_URI", "FACTORY_SERVICE"} <= names, "env")
+    _require(
+        {"JOB_ID", "CORRELATION_KEY", "ARTIFACTS_URI", "WORKSPACE_URI", "FACTORY_SERVICE"} <= names,
+        "env",
+    )
     # No-store / no-worktree (PFactory light planning) still builds.
     bare = build_job_manifest(
         JobSpec(service="pfactory", job_id="s1", commands=["echo hi"], nix_develop=False)
