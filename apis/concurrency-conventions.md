@@ -101,6 +101,21 @@ GCS) or, where a shared filesystem is required, an RWX volume.
 - **Workspace handoff:** a Phase-2 Job clones/fetches its inputs and writes
   outputs to its `<…>/workspace` and `<…>/build` keys; the control plane and
   CFactory read results from object storage + Postgres, never from a shared PVC.
+- **Workspace transfer via object storage (RFC-0017 §2.3) replaces the RWO
+  co-mount for multi-node.** The shared client packs a worktree to the
+  `<…>/workspace` key as a single `workspace.tar.gz` and restores it on the far
+  side: `pack_workspace(store, ref, src_dir) -> uri` and
+  `unpack_workspace(store, uri_or_ref, dest_dir)` in
+  [`scripts/artifact_store.py`](../scripts/artifact_store.py). Extraction is
+  path-traversal-guarded (absolute / `..` / escaping-link members are rejected
+  before anything is written). The dispatcher passes the packed URI to the Job as
+  `WORKSPACE_URI` (see [`scripts/job_dispatch.py`](../scripts/job_dispatch.py));
+  the Job `unpack_workspace`s into `/work` at start, runs, then `pack_workspace`s
+  its outputs back. Because the worktree no longer rides an RWO `local-path` PVC
+  that pins it to one node, the Job can be scheduled on any node — the last
+  blocker to multi-node scale-out. The RWO co-mount remains the single-node path;
+  removing it from the live Deployments/Jobs is the `factory-gitops` rollout, out
+  of scope for the reference lib.
 
 ## 3. Job-dispatch + result-callback contract (Phase 2)
 
