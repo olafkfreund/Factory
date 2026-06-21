@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from extension_registry import by_category, load_registry  # noqa: E402
+from extension_registry import by_category, load_registry
 
 _HUB = Path(__file__).resolve().parent.parent
 _SCHEMA = json.loads((_HUB / "apis" / "task-contract.schema.json").read_text(encoding="utf-8"))
@@ -69,7 +69,7 @@ _SPECKIT_CONTRACT = {
 
 def _validate_contract() -> None:
     try:
-        from jsonschema import Draft202012Validator
+        from jsonschema import Draft202012Validator  # noqa: PLC0415
     except ImportError:
         # Schema lib absent: at least prove the schema + sample are well-formed JSON
         # and the RFC-0015 blocks are declared in the schema.
