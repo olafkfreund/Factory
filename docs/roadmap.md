@@ -15,6 +15,28 @@ before building deep on top of it.
 
 The PARR spine is now proven end-to-end on real infrastructure:
 
+- **Spec-driven interop** ([RFC-0015](rfc/0015-spec-driven-interop-and-validated-gap-features.md),
+  *implemented* — epic #183 + all 10 children closed) — the fleet now reads and
+  emits SpecKit-style specs (a `constitution` of house rules ingested by PFactory
+  and consumed by AIFactory/TFactory, plus `.specify` ingest/emit), with an
+  adversarial spec-review pass, requirement→test traceability, and a declarative
+  extension registry. End-to-end proof landed 2026-06-21.
+- **Horizontal & concurrent execution** ([RFC-0016](rfc/0016-horizontal-concurrent-execution.md),
+  *core implemented & verified live* — epic #188) — a stateless control plane with
+  durable Postgres job-state, admission/concurrency caps tied to the cost budget,
+  the Nix-per-task Kubernetes Job substrate as the default for build/verify gates,
+  a shared MinIO/S3 object store for artifacts, and KEDA queue-depth autoscaling.
+  Proven live on the factory cluster: **8 concurrent** Job-per-task runs and a
+  **KEDA 1→3** scale-out.
+- **Job-native execution mechanisms** ([RFC-0017](rfc/0017-full-job-native-execution-and-scale-out.md),
+  *in progress* — epic #206) — Job-native log streaming, a Redis-backed
+  multi-replica run-multiplexer (multi-replica running live), and workspace
+  pack/unpack via object storage all landed. The Job-native build+verify *default*
+  flips are **not yet live** — they are converging through bug rounds on safe
+  in-pod defaults; multi-node workspace consumption (Stage E) remains.
+- **AWS demo resources cleaned up** — the App Runner / EKS demo stacks were torn
+  down; zero ongoing cloud spend.
+
 - **In-cluster ephemeral verification** — the verification ladder
   ([RFC-0006](rfc/0006-verification-assurance-levels.md)) now runs on the shared
   `factory-sandbox` primitive ([RFC-0005](rfc/0005-environment-manifest-and-toolchain-provisioning.md)),

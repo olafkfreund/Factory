@@ -6,7 +6,7 @@ permalink: /rfc/spec-driven-interop/
 
 # RFC-0015 — Spec-Driven Interop & Validated-Gap Features (SpecKit-informed)
 
-> **Status:** Proposed · **Created:** 2026-06-20 · **Extends:**
+> **Status:** Implemented (epic #183 + all 10 children closed; E2E proof landed 2026-06-21) · **Created:** 2026-06-20 · **Updated:** 2026-06-21 · **Extends:**
 > [RFC-0002](./0002-task-contract.md) (contract artifacts),
 > [RFC-0011](./0011-label-driven-intake-and-difficulty-tiers.md) (intake),
 > [RFC-0012](./0012-external-knowledge-grounding.md) (house standards / connectors),

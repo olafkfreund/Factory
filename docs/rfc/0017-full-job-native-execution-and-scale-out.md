@@ -6,7 +6,12 @@ permalink: /rfc/job-native-scale-out/
 
 # RFC-0017 — Full Job-Native Default Execution & Control-Plane Scale-Out
 
-> **Status:** Proposed · **Created:** 2026-06-21 · **Extends:**
+> **Status:** In progress (epic #206; mechanisms shipped — Job-native log
+> streaming, Redis-backed multi-replica rmux, workspace pack/unpack #207, and
+> multi-replica running live. The Job-native build+verify *default* flips
+> (#671/#466) are **not yet live** — they are converging through bug rounds on
+> safe in-pod defaults; Stage E multi-node workspace consumption remains.) ·
+> **Created:** 2026-06-21 · **Updated:** 2026-06-21 · **Extends:**
 > [RFC-0016](./0016-horizontal-concurrent-execution.md) (Job-per-task substrate,
 > durable state, KEDA), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md)
 > (Nix Jobs) · **Affects:** AIFactory (build default, logs/rmux, Redis),

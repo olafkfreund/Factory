@@ -6,7 +6,7 @@ permalink: /rfc/horizontal-concurrent-execution/
 
 # RFC-0016 — Horizontal & Concurrent Execution
 
-> **Status:** Proposed · **Created:** 2026-06-20 · **Extends:**
+> **Status:** Core implemented & verified live (epic #188; 8-concurrent Job-per-task proof + KEDA 1→3 scale proven 2026-06-21; remaining default flips + multi-node workspace consumption tracked in RFC-0017) · **Created:** 2026-06-20 · **Updated:** 2026-06-21 · **Extends:**
 > [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md)
 > (per-task ephemeral sandbox / k8s Job — Tier A proven),
 > [RFC-0002](./0002-task-contract.md) (contract is the job unit),
