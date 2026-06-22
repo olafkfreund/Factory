@@ -6,7 +6,7 @@ permalink: /rfc/regression-suite-and-continuous-verification/
 
 # RFC-0018 — Regression Suite & Continuous Verification
 
-> **Status:** Proposed · **Created:** 2026-06-22 · **Owner:** TFactory ·
+> **Status:** Shipped end-to-end 2026-06-22 (TFactory epic #482 + all 7 children #483–#489 closed; PRs #490–#511; follow-up: MCP-tool surface #512) · **Created:** 2026-06-22 · **Owner:** TFactory ·
 > **Extends:**
 > [RFC-0006](./0006-verification-assurance-levels.md) (VAL — a regression run
 > re-asserts the same VAL over time),
