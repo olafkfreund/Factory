@@ -10,8 +10,12 @@ permalink: /rfc/job-native-scale-out/
 > streaming, Redis-backed multi-replica rmux, workspace pack/unpack #207, and
 > multi-replica running live. The Job-native build+verify *default* flips
 > (#671/#466) are **not yet live** — they are converging through bug rounds on
-> safe in-pod defaults; Stage E multi-node workspace consumption remains.) ·
-> **Created:** 2026-06-21 · **Updated:** 2026-06-21 · **Extends:**
+> safe in-pod defaults. Stage E workspace pack/unpack runs live, and the last
+> node-pin on the packed build path — the warm Nix-store PVC — was cut by baking
+> the store into a `-nix` build image (#190); a packed build Job now carries no
+> node affinity. The cross-node *landing* proof is pending a second cluster node,
+> not more code.) ·
+> **Created:** 2026-06-21 · **Updated:** 2026-06-23 · **Extends:**
 > [RFC-0016](./0016-horizontal-concurrent-execution.md) (Job-per-task substrate,
 > durable state, KEDA), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md)
 > (Nix Jobs) · **Affects:** AIFactory (build default, logs/rmux, Redis),
@@ -60,6 +64,19 @@ and **unpacks** outputs back (the `workspace` role in `artifact_store`, RFC-0016
 §2); the control plane and CFactory read results from object storage + Postgres,
 never a shared PVC. Then remove the RWO worktree mounts — the last blocker to
 scheduling Jobs across **multiple nodes**.
+
+> **Status (2026-06-23).** Shipped. The producer packs the populated `/work` to
+> object storage (in-cluster MinIO) and the build Job unpacks it into a writable
+> `emptyDir`, dropping the RWO workspace co-mount. One pin survived that change:
+> the build Job still co-mounted the warm **Nix-store** RWO `local-path` PVC at
+> `/nix` (the toolchain cache the per-task flake resolves against), which re-pinned
+> every packed build back to that PVC's node. Cut in three reversible slices —
+> a dispatcher gate (`AIFACTORY_PACKED_NIX_IN_IMAGE`) that drops the Nix-store PVC
+> on the packed path (#730), a `-nix` build image that bakes `/nix/store` into a
+> layer (#732), and the gitops flip pointing the build at it (#733 + gitops). A
+> packed build Job now carries **no node affinity** by construction. Remaining:
+> demonstrate an actual cross-node landing, which needs a second node on the live
+> cluster (single-node today) — a validation step, not a code gap.
 
 ### 2.4 (Optional, later) HA Postgres
 Postgres is single-replica today (fine for "durable state exists"). Streaming
