@@ -51,6 +51,7 @@ import tarfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import cast
 
 # apis/concurrency-conventions.md §2 — one artifacts bucket per environment.
 DEFAULT_BUCKET = "factory-artifacts"
@@ -212,7 +213,8 @@ class ArtifactStore:
         obj = self._client().get_object(  # type: ignore[attr-defined]
             Bucket=self.config.bucket, Key=ref.key()
         )
-        return obj["Body"].read()
+        # boto3's client is untyped, so .read() is Any; coerce to satisfy strict.
+        return cast(bytes, obj["Body"].read())
 
     def list_artifacts(self, ref: ArtifactRef, role_scoped: bool = False) -> list[str]:
         """List object keys under a job's prefix. By default lists the whole job;
@@ -241,7 +243,8 @@ class ArtifactStore:
         obj = self._client().get_object(  # type: ignore[attr-defined]
             Bucket=self.config.bucket, Key=key
         )
-        return obj["Body"].read()
+        # boto3's client is untyped, so .read() is Any; coerce to satisfy strict.
+        return cast(bytes, obj["Body"].read())
 
 
 def parse_uri(uri: str) -> tuple[str, str]:
