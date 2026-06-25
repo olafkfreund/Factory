@@ -212,6 +212,24 @@ All three factories share one `factory-secrets` k8s Secret in namespace `factory
 Rotate these in `factory-gitops` (or directly on the cluster Secret) and restart the
 pods; they are not touched by `wire-tokens.sh`.
 
+> ⚠️ **`APP_API_TOKEN` must be a plain (non-`acw_`) token.** An `acw_…` value is a
+> *per-user* API key validated against PFactory's database, so an `acw_`-shaped
+> service principal **stops working whenever that DB is reset** (a cluster rebuild
+> wipes the `api_keys` table). The symptom is `401 "Invalid or insufficiently
+> scoped API key"` on **CFactory → PFactory `/api/*`** calls while the MCP surface
+> keeps working — confusing, because MCP compares the legacy token before the DB
+> lookup and `/api` historically did not. Use a plain random secret for the shared
+> service principal:
+> ```bash
+> openssl rand -hex 32      # set as factory-secrets/APP_API_TOKEN, then restart consumers
+> ```
+> PFactory accepts it via its legacy bearer path with **no DB dependency**, so
+> rebuilds can't break it. (PFactory#230 also reordered the `/api` middleware to
+> fall back to the legacy check, matching MCP — but a non-`acw_` value is still the
+> correct configuration.) Reserve scoped `acw_` keys for **external / CI** access
+> (e.g. `FACTORY_TOKEN`) where the target DB is stable, not for the in-cluster
+> inter-service principal.
+
 ### Refreshing the Claude / Gemini provider credentials
 
 `CLAUDE_CODE_OAUTH_TOKEN` is a `claude setup-token` OAuth token (`sk-a…`, ~108 chars)
