@@ -22,6 +22,19 @@ permalink: /tour/
 running portals. Each product is useful on its own and hands off to the next along the
 <b>PARR</b> loop — Prepare, Act, Reflect, Review.</p>
 
+<div class="tour-sec" markdown="0">
+  <h2>One task, end to end <span class="tag" style="color:#fe8019">PARR in flight</span></h2>
+  <p class="tour-intro">A single task — <b>"Add a /version endpoint"</b> — driven live through the whole
+  pipeline: planned and decomposed, coded subtask by subtask, verified, and watched from the cockpit.</p>
+  <div class="tour-grid">
+    <figure><img src="{{ '/assets/screenshots/tour/flow/01-pfactory-plan.png' | relative_url }}" alt="PFactory plan detail" loading="lazy"><figcaption><b style="color:#83a598">1 · Prepare</b> — PFactory decomposes the plan into criteria and child issues; gates pass.</figcaption></figure>
+    <figure><img src="{{ '/assets/screenshots/tour/flow/02-aifactory-subtasks.png' | relative_url }}" alt="AIFactory subtasks" loading="lazy"><figcaption><b style="color:#fe8019">2 · Act</b> — AIFactory breaks it into subtasks: endpoint, version string, unit test.</figcaption></figure>
+    <figure><img src="{{ '/assets/screenshots/tour/flow/03-aifactory-logs.png' | relative_url }}" alt="AIFactory live agent log" loading="lazy"><figcaption><b style="color:#fe8019">2 · Act</b> — the live agent log as the coder works the repo.</figcaption></figure>
+    <figure><img src="{{ '/assets/screenshots/tour/flow/04-tfactory-report.png' | relative_url }}" alt="TFactory verdict report" loading="lazy"><figcaption><b style="color:#b8bb26">3 · Reflect</b> — TFactory's verdict and report from a real run (PASS, with evidence).</figcaption></figure>
+    <figure><img src="{{ '/assets/screenshots/tour/flow/05-cfactory-dag.png' | relative_url }}" alt="CFactory task DAG" loading="lazy"><figcaption><b style="color:#fabd2f">4 · Review</b> — CFactory threads it as one work item with a live execution DAG.</figcaption></figure>
+  </div>
+</div>
+
 
 <div class="tour-sec" markdown="0">
   <h2 style="color:#83a598">PFactory <span class="tag" style="color:#83a598">Prepare</span></h2>
