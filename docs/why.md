@@ -34,10 +34,10 @@ Code, Codex, Devin). Factory deliberately does **not** compete there. We sit in 
 layer *around* the coding agents:
 
 <div class="parr">
-  <div class="step"><b>🧭 Govern</b><span>PFactory — plan with live-infra context + review gates + human approval</span></div>
-  <div class="step"><b>🛠️ Build</b><span>AIFactory — spec-first execution; or delegate to any coding agent</span></div>
-  <div class="step"><b>🧪 Verify</b><span>TFactory — generate &amp; grade tests on a 5-signal verdict</span></div>
-  <div class="step"><b>🛰️ Observe</b><span>CFactory — thread, watch and steer the whole pipeline</span></div>
+  <div class="step"><b> Govern</b><span>PFactory — plan with live-infra context + review gates + human approval</span></div>
+  <div class="step"><b> Build</b><span>AIFactory — spec-first execution; or delegate to any coding agent</span></div>
+  <div class="step"><b> Verify</b><span>TFactory — generate &amp; grade tests on a 5-signal verdict</span></div>
+  <div class="step"><b> Observe</b><span>CFactory — thread, watch and steer the whole pipeline</span></div>
 </div>
 
 The opportunity is real and growing: the AI code-tools market is roughly

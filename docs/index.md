@@ -26,10 +26,10 @@ next, all following the **PARR** loop: **P**repare · **A**ct · **R**eflect ·
 **R**eview.
 
 <div class="parr">
-  <div class="step"><b>🧭 Prepare</b><span>PFactory plans &amp; governs — grounded in your real infrastructure.</span></div>
-  <div class="step"><b>🛠️ Act</b><span>AIFactory turns governed issues into merge-ready code.</span></div>
-  <div class="step"><b>🧪 Reflect</b><span>TFactory generates &amp; grades tests on a 5-signal verdict.</span></div>
-  <div class="step"><b>🛰️ Review</b><span>CFactory observes the whole pipeline and steers it — with you in the loop.</span></div>
+  <div class="step"><b> Prepare</b><span>PFactory plans &amp; governs — grounded in your real infrastructure.</span></div>
+  <div class="step"><b> Act</b><span>AIFactory turns governed issues into merge-ready code.</span></div>
+  <div class="step"><b> Reflect</b><span>TFactory generates &amp; grades tests on a 5-signal verdict.</span></div>
+  <div class="step"><b> Review</b><span>CFactory observes the whole pipeline and steers it — with you in the loop.</span></div>
 </div>
 
 ```
@@ -42,7 +42,7 @@ PFactory  ──▶  AIFactory  ──▶  TFactory
 This is the repository for the **whole program** — cross-cutting plans, the shared
 pipeline, and the place the four products come together.
 
-👉 **New:** [**The Guarded PARR Pipeline**](/pipeline/) — every step and decision
+ **New:** [**The Guarded PARR Pipeline**](/pipeline/) — every step and decision
 from handover to merge, the sixteen guards that protect task & execution, and
 real adoption scenarios from solo builders to regulated enterprises.
 

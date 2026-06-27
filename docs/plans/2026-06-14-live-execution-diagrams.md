@@ -161,7 +161,7 @@ ids so the status map aligns.
 ### Layer 1 — Generation (PFactory)
 - New `plan/emit/diagram.py`: `build_plan_diagram(epic) -> str`. Reuse `MermaidGraph`.
   - Node per `ChildIssue`: id=`key`, label=`title` (truncated), shape/class by `kind`
-    (feature/testing/cicd/infra/docs), a `✓N` badge for `len(acceptance_criteria)`.
+    (feature/testing/cicd/infra/docs), a `N` badge for `len(acceptance_criteria)`.
   - Edges from `depends_on`.
   - Wrap each wave/phase in a `subgraph` (vertical bands = parallel work).
   - `flowchart LR` (left→right reads as time).
@@ -201,7 +201,7 @@ ids so the status map aligns.
 - **Left→right = time.** Waves are vertical bands; parallel subtasks stack — you
   *see* concurrency. The active node pulses; done nodes are solid green; the next
   eligible (deps satisfied) nodes are outlined so "what's next" is obvious.
-- **Nodes carry meaning, not just a name.** `C3 · rate-limiter · ✓2` (id · short
+- **Nodes carry meaning, not just a name.** `C3 · rate-limiter · 2` (id · short
   title · acceptance-criteria count) + a status glyph. Hover/click → a side panel
   with the full acceptance criteria, files touched, and the node's cost/tokens.
   This ties the *checks* (governance) to the *picture*.

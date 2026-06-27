@@ -32,16 +32,16 @@ resolves the historical port collision (PFactory and TFactory both defaulted to
 Each repo ships a Nix dev shell; enter it (`nix develop` or direnv) then:
 
 ```bash
-# AIFactory  (backend :3101)
+# AIFactory (backend :3101)
 cd AIFactory  && <its backend run command>            # see AIFactory README
 
-# PFactory   (backend :3102)
+# PFactory (backend :3102)
 cd PFactory   && python -m server.main                # FastAPI :3102
 
-# TFactory   (backend :3103)
+# TFactory (backend :3103)
 cd TFactory   && python -m server.main                # FastAPI :3103
 
-# CFactory   (backend :3111 + cockpit :3110)
+# CFactory (backend :3111 + cockpit :3110)
 cd CFactory   && just run        # backend
 cd CFactory   && just ui         # cockpit  ->  http://localhost:3110
 ```

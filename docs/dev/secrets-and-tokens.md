@@ -93,8 +93,8 @@ read on the service repos), with a short expiry.
 **Rotate (operator action — a bot cannot mint or revoke a PAT):**
 ```bash
 # 1. GitHub → Settings → Developer settings → Personal access tokens → generate a
-#    replacement (fine-grained preferred; least-privilege scope; short expiry).
-#    Do NOT revoke the old one yet — revoking first breaks every running build.
+# replacement (fine-grained preferred; least-privilege scope; short expiry).
+# Do NOT revoke the old one yet — revoking first breaks every running build.
 
 # 2. Patch the live Secret without echoing the value (stringData → k8s base64-encodes):
 printf '%s' '<paste-new-token>' > /tmp/ght.txt
@@ -154,7 +154,7 @@ at deploy time.
    `{SVC}_TOKEN`).
 4. Record the key id so you can revoke it later.
 
-### ⚠️ Before you enable the seam-gate against production
+### Before you enable the seam-gate against production
 `parr_regression.py --smoke` is **not purely read-only** — it POSTs probe artifacts:
 - `pfactory POST /api/plan/sessions/ingest-text` (creates a probe plan session)
 - `tfactory POST /api/specs/ingest` (shape/validation probe)
@@ -212,7 +212,7 @@ All three factories share one `factory-secrets` k8s Secret in namespace `factory
 Rotate these in `factory-gitops` (or directly on the cluster Secret) and restart the
 pods; they are not touched by `wire-tokens.sh`.
 
-> ⚠️ **`APP_API_TOKEN` must be a plain (non-`acw_`) token.** An `acw_…` value is a
+> **`APP_API_TOKEN` must be a plain (non-`acw_`) token.** An `acw_…` value is a
 > *per-user* API key validated against PFactory's database, so an `acw_`-shaped
 > service principal **stops working whenever that DB is reset** (a cluster rebuild
 > wipes the `api_keys` table). The symptom is `401 "Invalid or insufficiently
@@ -221,7 +221,7 @@ pods; they are not touched by `wire-tokens.sh`.
 > lookup and `/api` historically did not. Use a plain random secret for the shared
 > service principal:
 > ```bash
-> openssl rand -hex 32      # set as factory-secrets/APP_API_TOKEN, then restart consumers
+> openssl rand -hex 32 # set as factory-secrets/APP_API_TOKEN, then restart consumers
 > ```
 > PFactory accepts it via its legacy bearer path with **no DB dependency**, so
 > rebuilds can't break it. (PFactory#230 also reordered the `/api` middleware to

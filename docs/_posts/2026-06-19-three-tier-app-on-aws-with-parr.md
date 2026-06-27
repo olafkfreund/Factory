@@ -84,17 +84,17 @@ With those fixed, LinkLite ran on a real EKS 1.33 cluster (one `t3.small` node),
 RDS `db.t4g.micro` and ElastiCache `cache.t4g.micro`, behind a public load balancer:
 
 ```
-# /healthz  (web -> Postgres + Redis)
+# /healthz (web -> Postgres + Redis)
 {"status":"ok"}
 
 # POST /shorten
 {"code":"3HiFqJD","shortUrl":".../r/3HiFqJD"}
 
-# GET /r/3HiFqJD          -> HTTP 302 -> https://www.freundcloud.com/factory  (cache miss)
-# GET /r/3HiFqJD again    -> HTTP 302 (served from Redis — no DB hit)
-# GET /stats/3HiFqJD      -> {"hits":1}    (the cache hit did NOT increment the DB counter)
+# GET /r/3HiFqJD -> HTTP 302 -> https://www.freundcloud.com/factory  (cache miss)
+# GET /r/3HiFqJD again -> HTTP 302 (served from Redis — no DB hit)
+# GET /stats/3HiFqJD -> {"hits":1}    (the cache hit did NOT increment the DB counter)
 
-# invalid url  -> 400
+# invalid url -> 400
 # unknown code -> 404
 ```
 
