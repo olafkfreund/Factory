@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Tic-Tac-Toe</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:520px;margin:2rem auto;padding:0 1rem;background:#0f1117;color:#e6e6e6}
+ h1{font-size:1.3rem} .row{display:flex;gap:.5rem;align-items:center;margin:.5rem 0}
+ input{padding:.4rem;border-radius:6px;border:1px solid #333;background:#1a1d26;color:#e6e6e6}
+ #board{display:grid;grid-template-columns:repeat(3,90px);gap:6px;margin:1rem 0}
+ .cell{height:90px;font-size:2.2rem;background:#1a1d26;border:1px solid #333;border-radius:8px;cursor:pointer;color:#e6e6e6}
+ .cell:disabled{cursor:default;opacity:.85}
+ #status{font-weight:600;min-height:1.4rem;color:#7ee787}
+ table{width:100%;border-collapse:collapse;margin-top:.5rem} td,th{text-align:left;padding:.35rem;border-bottom:1px solid #2a2d36}
+</style></head>
+<body>
+<h1>Factory Tic-Tac-Toe</h1>
+<div class="row"><label>Player <input id="name" data-testid="name" value="Guest"></label>
+<button id="reset" data-testid="reset">New game</button></div>
+<div id="board" data-testid="board"></div>
+<div id="status" data-testid="status">Your move (X). Win a line to score.</div>
+<h2>Top players</h2>
+<table><thead><tr><th>#</th><th>Player</th><th>Wins</th></tr></thead>
+<tbody id="leaderboard" data-testid="leaderboard"></tbody></table>
+<script>
+const LINES=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+let board, over;
+const boardEl=document.getElementById('board'), statusEl=document.getElementById('status');
+function winner(b){for(const[a,c,d]of LINES)if(b[a]&&b[a]===b[c]&&b[a]===b[d])return b[a];return null;}
+function render(){boardEl.innerHTML='';board.forEach((v,i)=>{const btn=document.createElement('button');
+ btn.className='cell';btn.dataset.cell=i;btn.dataset.testid='cell-'+i;btn.textContent=v||'';
+ btn.disabled=!!v||over;btn.onclick=()=>play(i);boardEl.appendChild(btn);});}
+function firstEmpty(b){return b.findIndex(v=>!v);}
+async function play(i){if(over||board[i])return;board[i]='X';
+ if(winner(board)==='X'){over=true;statusEl.textContent='You won!';statusEl.dataset.result='win';await recordWin();render();return;}
+ if(firstEmpty(board)<0){over=true;statusEl.textContent='Draw';render();return;}
+ const o=firstEmpty(board);board[o]='O';
+ if(winner(board)==='O'){over=true;statusEl.textContent='Computer won';render();return;}
+ render();}
+async function recordWin(){const name=document.getElementById('name').value.trim()||'Guest';
+ try{await fetch('/api/win',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({player:name})});}catch(e){}
+ await loadBoardScores();}
+async function loadBoardScores(){try{const r=await fetch('/api/leaderboard');const d=await r.json();
+ const tb=document.getElementById('leaderboard');tb.innerHTML='';
+ (d.top||[]).forEach((p,idx)=>{const tr=document.createElement('tr');tr.dataset.testid='lb-row-'+idx;
+ tr.innerHTML=`<td>${idx+1}</td><td data-testid="lb-name-${idx}">${p.player}</td><td>${p.wins}</td>`;tb.appendChild(tr);});}catch(e){}}
+function reset(){board=Array(9).fill('');over=false;statusEl.textContent='Your move (X). Win a line to score.';delete statusEl.dataset.result;render();}
+document.getElementById('reset').onclick=reset;
+reset();loadBoardScores();
+</script></body></html>

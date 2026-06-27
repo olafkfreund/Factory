@@ -1,0 +1,5 @@
+# TFactory verification config: the live target the browser test runs against.
+# CI writes the Cloud Run URL into deployed_url.txt; set base_url to it for the run.
+targets:
+  - name: tic-tac-toe
+    base_url: "https://REPLACE-WITH-DEPLOYED-URL"
