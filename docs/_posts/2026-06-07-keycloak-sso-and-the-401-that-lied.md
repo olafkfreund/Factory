@@ -4,6 +4,7 @@ title: "Keycloak, GitHub SSO, and the 401 that lied to our faces"
 subtitle: "How we gave the Factory suite a front door — and the three-headed bug that kept slamming it shut"
 date: 2026-06-07
 author: Olaf Freund
+mermaid: true
 ---
 
 We wanted a simple thing: log into the Factory apps with our GitHub accounts, and let friends
@@ -26,9 +27,14 @@ The plan was boring on purpose — boring is what you want from auth:
   tunnel**. Everything deployed by **ArgoCD** from `factory-gitops`, because clicking around
   in a cluster is how you get a cluster nobody can rebuild.
 
-```
-GitHub OAuth App  ──broker──▶  Keycloak (realm: factory)  ──OIDC cookie──▶  aifactory / pfactory / tfactory
-```
+<div class="mermaid">
+flowchart LR
+    GH["GitHub OAuth App"] -- broker --> KC["Keycloak<br/>realm: factory"]
+    KC -- "OIDC cookie" --> APPS["aifactory · pfactory · tfactory"]
+    classDef kc fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    classDef app fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    class KC kc; class APPS app;
+</div>
 
 Keycloak itself runs in the most homelab way imaginable: `start-dev`, embedded H2 on a PVC,
 TLS terminated upstream by Cloudflare (`KC_PROXY_HEADERS=xforwarded`, `KC_HOSTNAME_STRICT=false`).
