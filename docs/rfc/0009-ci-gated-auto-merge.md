@@ -1,4 +1,5 @@
 ---
+mermaid: true
 layout: default
 title: "RFC-0009: Provider-Agnostic CI-Gated Auto-Merge"
 permalink: /rfc/ci-gated-auto-merge/
@@ -42,21 +43,22 @@ checks, and auto-merge primitives.
 
 ## 3. The loop
 
-```
-intent → PFactory plan (signed contract, RFC-0002)
-       → AIFactory build → open PR/MR (provider.create_pr)
-            │
-            ├── host CI runs on the PR (build/lint/unit)      ── required check: "ci/*"
-            └── TFactory runs its lanes → quality_gate →
-                provider.post_check(context="TFactory / tests") ── required check: "TFactory / tests"
-            │
-       merge policy: all required checks green
-                     AND assurance ≥ policy floor (RFC-0006)
-                     AND required approvals satisfied (by risk)
-            │
-       provider.enable_auto_merge() / merge when gate clears
-            → merged; CFactory threads PLAN→CODE→TEST→MERGED by issue (RFC-0001)
-```
+<div class="mermaid">
+flowchart TB
+    I["intent"] --> PF["PFactory plan<br/>signed contract · RFC-0002"]
+    PF --> AF["AIFactory build<br/>open PR/MR · provider.create_pr"]
+    AF --> CI["host CI on the PR<br/>build / lint / unit<br/>required check: ci/*"]
+    AF --> TF["TFactory lanes → quality_gate<br/>provider.post_check<br/>required check: TFactory / tests"]
+    CI --> POL{"merge policy<br/>all required checks green AND<br/>assurance ≥ policy floor (RFC-0006) AND<br/>required approvals satisfied"}
+    TF --> POL
+    POL --> MG["provider.enable_auto_merge()<br/>merge when gate clears"]
+    MG --> DONE["merged · CFactory threads<br/>PLAN → CODE → TEST → MERGED by issue"]
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class PF pf; class AF af; class TF tf; class DONE cf;
+</div>
 
 ## 4. The provider contract (extension)
 
