@@ -1,4 +1,5 @@
 ---
+mermaid: true
 layout: default
 title: "RFC-0016: Horizontal & Concurrent Execution — scaling the PARR fleet to N jobs"
 permalink: /rfc/horizontal-concurrent-execution/

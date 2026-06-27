@@ -1,4 +1,5 @@
 ---
+mermaid: true
 layout: default
 title: "RFC-0014: Cost-Aware, Capability-Aware Model & Runtime Routing"
 permalink: /rfc/cost-aware-routing/
@@ -198,6 +199,14 @@ flowchart TD
     K --> L
     L --> M["CFactory: estimate vs actual, per-role cost,<br/>routing rationale in the cockpit"]
     D -->|"budget_mode=enforce & estimate>ceiling"| N["downgrade within floor<br/>or fail-fast (named reason)"]
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class B pf;
+    class J af;
+    class K tf;
+    class M cf;
 ```
 
 **Why:** spend the expensive model where mistakes are costly (plan/governance),
