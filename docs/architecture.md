@@ -19,13 +19,13 @@ from CFactory, the control tower.
 
 <div class="mermaid">
 flowchart LR
-    subgraph P["🧭 Prepare"]
+    subgraph P[" Prepare"]
         PF["PFactory<br/>:3114 · :3115"]
     end
-    subgraph A["🛠️ Act"]
+    subgraph A[" Act"]
         AF["AIFactory<br/>:3101"]
     end
-    subgraph R["🧪 Reflect / Verify"]
+    subgraph R[" Reflect / Verify"]
         TF["TFactory<br/>:3103"]
     end
 
@@ -33,7 +33,7 @@ flowchart LR
     AF -- "merge-ready branch / PR" --> TF
     TF -. "handback · failing verdict" .-> AF
 
-    CF["🛰️ CFactory — control tower<br/>:3110 API · :3111 stream"]
+    CF[" CFactory — control tower<br/>:3110 API · :3111 stream"]
     PF -. "completion event" .-> CF
     AF -. "completion event" .-> CF
     TF -. "completion event" .-> CF

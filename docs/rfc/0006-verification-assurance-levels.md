@@ -10,7 +10,7 @@ permalink: /rfc/verification-assurance/
 > RFC-0001a said *no green without proof*. This RFC says *declare **how much** was
 > proven, and **never** present a lower assurance level as a higher one.* The
 > single rule: **we never tell the user something is tested when it isn't.**
-> Credibility is the product; one inflated "✓ tested" loses it.
+> Credibility is the product; one inflated " tested" loses it.
 
 ## 1. The problem — the verifiability ceiling
 
@@ -18,7 +18,7 @@ Some tasks cannot be fully verified by the factory alone. "Write an Ansible role
 and test it" can be **statically** checked (lint/syntax) and **converged in an
 ephemeral container** (Molecule), but truly proving it requires applying it
 against real, prod-like hosts — which may need a sandbox cloud account we don't
-have. The danger is reporting `tested ✓` when we only linted. The fix is not to
+have. The danger is reporting `tested ` when we only linted. The fix is not to
 test less; it is to **measure and declare the assurance level honestly**, and to
 make "built, but only verifiable to level N" a first-class, surfaced outcome.
 
@@ -28,7 +28,7 @@ make "built, but only verifiable to level N" a first-class, surfaced outcome.
 |---|---|---|---|---|
 | **VAL-0** | Static | It parses / lints / type-checks / scans clean | `ansible-lint`, `--syntax-check`, `ruff`, `mypy`, `terraform validate`, `tflint`, `hadolint` | toolchain only |
 | **VAL-1** | Unit | Pure logic behaves, deterministically, no external deps | `pytest`, `cargo test`, `go test` | toolchain |
-| **VAL-2** | Integration (ephemeral, local) | It works against **real but disposable** deps in the sandbox | **devenv services** (Postgres ✔ validated), testcontainers, **Molecule** converge+idempotence+verify (testinfra) for Ansible, `terraform plan` | sandbox + ephemeral deps |
+| **VAL-2** | Integration (ephemeral, local) | It works against **real but disposable** deps in the sandbox | **devenv services** (Postgres  validated), testcontainers, **Molecule** converge+idempotence+verify (testinfra) for Ansible, `terraform plan` | sandbox + ephemeral deps |
 | **VAL-3** | System (sandbox target) | It works applied against a **disposable prod-like target** | throwaway VM (QEMU/libvirt) or **sandbox cloud** account: `ansible-playbook` apply + assert, `terraform apply` + destroy, k8s deploy to ephemeral cluster | disposable target + creds + **cost guard + auto-teardown** |
 | **VAL-4** | Production parity | It works in the user's real environment | — | the user's prod — **never done autonomously** |
 
@@ -46,11 +46,11 @@ Worked example — **Ansible role**:
 
 | Level | Command | Requirement | Autonomous? |
 |---|---|---|---|
-| VAL-0 | `ansible-lint`, `ansible-playbook --syntax-check`, `yamllint` | ansible toolchain (Nix/devenv) | ✅ always |
+| VAL-0 | `ansible-lint`, `ansible-playbook --syntax-check`, `yamllint` | ansible toolchain (Nix/devenv) |  always |
 | VAL-1 | (n/a — roles have little pure-unit logic) | — | — |
-| VAL-2 | `molecule test` (Docker/Podman driver: create → converge → **idempotence** → verify) | ephemeral container target | ✅ in the sandbox |
-| VAL-3 | `ansible-playbook -i <sandbox-inventory>` apply + assert | a real sandbox host/VM/cloud + creds | ⚠ only if a disposable target is provisioned |
-| VAL-4 | apply to prod | the user's hosts | ❌ never |
+| VAL-2 | `molecule test` (Docker/Podman driver: create → converge → **idempotence** → verify) | ephemeral container target |  in the sandbox |
+| VAL-3 | `ansible-playbook -i <sandbox-inventory>` apply + assert | a real sandbox host/VM/cloud + creds |  only if a disposable target is provisioned |
+| VAL-4 | apply to prod | the user's hosts |  never |
 
 The planner emits a **Verification Plan** in the RFC-0002 contract:
 `target_level`, the per-level commands, and each level's `requires` (toolchain /
@@ -109,7 +109,7 @@ Rules:
 4. **The user-facing line is mandatory and honest**, e.g.: *"Built the Ansible
    role; passed lint + an ephemeral Molecule converge with idempotence; **I could
    not test it against real hosts (no sandbox target), so apply-time behavior is
-   unproven.**"* — never just "✅ tested".
+   unproven.**"* — never just " tested".
 
 ## 6. Where it plugs in
 

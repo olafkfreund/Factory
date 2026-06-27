@@ -117,7 +117,7 @@ handback loop meaningful.
 ## Where this leaves us
 
 - **Build leg:** proven on the live cluster — **~28 min, 3.7M tokens, $1.88**,
-  measured from the SDK's own cost figures. ✅
+  measured from the SDK's own cost figures. 
 - **Harness:** six seam bugs fixed; the token/cost capture now works (that's
   where the $1.88 comes from).
 - **Verify leg:** the code-carrying gap is closed on both sides, and the last
@@ -139,7 +139,7 @@ With the harness reading the right place, here's the row:
 
 | Scenario | Code | Verify | Tokens | Cost | Overall |
 |---|---|---|---|---|---|
-| FastAPI API gateway w/ rate limiting | passed (29.8 min) | passed (23.2 min) | 6,482,337 | **$3.12** | **✅ passed** |
+| FastAPI API gateway w/ rate limiting | passed (29.8 min) | passed (23.2 min) | 6,482,337 | **$3.12** | ** passed** |
 
 Plan → build → verify, on the live cluster, with a time and a dollar figure
 attached. The verify leg ran the `unit` and `api` lanes against the build and

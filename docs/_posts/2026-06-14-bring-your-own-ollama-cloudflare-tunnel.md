@@ -135,7 +135,7 @@ You need: a domain already on Cloudflare, and an API token scoped to
 #!/usr/bin/env bash
 # byo-ollama-named.sh - a STABLE Cloudflare named tunnel for your own domain,
 # created via the Cloudflare API, fronted by Cloudflare Access.
-#   usage: ./byo-ollama-named.sh ollama.example.com
+# usage: ./byo-ollama-named.sh ollama.example.com
 set -euo pipefail
 
 : "${CF_API_TOKEN:?set CF_API_TOKEN (Account: Cloudflare Tunnel:Edit, Zone: DNS:Edit)}"
