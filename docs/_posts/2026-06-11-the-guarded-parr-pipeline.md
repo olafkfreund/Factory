@@ -32,6 +32,13 @@ flowchart LR
     PR -->|"approved"| M["Merged"]
     classDef g fill:#b8bb26,stroke:#98971a,color:#1d2021;
     class M g;
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class PF pf;
+    class AF af;
+    class TF tf;
 </div>
 
 ## Fifteen guards, two layers

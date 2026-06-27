@@ -97,6 +97,25 @@ flowchart TD
     class PF2,PF4,AF1,AF5,TF4,TF5,PR3,PR4,PR6,PR7 gate;
     class PFX,NH,EndH stop;
     class AF2,PR9,EndM good;
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class PF pf;
+    class PF1 pf;
+    class PF3 pf;
+    class PF5 pf;
+    class PF6 pf;
+    class AF af;
+    class AFB af;
+    class AF3 af;
+    class AF4 af;
+    class HB af;
+    class PR2 af;
+    class TF tf;
+    class TF1 tf;
+    class TF2 tf;
+    class TF3 tf;
 </div>
 
 ---

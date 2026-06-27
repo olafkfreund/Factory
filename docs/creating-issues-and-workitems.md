@@ -114,6 +114,14 @@ flowchart TD
     AM --> DONE["Done: review-ready / merged<br/>threaded by issue number in CFactory"]
     MG --> DONE
     HB -.->|cannot fix| NH["factory:failed + comment<br/>(never silently dropped)"]
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class H pf;
+    class BUILD af;
+    class V tf;
+    class DONE cf;
 ```
 
 Why it is shaped this way:

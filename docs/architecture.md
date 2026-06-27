@@ -40,6 +40,13 @@ flowchart LR
 
     classDef tower fill:#1d2b3a,stroke:#5aa9e6,color:#cde4ff;
     class CF tower;
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class PF pf;
+    class AF af;
+    class TF tf;
 </div>
 
 Prepare → Act → Reflect run left to right. The dotted return arrow is the
@@ -79,6 +86,13 @@ flowchart TB
 
     classDef tower fill:#1d2b3a,stroke:#5aa9e6,color:#cde4ff;
     class CF tower;
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class PF pf;
+    class AF af;
+    class TF tf;
 </div>
 
 Events are **idempotent** by `(service, correlation_key, status)` and consumers
@@ -108,6 +122,13 @@ flowchart LR
 
     classDef key fill:#2a2a1a,stroke:#fabd2f,color:#fdf3c5;
     class B key;
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class A pf;
+    class C af;
+    class E tf;
 </div>
 
 That one key is what lets CFactory show — and steer — `plan → code → branch/PR →

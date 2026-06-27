@@ -1,4 +1,5 @@
 ---
+mermaid: true
 layout: default
 title: "RFC-0015: Spec-Driven Interop, Adversarial Spec Review, Traceability & a Declarative Extension Registry"
 permalink: /rfc/spec-driven-interop/
@@ -175,6 +176,15 @@ flowchart TD
     REG["D3: apis/extension-registry.json (category + effect)"] -.governs.-> RT
     REG -.governs.-> AI
     REG -.governs.-> TF
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class P pf;
+    class EM pf;
+    class AI af;
+    class TF tf;
+    class CF cf;
 ```
 
 **Why:** capture spec-kit's three good ideas (constitution, readable artifacts,
