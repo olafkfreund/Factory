@@ -220,13 +220,20 @@ chain** — the cooperation we're building out:
    number** — threads `plan → code → branch/PR → tests`, so CFactory can show and
    steer the whole pipeline from one place.
 
-```
-   PFactory ──issues──▶ AIFactory ──branch/PR──▶ TFactory
-       ▲                    │  ▲                     │
-       │                    │  └──── handback ───────┘
-       └─ correlation key (GitHub issue #) ──────────┘
-                    every step observed by CFactory
-```
+<div class="mermaid">
+flowchart LR
+    PF["PFactory"] -- "issue #" --> AF["AIFactory"]
+    AF -- "branch / PR · issue #" --> TF["TFactory"]
+    TF -. "handback" .-> AF
+    C["CFactory<br/>observes every step ·<br/>threads by issue #"] -.-> PF
+    C -.-> AF
+    C -.-> TF
+    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
+    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
+    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    class PF pf; class AF af; class TF tf; class C cf;
+</div>
 
 The connective tissue — a shared correlation key, a normalized completion-event
 schema, and a canonical local port map — is tracked as the **PARR-spine epic** in
