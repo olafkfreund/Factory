@@ -12,9 +12,18 @@ provider "azurerm" {
 }
 
 variable "subscription_id" { type = string }
-variable "location" { type = string, default = "uksouth" }
-variable "image" { type = string, default = "" } # acr/app:tag — empty in phase-1 (infra only)
-variable "prefix" { type = string, default = "ttt" }
+variable "location" {
+  type    = string
+  default = "uksouth"
+}
+variable "image" {
+  type    = string
+  default = "" # acr/app:tag — empty in phase-1 (infra only)
+}
+variable "prefix" {
+  type    = string
+  default = "ttt"
+}
 
 resource "random_password" "db" {
   length  = 20
@@ -62,48 +71,78 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "azure" {
   end_ip_address   = "0.0.0.0"
 }
 
-resource "azurerm_redis_cache" "redis" {
-  name                 = "${var.prefix}-redis-${random_string.suffix.result}"
-  resource_group_name  = azurerm_resource_group.rg.name
-  location             = azurerm_resource_group.rg.location
-  capacity             = 0
-  family               = "C"
-  sku_name             = "Basic"
-  non_ssl_port_enabled = false
-  minimum_tls_version  = "1.2"
-}
-
-resource "azurerm_service_plan" "plan" {
-  name                = "${var.prefix}-plan"
+# Serverless containers (no VM quota; Azure Cache for Redis is retiring, so Redis
+# runs as a sidecar container co-located with the app at localhost:6379).
+resource "azurerm_container_app_environment" "env" {
+  name                = "${var.prefix}-env"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
-  os_type             = "Linux"
-  sku_name            = "B1"
 }
 
-resource "azurerm_linux_web_app" "app" {
-  count               = var.image == "" ? 0 : 1
-  name                = "${var.prefix}-app-${random_string.suffix.result}"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  service_plan_id     = azurerm_service_plan.plan.id
-  site_config {
-    application_stack {
-      docker_image_name        = var.image
-      docker_registry_url      = "https://${azurerm_container_registry.acr.login_server}"
-      docker_registry_username = azurerm_container_registry.acr.admin_username
-      docker_registry_password = azurerm_container_registry.acr.admin_password
+resource "azurerm_container_app" "app" {
+  count                        = var.image == "" ? 0 : 1
+  name                         = "${var.prefix}-app"
+  resource_group_name          = azurerm_resource_group.rg.name
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  revision_mode                = "Single"
+
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-pwd"
+  }
+  secret {
+    name  = "acr-pwd"
+    value = azurerm_container_registry.acr.admin_password
+  }
+  secret {
+    name  = "db-url"
+    value = "postgresql://ttt:${random_password.db.result}@${azurerm_postgresql_flexible_server.pg.fqdn}:5432/ttt?sslmode=require"
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+    container {
+      name   = "redis"
+      image  = "docker.io/library/redis:7-alpine"
+      cpu    = 0.25
+      memory = "0.5Gi"
+    }
+    container {
+      name   = "app"
+      image  = "${azurerm_container_registry.acr.login_server}/${var.image}"
+      cpu    = 0.75
+      memory = "1.5Gi"
+      env {
+        name        = "DATABASE_URL"
+        secret_name = "db-url"
+      }
+      env {
+        name  = "REDIS_HOST"
+        value = "localhost"
+      }
+      env {
+        name  = "REDIS_PORT"
+        value = "6379"
+      }
+      env {
+        name  = "REDIS_SSL"
+        value = "false"
+      }
     }
   }
-  app_settings = {
-    WEBSITES_PORT  = "8080"
-    DATABASE_URL   = "postgresql://ttt:${random_password.db.result}@${azurerm_postgresql_flexible_server.pg.fqdn}:5432/ttt?sslmode=require"
-    REDIS_HOST     = azurerm_redis_cache.redis.hostname
-    REDIS_PORT     = "6380"
-    REDIS_SSL      = "true"
-    REDIS_PASSWORD = azurerm_redis_cache.redis.primary_access_key
+  ingress {
+    external_enabled = true
+    target_port      = 8080
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
   }
 }
 
 output "acr_login_server" { value = azurerm_container_registry.acr.login_server }
-output "url" { value = var.image == "" ? "" : "https://${azurerm_linux_web_app.app[0].default_hostname}" }
+output "url" {
+  value = var.image == "" ? "" : "https://${azurerm_container_app.app[0].ingress[0].fqdn}"
+}
