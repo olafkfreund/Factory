@@ -114,10 +114,10 @@ flowchart TD
     AM --> DONE["Done: review-ready / merged<br/>threaded by issue number in CFactory"]
     MG --> DONE
     HB -.->|cannot fix| NH["factory:failed + comment<br/>(never silently dropped)"]
-    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
-    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
-    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
-    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    classDef pf fill:#2b3a37,stroke:#83a598,stroke-width:2px,color:#cfe6de,font-weight:bold;
+    classDef af fill:#3a2b18,stroke:#fe8019,stroke-width:2px,color:#f6cfa6,font-weight:bold;
+    classDef tf fill:#33360f,stroke:#b8bb26,stroke-width:2px,color:#e2e4a0,font-weight:bold;
+    classDef cf fill:#3a3115,stroke:#fabd2f,stroke-width:2px,color:#f6dd98,font-weight:bold;
     class H pf;
     class BUILD af;
     class V tf;

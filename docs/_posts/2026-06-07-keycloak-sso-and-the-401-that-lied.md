@@ -31,8 +31,8 @@ The plan was boring on purpose — boring is what you want from auth:
 flowchart LR
     GH["GitHub OAuth App"] -- broker --> KC["Keycloak<br/>realm: factory"]
     KC -- "OIDC cookie" --> APPS["aifactory · pfactory · tfactory"]
-    classDef kc fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
-    classDef app fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
+    classDef kc fill:#3a3115,stroke:#fabd2f,stroke-width:2px,color:#f6dd98,font-weight:bold;
+    classDef app fill:#2b3a37,stroke:#83a598,stroke-width:2px,color:#cfe6de,font-weight:bold;
     class KC kc; class APPS app;
 </div>
 
