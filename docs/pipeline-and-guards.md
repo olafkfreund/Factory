@@ -101,21 +101,24 @@ flowchart TD
     classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
     classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
     classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
-    class PF pf;
-    class PF1 pf;
-    class PF3 pf;
-    class PF5 pf;
-    class PF6 pf;
-    class AF af;
-    class AFB af;
-    class AF3 af;
-    class AF4 af;
-    class HB af;
-    class PR2 af;
-    class TF tf;
-    class TF1 tf;
-    class TF2 tf;
-    class TF3 tf;
+    classDef pfbox fill:#32302f,stroke:#83a598,stroke-width:2px,color:#83a598;
+    classDef afbox fill:#32302f,stroke:#fe8019,stroke-width:2px,color:#fe8019;
+    classDef tfbox fill:#32302f,stroke:#b8bb26,stroke-width:2px,color:#b8bb26;
+        class PF pfbox;
+        class PF1 pf;
+        class PF3 pf;
+        class PF5 pf;
+        class PF6 pf;
+        class AF afbox;
+        class AFB af;
+        class AF3 af;
+        class AF4 af;
+        class HB af;
+        class PR2 af;
+        class TF tfbox;
+        class TF1 tf;
+        class TF2 tf;
+        class TF3 tf;
 </div>
 
 ---

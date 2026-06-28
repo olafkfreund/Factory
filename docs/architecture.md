@@ -44,9 +44,9 @@ flowchart LR
     classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
     classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
     classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
-    class PF pf;
-    class AF af;
-    class TF tf;
+        class PF pf;
+        class AF af;
+        class TF tf;
 </div>
 
 Prepare → Act → Reflect run left to right. The dotted return arrow is the
@@ -90,9 +90,9 @@ flowchart TB
     classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
     classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
     classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
-    class PF pf;
-    class AF af;
-    class TF tf;
+        class PF pf;
+        class AF af;
+        class TF tf;
 </div>
 
 Events are **idempotent** by `(service, correlation_key, status)` and consumers
