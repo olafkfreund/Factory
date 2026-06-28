@@ -82,11 +82,11 @@ flowchart LR
     C["CFactory · Review<br/>observe &amp; steer"] -.-> P
     C -.-> A
     C -.-> T
-    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
-    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
-    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
-    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
-    classDef sh fill:#1b1b1b,stroke:#b8bb26,color:#b8bb26,font-weight:bold;
+    classDef pf fill:#2b3a37,stroke:#83a598,stroke-width:2px,color:#cfe6de,font-weight:bold;
+    classDef af fill:#3a2b18,stroke:#fe8019,stroke-width:2px,color:#f6cfa6,font-weight:bold;
+    classDef tf fill:#33360f,stroke:#b8bb26,stroke-width:2px,color:#e2e4a0,font-weight:bold;
+    classDef cf fill:#3a3115,stroke:#fabd2f,stroke-width:2px,color:#f6dd98,font-weight:bold;
+    classDef sh fill:#26331a,stroke:#b8bb26,stroke-width:2px,color:#cfe6b0,font-weight:bold;
     class P pf; class A af; class T tf; class C cf; class S sh;
 ```
 
@@ -228,10 +228,10 @@ flowchart LR
     C["CFactory<br/>observes every step ·<br/>threads by issue #"] -.-> PF
     C -.-> AF
     C -.-> TF
-    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
-    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
-    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
-    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
+    classDef pf fill:#2b3a37,stroke:#83a598,stroke-width:2px,color:#cfe6de,font-weight:bold;
+    classDef af fill:#3a2b18,stroke:#fe8019,stroke-width:2px,color:#f6cfa6,font-weight:bold;
+    classDef tf fill:#33360f,stroke:#b8bb26,stroke-width:2px,color:#e2e4a0,font-weight:bold;
+    classDef cf fill:#3a3115,stroke:#fabd2f,stroke-width:2px,color:#f6dd98,font-weight:bold;
     class PF pf; class AF af; class TF tf; class C cf;
 </div>
 

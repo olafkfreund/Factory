@@ -91,19 +91,19 @@ flowchart TD
     PR9 --> EndM([Merged])
     NH --> EndH([Human takes over])
 
-    classDef gate fill:#fabd2f,stroke:#d79921,color:#1d2021;
-    classDef stop fill:#fb4934,stroke:#cc241d,color:#1d2021;
-    classDef good fill:#b8bb26,stroke:#98971a,color:#1d2021;
+    classDef gate fill:#3a3115,stroke:#fabd2f,stroke-width:2px,color:#f6dd98;
+    classDef stop fill:#3d1f1c,stroke:#fb4934,stroke-width:2px,color:#f5a99f;
+    classDef good fill:#33360f,stroke:#b8bb26,stroke-width:2px,color:#e2e4a0;
     class PF2,PF4,AF1,AF5,TF4,TF5,PR3,PR4,PR6,PR7 gate;
     class PFX,NH,EndH stop;
     class AF2,PR9,EndM good;
-    classDef pf fill:#83a598,stroke:#5f8175,color:#1b1b1b,font-weight:bold;
-    classDef af fill:#fe8019,stroke:#c4641a,color:#1b1b1b,font-weight:bold;
-    classDef tf fill:#b8bb26,stroke:#8d9020,color:#1b1b1b,font-weight:bold;
-    classDef cf fill:#fabd2f,stroke:#c69526,color:#1b1b1b,font-weight:bold;
-    classDef pfbox fill:#32302f,stroke:#83a598,stroke-width:2px,color:#83a598;
-    classDef afbox fill:#32302f,stroke:#fe8019,stroke-width:2px,color:#fe8019;
-    classDef tfbox fill:#32302f,stroke:#b8bb26,stroke-width:2px,color:#b8bb26;
+    classDef pf fill:#2b3a37,stroke:#83a598,stroke-width:2px,color:#cfe6de,font-weight:bold;
+    classDef af fill:#3a2b18,stroke:#fe8019,stroke-width:2px,color:#f6cfa6,font-weight:bold;
+    classDef tf fill:#33360f,stroke:#b8bb26,stroke-width:2px,color:#e2e4a0,font-weight:bold;
+    classDef cf fill:#3a3115,stroke:#fabd2f,stroke-width:2px,color:#f6dd98,font-weight:bold;
+    classDef pfbox fill:#262c2b,stroke:#83a598,stroke-width:2px,color:#83a598;
+    classDef afbox fill:#2e261c,stroke:#fe8019,stroke-width:2px,color:#fe8019;
+    classDef tfbox fill:#2b2c14,stroke:#b8bb26,stroke-width:2px,color:#b8bb26;
         class PF pfbox;
         class PF1 pf;
         class PF3 pf;
