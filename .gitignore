@@ -12,3 +12,6 @@ reports/jscpd/
 # python bytecode caches
 __pycache__/
 *.pyc
+
+# Local direnv env (may hold secrets) — never commit
+.envrc
