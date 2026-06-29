@@ -53,7 +53,10 @@ pfactory.session_id  →  issue#  →  aifactory.task_id  →  branch / PR#  →
 ## 3. The completion-event envelope
 
 A service emits **one** completion event when its stage reaches a **terminal status**.
-The envelope has exactly these six required fields:
+The envelope has these required fields — the RFC core plus CloudEvents-core (adopted
+in the v1.2 additive upgrade #466/#468 and made canonical by the #471 cutover, which
+removed the now-redundant legacy `schema_version`, `event`, `correlation_id`, and
+`updated_at` duplicates):
 
 | Field | Type | Description |
 |---|---|---|
@@ -62,7 +65,13 @@ The envelope has exactly these six required fields:
 | `task_id` | string | The emitter's *local* identifier for this unit (PFactory: `session_id`; AIFactory: `task_id`; TFactory: `spec_id`). |
 | `status` | string | The terminal status this service landed on (§5). |
 | `phase` | string | The pipeline phase the status belongs to (e.g. `emit`, `review`, `qa`, `test`). |
-| `updated_at` | string | ISO-8601 UTC timestamp of the terminal transition. |
+| `id` | string | Per-event idempotency key (CloudEvents `id`); consumers dedup on it exactly-once. |
+| `specversion` | string | CloudEvents spec version — `1.0`. |
+| `source` | string | CloudEvents source URI-reference identifying the producer (e.g. `/pfactory`). |
+| `type` | string | CloudEvents event type (reverse-DNS, e.g. `io.factory.pfactory.completion`). |
+| `time` | string | ISO-8601 UTC occurrence timestamp (CloudEvents `time`; replaces the legacy `updated_at`). |
+
+A `traceparent` (W3C trace context) is also emitted for OpenTelemetry correlation.
 
 ### Example
 
@@ -73,7 +82,11 @@ The envelope has exactly these six required fields:
   "task_id": "001-refund-flow",
   "status": "emitted",
   "phase": "emit",
-  "updated_at": "2026-06-04T15:14:45+00:00"
+  "id": "9f1c0e2a-0b3d-4a5e-8c7f-1a2b3c4d5e6f",
+  "specversion": "1.0",
+  "source": "/pfactory",
+  "type": "io.factory.pfactory.completion",
+  "time": "2026-06-04T15:14:45+00:00"
 }
 ```
 
@@ -94,7 +107,7 @@ without polling. **Additive and optional** — consumers MUST ignore it when abs
 ```json
 {
   "correlation_key": "142", "service": "aifactory", "task_id": "proj:001",
-  "status": "done", "phase": "act", "updated_at": "2026-06-05T12:00:00+00:00",
+  "status": "done", "phase": "act", "time": "2026-06-05T12:00:00+00:00",
   "usage": { "input_tokens": 2400, "output_tokens": 100,
              "total_tokens": 2500, "cost_usd": 1.25, "model": "claude-sonnet-4-6" }
 }
@@ -116,7 +129,7 @@ table. All members are optional and additive:
   "task_id": "001-refund-flow",
   "status": "emitted",
   "phase": "emit",
-  "updated_at": "2026-06-04T15:14:45+00:00",
+  "time": "2026-06-04T15:14:45+00:00",
   "correlation": {
     "session_id": "001-refund-flow",
     "issue_number": 142,
@@ -164,17 +177,21 @@ the names with their own prefix):
 | `PFACTORY_COMPLETION_SENTINEL=1` | Also write a `COMPLETED.json` sentinel. |
 | `PFACTORY_COMPLETION_SENTINEL_DIR=<dir>` | Where the sentinel is written. |
 
-Consumers SHOULD treat events as **idempotent** by `(service, correlation_key,
-status)` — a retried or duplicated delivery for the same terminal transition is the
-same event.
+Consumers MUST treat events as **idempotent** by the per-event CloudEvents `id`
+(#468) — a retried or duplicated delivery carries the same `id` and is the same
+event, while a legitimate re-run after handback carries a new `id`. The #471 cutover
+removed the legacy `(service, correlation_key, status)` dedup key (it wrongly
+collided on re-runs); a consumer that receives an event with no `id` SHOULD treat it
+as an ingest anomaly rather than silently fall back to the old key.
 
 ## 7. Versioning & compatibility
 
-- The six §3 fields are **stable**. New fields are **additive** and optional; a consumer
-  MUST ignore unknown fields.
-- Removing or renaming a field, or changing a field's type, is a **breaking** change and
-  requires a new RFC version (and a `schema_version` field on the envelope at that time).
-- Until then, the absence of `schema_version` implies **v1** (this document).
+- The §3 required fields are **stable**. New fields are **additive** and optional; a
+  consumer MUST ignore unknown fields.
+- Removing or renaming a required field, or changing a field's type, is a **breaking**
+  change and requires a new RFC version. Version is conveyed by the CloudEvents
+  `specversion` (`1.0`) and the published JSON schema's `$id`; the legacy
+  `schema_version` envelope field was removed in the #471 cutover.
 
 ## 8. Reference implementation
 
