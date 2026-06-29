@@ -13,9 +13,11 @@ permalink: /rfc/job-native-scale-out/
 > safe in-pod defaults. Stage E workspace pack/unpack runs live, and the last
 > node-pin on the packed build path — the warm Nix-store PVC — was cut by baking
 > the store into a `-nix` build image (#190); a packed build Job now carries no
-> node affinity. The cross-node *landing* proof is pending a second cluster node,
-> not more code.) ·
-> **Created:** 2026-06-21 · **Updated:** 2026-06-23 · **Extends:**
+> node affinity. The cross-node *landing* is now **proven live** (2026-06-29): a
+> node-agnostic Job on the `-nix` build image scheduled onto a second cluster node
+> with the control-plane cordoned, resolving toolchains from the baked store
+> offline — closing the last infra-gated item (#215).) ·
+> **Created:** 2026-06-21 · **Updated:** 2026-06-29 · **Extends:**
 > [RFC-0016](./0016-horizontal-concurrent-execution.md) (Job-per-task substrate,
 > durable state, KEDA), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md)
 > (Nix Jobs) · **Affects:** AIFactory (build default, logs/rmux, Redis),
@@ -74,9 +76,12 @@ scheduling Jobs across **multiple nodes**.
 > a dispatcher gate (`AIFACTORY_PACKED_NIX_IN_IMAGE`) that drops the Nix-store PVC
 > on the packed path (#730), a `-nix` build image that bakes `/nix/store` into a
 > layer (#732), and the gitops flip pointing the build at it (#733 + gitops). A
-> packed build Job now carries **no node affinity** by construction. Remaining:
-> demonstrate an actual cross-node landing, which needs a second node on the live
-> cluster (single-node today) — a validation step, not a code gap.
+> packed build Job now carries **no node affinity** by construction. **Cross-node
+> landing proven live (2026-06-29):** with a second agent node (`k3d-agent-0-0`)
+> joined to the `factory` k3d cluster and the control-plane node
+> (`k3d-factory-server-0`) cordoned, a node-agnostic Job on the `-nix` build image
+> was bound by the scheduler to the agent node and resolved a toolchain from the
+> baked `/nix/store` fully offline. See §4.
 
 ### 2.4 (Optional, later) HA Postgres
 Postgres is single-replica today (fine for "durable state exists"). Streaming
@@ -107,6 +112,15 @@ completeness, not required by this RFC.
   build/verify completes with NO RWO worktree mount; results readable from object
   storage by the control plane + CFactory; schedule two Jobs on (simulated) two
   nodes without a shared PVC.
+- **Cross-node landing (RFC-0016 #190 depin, Factory #215): proven live 2026-06-29.**
+  A second agent node (`k3d-agent-0-0`) is joined to the `factory` k3d cluster. With
+  the control-plane node (`k3d-factory-server-0`) cordoned, a node-agnostic Job on
+  the packed `-nix` build image (`AIFACTORY_BUILD_IMAGE` `…aifactory:sha-24b2796-nix`)
+  was bound by the scheduler to the agent node in ~2s, ran `nix` 2.30.1 and executed
+  a toolchain binary from the baked `/nix/store` (121 store paths) fully offline, and
+  completed green — while the 28-pod control-plane fleet was undisturbed and the node
+  was uncordoned immediately afterward. This closes the only infra-gated item under
+  epic #206.
 
 ## 5. Adoption (tracked by the epic)
 
