@@ -10,10 +10,18 @@ terraform {
   }
 }
 provider "aws" { region = var.region }
-variable "region" { type = string, default = "eu-west-2" }
-variable "image" { type = string } # ECR image ref built by CI
+variable "region" {
+  type    = string
+  default = "eu-west-2"
+}
+variable "image" {
+  type = string # ECR image ref built by CI
+}
 
-resource "random_password" "db" { length = 20, special = false }
+resource "random_password" "db" {
+  length  = 20
+  special = false
+}
 
 resource "aws_db_instance" "pg" {
   identifier           = "ttt-pg"
