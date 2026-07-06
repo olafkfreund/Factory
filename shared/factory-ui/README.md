@@ -15,7 +15,7 @@ the Factory family already uses for `verification-core` and `factory-contracts`.
 | File | What it is | Per-portal input |
 |------|------------|------------------|
 | `CommandPalette.tsx` | ⌘K palette: fuzzy jump to views/tasks + run actions | The host assembles the flat `commands` list and supplies the task lane either as a local `tasks` list (filtered here) or via an async `onSearch(q)` that returns ranked results (federated search, #149). The component carries no portal-specific data, so it is already identical everywhere. |
-| `PortalSwitcher.tsx` | Topbar switcher: the four portals, current one active, others link out | The host passes a single `current` prop (`'plan' \| 'build' \| 'test' \| 'cockpit'`). Sibling URLs come from `VITE_*_URL` with live-portal fallbacks. |
+| `PortalSwitcher.tsx` | Topbar switcher: the four portals, current one active, others link out | The host passes a single `current` prop (`'plan' \| 'build' \| 'test' \| 'cockpit'`) and an optional `needsCount` (fleet human-blocked count → badge on the Cockpit chip). Sibling URLs come from `VITE_*_URL` with live-portal fallbacks. |
 
 Both are framework-light React + Tailwind that consume the shared shadcn/HSL
 token contract (`border`, `bg-card`, `bg-popover`, `bg-muted`, `text-foreground`,
