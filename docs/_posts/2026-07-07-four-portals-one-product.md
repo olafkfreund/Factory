@@ -2,7 +2,7 @@
 layout: post
 title: "Four portals, one product: the Factory becomes a single shell"
 subtitle: "A unified cross-portal shell, one sign-on, fleet-wide search, and the whole factory moved to the latest models — with a one-page showcase for each service, ready to download."
-date: 2026-07-07 12:00:00
+date: 2026-07-07 06:00:00
 author: Olaf Freund
 ---
 
