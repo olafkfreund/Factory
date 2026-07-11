@@ -6,7 +6,7 @@ permalink: /rfc/deployment-aware-planning/
 
 # RFC-0013 — Deployment-Aware Planning
 
-> **Status:** In Progress (epic #147 — foundation Implemented: contract `deployment` block, deployment-metrics MCP stub, deploy verification profile; service layer in progress) · **Created:** 2026-06-20 · **Updated:** 2026-06-20 · **Extends:** [RFC-0002](./0002-task-contract.md) (contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (environment manifest), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0009](./0009-ci-gated-auto-merge.md) (CI-gated auto-merge), [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (code-aware planning) · **Affects:** PFactory (discovers), AIFactory/TFactory (honor), CFactory (surfaces)
+> **Status:** Implemented (epic #147 closed) — contract `deployment` block, deploy verification profile, and the **DRY-RUN deploy lane are live in the TFactory kubejob verify pipeline**: `agents/verify_pipeline.py` calls `maybe_run_deploy_lane` between the evaluator and the triager on the reference deployment (`TFACTORY_VERIFY_EXEC=kubejob`). The lane only *triggers* when the contract's `deployment.risk_class == "high"` or `production_classification == "production"`; for repos with no IaC it no-ops. The live ceiling is **VAL-2** (dry-run/plan) by code, and VAL-4 (production apply) is never autonomous (`ProductionApplyError` on effectful verbs). The deployment-metrics MCP (DORA) remains an honest stub (`available: false`). · **Created:** 2026-06-20 · **Updated:** 2026-07-02 · **Extends:** [RFC-0002](./0002-task-contract.md) (contract), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (environment manifest), [RFC-0006](./0006-verification-assurance-levels.md) (assurance levels), [RFC-0009](./0009-ci-gated-auto-merge.md) (CI-gated auto-merge), [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (code-aware planning) · **Affects:** PFactory (discovers), AIFactory/TFactory (honor), CFactory (surfaces)
 >
 > The fleet already reads the code before it plans (RFC-0010) and verifies honestly against an assurance ladder (RFC-0006). What it does **not** yet understand is how a change **ships**: which CI system runs it, how it deploys, which environments it can reach, and how risky that is. This RFC makes planning **deployment-aware**. PFactory discovers the delivery surface, derives a risk/scan/system-gate policy from it, pulls best-effort DORA context from a deployment-metrics MCP, and records all of it in a new additive `deployment` contract block. Verification of a deploy is **DRY-RUN by policy**: production is **VAL-4 and never autonomous**.
 
@@ -141,6 +141,15 @@ production change, deploy verification stops at a dry-run/plan, and the real
 §3. The fleet proves the deploy *would* work; a human authorizes the deploy that
 *does*.
 
+The live deploy lane (`agents/deploy_lane.py` +
+`tools/runners/deploy_runner.py`) currently assembles only dry-run/plan steps —
+`tofu init`/`validate` (VAL-0) and `tofu plan` with no apply (VAL-2),
+`helm template`, `kubectl apply --dry-run` — so its **effective ceiling in the
+running pipeline is VAL-2**. This is enforced in code, not by convention: any
+step that would apply to a real environment raises `ProductionApplyError`
+rather than run. VAL-3 (ephemeral-apply against a disposable target) remains the
+design headroom above the live lane, and VAL-4 is never produced.
+
 ## 7. Compatibility
 
 Strictly additive and back-compatible:
@@ -152,11 +161,25 @@ Strictly additive and back-compatible:
 - The deployment-metrics MCP is stubbed (`available: false`) by default — no new
   runtime dependency, no fabricated data.
 
-## 8. Scope of this RFC
+## 8. Scope and delivery status
 
-This RFC and its foundation PR deliver the **contract + policy + stub**: the
-`deployment` schema block, the MCP contract and dependency-free stub provider,
-the `deploy` verification profile, and this normative spec. The producing side
-(PFactory discovery), the consuming side (AIFactory/TFactory honoring the policy
-and emitting deploy verification), the CFactory surfacing, and the real
-deployment-metrics provider are follow-on work tracked against this RFC.
+The foundation PR delivered the **contract + policy + stub**: the `deployment`
+schema block, the MCP contract and dependency-free stub provider, the `deploy`
+verification profile, and this normative spec.
+
+Since then the consuming side has shipped. The **DRY-RUN deploy lane is wired
+into the live TFactory kubejob verify pipeline**: `agents/verify_pipeline.py`
+runs `maybe_run_deploy_lane` between the evaluator and the triager, and the
+reference deployment runs with `TFACTORY_VERIFY_EXEC=kubejob`, so the lane
+executes inside the per-verify Kubernetes Job. It is **conditional, not
+per-task**: it only triggers when the contract's `deployment.risk_class ==
+"high"` or `production_classification == "production"`, and for a repo with no
+IaC it no-ops. The triager's deploy gate reads the lane's honest RFC-0006
+verification block. In the running pipeline the lane caps at **VAL-2**
+(dry-run/plan) by code, and a production apply (VAL-4) is never autonomous —
+`deploy_runner.py` raises `ProductionApplyError` on any effectful verb (§6).
+
+Still outstanding: DORA delivery history and the deployment-metrics MCP remain
+honest stubs (`available: false`) pending a real provider; the VAL-3
+ephemeral-apply rung (§6) is design headroom, not yet exercised in the live
+lane.
