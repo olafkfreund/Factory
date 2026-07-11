@@ -1,8 +1,34 @@
 # Design: SWE-bench pipeline driver (`scripts/benchmarks/run_pipeline_task.py`)
 
-Status: design locked 2026-07-11 (issue #271). Implementation follows in a
-separate PR. Every claim below carries file:line evidence from the service
-repos as of this date.
+Status: IMPLEMENTED and smoke-proven 2026-07-11 (issue #271). One instance
+(sympy__sympy-22914) driven through a local AIFactory end to end and scored
+RESOLVED 1/1 by the official harness (919k tokens, USD 0.45, ~3 min build).
+Every claim below carries file:line evidence from the service repos.
+
+## Smoke-run findings (2026-07-11)
+
+- AIFactory bug found and fixed: `/api/tasks/from-issue` never wrote
+  `spec.md`, so every tier died at spawn with "Spec not found" (only the
+  banner line survives into task_logs - stdout is lost in the pty read race
+  on fast exit). Fixed in AIFactory #806 / PR #807 (merged to dev). A local
+  benchmark server must run dev >= 5a05584f.
+- Stale credential profiles poison spawns: `~/.aifactory/claude-profiles.json`
+  with an old OAuth token is preferred over `~/.claude/.credentials.json`.
+  Move it aside for benchmark sessions; the health endpoint's provider_auth
+  tile only checks env vars and reports a false negative for OAuth-file auth.
+- Local server needs `APP_HOST=127.0.0.1` when a leftover dev `.env` sets
+  `APP_DISABLE_AUTH=true` (the server rightly refuses 0.0.0.0 without auth).
+- Builds can finish with the patch UNCOMMITTED in the task worktree (the
+  build parks in human_review before its commit step when the repo's tests
+  cannot run locally). The driver recovers it: when the branch diff is
+  empty, it diffs the worktree working tree against base
+  (`extract_worktree_patch`). Untracked `.aifactory/` artifacts never appear
+  in git diff.
+- The coding agent could not run sympy's tests (immutable NixOS python, no
+  mpmath) yet still produced the correct patch. For the 50-task run, per-task
+  venv provisioning (`--provision-venv`) raises the odds the agent can
+  iterate against real tests; it is best-effort - the agent is not
+  guaranteed to discover `.venv`.
 
 ## Reuse first
 
