@@ -1,0 +1,402 @@
+[
+  {
+    "instance_id": "astropy__astropy-14309",
+    "repo": "astropy/astropy",
+    "base_commit": "cdb66059a2feb44ee49021874605ba90801f9986",
+    "problem_statement_chars": 4910,
+    "difficulty": "<15 min fix",
+    "created_at": "2023-01-23T22:34:01Z"
+  },
+  {
+    "instance_id": "astropy__astropy-14598",
+    "repo": "astropy/astropy",
+    "base_commit": "80c3854a5f4f4a6ab86c03d9db7854767fcd83c1",
+    "problem_statement_chars": 2651,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2023-03-29T10:34:49Z"
+  },
+  {
+    "instance_id": "django__django-10554",
+    "repo": "django/django",
+    "base_commit": "14d026cccb144c6877294ba4cd4e03ebf0842498",
+    "problem_statement_chars": 2909,
+    "difficulty": "1-4 hours",
+    "created_at": "2018-10-24T14:24:45Z"
+  },
+  {
+    "instance_id": "django__django-10999",
+    "repo": "django/django",
+    "base_commit": "36300ef336e3f130a0dadc1143163ff3d23dc843",
+    "problem_statement_chars": 616,
+    "difficulty": "<15 min fix",
+    "created_at": "2019-02-16T07:44:50Z"
+  },
+  {
+    "instance_id": "django__django-11149",
+    "repo": "django/django",
+    "base_commit": "e245046bb6e8b32360aa48b8a41fb7050f0fc730",
+    "problem_statement_chars": 783,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2019-03-30T18:14:35Z"
+  },
+  {
+    "instance_id": "django__django-11299",
+    "repo": "django/django",
+    "base_commit": "6866c91b638de5368c18713fa851bfe56253ea55",
+    "problem_statement_chars": 3040,
+    "difficulty": "<15 min fix",
+    "created_at": "2019-04-28T11:15:08Z"
+  },
+  {
+    "instance_id": "django__django-11477",
+    "repo": "django/django",
+    "base_commit": "e28671187903e6aca2428374fdd504fca3032aee",
+    "problem_statement_chars": 225,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2019-06-14T17:40:45Z"
+  },
+  {
+    "instance_id": "django__django-11551",
+    "repo": "django/django",
+    "base_commit": "7991111af12056ec9a856f35935d273526338c1f",
+    "problem_statement_chars": 5413,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2019-07-09T22:28:45Z"
+  },
+  {
+    "instance_id": "django__django-11749",
+    "repo": "django/django",
+    "base_commit": "350123f38c2b6217c38d70bfbd924a9ba3df1289",
+    "problem_statement_chars": 1249,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2019-09-05T21:47:44Z"
+  },
+  {
+    "instance_id": "django__django-12304",
+    "repo": "django/django",
+    "base_commit": "4c1b401e8250f9f520b3c7dc369554477ce8b15a",
+    "problem_statement_chars": 580,
+    "difficulty": "<15 min fix",
+    "created_at": "2020-01-09T15:43:51Z"
+  },
+  {
+    "instance_id": "django__django-12406",
+    "repo": "django/django",
+    "base_commit": "335c9c94acf263901fb023404408880245b0c4b4",
+    "problem_statement_chars": 1066,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2020-02-02T16:34:05Z"
+  },
+  {
+    "instance_id": "django__django-12419",
+    "repo": "django/django",
+    "base_commit": "7fa1a93c6c8109010a6ff3f604fda83b604e0e97",
+    "problem_statement_chars": 680,
+    "difficulty": "<15 min fix",
+    "created_at": "2020-02-05T10:02:56Z"
+  },
+  {
+    "instance_id": "django__django-12754",
+    "repo": "django/django",
+    "base_commit": "18759b2209ff556aed7f20d83cbf23e3d234e41c",
+    "problem_statement_chars": 860,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2020-04-19T10:59:30Z"
+  },
+  {
+    "instance_id": "django__django-13023",
+    "repo": "django/django",
+    "base_commit": "f83b44075dafa429d59e8755aa47e15577cc49f9",
+    "problem_statement_chars": 522,
+    "difficulty": "<15 min fix",
+    "created_at": "2020-06-04T20:40:44Z"
+  },
+  {
+    "instance_id": "django__django-13344",
+    "repo": "django/django",
+    "base_commit": "e39e727ded673e74016b5d3658d23cbe20234d11",
+    "problem_statement_chars": 1361,
+    "difficulty": "1-4 hours",
+    "created_at": "2020-08-24T20:50:35Z"
+  },
+  {
+    "instance_id": "django__django-13809",
+    "repo": "django/django",
+    "base_commit": "bef6f7584280f1cc80e5e2d80b7ad073a93d26ec",
+    "problem_statement_chars": 457,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2020-12-24T15:31:35Z"
+  },
+  {
+    "instance_id": "django__django-14351",
+    "repo": "django/django",
+    "base_commit": "06fd4df41afb5aa1d681b853c3c08d8c688ca3a5",
+    "problem_statement_chars": 8541,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2021-05-05T03:50:44Z"
+  },
+  {
+    "instance_id": "django__django-14771",
+    "repo": "django/django",
+    "base_commit": "4884a87e022056eda10534c13d74e49b8cdda632",
+    "problem_statement_chars": 994,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2021-08-15T07:26:17Z"
+  },
+  {
+    "instance_id": "django__django-15277",
+    "repo": "django/django",
+    "base_commit": "30613d6a748fce18919ff8b0da166d9fda2ed9bc",
+    "problem_statement_chars": 2748,
+    "difficulty": "<15 min fix",
+    "created_at": "2022-01-03T12:14:06Z"
+  },
+  {
+    "instance_id": "django__django-15525",
+    "repo": "django/django",
+    "base_commit": "fbacaa58ffc5a62456ee68b90efa13957f761ce4",
+    "problem_statement_chars": 4379,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2022-03-18T10:39:26Z"
+  },
+  {
+    "instance_id": "django__django-15572",
+    "repo": "django/django",
+    "base_commit": "0b31e024873681e187b574fe1c4afe5e48aeeecf",
+    "problem_statement_chars": 1388,
+    "difficulty": "<15 min fix",
+    "created_at": "2022-04-09T09:38:31Z"
+  },
+  {
+    "instance_id": "django__django-15916",
+    "repo": "django/django",
+    "base_commit": "88e67a54b7ed0210c11523a337b498aadb2f5187",
+    "problem_statement_chars": 1744,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2022-08-04T18:59:18Z"
+  },
+  {
+    "instance_id": "django__django-16100",
+    "repo": "django/django",
+    "base_commit": "c6350d594c359151ee17b0c4f354bb44f28ff69e",
+    "problem_statement_chars": 281,
+    "difficulty": "<15 min fix",
+    "created_at": "2022-09-24T13:32:02Z"
+  },
+  {
+    "instance_id": "django__django-16429",
+    "repo": "django/django",
+    "base_commit": "6c86495bcee22eac19d7fb040b2988b830707cbd",
+    "problem_statement_chars": 964,
+    "difficulty": "<15 min fix",
+    "created_at": "2023-01-05T11:41:37Z"
+  },
+  {
+    "instance_id": "django__django-16950",
+    "repo": "django/django",
+    "base_commit": "f64fd47a7627ed6ffe2df2a32ded6ee528a784eb",
+    "problem_statement_chars": 1443,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2023-06-06T19:58:48Z"
+  },
+  {
+    "instance_id": "django__django-9296",
+    "repo": "django/django",
+    "base_commit": "84322a29ce9b0940335f8ab3d60e55192bef1e50",
+    "problem_statement_chars": 411,
+    "difficulty": "<15 min fix",
+    "created_at": "2017-10-27T11:10:04Z"
+  },
+  {
+    "instance_id": "matplotlib__matplotlib-22719",
+    "repo": "matplotlib/matplotlib",
+    "base_commit": "a2a1b0a11b993fe5f8fab64b6161e99243a6393c",
+    "problem_statement_chars": 10176,
+    "difficulty": "<15 min fix",
+    "created_at": "2022-03-28T14:42:28Z"
+  },
+  {
+    "instance_id": "matplotlib__matplotlib-24970",
+    "repo": "matplotlib/matplotlib",
+    "base_commit": "a3011dfd1aaa2487cce8aa7369475533133ef777",
+    "problem_statement_chars": 1758,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2023-01-13T14:23:39Z"
+  },
+  {
+    "instance_id": "matplotlib__matplotlib-26342",
+    "repo": "matplotlib/matplotlib",
+    "base_commit": "2aee6ccd7c7e1f8d282c1e7579f4ee546b838542",
+    "problem_statement_chars": 571,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2023-07-18T10:06:19Z"
+  },
+  {
+    "instance_id": "pydata__xarray-4966",
+    "repo": "pydata/xarray",
+    "base_commit": "37522e991a32ee3c0ad1a5ff8afe8e3eb1885550",
+    "problem_statement_chars": 4384,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2021-02-26T12:05:51Z"
+  },
+  {
+    "instance_id": "pydata__xarray-6461",
+    "repo": "pydata/xarray",
+    "base_commit": "851dadeb0338403e5021c3fbe80cbc9127ee672d",
+    "problem_statement_chars": 986,
+    "difficulty": "<15 min fix",
+    "created_at": "2022-04-09T03:02:40Z"
+  },
+  {
+    "instance_id": "pylint-dev__pylint-6386",
+    "repo": "pylint-dev/pylint",
+    "base_commit": "754b487f4d892e3d4872b6fc7468a71db4e31c13",
+    "problem_statement_chars": 739,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2022-04-19T06:34:57Z"
+  },
+  {
+    "instance_id": "pytest-dev__pytest-10051",
+    "repo": "pytest-dev/pytest",
+    "base_commit": "aa55975c7d3f6c9f6d7f68accc41bb7cadf0eb9a",
+    "problem_statement_chars": 1371,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2022-06-15T17:39:53Z"
+  },
+  {
+    "instance_id": "pytest-dev__pytest-5809",
+    "repo": "pytest-dev/pytest",
+    "base_commit": "8aba863a634f40560e25055d179220f0eefabe9a",
+    "problem_statement_chars": 971,
+    "difficulty": "<15 min fix",
+    "created_at": "2019-09-01T04:40:09Z"
+  },
+  {
+    "instance_id": "scikit-learn__scikit-learn-13328",
+    "repo": "scikit-learn/scikit-learn",
+    "base_commit": "37b0e66c871e8fb032a9c7086b2a1d5419838154",
+    "problem_statement_chars": 4704,
+    "difficulty": "<15 min fix",
+    "created_at": "2019-02-28T12:47:52Z"
+  },
+  {
+    "instance_id": "scikit-learn__scikit-learn-14710",
+    "repo": "scikit-learn/scikit-learn",
+    "base_commit": "4b6273b87442a4437d8b3873ea3022ae163f4fdf",
+    "problem_statement_chars": 6629,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2019-08-21T16:29:47Z"
+  },
+  {
+    "instance_id": "scikit-learn__scikit-learn-25747",
+    "repo": "scikit-learn/scikit-learn",
+    "base_commit": "2c867b8f822eb7a684f0d5c4359e4426e1c9cfe0",
+    "problem_statement_chars": 6147,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2023-03-02T20:38:47Z"
+  },
+  {
+    "instance_id": "sphinx-doc__sphinx-10449",
+    "repo": "sphinx-doc/sphinx",
+    "base_commit": "36367765fe780f962bba861bf368a765380bbc68",
+    "problem_statement_chars": 4478,
+    "difficulty": "<15 min fix",
+    "created_at": "2022-05-14T14:02:26Z"
+  },
+  {
+    "instance_id": "sphinx-doc__sphinx-7440",
+    "repo": "sphinx-doc/sphinx",
+    "base_commit": "9bb204dcabe6ba0fc422bf4a45ad0c79c680d90b",
+    "problem_statement_chars": 905,
+    "difficulty": "<15 min fix",
+    "created_at": "2020-04-08T13:46:43Z"
+  },
+  {
+    "instance_id": "sphinx-doc__sphinx-7748",
+    "repo": "sphinx-doc/sphinx",
+    "base_commit": "9988d5ce267bf0df4791770b469431b1fb00dcdd",
+    "problem_statement_chars": 381,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2020-05-30T06:41:07Z"
+  },
+  {
+    "instance_id": "sphinx-doc__sphinx-7985",
+    "repo": "sphinx-doc/sphinx",
+    "base_commit": "f30284ef926ebaf04b176f21b421e2dffc679792",
+    "problem_statement_chars": 1776,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2020-07-19T10:09:07Z"
+  },
+  {
+    "instance_id": "sphinx-doc__sphinx-8475",
+    "repo": "sphinx-doc/sphinx",
+    "base_commit": "3ea1ec84cc610f7a9f4f6b354e264565254923ff",
+    "problem_statement_chars": 766,
+    "difficulty": "<15 min fix",
+    "created_at": "2020-11-22T16:54:19Z"
+  },
+  {
+    "instance_id": "sympy__sympy-12481",
+    "repo": "sympy/sympy",
+    "base_commit": "c807dfe7569692cad24f02a08477b70c1679a4dd",
+    "problem_statement_chars": 407,
+    "difficulty": "<15 min fix",
+    "created_at": "2017-04-03T01:52:33Z"
+  },
+  {
+    "instance_id": "sympy__sympy-13647",
+    "repo": "sympy/sympy",
+    "base_commit": "67e3c956083d0128a621f65ee86a7dacd4f9f19f",
+    "problem_statement_chars": 1088,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2017-11-28T21:22:51Z"
+  },
+  {
+    "instance_id": "sympy__sympy-16597",
+    "repo": "sympy/sympy",
+    "base_commit": "6fd65310fa3167b9626c38a5487e171ca407d988",
+    "problem_statement_chars": 611,
+    "difficulty": "1-4 hours",
+    "created_at": "2019-04-08T12:49:10Z"
+  },
+  {
+    "instance_id": "sympy__sympy-16792",
+    "repo": "sympy/sympy",
+    "base_commit": "09786a173e7a0a488f46dd6000177c23e5d24eed",
+    "problem_statement_chars": 1930,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2019-05-09T03:40:54Z"
+  },
+  {
+    "instance_id": "sympy__sympy-18189",
+    "repo": "sympy/sympy",
+    "base_commit": "1923822ddf8265199dbd9ef9ce09641d3fd042b9",
+    "problem_statement_chars": 678,
+    "difficulty": "<15 min fix",
+    "created_at": "2019-12-31T15:45:24Z"
+  },
+  {
+    "instance_id": "sympy__sympy-19783",
+    "repo": "sympy/sympy",
+    "base_commit": "586a43201d0357e92e8c93548d69a9f42bf548f4",
+    "problem_statement_chars": 422,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2020-07-16T09:40:38Z"
+  },
+  {
+    "instance_id": "sympy__sympy-23950",
+    "repo": "sympy/sympy",
+    "base_commit": "88664e6e0b781d0a8b5347896af74b555e92891e",
+    "problem_statement_chars": 766,
+    "difficulty": "15 min - 1 hour",
+    "created_at": "2022-08-20T18:21:10Z"
+  },
+  {
+    "instance_id": "sympy__sympy-24539",
+    "repo": "sympy/sympy",
+    "base_commit": "193e3825645d93c73e31cdceb6d742cc6919624d",
+    "problem_statement_chars": 659,
+    "difficulty": "<15 min fix",
+    "created_at": "2023-01-17T17:26:42Z"
+  }
+]
