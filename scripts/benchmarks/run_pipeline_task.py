@@ -100,6 +100,14 @@ def prepare_scratch_repo(upstream: str, base_commit: str, scratch_dir: Path) -> 
     _run_git(["clone", "--no-tags", upstream, str(scratch_dir)])
     _run_git(["-C", str(scratch_dir), "checkout", "-B", "main", base_commit])
     _run_git(["-C", str(scratch_dir), "remote", "remove", "origin"])
+    # Gold-test leak guard, part 2: the upstream default branch (e.g. master)
+    # still points at the clone-time tip, so future/gold history would remain
+    # reachable via `git log --all`. Delete every local branch except main.
+    for branch in _run_git(
+        ["-C", str(scratch_dir), "for-each-ref", "--format=%(refname:short)", "refs/heads/"]
+    ).splitlines():
+        if branch and branch != "main":
+            _run_git(["-C", str(scratch_dir), "branch", "-D", branch])
     return scratch_dir
 
 

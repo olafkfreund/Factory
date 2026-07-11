@@ -100,14 +100,14 @@ def test_prepare_scratch_repo_pins_to_base_commit(
 
     head = _git("-C", str(scratch), "rev-parse", "HEAD", cwd=scratch)
     assert head == base_sha
-    # the future/gold commit must not be reachable from HEAD/main (the design
-    # doc's guarantee: "main IS base_commit"). NOTE: a residual ref for the
-    # upstream's original default branch, if its name differs from "main",
-    # can still carry future history reachable via `git log --all` -- the
-    # locked design's 3 commands do not delete it. Flagged as a follow-up gap,
-    # not fixed here (out of scope for this ticket -- design is locked).
-    log = _git("-C", str(scratch), "log", "--oneline", cwd=scratch)
-    assert "gold fix" not in log
+    # the future/gold commit must not be reachable from ANY ref: main is
+    # base_commit, the upstream default branch is deleted, origin removed.
+    log_all = _git("-C", str(scratch), "log", "--oneline", "--all", cwd=scratch)
+    assert "gold fix" not in log_all
+    branches = _git(
+        "-C", str(scratch), "for-each-ref", "--format=%(refname:short)", "refs/heads/", cwd=scratch
+    )
+    assert branches.splitlines() == ["main"]
     # origin removed -- no remote to leak history from
     remotes = _git("-C", str(scratch), "remote", cwd=scratch)
     assert remotes == ""
