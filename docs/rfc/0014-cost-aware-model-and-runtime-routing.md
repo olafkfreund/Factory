@@ -7,7 +7,7 @@ permalink: /rfc/cost-aware-routing/
 
 # RFC-0014 — Cost-Aware, Capability-Aware Model & Runtime Routing
 
-> **Status:** Proposed · **Created:** 2026-06-20 · **Extends:**
+> **Status:** Accepted (v1 scope, 2026-07-11) · **Created:** 2026-06-20 · **Extends:**
 > [RFC-0002](./0002-task-contract.md) (contract `execution` block),
 > [RFC-0011](./0011-label-driven-intake-and-difficulty-tiers.md) (difficulty
 > tiers), [RFC-0013](./0013-deployment-aware-planning.md) (risk class),
@@ -52,6 +52,93 @@ default**, so a user can opt in to "go faster / cheaper" deliberately.
    observe-only by default; **enforce** mode is operator-gated.
 5. **One price/capability table.** A single hub `model-catalog.json` replaces the
    per-repo duplicated `MODEL_ID_MAP`/price knowledge.
+
+## 2b. Accepted v1 scope (2026-07-11)
+
+The RFC is Accepted with a deliberately small v1: **static per-stage tier
+routing** driven by a versioned operator policy. Everything else in this
+document (dynamic task scoring, cost ceilings, budget enforce mode, gated
+runtimes, cascades) stays specified but is **v2+**.
+
+**In scope (v1):**
+
+1. A three-tier model taxonomy: `small`, `mid`, `frontier` (mapped to the
+   catalog `class` field: `cheap`/`local` => small, `balanced` => mid,
+   `frontier` => frontier).
+2. A static **stage -> tier** routing policy (table below), versioned as
+   `routing_policy_version`, applied at plan-emit by PFactory and honoured by
+   each service at its own model seam.
+3. A per-task **override** (`routing.overrides`, stage -> tier) and a
+   **`routing.pinned_model` escape hatch that wins everywhere** — when set,
+   every stage uses exactly that model and the policy is bypassed (this
+   preserves today's behaviour for pinned runs).
+4. Provider **fallback within the same tier only** (reuses the RFC-0008
+   `provider_failover` chain); a fallback may never silently change tier.
+5. An audit trail: each service records the **actual model used per stage** in
+   the contract (`routing.actual`) so CFactory can show requested-vs-actual.
+
+**Out of scope (v1, explicitly v2):** dynamic cascades (try small, escalate on
+low confidence), per-request quality scoring, cost-ceiling-driven selection,
+`budget_mode=enforce`, and the gated runtimes of §6.
+
+**Default OFF:** a fleet with no routing policy configured behaves exactly as
+today. The policy activates only when the operator sets one.
+
+### 2b.1 Stage -> tier defaults (v1 policy `2026-07-static-v1`)
+
+| Stage | Owner | Default tier | Why |
+|---|---|---|---|
+| `intake` (classification, label triage) | PFactory | `small` | mechanical classification; wrong answers are cheap to correct |
+| `planning` | PFactory | `frontier` | expensive-to-get-wrong; plan quality bounds everything downstream |
+| `coding` | AIFactory | `mid` | bulk token spend; mid-tier holds quality on well-planned tasks |
+| `qa_quick` (lint-level review pass) | AIFactory | `small` | high-volume, low-stakes screening |
+| `qa_full` (full / adversarial review) | AIFactory | `frontier` | the last line before verify; misses ship defects |
+| `test_gen` | TFactory | `mid` | test authoring is mechanical once ACs are explicit |
+| `triage` (gating verdicts) | TFactory | `frontier` | verdicts gate merge/handback; false accepts are the costliest error |
+
+Tier floors from RFC-0011 still apply: the policy may raise a stage above the
+tier floor, never below it (a `hard` task keeps frontier planning regardless).
+
+### 2b.2 Routing policy schema (v1)
+
+The operator policy is a single document (hub-owned, versioned):
+
+```jsonc
+{
+  "routing_policy_version": "2026-07-static-v1",
+  "tiers": { "small": ["claude-haiku-4-5", "ollama:qwen3"],   // preference-ordered
+             "mid": ["claude-sonnet-5", "codex"],
+             "frontier": ["claude-opus-4-8"] },
+  "stages": { "intake": "small", "planning": "frontier", "coding": "mid",
+              "qa_quick": "small", "qa_full": "frontier",
+              "test_gen": "mid", "triage": "frontier" },
+  "fallback": { "within_tier_only": true }     // provider failover never changes tier
+}
+```
+
+Per-task precedence (highest first):
+
+1. `routing.pinned_model` — one model for every stage; policy bypassed.
+2. `routing.overrides[stage]` — per-task stage -> tier override.
+3. RFC-0011 tier floor — never routed below.
+4. Policy `stages[stage]` default.
+5. No policy configured — status quo (each service's existing defaults).
+
+### 2b.3 Contract carrier
+
+`$defs.routing` in `apis/task-contract.schema.json` (optional, additive,
+follows the `$defs.environment` pattern of RFC-0005): `requested` (stage ->
+tier, written by PFactory from the policy), `actual` (stage -> model id,
+filled by each service for audit), `overrides`, `pinned_model`, and
+`routing_policy_version`. Absent => no routing policy applied.
+`contract_version` stays `"2"`.
+
+### 2b.4 Measurement requirement
+
+A routing-policy change (including turning v1 on fleet-wide) is only accepted
+after a benchmark re-run (the #271 baseline) shows the cost delta with **no
+resolve-rate regression beyond noise**. Cost wins never trade away quality
+silently.
 
 ## 3. The model catalog (single source of truth)
 
