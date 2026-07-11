@@ -121,6 +121,26 @@ def extract_patch(scratch_dir: Path, base_commit: str, branch_name: str) -> str:
     return result.stdout
 
 
+def extract_worktree_patch(scratch_dir: Path, base_commit: str, spec_id: str) -> str:
+    """Fallback: diff the task worktree's WORKING TREE against base.
+
+    A build that halts before its commit step (e.g. parked in human_review
+    because tests could not run) leaves the produced code uncommitted in
+    the worktree, so the branch diff is empty while the patch exists on
+    disk. Untracked files (.aifactory/ artifacts) never appear in git diff,
+    so no pathspec exclusion is needed.
+    """
+    worktree = scratch_dir / ".aifactory" / "worktrees" / "tasks" / spec_id
+    if not worktree.is_dir():
+        return ""
+    cmd = ["git", "-C", str(worktree), "diff", base_commit]
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)  # noqa: S603
+    except subprocess.CalledProcessError:
+        return ""
+    return result.stdout
+
+
 # ── AIFactory HTTP calls ─────────────────────────────────────────────────────
 
 
@@ -402,6 +422,10 @@ def main(argv: list[str] | None = None) -> int:
         status, halt_reason = apply_evidence_gate(status, evidence["total_tokens"])
         if branch_name:
             diff = extract_patch(scratch_dir, args.base_commit, branch_name)
+        if not diff and spec_id:
+            diff = extract_worktree_patch(scratch_dir, args.base_commit, spec_id)
+            if diff:
+                print(f"[{args.instance_id}] patch recovered from uncommitted worktree")  # noqa: T201
     except PipelineError as exc:
         halt_reason = exc.halt_reason
         status = "failed"

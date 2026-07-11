@@ -235,3 +235,24 @@ def test_submit_task_raises_pipeline_error_on_failure() -> None:
     with pytest.raises(rpt.PipelineError) as exc_info:
         rpt.submit_task(client, "p-1", "inst-1", "do the thing", "medium")
     assert exc_info.value.halt_reason == "submit_failed"
+
+
+def test_extract_worktree_patch_recovers_uncommitted(
+    upstream_repo: tuple[Path, str, str], tmp_path: Path
+) -> None:
+    upstream, base_sha, _head = upstream_repo
+    scratch = tmp_path / "scratch" / "inst-w"
+    rpt.prepare_scratch_repo(str(upstream), base_sha, scratch)
+    wt = scratch / ".aifactory" / "worktrees" / "tasks" / "001-x"
+    _git(
+        "-C", str(scratch), "worktree", "add", "-b", "aifactory/001-x", str(wt), "main", cwd=scratch
+    )
+    (wt / "a.txt").write_text("one\npatched\n")  # uncommitted change
+    (wt / ".aifactory-status").write_text("junk")  # untracked artifact, must not appear
+    patch = rpt.extract_worktree_patch(scratch, base_sha, "001-x")
+    assert "patched" in patch
+    assert ".aifactory-status" not in patch
+
+
+def test_extract_worktree_patch_missing_worktree_is_empty(tmp_path: Path) -> None:
+    assert rpt.extract_worktree_patch(tmp_path, "deadbeef", "nope") == ""
