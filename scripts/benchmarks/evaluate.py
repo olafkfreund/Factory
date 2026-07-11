@@ -34,33 +34,43 @@ def main():
     ap.add_argument("--instance-ids-file", help="JSON file limiting which instances to score")
     ap.add_argument("--max-workers", default="4")
     ap.add_argument("--timeout", default="1800")
-    ap.add_argument("--namespace", default="swebench",
-                    help='image namespace; use "none" to force local builds')
+    ap.add_argument(
+        "--namespace", default="swebench", help='image namespace; use "none" to force local builds'
+    )
     args = ap.parse_args()
 
     cmd = [
-        sys.executable, "-m", "swebench.harness.run_evaluation",
-        "--dataset_name", args.dataset,
-        "--predictions_path", args.predictions,
-        "--run_id", args.run_id,
-        "--max_workers", args.max_workers,
-        "--timeout", args.timeout,
-        "--namespace", args.namespace,
+        sys.executable,
+        "-m",
+        "swebench.harness.run_evaluation",
+        "--dataset_name",
+        args.dataset,
+        "--predictions_path",
+        args.predictions,
+        "--run_id",
+        args.run_id,
+        "--max_workers",
+        args.max_workers,
+        "--timeout",
+        args.timeout,
+        "--namespace",
+        args.namespace,
     ]
     if args.instance_ids_file:
         cmd += ["--instance_ids", *load_instance_ids(args.instance_ids_file)]
 
-    print("+", " ".join(cmd), flush=True)
-    rc = subprocess.run(cmd).returncode
+    print("+", " ".join(cmd), flush=True)  # noqa: T201 (CLI output)
+    # justification: fixed argv, sys.executable + official harness module, no shell
+    rc = subprocess.run(cmd, check=False).returncode  # noqa: S603
     if rc:
         sys.exit(rc)
 
     # Harness writes {model_name_or_path}.{run_id}.json into the CWD.
-    with open(args.predictions) as f:
+    with Path(args.predictions).open() as f:
         model = json.loads(f.readline())["model_name_or_path"]
     report = Path(f"{model.replace('/', '__')}.{args.run_id}.json")
-    print(f"\nReport: {report.resolve() if report.exists() else report} "
-          f"({'found' if report.exists() else 'NOT FOUND - check logs/run_evaluation/' + args.run_id})")
+    status = "found" if report.exists() else f"NOT FOUND - check logs/run_evaluation/{args.run_id}"
+    print(f"\nReport: {report.resolve() if report.exists() else report} ({status})")  # noqa: T201
 
 
 if __name__ == "__main__":

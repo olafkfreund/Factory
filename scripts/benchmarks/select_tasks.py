@@ -13,6 +13,7 @@ no token) and cached locally as swebench_verified_rows.json.
 
 Reproduce:  python3 select_tasks.py
 """
+
 import json
 import random
 import urllib.request
@@ -20,12 +21,15 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 DATASET = "princeton-nlp/SWE-bench_Verified"
-API = ("https://datasets-server.huggingface.co/rows"
-       "?dataset=princeton-nlp%2FSWE-bench_Verified&config=default&split=test")
+API = (
+    "https://datasets-server.huggingface.co/rows"
+    "?dataset=princeton-nlp%2FSWE-bench_Verified&config=default&split=test"
+)
 HERE = Path(__file__).parent
 CACHE = HERE / "swebench_verified_rows.json"
 SEED = 42
 TARGET = 50
+FULL_SIZE = 500  # SWE-bench Verified row count
 MIN_REPO_INSTANCES = 10
 KEEP = ("instance_id", "repo", "base_commit", "created_at", "difficulty")
 
@@ -34,14 +38,15 @@ def fetch_rows():
     if CACHE.exists():
         return json.loads(CACHE.read_text())
     rows = []
-    for offset in range(0, 500, 100):
-        with urllib.request.urlopen(f"{API}&offset={offset}&length=100") as r:
+    for offset in range(0, FULL_SIZE, 100):
+        with urllib.request.urlopen(f"{API}&offset={offset}&length=100") as r:  # noqa: S310 (fixed https URL)
             page = json.load(r)
         for item in page["rows"]:
             row = {k: item["row"][k] for k in KEEP}
             row["problem_statement_chars"] = len(item["row"]["problem_statement"])
             rows.append(row)
-    assert len(rows) == 500, f"expected 500 rows, got {len(rows)}"
+    if len(rows) != FULL_SIZE:
+        raise SystemExit(f"expected {FULL_SIZE} rows, got {len(rows)}")
     CACHE.write_text(json.dumps(rows, indent=1))
     return rows
 
@@ -57,7 +62,8 @@ def apportion(counts, total):
         alloc[k] += 1
     # cap at available instances (redistribute is not needed at our sizes,
     # but assert so we notice if it ever is)
-    assert all(alloc[k] <= counts[k] for k in alloc)
+    if not all(alloc[k] <= counts[k] for k in alloc):
+        raise SystemExit("allocation exceeds available instances")
     return alloc
 
 
@@ -67,7 +73,7 @@ def main():
     eligible = {k: v for k, v in repo_counts.items() if v >= MIN_REPO_INSTANCES}
     repo_alloc = apportion(eligible, TARGET)
 
-    rng = random.Random(SEED)
+    rng = random.Random(SEED)  # noqa: S311 (deterministic sampling, not crypto)
     by_repo = defaultdict(list)
     for r in rows:
         if r["repo"] in eligible:
@@ -86,15 +92,23 @@ def main():
 
     # sanity checks
     ids = [r["instance_id"] for r in selected]
-    assert len(ids) == TARGET and len(set(ids)) == TARGET, "need 50 unique ids"
+    if not (len(ids) == TARGET and len(set(ids)) == TARGET):
+        raise SystemExit("need 50 unique ids")
     source_ids = {r["instance_id"] for r in rows}
-    assert set(ids) <= source_ids, "selected id not in source dataset"
+    if not set(ids) <= source_ids:
+        raise SystemExit("selected id not in source dataset")
 
-    out = [{"instance_id": r["instance_id"], "repo": r["repo"],
+    out = [
+        {
+            "instance_id": r["instance_id"],
+            "repo": r["repo"],
             "base_commit": r["base_commit"],
             "problem_statement_chars": r["problem_statement_chars"],
-            "difficulty": r["difficulty"], "created_at": r["created_at"]}
-           for r in selected]
+            "difficulty": r["difficulty"],
+            "created_at": r["created_at"],
+        }
+        for r in selected
+    ]
     (HERE / "swebench-verified-50.json").write_text(json.dumps(out, indent=2) + "\n")
 
     # distribution tables
@@ -103,32 +117,52 @@ def main():
     sel_repo = Counter(r["repo"] for r in selected)
 
     def table(title, full, sel, full_total, sel_total):
-        lines = [f"### {title}", "",
-                 f"| {title} | full ({full_total}) | full % | selected ({sel_total}) | selected % |",
-                 "|---|---|---|---|---|"]
+        lines = [
+            f"### {title}",
+            "",
+            f"| {title} | full ({full_total}) | full % | selected ({sel_total}) | selected % |",
+            "|---|---|---|---|---|",
+        ]
         for k in sorted(full, key=lambda k: -full[k]):
-            lines.append(f"| {k} | {full[k]} | {100*full[k]/full_total:.1f}% "
-                         f"| {sel.get(k, 0)} | {100*sel.get(k, 0)/sel_total:.1f}% |")
+            lines.append(
+                f"| {k} | {full[k]} | {100 * full[k] / full_total:.1f}% "
+                f"| {sel.get(k, 0)} | {100 * sel.get(k, 0) / sel_total:.1f}% |"
+            )
         return "\n".join(lines)
 
-    repo_table = table("repo", repo_counts, sel_repo, 500, TARGET)
-    diff_table = table("difficulty", full_diff, sel_diff, 500, TARGET)
-    print(repo_table, "\n\n", diff_table, sep="")
+    repo_table = table("repo", repo_counts, sel_repo, FULL_SIZE, TARGET)
+    diff_table = table("difficulty", full_diff, sel_diff, FULL_SIZE, TARGET)
+    print(repo_table, "\n\n", diff_table, sep="")  # noqa: T201 (CLI output)
 
-    report = ["# SWE-bench Verified 50-task subset -- selection report", "",
-              f"Source: `{DATASET}` (test split, 500 instances, via HF datasets-server rows API).",
-              f"Selection: seed {SEED}, stratified by repo (proportional largest-remainder over "
-              f"repos with >= {MIN_REPO_INSTANCES} instances; smaller repos, "
-              f"{500 - sum(eligible.values())}/500 instances, excluded) then by the dataset's "
-              "`difficulty` annotation within each repo.", "",
-              "Reproduce:", "", "```", "python3 select_tasks.py", "```", "",
-              "## Stratification vs. full dataset", "",
-              repo_table, "", diff_table, "",
-              "## Selected instances", "",
-              "| instance_id | repo | difficulty |", "|---|---|---|"]
+    report = [
+        "# SWE-bench Verified 50-task subset -- selection report",
+        "",
+        f"Source: `{DATASET}` (test split, 500 instances, via HF datasets-server rows API).",
+        f"Selection: seed {SEED}, stratified by repo (proportional largest-remainder over "
+        f"repos with >= {MIN_REPO_INSTANCES} instances; smaller repos, "
+        f"{500 - sum(eligible.values())}/500 instances, excluded) then by the dataset's "
+        "`difficulty` annotation within each repo.",
+        "",
+        "Reproduce:",
+        "",
+        "```",
+        "python3 select_tasks.py",
+        "```",
+        "",
+        "## Stratification vs. full dataset",
+        "",
+        repo_table,
+        "",
+        diff_table,
+        "",
+        "## Selected instances",
+        "",
+        "| instance_id | repo | difficulty |",
+        "|---|---|---|",
+    ]
     report += [f"| {r['instance_id']} | {r['repo']} | {r['difficulty']} |" for r in selected]
     (HERE / "selection_report.md").write_text("\n".join(report) + "\n")
-    print(f"\nWrote swebench-verified-50.json ({TARGET} tasks) and selection_report.md")
+    print(f"\nWrote swebench-verified-50.json ({TARGET} tasks) and selection_report.md")  # noqa: T201
 
 
 if __name__ == "__main__":
