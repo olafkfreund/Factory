@@ -319,63 +319,43 @@ def _stub_pipeline(monkeypatch: pytest.MonkeyPatch, calls: list[tuple]) -> None:
     monkeypatch.setattr(rpt, "provision_worktree_venv", lambda *a, **_k: calls.append(a) or True)
 
 
-def test_provision_venv_flag_off_not_called(
-    monkeypatch: pytest.MonkeyPatch, upstream_repo: tuple[Path, str, str], tmp_path: Path
+def _main_args(upstream: Path, base_sha: str, tmp_path: Path, *extra: str) -> list[str]:
+    return [
+        "--instance-id",
+        "inst-1",
+        "--repo-url",
+        str(upstream),
+        "--base-commit",
+        base_sha,
+        "--problem-statement",
+        "fix it",
+        "--scratch-root",
+        str(tmp_path / "scratch"),
+        "--out",
+        str(tmp_path / "preds.jsonl"),
+        *extra,
+    ]
+
+
+@pytest.mark.parametrize("provision", [False, True])
+def test_provision_venv_wiring(
+    provision: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_repo: tuple[Path, str, str],
+    tmp_path: Path,
 ) -> None:
     upstream, base_sha, _head = upstream_repo
     calls: list[tuple] = []
     _stub_pipeline(monkeypatch, calls)
+    extra = ["--provision-venv", "--extra-deps", "mpmath, pytest"] if provision else []
 
-    rpt.main(
-        [
-            "--instance-id",
-            "inst-1",
-            "--repo-url",
-            str(upstream),
-            "--base-commit",
-            base_sha,
-            "--problem-statement",
-            "fix it",
-            "--scratch-root",
-            str(tmp_path / "scratch"),
-            "--out",
-            str(tmp_path / "preds.jsonl"),
-        ]
-    )
+    rpt.main(_main_args(upstream, base_sha, tmp_path, *extra))
 
-    assert calls == []
-
-
-def test_provision_venv_flag_on_calls_with_spec_id(
-    monkeypatch: pytest.MonkeyPatch, upstream_repo: tuple[Path, str, str], tmp_path: Path
-) -> None:
-    upstream, base_sha, _head = upstream_repo
-    calls: list[tuple] = []
-    _stub_pipeline(monkeypatch, calls)
-    scratch_root = tmp_path / "scratch"
-
-    rpt.main(
-        [
-            "--instance-id",
-            "inst-1",
-            "--repo-url",
-            str(upstream),
-            "--base-commit",
-            base_sha,
-            "--problem-statement",
-            "fix it",
-            "--scratch-root",
-            str(scratch_root),
-            "--out",
-            str(tmp_path / "preds.jsonl"),
-            "--provision-venv",
-            "--extra-deps",
-            "mpmath, pytest",
-        ]
-    )
-
+    if not provision:
+        assert calls == []
+        return
     assert len(calls) == 1
     scratch_dir, spec_id, extra_deps = calls[0][:3]
-    assert scratch_dir == scratch_root / "inst-1"
+    assert scratch_dir == tmp_path / "scratch" / "inst-1"
     assert spec_id == "spec-1"
     assert extra_deps == ["mpmath", "pytest"]

@@ -70,10 +70,12 @@ def changed_python_files(base: str, package: str) -> list[str]:
 
 def ruff_counts(source: str, filename: str) -> Counter[str]:
     """Per-rule ruff violation counts for *source* checked as *filename*."""
-    suffix = Path(filename).name
-    with tempfile.NamedTemporaryFile("w", suffix=f"__{suffix}", delete=False) as fh:
-        fh.write(source)
-        tmp = fh.name
+    # Write under the REAL basename inside a temp dir: a random-prefixed name
+    # (the old NamedTemporaryFile suffix trick) defeats per-file-ignores like
+    # `**/test_*.py`, so test files were held to the non-test bar.
+    tmpdir = tempfile.mkdtemp()
+    tmp = str(Path(tmpdir) / Path(filename).name)
+    Path(tmp).write_text(source)
     try:
         res = _run(["ruff", "check", "--config", "ruff.toml", "--output-format", "json", tmp])
         if not res.stdout.strip():
@@ -86,6 +88,7 @@ def ruff_counts(source: str, filename: str) -> Counter[str]:
         return Counter(item["code"] for item in items)
     finally:
         Path(tmp).unlink(missing_ok=True)
+        Path(tmpdir).rmdir()
 
 
 def file_at_base(base: str, path: str) -> str | None:
