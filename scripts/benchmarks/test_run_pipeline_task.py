@@ -256,3 +256,126 @@ def test_extract_worktree_patch_recovers_uncommitted(
 
 def test_extract_worktree_patch_missing_worktree_is_empty(tmp_path: Path) -> None:
     assert rpt.extract_worktree_patch(tmp_path, "deadbeef", "nope") == ""
+
+
+# ── provision_worktree_venv ──────────────────────────────────────────────────
+
+
+def test_exclude_venv_writes_into_linked_worktree_gitdir(
+    upstream_repo: tuple[Path, str, str], tmp_path: Path
+) -> None:
+    upstream, base_sha, _head = upstream_repo
+    scratch = tmp_path / "scratch" / "inst-venv"
+    rpt.prepare_scratch_repo(str(upstream), base_sha, scratch)
+    wt = scratch / ".aifactory" / "worktrees" / "tasks" / "001-x"
+    _git(
+        "-C", str(scratch), "worktree", "add", "-b", "aifactory/001-x", str(wt), "main", cwd=scratch
+    )
+
+    rpt._exclude_venv(wt)
+
+    gitdir = rpt._worktree_gitdir(wt)
+    assert gitdir != wt / ".git"  # resolved through the `gitdir: <path>` file
+    exclude_text = (gitdir / "info" / "exclude").read_text()
+    assert ".venv/\n" in exclude_text
+
+
+def test_exclude_venv_regular_repo_layout(tmp_path: Path) -> None:
+    repo = tmp_path / "plain"
+    repo.mkdir()
+    _git("init", "-q", cwd=repo)
+
+    rpt._exclude_venv(repo)
+
+    assert ".venv/\n" in (repo / ".git" / "info" / "exclude").read_text()
+
+
+def test_provision_worktree_venv_poll_timeout_returns_false_fast(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(rpt, "_VENV_POLL_TIMEOUT_SEC", 0.05)
+    monkeypatch.setattr(rpt, "_VENV_POLL_INTERVAL_SEC", 0.01)
+
+    result = rpt.provision_worktree_venv(tmp_path / "no-such-scratch", "spec-nope", [])
+
+    assert result is False
+
+
+def _stub_pipeline(monkeypatch: pytest.MonkeyPatch, calls: list[tuple]) -> None:
+    """Stub every network-touching step of main() so only the
+    --provision-venv wiring is under test."""
+    monkeypatch.setattr(rpt, "HttpClient", lambda *_a, **_k: object())
+    monkeypatch.setattr(rpt, "register_project", lambda *_a, **_k: "p-1")
+    monkeypatch.setattr(rpt, "submit_task", lambda *_a, **_k: ("task-1", "spec-1"))
+    monkeypatch.setattr(rpt, "poll_task", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        rpt,
+        "get_task_detail",
+        lambda *_a, **_k: {"status": "completed", "branch_name": None},
+    )
+    monkeypatch.setattr(
+        rpt, "read_evidence", lambda *_a, **_k: {"total_tokens": 1, "cost_usd": 0.1}
+    )
+    monkeypatch.setattr(rpt, "provision_worktree_venv", lambda *a, **_k: calls.append(a) or True)
+
+
+def test_provision_venv_flag_off_not_called(
+    monkeypatch: pytest.MonkeyPatch, upstream_repo: tuple[Path, str, str], tmp_path: Path
+) -> None:
+    upstream, base_sha, _head = upstream_repo
+    calls: list[tuple] = []
+    _stub_pipeline(monkeypatch, calls)
+
+    rpt.main(
+        [
+            "--instance-id",
+            "inst-1",
+            "--repo-url",
+            str(upstream),
+            "--base-commit",
+            base_sha,
+            "--problem-statement",
+            "fix it",
+            "--scratch-root",
+            str(tmp_path / "scratch"),
+            "--out",
+            str(tmp_path / "preds.jsonl"),
+        ]
+    )
+
+    assert calls == []
+
+
+def test_provision_venv_flag_on_calls_with_spec_id(
+    monkeypatch: pytest.MonkeyPatch, upstream_repo: tuple[Path, str, str], tmp_path: Path
+) -> None:
+    upstream, base_sha, _head = upstream_repo
+    calls: list[tuple] = []
+    _stub_pipeline(monkeypatch, calls)
+    scratch_root = tmp_path / "scratch"
+
+    rpt.main(
+        [
+            "--instance-id",
+            "inst-1",
+            "--repo-url",
+            str(upstream),
+            "--base-commit",
+            base_sha,
+            "--problem-statement",
+            "fix it",
+            "--scratch-root",
+            str(scratch_root),
+            "--out",
+            str(tmp_path / "preds.jsonl"),
+            "--provision-venv",
+            "--extra-deps",
+            "mpmath, pytest",
+        ]
+    )
+
+    assert len(calls) == 1
+    scratch_dir, spec_id, extra_deps = calls[0][:3]
+    assert scratch_dir == scratch_root / "inst-1"
+    assert spec_id == "spec-1"
+    assert extra_deps == ["mpmath", "pytest"]
