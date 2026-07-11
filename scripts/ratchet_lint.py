@@ -4,24 +4,32 @@
 Implements the Factory coding-standards ratchet (coding-standards.md sections 0
 and 4.6): the strict bar (`ruff` with the shared select set + `mypy --strict`)
 is enforced on the files a PR changes, and a changed file MAY NOT REGRESS - i.e.
-it may not gain ruff violations relative to the PR base. Untouched legacy
-hotspots are allowed until touched, and the existing legacy backlog inside a
-touched file does not block (a whole-repo strict gate would be instantly red:
-the hub's scripts/ carry pre-existing S/BLE/PL/T20 debt at adoption). New code
-and any net-new violation a PR introduces are blocked.
+it may not gain ruff or mypy violations relative to the PR base. Untouched
+legacy hotspots are allowed until touched, and the existing legacy backlog
+inside a touched file does not block (a whole-repo strict gate would be
+instantly red: the hub's scripts/ carry pre-existing S/BLE/PL/T20 and untyped
+debt at adoption). New code and any net-new violation a PR introduces are
+blocked.
 
-Mechanism: for each changed Python file, count ruff violations (shared config)
-at the PR base and at HEAD; fail if HEAD has more. `ruff format` reflowing legacy
-lines never increases the count, so a pure-cleanup PR stays green while genuine
-new violations are caught.
+Mechanism: for each changed Python file, count violations (ruff: per rule code;
+mypy: per file) at the PR base and at HEAD; fail if HEAD has more. `ruff format`
+reflowing legacy lines never increases the count, so a pure-cleanup PR stays
+green while genuine new violations are caught.
 
-This module is intentionally vendored verbatim from CFactory's reference
-implementation (cross-service reuse of the proven Factory ratchet); only the
-default package scope differs (the hub's first-class Python is the flat
-`scripts/` dir, not a package).
+Two tools are supported (mirrors AIFactory scripts/cq_ratchet.py and CFactory):
+
+* ``--tool ruff`` - per-rule-code ruff violation counts on each changed file.
+* ``--tool mypy`` - mypy --strict error count per changed file. The legacy
+  scripts are only partially annotated, so a whole-tree strict run would be
+  instantly red; counting per file base-vs-head lets a touched legacy file keep
+  its existing mypy debt while forbidding NET-NEW type errors.
+
+This module is intentionally vendored from CFactory's reference implementation
+(cross-service reuse of the proven Factory ratchet); only the default package
+scope differs (the hub's first-class Python is the flat `scripts/` dir).
 
 Usage:
-    python scripts/ratchet_lint.py --base <git-ref> [--package <dir>]
+    python scripts/ratchet_lint.py --base <git-ref> [--tool ruff|mypy] [--package <dir>]
 
 Exit code 0 if no changed file regressed; 1 otherwise.
 """
@@ -30,6 +38,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -38,6 +48,9 @@ from pathlib import Path
 
 PACKAGE_DEFAULT = "scripts"
 
+# mypy text output lines look like:  path/to/file.py:12: error: <msg>  [code]
+_MYPY_ERROR_RE = re.compile(r"^.+?:\d+: error:")
+
 
 def _emit(message: str) -> None:
     # This is a CLI lint tool; its stdout report IS its purpose, so the T20
@@ -45,10 +58,10 @@ def _emit(message: str) -> None:
     print(message)  # noqa: T201
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    # cmd is built from constant git/ruff argv plus repo-internal paths, not
-    # untrusted input; this lint tool legitimately shells out to git and ruff.
-    return subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+def _run(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    # cmd is built from constant git/ruff/mypy argv plus repo-internal paths, not
+    # untrusted input; this lint tool legitimately shells out to git and linters.
+    return subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)  # noqa: S603
 
 
 def changed_python_files(base: str, package: str) -> list[str]:
@@ -68,14 +81,22 @@ def changed_python_files(base: str, package: str) -> list[str]:
     return out
 
 
-def ruff_counts(source: str, filename: str) -> Counter[str]:
-    """Per-rule ruff violation counts for *source* checked as *filename*."""
-    # Write under the REAL basename inside a temp dir: a random-prefixed name
-    # (the old NamedTemporaryFile suffix trick) defeats per-file-ignores like
-    # `**/test_*.py`, so test files were held to the non-test bar.
+def _write_temp(source: str, filename: str) -> tuple[str, str]:
+    """Write *source* under the REAL basename inside a fresh temp dir.
+
+    A random-prefixed name (the old NamedTemporaryFile suffix trick) defeats
+    per-file-ignores like `**/test_*.py`, so test files were held to the
+    non-test bar. Returns (tmpdir, tmp) for the caller to clean up.
+    """
     tmpdir = tempfile.mkdtemp()
     tmp = str(Path(tmpdir) / Path(filename).name)
     Path(tmp).write_text(source)
+    return tmpdir, tmp
+
+
+def ruff_counts(source: str, filename: str) -> Counter[str]:
+    """Per-rule ruff violation counts for *source* checked as *filename*."""
+    tmpdir, tmp = _write_temp(source, filename)
     try:
         res = _run(["ruff", "check", "--config", "ruff.toml", "--output-format", "json", tmp])
         if not res.stdout.strip():
@@ -91,15 +112,65 @@ def ruff_counts(source: str, filename: str) -> Counter[str]:
         Path(tmpdir).rmdir()
 
 
+def mypy_command(target: str) -> list[str]:
+    """The mypy invocation used for both the base and HEAD version of a file.
+
+    ``--follow-imports=silent`` keeps mypy from reporting errors in imported
+    legacy modules the changed file merely references, and
+    ``--ignore-missing-imports`` stops third-party stub gaps (and the base
+    version's temp-file location) from inflating the count - the strict bar
+    still applies to the file's own annotations.
+    """
+    return [
+        "mypy",
+        "--config-file",
+        "mypy.ini",
+        "--ignore-missing-imports",
+        "--follow-imports=silent",
+        "--no-error-summary",
+        "--no-color-output",
+        "--hide-error-context",
+        target,
+    ]
+
+
+def _mypy_env(package: str) -> dict[str, str]:
+    # Put the package dir on MYPYPATH so a changed script's imports of sibling
+    # scripts resolve (the file under test is a temp copy outside the tree).
+    return {**os.environ, "MYPYPATH": package}
+
+
+def mypy_count(source: str, filename: str, package: str) -> int:
+    """mypy --strict error count for *source* checked as *filename*.
+
+    With ``--follow-imports=silent`` mypy only reports errors in the file it
+    was explicitly given, so every error line belongs to this file. Base and
+    HEAD are both checked from a temp file so the comparison is symmetric.
+    """
+    tmpdir, tmp = _write_temp(source, filename)
+    try:
+        res = _run(mypy_command(tmp), env=_mypy_env(package))
+        return sum(1 for line in res.stdout.splitlines() if _MYPY_ERROR_RE.match(line))
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+        Path(tmpdir).rmdir()
+
+
 def file_at_base(base: str, path: str) -> str | None:
     res = _run(["git", "show", f"{base}:{path}"])
     return res.stdout if res.returncode == 0 else None
 
 
-def regressions(base: str, path: str) -> list[str]:
+def regressions(base: str, path: str, tool: str, package: str) -> list[str]:
     head_src = Path(path).read_text()
-    head_counts = ruff_counts(head_src, path)
     base_src = file_at_base(base, path)
+    if tool == "mypy":
+        head_n = mypy_count(head_src, path, package)
+        base_n = mypy_count(base_src, path, package) if base_src is not None else 0
+        if head_n > base_n:
+            return [f"{path}: mypy errors +{head_n - base_n} (base {base_n} -> head {head_n})"]
+        return []
+    head_counts = ruff_counts(head_src, path)
     base_counts = ruff_counts(base_src, path) if base_src is not None else Counter()
     out: list[str] = []
     for code, head_n in head_counts.items():
@@ -112,24 +183,34 @@ def regressions(base: str, path: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True, help="git ref to diff against")
+    parser.add_argument("--tool", choices=["ruff", "mypy"], default="ruff")
     parser.add_argument("--package", default=PACKAGE_DEFAULT)
     args = parser.parse_args()
 
     files = changed_python_files(args.base, args.package)
     if not files:
-        _emit(f"ratchet: no changed Python files under {args.package}; nothing to gate.")
+        _emit(f"ratchet ({args.tool}): no changed Python under {args.package}; nothing to gate.")
         return 0
 
-    _emit("ratchet: gating changed files:\n  " + "\n  ".join(files))
+    _emit(f"ratchet ({args.tool}): gating changed files:\n  " + "\n  ".join(files))
 
     all_regressions: list[str] = []
+    regressed_paths: list[str] = []
     for path in files:
-        all_regressions.extend(regressions(args.base, path))
+        found = regressions(args.base, path, args.tool, args.package)
+        all_regressions.extend(found)
+        if found:
+            regressed_paths.append(path)
 
     if all_regressions:
-        _emit("\nratchet FAILED: changed files gained ruff violations (shared strict bar):")
+        _emit(f"\nratchet FAILED: changed files gained {args.tool} violations (shared strict bar):")
         for line in all_regressions:
             _emit(f"  {line}")
+        if args.tool == "mypy":
+            # Show the actual findings to make the failure actionable.
+            for path in regressed_paths:
+                res = _run(mypy_command(path), env=_mypy_env(args.package))
+                sys.stdout.write(res.stdout)
         _emit(
             "\nFix the new violations (or clean the file further). The ratchet only "
             "blocks NET-NEW violations - pre-existing legacy in a touched file is "
@@ -137,7 +218,7 @@ def main() -> int:
         )
         return 1
 
-    _emit("ratchet PASSED: no changed file regressed; new violations: none.")
+    _emit(f"ratchet PASSED ({args.tool}): no changed file regressed; new violations: none.")
     return 0
 
 

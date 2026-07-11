@@ -10,16 +10,18 @@ name: code-quality (ratchet)
 # instantly red (the hub's scripts/ carry ~198 legacy S/BLE/PL/T20 violations at
 # adoption), so the ratchet (scripts/ratchet_lint.py) is used instead.
 #
-# mypy --strict on changed files is INFORMATIONAL (continue-on-error): the legacy
-# scripts are largely untyped, so it surfaces type debt without making the
-# adoption PR red. A whole-repo `ruff format --check scripts/` stays blocking
-# because formatting is mechanical and already clean.
+# mypy --strict on changed files is now ALSO a BLOCKING no-regression ratchet
+# (Factory#254, mirroring CFactory#169): the legacy scripts are largely untyped,
+# so a whole-repo strict run would be instantly red - instead the ratchet counts
+# mypy --strict errors per changed file base-vs-head and fails only on NET-NEW
+# type errors. A whole-repo `ruff format --check scripts/` stays blocking because
+# formatting is mechanical and already clean.
 #
 # The hub owns standards/ — these jobs reference standards/ruff.toml /
 # standards/mypy.ini directly via the vendored-at-root ruff.toml / mypy.ini.
 #
-# ratchet_lint.py is vendored verbatim from CFactory (cross-service reuse of the
-# proven Factory ratchet); only the package scope differs (flat scripts/ dir).
+# ratchet_lint.py is vendored from CFactory (cross-service reuse of the proven
+# Factory ratchet); only the package scope differs (flat scripts/ dir).
 
 on:
   pull_request:
@@ -47,7 +49,7 @@ env:
 
 jobs:
   ratchet:
-    name: ruff ratchet (diff-scoped, blocking) + mypy (informational)
+    name: ruff + mypy ratchet (diff-scoped, blocking)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,16 +79,12 @@ jobs:
         # for the adoption PR while catching genuinely new violations.
         run: python scripts/ratchet_lint.py --base "${{ steps.base.outputs.ref }}" --package "${PACKAGE_DIR}"
 
-      - name: mypy --strict on changed files (informational)
-        # Non-blocking: the legacy scripts are largely untyped, so mypy --strict
-        # over touched files reports a large existing backlog. This surfaces type
-        # debt without making the adoption PR red. Promoting this to a blocking
-        # per-file ratchet is tracked as follow-up.
-        continue-on-error: true
-        run: |
-          mapfile -t files < <(git diff --name-only --diff-filter=AM "${{ steps.base.outputs.ref }}...HEAD" -- "${PACKAGE_DIR}" | grep '\.py$' || true)
-          if [ ${#files[@]} -eq 0 ]; then echo "no changed Python files"; exit 0; fi
-          mypy --config-file mypy.ini "${files[@]}" || true
+      - name: Ratchet (mypy --strict on changed files; blocks net-new type errors)
+        # No-regression gate mirroring the ruff ratchet (Factory#254 / CFactory#169):
+        # a touched legacy script keeps its existing mypy debt, but a PR may not add
+        # net-new mypy --strict errors. The whole-repo strict backlog stays out of
+        # scope until each file is individually cleaned.
+        run: python scripts/ratchet_lint.py --tool mypy --base "${{ steps.base.outputs.ref }}" --package "${PACKAGE_DIR}"
 
   format-check:
     name: ruff format --check (scripts, blocking)
