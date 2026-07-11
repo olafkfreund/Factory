@@ -314,12 +314,17 @@ def poll_task(
 
 
 def get_task_detail(client: HttpClient, task_id: str) -> dict[str, Any]:
-    resp = client.get(f"/api/tasks/{task_id}")
-    if not is_success(resp.status):
-        raise PipelineError(
-            f"GET /api/tasks/{task_id} -> {resp.status}: {resp.json}", "task_detail_failed"
-        )
-    return resp.json
+    # Retried: under concurrent builds the local server occasionally serves a
+    # transient error on this GET after a long build; the build itself is fine.
+    last: Any = None
+    for attempt in range(3):
+        if attempt:
+            time.sleep(10)
+        resp = client.get(f"/api/tasks/{task_id}")
+        if is_success(resp.status):
+            return resp.json
+        last = f"{resp.status}: {resp.json}"
+    raise PipelineError(f"GET /api/tasks/{task_id} -> {last}", "task_detail_failed")
 
 
 # ── evidence gate (cost/token source of truth) ──────────────────────────────
@@ -468,6 +473,26 @@ def _load_problem_statement(args: argparse.Namespace) -> str:
     return args.problem_statement_file.read_text()
 
 
+def salvage_after_failure(
+    scratch_dir: Path,
+    base_commit: str,
+    spec_id: str | None,
+    diff: str,
+    evidence: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """The build may have finished server-side despite an API failure; the
+    worktree patch and token evidence are on disk regardless."""
+    if not spec_id:
+        return diff, evidence
+    if not diff:
+        diff = extract_worktree_patch(scratch_dir, base_commit, spec_id)
+        if diff:
+            print("patch salvaged from worktree after pipeline failure")  # noqa: T201
+    if evidence["total_tokens"] is None:
+        evidence = read_evidence(scratch_dir, spec_id)
+    return diff, evidence
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     started = time.monotonic()
@@ -517,6 +542,9 @@ def main(argv: list[str] | None = None) -> int:
         halt_reason = exc.halt_reason
         status = "failed"
         print(f"[{args.instance_id}] pipeline failure ({halt_reason}): {exc}")  # noqa: T201
+        diff, evidence = salvage_after_failure(
+            scratch_dir, args.base_commit, spec_id, diff, evidence
+        )
 
     if not diff:
         print(f"[{args.instance_id}] WARNING: empty diff (status={status})")  # noqa: T201
