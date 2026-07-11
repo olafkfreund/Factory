@@ -141,6 +141,77 @@ def extract_worktree_patch(scratch_dir: Path, base_commit: str, spec_id: str) ->
     return result.stdout
 
 
+# ── opt-in per-task venv provisioning (so the coder can run repo tests) ────
+
+_VENV_POLL_INTERVAL_SEC = 2
+_VENV_POLL_TIMEOUT_SEC = 120
+
+
+def _worktree_gitdir(worktree: Path) -> Path:
+    """The real git-dir for `worktree`: a linked worktree's `.git` is a FILE
+    containing `gitdir: <path>`; a regular repo/worktree has `.git` as a dir."""
+    git_marker = worktree / ".git"
+    if git_marker.is_file():
+        return Path(git_marker.read_text().strip().removeprefix("gitdir:").strip())
+    return git_marker
+
+
+def _exclude_venv(worktree: Path) -> None:
+    """Append `.venv/` to the worktree's git exclude file so a safety-net
+    `git add -A` can never commit it into the scored branch."""
+    exclude_path = _worktree_gitdir(worktree) / "info" / "exclude"
+    exclude_path.parent.mkdir(parents=True, exist_ok=True)
+    with exclude_path.open("a") as f:
+        f.write(".venv/\n")
+
+
+def provision_worktree_venv(
+    scratch_dir: Path, spec_id: str, extra_deps: list[str], timeout_sec: int = 600
+) -> bool:
+    """Best-effort: create a venv in the task worktree and `pip install -e .`
+    (plus any extra deps) so the coding agent can run the target repo's tests
+    -- the host python is otherwise immutable/missing repo deps (design doc
+    risk: build parks in human_review because tests can't run). This must
+    NEVER fail the pipeline: any problem prints one warning and returns False.
+    """
+    worktree = scratch_dir / ".aifactory" / "worktrees" / "tasks" / spec_id
+    deadline = time.monotonic() + _VENV_POLL_TIMEOUT_SEC
+    while not worktree.is_dir():
+        if time.monotonic() >= deadline:
+            print(  # noqa: T201 -- CLI output
+                f"provision_worktree_venv: {worktree} did not appear within "
+                f"{_VENV_POLL_TIMEOUT_SEC}s -- skipping"
+            )
+            return False
+        time.sleep(_VENV_POLL_INTERVAL_SEC)
+
+    try:
+        _exclude_venv(worktree)
+        venv_result = subprocess.run(  # noqa: S603
+            [sys.executable, "-m", "venv", str(worktree / ".venv")],
+            cwd=worktree,
+            capture_output=True,
+            check=False,
+            timeout=timeout_sec,
+        )
+        if venv_result.returncode != 0:
+            raise RuntimeError(venv_result.stderr.decode(errors="replace"))
+        pip = worktree / ".venv" / "bin" / "pip"
+        pip_result = subprocess.run(  # noqa: S603
+            [str(pip), "install", "-e", ".", *extra_deps],
+            cwd=worktree,
+            capture_output=True,
+            check=False,
+            timeout=timeout_sec,
+        )
+        if pip_result.returncode != 0:
+            raise RuntimeError(pip_result.stderr.decode(errors="replace"))
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        print(f"provision_worktree_venv: best-effort venv setup failed: {exc}")  # noqa: T201
+        return False
+    return True
+
+
 # ── AIFactory HTTP calls ─────────────────────────────────────────────────────
 
 
@@ -380,6 +451,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--timeout-min", type=int, default=90)
     ap.add_argument("--poll-sec", type=int, default=20)
     ap.add_argument("--out", required=True, help="predictions.jsonl append path")
+    ap.add_argument(
+        "--provision-venv",
+        action="store_true",
+        help="best-effort per-task venv so the coder can run the repo's tests",
+    )
+    ap.add_argument(
+        "--extra-deps", default="", help="comma-separated extra pip packages for --provision-venv"
+    )
     return ap.parse_args(argv)
 
 
@@ -412,6 +491,14 @@ def main(argv: list[str] | None = None) -> int:
         task_id, spec_id = submit_task(
             client, project_id, args.instance_id, problem_statement, args.tier
         )
+        if args.provision_venv:
+            if spec_id:
+                extra_deps = [d.strip() for d in args.extra_deps.split(",") if d.strip()]
+                provision_worktree_venv(scratch_dir, spec_id, extra_deps)
+            else:
+                print(  # noqa: T201 -- CLI output
+                    f"[{args.instance_id}] --provision-venv requested but no spec_id yet"
+                )
         poll_task(client, task_id, args.timeout_min, args.poll_sec)
         detail = get_task_detail(client, task_id)
         status = detail.get("status", "unknown")
