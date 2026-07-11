@@ -26,7 +26,8 @@
         "issue_number": { "type": "integer" },
         "repo": { "type": "string", "description": "owner/name of the target repo." },
         "base_ref": { "type": "string", "description": "RFC-0010 reconnaissance: the branch/tag the plan was built against, e.g. 'main'." },
-        "baseline_commit": { "type": "string", "description": "RFC-0010 reconnaissance: the resolved commit SHA the RepoMap was built from. Lets AIFactory/TFactory anchor to the exact tree the human approved and detect drift." }
+        "baseline_commit": { "type": "string", "description": "RFC-0010 reconnaissance: the resolved commit SHA the RepoMap was built from. Lets AIFactory/TFactory anchor to the exact tree the human approved and detect drift." },
+        "content_trust": { "$ref": "#/$defs/content_trust" }
       }
     },
     "approval": {
@@ -309,6 +310,42 @@
     }
   },
   "$defs": {
+    "content_trust": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Untrusted-content provenance marking for prompt-injection defense (docs/security/untrusted-content-threat-model.md, issue #273). PFactory sets it at intake; every downstream service carries it through unchanged and wraps untrusted text in the canonical delimiter before prompt injection. Fully additive and OPTIONAL - ABSENT => consumers MUST assume untrusted_user_content (fail-closed default); the block exists to positively assert trust, never to let absence imply it.",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": ["trusted", "untrusted_user_content"],
+          "description": "Trust class of the contract's free-text fields as a whole. 'untrusted_user_content' for anything derived from issue text, submitted specs, repo content, or MCP responses; 'trusted' ONLY for operator-authored input."
+        },
+        "sources": {
+          "type": "array",
+          "description": "Per-origin trust detail for mixed contracts.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["source", "trust"],
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": ["issue_text", "spec_file", "repo_content", "mcp_response", "operator"],
+                "description": "Where this content originated."
+              },
+              "trust": {
+                "type": "string",
+                "enum": ["trusted", "untrusted_user_content"]
+              },
+              "detail": {
+                "type": "string",
+                "description": "Concrete origin, e.g. 'github-issue:142', 'repo:owner/name@sha', 'mcp:backstage/techdocs'."
+              }
+            }
+          }
+        }
+      }
+    },
     "constitution": {
       "type": "object",
       "additionalProperties": true,
