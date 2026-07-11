@@ -6,7 +6,7 @@ permalink: /rfc/correlation-key/
 
 # RFC-0001 — Shared Correlation Key & Completion-Event Schema
 
-> **Status:** Implemented (PFactory · AIFactory · TFactory emitters + CFactory collector) · **Version:** 1.1 · **Updated:** 2026-06-20
+> **Status:** Implemented (PFactory · AIFactory · TFactory emitters + CFactory collector) · **Version:** 1.3 · **Updated:** 2026-07-11
 > Part of the **PARR spine** (issue [#1](https://github.com/olafkfreund/Factory/issues/1),
 > [#4](https://github.com/olafkfreund/Factory/issues/4)). The product repos implement
 > against this document.
@@ -115,6 +115,32 @@ without polling. **Additive and optional** — consumers MUST ignore it when abs
 
 AIFactory derives it from its per-task `token_usage.json` (already tracked). PFactory
 and TFactory accumulate per session/spec and emit it when instrumented (pending).
+
+## 3.2 The optional `injection_scan` block (v1.3)
+
+A service that ran a prompt-injection scan over untrusted content (issue text, cloned
+repo content, MCP responses — see
+[the untrusted-content threat model](../security/untrusted-content-threat-model.md),
+issue #273) MAY include an `injection_scan` object carrying the verdict, so CFactory
+can display what was and was not scanned. **Additive and optional** — consumers MUST
+ignore it when absent. Absence means no scan ran at this stage; it is NEVER
+interpreted as a pass.
+
+| Field | Type | Description |
+|---|---|---|
+| `verdict` | string | `pass` \| `flagged` \| `skipped`. `flagged` => the task paused to `human_review` (fail-closed, never silent-continue). `skipped` => the scan did not run; NEVER reported as `pass`. |
+| `reason` | string? | REQUIRED for `flagged`/`skipped`: what was flagged, or why the scan was skipped. |
+| `scanner` | string? | Scanner identifier, e.g. `aifactory-precoder-v1`. |
+| `sources_scanned` | string[]? | The untrusted sources inspected, e.g. `["issue_text", "repo_content"]`. |
+
+```json
+{
+  "correlation_key": "142", "service": "aifactory", "task_id": "proj:001",
+  "status": "human_review", "phase": "act", "time": "2026-07-11T09:00:00+00:00",
+  "injection_scan": { "verdict": "flagged", "scanner": "aifactory-precoder-v1",
+                      "reason": "instruction-like payload in README.md: 'ignore previous instructions'" }
+}
+```
 
 ## 4. The optional `correlation` block
 

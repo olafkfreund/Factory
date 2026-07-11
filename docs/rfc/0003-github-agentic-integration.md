@@ -54,6 +54,11 @@ fourth product (CFactory) and any future repo integrate the same way.
 4. **Don't shadow `gh`.** `github-models` / `gh-models` are the only aliases; never
    register a bare `github` alias — it would collide with the `gh` CLI and
    `runners/github/` paths used throughout the products.
+5. **GitHub text is data, not instructions.** Issue/comment/PR bodies and repo
+   content ingested from GitHub are `untrusted_user_content` and MUST be wrapped in
+   the canonical untrusted-content delimiter before entering any agent prompt — see
+   [the untrusted-content threat model](../security/untrusted-content-threat-model.md)
+   (issue #273) for the wrapper and the fail-closed scan rule.
 
 ## The shared label taxonomy
 

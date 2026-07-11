@@ -1,7 +1,7 @@
 asyncapi: 2.6.0
 info:
   title: Factory Completion-Event Contract
-  version: 1.1.0
+  version: 1.3.0
   description: |
     **RFC-0001 — Shared correlation key & completion-event envelope.**
 
@@ -118,6 +118,8 @@ components:
           $ref: '#/components/schemas/Usage'
         correlation:
           $ref: '#/components/schemas/CorrelationBlock'
+        injection_scan:
+          $ref: '#/components/schemas/InjectionScan'
         schema_version:
           type: string
           description: Absent implies v1. Present only when a breaking change ships.
@@ -141,6 +143,33 @@ components:
         model:
           type: string
           description: Model id (optional).
+    InjectionScan:
+      type: object
+      description: >-
+        Optional, additive (v1.3, RFC-0001 §3.2, issue #273) — prompt-injection
+        scan verdict over untrusted content (issue text, cloned repo content,
+        MCP responses; see docs/security/untrusted-content-threat-model.md).
+        Absence means no scan ran at this stage; it is NEVER interpreted as a
+        pass. verdict=flagged means the task paused to human_review
+        (fail-closed, never silent-continue); verdict=skipped is NEVER
+        reported as pass.
+      required:
+        - verdict
+      properties:
+        verdict:
+          type: string
+          enum: [pass, flagged, skipped]
+        reason:
+          type: string
+          description: REQUIRED for flagged/skipped — what was flagged, or why the scan was skipped.
+        scanner:
+          type: string
+          description: Scanner identifier, e.g. aifactory-precoder-v1.
+        sources_scanned:
+          type: array
+          items:
+            type: string
+          description: Untrusted sources inspected, e.g. [issue_text, repo_content].
     CorrelationBlock:
       type: object
       description: Optional upstream/downstream chain links (all additive).
