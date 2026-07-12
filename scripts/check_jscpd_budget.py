@@ -48,10 +48,17 @@ import tempfile
 from pathlib import Path
 
 # Current clone count (>=8 lines, >=50 tokens; see .jscpd.json) at the moment the
-# gate flipped to enforcing. This is the ceiling: the gate fails on clone 74+.
+# gate flipped to enforcing. This is the ceiling: the gate fails on clone 40+.
 # RATCHET RULE: this number only ever DECREASES. Lower it (never raise it) in the
 # same PR that removes clones via a hub extraction.
-CLONE_BUDGET = 73
+#
+# 2026-07-12 (#286): ratcheted 73 -> 39. Not a code extraction — .jscpd.json now
+# ignores product-catalogs/**, which is STAGING content (per its README: ready-to-
+# drop Backstage catalog-info.yaml + copies of the canonical apis/*.openapi.yaml,
+# meant to be copied wholesale into each product repo, NOT imported here). Those
+# per-product copies are deliberate, non-extractable duplication that only added
+# jscpd noise; excluding them lowers the real-code clone count from 75 to 39.
+CLONE_BUDGET = 39
 
 _DEFAULT_REPORT = Path(__file__).resolve().parent.parent / "reports/jscpd/jscpd-report.json"
 

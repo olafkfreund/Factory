@@ -19,7 +19,8 @@
     "reports/**",
     "**/*.lock",
     "**/dist/**",
-    "**/build/**"
+    "**/build/**",
+    "product-catalogs/**"
   ],
   "threshold": 100
 }
