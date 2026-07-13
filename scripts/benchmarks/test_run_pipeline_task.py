@@ -359,3 +359,35 @@ def test_provision_venv_wiring(
     assert scratch_dir == tmp_path / "scratch" / "inst-1"
     assert spec_id == "spec-1"
     assert extra_deps == ["mpmath", "pytest"]
+
+
+def test_extract_patch_strips_aifactory_scaffolding(tmp_path: Path) -> None:
+    """Factory#288: committed .aifactory/ scaffolding, status file, and caches
+    must NOT pollute the scored model_patch — only real source survives."""
+    repo = tmp_path / "scratch"
+    repo.mkdir()
+    _git("init", "-q", cwd=repo)
+    _git("config", "user.email", "t@t", cwd=repo)
+    _git("config", "user.name", "t", cwd=repo)
+    (repo / "app.py").write_text("x = 1\n")
+    _git("add", "app.py", cwd=repo)
+    _git("commit", "-qm", "base", cwd=repo)
+    base = _git("rev-parse", "HEAD", cwd=repo)
+
+    _git("checkout", "-qb", "aifactory/001", cwd=repo)
+    (repo / "app.py").write_text("x = 2\n")  # the real fix
+    # the scaffolding the build's safety-net commit lands on the branch
+    (repo / ".aifactory").mkdir()
+    (repo / ".aifactory" / "plan.md").write_text("planning noise\n")
+    (repo / ".aifactory-status").write_text("state=building\n")
+    (repo / "sub" / "__pycache__").mkdir(parents=True)
+    (repo / "sub" / "__pycache__" / "x.cpython-312.pyc").write_text("cache\n")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-qm", "work + scaffolding", cwd=repo)
+
+    patch = rpt.extract_patch(repo, base, "aifactory/001")
+
+    assert "app.py" in patch and "x = 2" in patch  # real source is kept
+    assert ".aifactory" not in patch  # covers .aifactory/ and .aifactory-status
+    assert "plan.md" not in patch
+    assert "__pycache__" not in patch

@@ -111,9 +111,37 @@ def prepare_scratch_repo(upstream: str, base_commit: str, scratch_dir: Path) -> 
     return scratch_dir
 
 
+# Non-source paths the pipeline commits into the task worktree that must NOT
+# pollute the scored model_patch (Factory#288): AIFactory's own scaffolding
+# (plans, memory, COMPLETED.json, spawn logs), the per-task venv, and Python
+# caches. The build's safety-net commit lands some of these on the branch, so
+# they appear in a two-dot diff unless excluded.
+_PATCH_EXCLUDES = [
+    ":(exclude).aifactory/**",
+    ":(exclude).aifactory-status",
+    ":(exclude)**/.venv/**",
+    ":(exclude)**/__pycache__/**",
+    ":(exclude)**/*.pyc",
+]
+
+
 def extract_patch(scratch_dir: Path, base_commit: str, branch_name: str) -> str:
-    """The scored artifact: a two-dot diff against the pinned base, local only."""
-    cmd = ["git", "-C", str(scratch_dir), "diff", base_commit, branch_name]
+    """The scored artifact: a two-dot diff against the pinned base, local only.
+
+    Excludes the pipeline's own committed scaffolding (Factory#288) so the patch
+    contains only the application source the harness should apply and test.
+    """
+    cmd = [
+        "git",
+        "-C",
+        str(scratch_dir),
+        "diff",
+        base_commit,
+        branch_name,
+        "--",
+        ".",
+        *_PATCH_EXCLUDES,
+    ]
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)  # noqa: S603
     except subprocess.CalledProcessError as exc:
@@ -127,13 +155,14 @@ def extract_worktree_patch(scratch_dir: Path, base_commit: str, spec_id: str) ->
     A build that halts before its commit step (e.g. parked in human_review
     because tests could not run) leaves the produced code uncommitted in
     the worktree, so the branch diff is empty while the patch exists on
-    disk. Untracked files (.aifactory/ artifacts) never appear in git diff,
-    so no pathspec exclusion is needed.
+    disk. Excludes the pipeline's committed scaffolding (Factory#288) — a
+    safety-net commit can land `.aifactory/` on the branch, so it shows up in
+    `git diff <base>` even though untracked artifacts would not.
     """
     worktree = scratch_dir / ".aifactory" / "worktrees" / "tasks" / spec_id
     if not worktree.is_dir():
         return ""
-    cmd = ["git", "-C", str(worktree), "diff", base_commit]
+    cmd = ["git", "-C", str(worktree), "diff", base_commit, "--", ".", *_PATCH_EXCLUDES]
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)  # noqa: S603
     except subprocess.CalledProcessError:
