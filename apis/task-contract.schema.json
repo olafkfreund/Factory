@@ -147,8 +147,15 @@
           "type": "object",
           "additionalProperties": { "type": "string", "enum": ["none", "low", "medium", "high"] }
         },
-        "parallel": { "type": "boolean" },
-        "workers": { "type": "integer", "minimum": 1 },
+        "parallel": {
+          "type": "boolean",
+          "description": "Whether AIFactory may build this task's independent subtasks CONCURRENTLY. PFactory derives it from the plan's dependency shape: true when some phase holds more than one subtask at the same dependency level (a phase marked parallel_safe), false for a pure dependency chain. AIFactory honors it via task_metadata.parallel -> parallel_runner, which runs each concurrent subtask in its OWN child git worktree over a disjoint file set and merges sequentially. Absent => AIFactory's own default (serial)."
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum subtasks AIFactory may build concurrently per wave. PFactory sets it to the WIDEST phase's subtask count, capped at 4 -- a planner-side policy, not a contract invariant, so the schema deliberately imposes no maximum. Only consulted when parallel is true; workers <= 1 makes a phase ineligible for parallel execution. Absent => AIFactory's own default (3)."
+        },
         "review_tier": { "type": "string", "enum": ["auto", "async", "blocking"] },
         "autonomy_tier": {
           "type": "string",
