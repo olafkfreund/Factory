@@ -138,11 +138,45 @@ human summary.
 | `tfactory` | PFactory | TFactory (via AIFactory handover) | optional (TFactory falls back to inference) |
 | `epic_context.house_standards` | PFactory (retrieves) | AIFactory/TFactory (follow), `standards_conformance` gate (verifies) | optional (RFC-0012; absent => no external standards to enforce) |
 | `deployment` | PFactory (discovers) | AIFactory/TFactory (honor risk/scan/gate + DRY-RUN policy), CFactory (surfaces) | optional (RFC-0013; absent => no deployment dimension) |
+| `execution.parallel` / `execution.workers` | PFactory (from the plan's dependency shape) | AIFactory (concurrent subtask build, worktree-per-agent) | optional (absent => AIFactory's own default: serial) |
 | `execution.routing` / `execution.runtime` / `execution.budget_mode` | PFactory (cost router) | AIFactory (per-role models + gated runtime + budget enforce), TFactory (test-model), CFactory (cost) | optional (RFC-0014; absent => today's behaviour) |
 
 A v2 contract **without** `execution`/`tfactory` is a valid signed plan that
 behaves like v1 plus richer correlation. A v2 contract **with** them is the full
 skip-planning, no-guessing fast-path.
+
+### `execution.parallel` / `execution.workers` (optional multi-agent build)
+
+These two OPTIONAL `execution` fields let **the planner decide** that a task
+should be built by concurrent agents, and carry that decision over the handover
+into AIFactory. They are the contract seam for multi-agent execution — nothing
+else needs to be configured on the AIFactory side.
+
+`execution.parallel` (boolean) says whether AIFactory may build the task's
+independent subtasks concurrently. `execution.workers` (integer >= 1) caps how
+many run at once per wave.
+
+**PFactory derives both from the plan's dependency shape** — not from a guess or
+an operator toggle. Subtasks grouped at the same dependency level are
+independent, so the phase they form is marked `parallel_safe` (see the `phases`
+block, §2). `parallel` is true when some phase is wider than one subtask;
+`workers` is the WIDEST phase's subtask count. A pure dependency chain therefore
+emits `parallel: false, workers: 1`. PFactory caps `workers` at 4
+(`execution_profile._MAX_WORKERS`) — that is a **planner-side policy, not a
+contract invariant**, which is why the schema sets `minimum: 1` and deliberately
+imposes no maximum.
+
+AIFactory ingests them through `trusted_plan._EXECUTION_TO_METADATA`
+(`parallel` -> `parallel`, `workers` -> `workers` in `task_metadata.json`), reads
+them back via `AgentService._read_parallel_opts`, and executes the wave with
+`agents/parallel_runner.py`: each concurrent subtask gets its OWN child git
+worktree over a **disjoint file set** (enforced by `implementation_plan/scheduler.py`),
+and the worktrees are merged sequentially. `workers <= 1` makes a phase
+ineligible for parallel execution (`is_phase_parallel_eligible`).
+
+Absent => AIFactory's own defaults (serial; 3 workers if enabled by other means).
+Both fields are covered by the `approval` signature, so the parallelism decision
+is tamper-evident like the rest of the execution profile.
 
 ### `execution.budget_usd` (optional soft budget)
 
