@@ -30,6 +30,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 # id-prefix -> provider. Used both to bucket OUR ids and to compare against the
 # right upstream list (a new gpt-* is not a "missing claude").
@@ -92,11 +93,7 @@ def _google_models() -> list[str]:
         {},
     )
     # names come back as "models/gemini-2.5-pro" — strip the prefix
-    return [
-        m["name"].split("/", 1)[-1]
-        for m in data.get("models", [])
-        if m.get("name")
-    ]
+    return [m["name"].split("/", 1)[-1] for m in data.get("models", []) if m.get("name")]
 
 
 _PROVIDERS = {
@@ -109,8 +106,7 @@ _PROVIDERS = {
 def _known_ids(catalog_path: str, phase_config_path: str | None) -> set[str]:
     """The model ids the fleet references: catalog keys/ids + MODEL_ID_MAP values."""
     ids: set[str] = set()
-    with open(catalog_path) as f:
-        catalog = json.load(f)
+    catalog = json.loads(Path(catalog_path).read_text())
     # model-catalog.json is either {id: {...}} or {"models": [{"id": ...}]}
     if isinstance(catalog, dict):
         entries = catalog.get("models") if "models" in catalog else catalog
@@ -122,8 +118,8 @@ def _known_ids(catalog_path: str, phase_config_path: str | None) -> set[str]:
         elif isinstance(entries, list):
             ids.update(e["id"] for e in entries if isinstance(e, dict) and e.get("id"))
     # phase_config.py: pull any "provider-looking" id string literals
-    if phase_config_path and os.path.exists(phase_config_path):
-        text = open(phase_config_path).read()
+    if phase_config_path and Path(phase_config_path).exists():
+        text = Path(phase_config_path).read_text()
         for m in re.findall(r"[\"'](claude-[\w.-]+|gpt-[\w.-]+|gemini-[\w.-]+)[\"']", text):
             ids.add(m)
     return {i for i in ids if _provider_of(i)}
@@ -182,18 +178,16 @@ def main() -> int:
     )
     args = ap.parse_args()
     baseline: dict[str, list[str]] = {}
-    if os.path.exists(args.baseline):
-        with open(args.baseline) as f:
-            baseline = json.load(f)
+    baseline_path = Path(args.baseline)
+    if baseline_path.exists():
+        baseline = json.loads(baseline_path.read_text())
     report, new_baseline = probe(args.catalog, args.phase_config, baseline)
-    with open(args.out, "w") as f:
-        json.dump(report, f, indent=2)
-    with open(args.baseline, "w") as f:
-        json.dump(new_baseline, f, indent=2, sort_keys=True)
+    Path(args.out).write_text(json.dumps(report, indent=2))
+    baseline_path.write_text(json.dumps(new_baseline, indent=2, sort_keys=True))
     n_new = sum(1 for x in report["findings"] if x["kind"] == "new")
     n_dep = sum(1 for x in report["findings"] if x["kind"] == "deprecated")
-    print(f"model-probe: {n_new} new, {n_dep} deprecated-in-use across providers")
-    print(json.dumps(report["providers"], indent=2))
+    print(f"model-probe: {n_new} new, {n_dep} deprecated-in-use across providers")  # noqa: T201
+    print(json.dumps(report["providers"], indent=2))  # noqa: T201
     return 0
 
 

@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import model_probe as mp  # noqa: E402
+import model_probe as mp
 
 
 def _catalog(d: Path, ids):
@@ -82,7 +82,7 @@ def run():
         assert rep["providers"]["anthropic"]["status"] == "skipped"
         assert [f for f in rep["findings"] if f["kind"] == "deprecated"] == []
 
-    print("model_probe self-check: all 5 checks passed")
+    print("model_probe self-check: all 5 checks passed")  # noqa: T201
 
 
 if __name__ == "__main__":
