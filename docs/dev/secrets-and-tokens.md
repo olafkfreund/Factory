@@ -11,6 +11,9 @@ its five repositories (Factory + AIFactory + PFactory + TFactory + CFactory) and
 the deployed fleet. It explains, for each token: **what it is**, **where the value
 comes from**, **how to set it**, and **how to rotate or react if it leaks**.
 
+> For non-secret behaviour toggles (feature flags, pipeline gates, execution-backend
+> selectors), see the [Environment Flags Reference]({{ site.baseurl }}/dev/environment-flags).
+
 > This runbook covers credentials that **already exist** and how they are wired at
 > runtime. How the factory *discovers at planning time* what access a feature needs
 > in order to be tested — and curates (human-verified when required) credentials for
