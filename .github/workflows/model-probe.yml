@@ -1,0 +1,83 @@
+name: model-probe
+
+# Weekly: which models do the providers offer that we do not use yet, and which
+# ids we DO use has a provider dropped? Report-only (#299) — it opens issues; a
+# human decides which stage adopts a new frontier model. Nothing edits the
+# catalog. The baseline (scripts/model_probe_baseline.json) makes "new" a true
+# week-over-week delta, so a stable week is silent.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'   # Monday 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commit the refreshed baseline
+  issues: write     # open findings
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout AIFactory (model-catalog + phase_config)
+        uses: actions/checkout@v4
+        with:
+          repository: olafkfreund/AIFactory
+          path: _aifactory
+          # Needs read access to AIFactory. Reuse the fleet GITOPS_PAT; if it
+          # lacks AIFactory scope, set a dedicated read token here.
+          token: ${{ secrets.GITOPS_PAT || github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run the probe
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          python3 scripts/model_probe.py \
+            --catalog _aifactory/apps/backend/core/model-catalog.json \
+            --phase-config _aifactory/apps/backend/phase_config.py \
+            --baseline scripts/model_probe_baseline.json \
+            --out probe-report.json
+          cat probe-report.json
+      - name: Open issues for findings (deduped by title)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          rep = json.load(open("probe-report.json"))
+          def open_issue(title, body, labels):
+              # dedup: skip if an open issue with this exact title exists
+              out = subprocess.run(
+                  ["gh","issue","list","--state","open","--search",
+                   f'in:title "{title}"',"--json","title","-q",".[].title"],
+                  capture_output=True, text=True).stdout
+              if title in out.splitlines():
+                  print("exists:", title); return
+              subprocess.run(["gh","issue","create","--title",title,
+                              "--body",body,"--label",labels], check=False)
+              print("opened:", title)
+          for f in rep["findings"]:
+              if f["kind"] == "deprecated":
+                  open_issue(
+                      f'model-probe: used model `{f["id"]}` no longer listed by {f["provider"]}',
+                      f'The model id `{f["id"]}` is referenced by the fleet (model-catalog.json / MODEL_ID_MAP) but is not in {f["provider"]}\'s live models list. It may be deprecated. Repin the affected stage(s) to a current id.',
+                      "model-currency,high-priority")
+              elif f["kind"] == "new":
+                  open_issue(
+                      f'model-probe: new {f["provider"]} model `{f["id"]}` available',
+                      f'{f["provider"]} now offers `{f["id"]}`, which the fleet does not reference. Consider whether a stage should adopt it (edit AIFactory core/model-catalog.json + phase_config MODEL_ID_MAP). Report-only.',
+                      "model-currency")
+          PY
+      - name: Commit the refreshed baseline
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/model_probe_baseline.json
+          git commit -m "chore(model-probe): refresh model baseline [skip ci]" || exit 0
+          git push
