@@ -243,26 +243,29 @@ flag.
 The canonical, code-adjacent sources for each service (this page indexes them):
 
 - **Factory hub** — `docs/dev/secrets-and-tokens.md`, `scripts/README-parr-regression.md`.
-- **PFactory** — `.env.example`, `AGENTS.md` / `CLAUDE.md`; no central reference page.
-- **AIFactory** — `docs/docs/configuration-reference.md` (primary), `apps/web-server/.env.example`,
-  `apps/backend/.env.example`, `docs/docs/concepts/*`.
-- **TFactory** — `.env.example`, the Jekyll `docs/` site (`capabilities-and-usage.md`,
-  `completion-event-envelope.md`, `nix-reproducible-testing.md`), `README.md`.
-- **CFactory** — `techdocs/dependencies.md` (the `CFACTORY_*` table), `charts/cfactory/values.yaml`,
-  `docs/guides/token-gated-api.md`.
+- **PFactory** — `docs/dev/environment-reference.md` (exhaustive, code-verified), `.env.example`.
+- **AIFactory** — `docs/docs/environment-reference.md` (exhaustive) + `docs/docs/configuration-reference.md`,
+  `apps/backend/.env.example`, `apps/web-server/.env.example`.
+- **TFactory** — `docs/environment-reference.md` (exhaustive, backend + web-server), `.env.example`, `README.md`.
+- **CFactory** — `docs/dev/environment-reference.md` (public) + `techdocs/dependencies.md` (the
+  `CFACTORY_*` table), `charts/cfactory/values.yaml`.
 
 ## Coverage gaps
 
-Two structural gaps this index papers over but the services should close at source:
+As of the 2026-07-23 documentation refresh, every service now ships an exhaustive,
+code-verified `environment-reference.md` (linked above): each was produced by grepping the
+service for every `os.environ` / `os.getenv` / pydantic `Settings` field and reconciling the
+result against `.env.example`, so the prior "no per-service central reference" gap for
+PFactory and TFactory is closed (TFactory added ~40 previously-undocumented vars — the whole
+web-server security surface; PFactory reconciled 219 vars and added 33 to `.env.example`).
 
-- **No per-service central reference** for PFactory or TFactory; discovery there requires
-  reading `.env.example` plus grepping agent docs. Roughly 40 TFactory and ~55 PFactory
-  operationally-significant flags have no doc row.
+One residual item to close at source:
+
 - **Documented-but-unread:** `AIFACTORY_AUTO_DEPLOY` appears in the AIFactory configuration
   reference but has no reader in service code (it is handled by the deploy-then-verify skill).
   Either wire it or annotate it as skill-only.
 
-Highest-priority undocumented flags to backfill first are the security- and side-effect-bearing
-ones marked `[sec]` / `[write]` / `[on!]` above — especially the default-ON
-`TFACTORY_TRIAGER_HARVEST` and `AIFACTORY_INTAKE_AUTO_HANDOFF`, and the auth-bypass
-`APP_DISABLE_AUTH`.
+When adding a new flag, put the authoritative row in the service's own `environment-reference.md`
+and mirror the security- and side-effect-bearing ones (`[sec]` / `[write]` / `[on!]`) into the
+high-impact section above — especially default-ON writers like `TFACTORY_TRIAGER_HARVEST` and
+`AIFACTORY_INTAKE_AUTO_HANDOFF`, and the auth-bypass `APP_DISABLE_AUTH`.
