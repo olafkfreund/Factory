@@ -93,6 +93,10 @@ flowchart LR
 This is the repository for the **whole program** — cross-cutting plans, the shared
 pipeline, and the place the four products come together.
 
+ **New:** [**Proof, not promises**](/proof/) — what the Factory can prove that
+other tools do not: the VAL ladder, mutation-graded tests, MFA-honest UI testing,
+signed contracts, and a standing regression suite — plus what we do not claim yet.
+
  **New:** [**The Guarded PARR Pipeline**](/pipeline/) — every step and decision
 from handover to merge, the sixteen guards that protect task & execution, and
 real adoption scenarios from solo builders to regulated enterprises.
