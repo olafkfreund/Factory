@@ -218,7 +218,12 @@ def check_build_lifecycle(timeout: int) -> Seam:
     — the build seam, end to end on the live cluster."""
     s = Seam("aifactory:build-lifecycle")
     code, projs = _call("aifactory", "GET", "/api/projects", timeout=20)
-    items = projs if isinstance(projs, list) else projs.get("projects", [])
+    # AIFactory's /api/projects answers with {"items": [...]} to this client;
+    # older/other shapes are a bare list or {"projects": [...]}. Accept all three
+    # so a paginated-envelope response isn't misread as "no projects".
+    items = (
+        projs if isinstance(projs, list) else (projs.get("projects") or projs.get("items") or [])
+    )
     pid = next(
         (
             p.get("id") or p.get("project_id")
