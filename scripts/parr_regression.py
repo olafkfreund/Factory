@@ -222,9 +222,7 @@ def check_build_lifecycle(timeout: int) -> Seam:
     # older/other shapes are a bare list or {"projects": [...]}. Accept all three
     # so a paginated-envelope response isn't misread as "no projects".
     items = (
-        projs
-        if isinstance(projs, list)
-        else (projs.get("projects") or projs.get("items") or [])
+        projs if isinstance(projs, list) else (projs.get("projects") or projs.get("items") or [])
     )
     pid = next(
         (
