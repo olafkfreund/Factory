@@ -1,0 +1,75 @@
+# Fides change gate + segregation-of-duties for pull requests (Factory#316).
+#
+# Records the PR as a Fides "change" (a trail) and runs the change gate. The gate
+# returns an approve/hold verdict + risk score and exits 2 on HOLD, which fails
+# this required check and blocks the merge until the segregation-of-duties
+# approval is recorded by a SECOND distinct human (four-eyes):
+#
+#     fides approve --trail <sha> --role approver --reason "reviewed PR #<n>"
+#
+# The committer is captured from the trail; the PR reviewer who runs `fides
+# approve` is the second identity; the person who merges is the third. The gate's
+# `segregation-of-duties` attestation is `compliant: true` only when all three are
+# pairwise-distinct (PCI-DSS 4.0 / SOX ITGC). This maps the four-eyes rule onto
+# the change record. See docs/compliance/signed-commits-and-sod.md.
+#
+# REVIEW ASSUMPTIONS (verify before enabling as a required check):
+#  - FIDES_SERVER_URL / FIDES_CI_KEY secrets and FIDES_FLOW_ID var are set per repo.
+#    A distinct Fides Flow per repo is assumed (one delivery stream = one repo).
+#  - `fides approve` is run by a human out-of-band (a manual step cannot be two
+#    distinct humans inside one automated job). This workflow only RECORDS the
+#    change and GATES on it; it does not self-approve.
+#  - ServiceNow write-back is optional and only runs when SN_CHANGE_NUMBER is set.
+name: fides-change-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Fail closed: compliance evidence must not depend on interruptible runs.
+concurrency:
+  group: fides-change-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  change-gate:
+    # Skip drafts; the gate runs once the PR is ready for review.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    env:
+      FIDES_SERVER_URL: ${{ secrets.FIDES_SERVER_URL }}
+      FIDES_API_TOKEN: ${{ secrets.FIDES_CI_KEY }}
+      FLOW_ID: ${{ vars.FIDES_FLOW_ID }}
+      TRAIL_ID: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Preflight (fail closed if Fides is not configured)
+        run: |
+          : "${FIDES_SERVER_URL:?FIDES_SERVER_URL secret is required}"
+          : "${FIDES_API_TOKEN:?FIDES_CI_KEY secret is required}"
+          : "${FLOW_ID:?FIDES_FLOW_ID variable is required}"
+
+      - name: Install Fides CLI
+        run: curl -sSfL "$FIDES_SERVER_URL/cli/install.sh" | sh
+
+      - name: Record the change (start trail for this PR)
+        run: |
+          fides trail start \
+            --flow "$FLOW_ID" \
+            --trail "$TRAIL_ID" \
+            --repository "${{ github.server_url }}/${{ github.repository }}" \
+            --commit "$TRAIL_ID" \
+            --branch "${{ github.head_ref }}" \
+            --message "PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
+
+      - name: Change gate (HOLD until segregation-of-duties approval)
+        run: |
+          # Exit 2 => HOLD => this required check fails => merge blocked until a
+          # second human records `fides approve --trail $TRAIL_ID --role approver`.
+          fides change-gate --trail "$TRAIL_ID"
+
+      - name: ServiceNow write-back (optional)
+        if: ${{ vars.SN_CHANGE_NUMBER != '' }}
+        run: |
+          fides servicenow change-check \
+            --trail "$TRAIL_ID" \
+            --change "${{ vars.SN_CHANGE_NUMBER }}"
