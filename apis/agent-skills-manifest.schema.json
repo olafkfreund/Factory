@@ -256,7 +256,7 @@
         "services": {
           "type": "array",
           "minItems": 1,
-          "description": "One entry per service manifest folded in. Each entry is a service manifest body plus the URL it was fetched from, so a consumer can always go back to the origin.",
+          "description": "One entry per service manifest the aggregator HOLDS A COPY OF. Each entry is a complete service manifest body plus the URL it was fetched from, so a consumer can always go back to the origin. A service the aggregator has never successfully fetched has no body to fold in and belongs in `unavailable[]`, not here — this array stays strictly conformant so a consumer can iterate it without defensive checks.",
           "items": {
             "allOf": [
               { "$ref": "#/$defs/service_body" },
@@ -283,7 +283,40 @@
             "unevaluatedProperties": false
           }
         },
+        "unavailable": {
+          "type": "array",
+          "description": "Services the aggregator knows about but currently holds NO manifest for — the origin has never been successfully fetched (down since the aggregator started, or not serving a manifest yet). They are announced rather than omitted so an agent learns the service exists and is temporarily undiscoverable, instead of concluding the fleet is smaller than it is. A service that WAS fetched before and is down now keeps its cached body in `services[]` with `reachable: false`; only the never-fetched case lands here. Partial availability degrades, it does not fail.",
+          "items": { "$ref": "#/$defs/unavailable_service" }
+        },
         "generated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "unavailable_service": {
+      "type": "object",
+      "description": "A service with no manifest body to publish. Deliberately thin: it carries only what the aggregator's own configuration knows, because inventing a version, an MCP endpoint or a skills list for a service it has never reached would put fiction in a discovery document.",
+      "required": ["name", "manifest_url"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,63}$",
+          "description": "Stable machine name, as it would appear in `service.name` once the manifest is fetched."
+        },
+        "title": { "type": "string", "description": "Human display name." },
+        "manifest_url": {
+          "$ref": "#/$defs/url",
+          "description": "Where the aggregator expects this service's manifest to be. A consumer can retry it directly — the origin may be up again by the time it asks."
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Short, coarse explanation for a human reading the aggregate, e.g. `unreachable` or `manifest incomplete`. The fleet manifest is public and unauthenticated, so this MUST NOT carry raw exception text, stack traces, internal hostnames or anything else the aggregator would not publish deliberately."
+        },
+        "checked_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the aggregator last tried and failed to fetch this origin."
+        }
       }
     },
     "url": {
