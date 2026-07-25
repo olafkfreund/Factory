@@ -30,6 +30,9 @@ on:
       - "scripts/gen_contracts.py"
       - "shared/factory-contracts/**"
       - "tests/test_gen_contracts.py"
+      - "apis/agent-skills-manifest.schema.json"
+      - "apis/examples/agent-skills/**"
+      - "tests/test_agent_skills_manifest.py"
       - ".github/workflows/contracts.yml"
   push:
     branches: [main]
@@ -71,7 +74,15 @@ jobs:
         # pydantic is required only by the generated module (the generator and
         # the staleness check above are dependency-free). The self-test imports
         # the generated package, so it is installed here.
-        run: pip install pytest "pydantic>=2"
+        run: pip install pytest "pydantic>=2" jsonschema
 
       - name: Run the contracts self-test
         run: pytest -v tests/test_gen_contracts.py
+
+      - name: Validate the agent-skills manifest schema + examples
+        # RFC-0019 section 3.4 (Factory#302): the reference instances under
+        # apis/examples/agent-skills/ are what every service copies, and the
+        # fleet aggregate is folded from them. Runs as a step of this job
+        # rather than its own, so the checkout/setup boilerplate is not
+        # duplicated (jscpd clone budget).
+        run: pytest -v tests/test_agent_skills_manifest.py

@@ -1,0 +1,67 @@
+{
+  "schema_version": "1",
+  "kind": "service",
+  "service": {
+    "name": "pfactory",
+    "title": "PFactory",
+    "version": "1.0.0",
+    "role": "prepare",
+    "description": "Governed planning grounded in live cloud/Backstage context. A planning session is ingested from an idea or spec, enriched with org/cloud context, decomposed, and scored by four review gates (architecture, security, best-practices, feasibility) that each return 0-1 with citations. A human approves, then PFactory emits governed GitHub issues and sets the RFC-0001 correlation key.",
+    "homepage": "https://pfactory.freundcloud.org.uk",
+    "repository": "https://github.com/olafkfreund/PFactory"
+  },
+  "openapi_url": "/openapi.json",
+  "mcp": {
+    "transport": "stdio",
+    "command": ["bash", "scripts/start-pfactory-mcp.sh"],
+    "documentation": "https://github.com/olafkfreund/Factory/blob/main/apis/pfactory.mcp.md"
+  },
+  "auth": {
+    "manifest": "none",
+    "schemes": ["bearer"],
+    "documentation": "https://factory.freundcloud.com/dev/secrets-and-tokens/"
+  },
+  "skills": [
+    {
+      "name": "plan-create",
+      "description": "Start a governed planning session from an idea or a spec. Give it a title, a description and the target repo; it returns a session id you use for every later step. This is the front of the PARR funnel: nothing reaches AIFactory without a plan.",
+      "invocation": { "kind": "mcp_tool", "tool": "plan.create" },
+      "tags": ["planning", "parr", "prepare"]
+    },
+    {
+      "name": "plan-enrich",
+      "description": "Pull live cloud and Backstage context into an existing planning session, so the plan is grounded in the org's real infrastructure and catalog rather than in guesses.",
+      "invocation": { "kind": "mcp_tool", "tool": "plan.enrich" },
+      "tags": ["planning", "context", "backstage"]
+    },
+    {
+      "name": "plan-review",
+      "description": "Run the four review gates over a session: architecture, security, best-practices and feasibility. Each returns a 0-1 score with the citations behind it, so a low score can be argued with rather than merely obeyed.",
+      "invocation": { "kind": "rest", "method": "POST", "path": "/api/plans/{sessionId}/review" },
+      "tags": ["review", "governance", "gates"]
+    },
+    {
+      "name": "plan-approve",
+      "description": "Record the human governance decision on a reviewed session (approve or reject, with an optional note). PFactory will not emit work without it.",
+      "invocation": { "kind": "rest", "method": "POST", "path": "/api/plans/{sessionId}/approve" },
+      "tags": ["governance", "human-in-the-loop"]
+    },
+    {
+      "name": "plan-emit",
+      "description": "Emit the approved plan as governed GitHub issues and set the RFC-0001 correlation key that threads the work across AIFactory, TFactory and CFactory. Use this when a plan is signed off and ready to build.",
+      "invocation": { "kind": "rest", "method": "POST", "path": "/api/plans/{sessionId}/emit" },
+      "tags": ["intake", "github", "rfc-0001"]
+    },
+    {
+      "name": "cloud-discover",
+      "description": "Run a read-only cloud posture assessment of an AWS, Azure or GCP account: enumerate resources, detect misconfigurations with Prowler (CIS/OCSF), build a service-topology diagram, and emit an accept/flag/reject verdict into findings/. Nothing is mutated.",
+      "invocation": { "kind": "slash_command", "command": "/cloud-discover" },
+      "install": {
+        "source": "https://github.com/olafkfreund/PFactory",
+        "path": ".claude/skills/cloud-discover/SKILL.md"
+      },
+      "tags": ["cloud", "security", "read-only"]
+    }
+  ],
+  "generated_at": "2026-07-25T09:00:00Z"
+}
