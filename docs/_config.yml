@@ -37,3 +37,8 @@ exclude:
   - Gemfile.lock
 
 repo_url: https://github.com/olafkfreund/Factory
+
+# Proof / comparison page (Factory#249). The live topnav is hardcoded in
+# _layouts/default.html; to surface this in the nav, add one entry there:
+#   <li><a href="{{ '/proof/' | relative_url }}">Proof</a></li>
+proof_url: /proof/
