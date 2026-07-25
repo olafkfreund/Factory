@@ -33,6 +33,9 @@ on:
       - "apis/agent-skills-manifest.schema.json"
       - "apis/examples/agent-skills/**"
       - "tests/test_agent_skills_manifest.py"
+      - "apis/planning-card.schema.json"
+      - "apis/examples/planning-cards/**"
+      - "tests/test_planning_card.py"
       - ".github/workflows/contracts.yml"
   push:
     branches: [main]
@@ -86,3 +89,10 @@ jobs:
         # rather than its own, so the checkout/setup boilerplate is not
         # duplicated (jscpd clone budget).
         run: pytest -v tests/test_agent_skills_manifest.py
+
+      - name: Validate the planning-card schema + examples
+        # RFC-0019 section 3.1 (Factory#302): the card resource CFactory's
+        # /api/cards is built to. Same job for the same reason as the step
+        # above - a second job would duplicate the checkout/setup block and
+        # eat into the jscpd clone budget, which only ratchets down.
+        run: pytest -v tests/test_planning_card.py

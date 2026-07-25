@@ -73,6 +73,15 @@ resource on top of the existing `work_items` correlation store:
   enters the factory it becomes an RFC-0001 correlation and threads the existing
   work-item timeline.
 
+**Contract (shipped):** [`apis/planning-card.md`](../../apis/planning-card.md) +
+[`apis/planning-card.schema.json`](../../apis/planning-card.schema.json), with
+reference instances under `apis/examples/planning-cards/`. It pins the card
+resource, the `/api/cards` REST surface, tenant scoping, and the two design laws
+Phase 1 turns on: cards are a **separate table** from `work_items` (the cockpit's
+reconcile/prune rebuilds that store from upstream events and would overwrite or
+delete every human-owned field), and `correlation_key` is the **join** - NULL
+while the card is only planned, set once when it enters the factory.
+
 ### 3.2 The factory consumes the board
 
 A card in `ready` status with a difficulty tier is a **first-class intake
@@ -187,5 +196,10 @@ Each phase ships independently and is useful on its own; 1-3 deliver the core
   native, to keep the control plane inside the fleet and avoid a hard external
   dependency — but a spike comparing "build vs integrate" is worth one week
   before Phase 1.
-- Card id scheme (`FCT-N` global vs per-workspace) and its relationship to the
-  existing correlation key.
+- ~~Card id scheme (`FCT-N` global vs per-workspace) and its relationship to the
+  existing correlation key.~~ **Settled for Phase 1** in
+  [`apis/planning-card.md`](../../apis/planning-card.md): one `FCT-` sequence per
+  tenant, no workspace segment (Phase 1 ships a flat backlog), immutable once
+  issued, and explicitly *not* the correlation key - `FCT-42` identifies the
+  plan, the correlation key identifies the work and only exists once there is
+  any. Revisit if a second board ever justifies the hierarchy.
