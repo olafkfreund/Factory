@@ -19,6 +19,7 @@ Checks:
     openapi -> OpenAPI 3.x; asyncapi -> AsyncAPI 2.x/3.x; mcp -> non-empty
     markdown. Other declared types only require the `$text` target to exist.
   * If mkdocs.yml is present, its nav targets all exist under the docs dir.
+    Absolute-URL nav entries (https://...) are external links and are skipped.
     (TechDocs is optional for a product repo; the hub always ships mkdocs.yml.)
 
 Run via `catalog-validate` in the Nix devShell, or directly:
@@ -31,6 +32,8 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
 
 try:
     import yaml
@@ -51,7 +54,7 @@ EXTERNAL_APIS = frozenset(
 )
 
 
-def _check_catalog(root: Path, errors: list[str]) -> list[dict]:
+def _check_catalog(root: Path, errors: list[str]) -> list[dict[str, Any]]:
     path = root / "catalog-info.yaml"
     docs = [d for d in yaml.safe_load_all(path.read_text()) if d]
     api_names = {d["metadata"]["name"] for d in docs if d.get("kind") == "API"}
@@ -80,7 +83,9 @@ def _check_catalog(root: Path, errors: list[str]) -> list[dict]:
     return docs
 
 
-def _check_api_definition(root: Path, meta: dict, spec: dict, errors: list[str]) -> None:
+def _check_api_definition(
+    root: Path, meta: dict[str, Any], spec: dict[str, Any], errors: list[str]
+) -> None:
     api_type = spec.get("type", "")
     definition = spec.get("definition")
     if not (isinstance(definition, dict) and "$text" in definition):
@@ -119,6 +124,9 @@ def _check_mkdocs(root: Path, errors: list[str]) -> None:
 
     def walk(nav: object) -> None:
         if isinstance(nav, str):
+            url = urlparse(nav)
+            if url.scheme and url.netloc:
+                return  # external link (https://...), not a page under docs_dir
             if nav.endswith(".md") and not (docs_dir / nav).exists():
                 errors.append(f"mkdocs nav -> {nav} missing under {docs_dir.name}/")
         elif isinstance(nav, list):

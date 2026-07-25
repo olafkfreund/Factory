@@ -121,6 +121,28 @@ def test_mkdocs_present_and_valid_passes(tmp_path: Path) -> None:
     assert vc.validate(tmp_path) == 0
 
 
+def test_mkdocs_external_url_nav_entry_is_skipped(tmp_path: Path) -> None:
+    # An absolute URL is an external link, not a page under docs_dir - even when
+    # it ends in .md (e.g. a GitHub blob link). Must not be reported missing.
+    _write(tmp_path, _MIN_CATALOG)
+    (tmp_path / "mkdocs.yml").write_text(
+        "docs_dir: docs\n"
+        "nav:\n"
+        "  - Home: index.md\n"
+        "  - Standards: https://github.com/olafkfreund/Factory/blob/main/x.md\n"
+        "  - Guide: https://factory.freundcloud.com/creating-issues-and-workitems/\n"
+    )
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "index.md").write_text("# Home\n")
+    assert vc.validate(tmp_path) == 0
+
+
+def test_real_hub_catalog_validates() -> None:
+    # End-to-end against this repo's own catalog + mkdocs nav (regression lock
+    # for #356: the hub validator must pass on main).
+    assert vc.validate(Path(__file__).resolve().parents[1]) == 0
+
+
 def test_real_product_catalogs_validate() -> None:
     # End-to-end against the actual checked-in product catalogs (regression lock).
     repo_root = Path(__file__).resolve().parents[1]
