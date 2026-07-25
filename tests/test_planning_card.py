@@ -23,9 +23,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-import pytest
-
 import contract_schema as cs
+import pytest
 
 jsonschema = pytest.importorskip("jsonschema")
 
