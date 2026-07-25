@@ -25,8 +25,7 @@ from typing import Any
 
 import contract_schema as cs
 import pytest
-
-jsonschema = pytest.importorskip("jsonschema")
+from contract_schema import jsonschema
 
 _SCHEMA_FILE = "planning-card.schema.json"
 _TAXONOMY_FILE = "status-taxonomy.json"

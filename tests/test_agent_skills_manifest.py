@@ -24,8 +24,7 @@ from typing import Any
 
 import contract_schema as cs
 import pytest
-
-jsonschema = pytest.importorskip("jsonschema")
+from contract_schema import jsonschema
 
 _SCHEMA_FILE = "agent-skills-manifest.schema.json"
 _SERVICES = ("pfactory", "aifactory", "tfactory", "cfactory")
@@ -40,11 +39,11 @@ def _example(name: str) -> dict[str, Any]:
 
 
 def _validator() -> Any:
-    return cs.validator_for(jsonschema, cs.schema(_SCHEMA_FILE))
+    return cs.validator_for(cs.schema(_SCHEMA_FILE))
 
 
 def _errors(doc: dict[str, Any]) -> list[str]:
-    return cs.error_messages(jsonschema, cs.schema(_SCHEMA_FILE), doc)
+    return cs.error_messages(cs.schema(_SCHEMA_FILE), doc)
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
