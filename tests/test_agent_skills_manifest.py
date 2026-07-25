@@ -19,18 +19,16 @@ Skips cleanly when jsonschema is unavailable (e.g. outside the Nix devShell);
 
 from __future__ import annotations
 
-import json
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 import pytest
 
+from tests import contract_schema as cs
+
 jsonschema = pytest.importorskip("jsonschema")
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SCHEMA_PATH = _REPO_ROOT / "apis" / "agent-skills-manifest.schema.json"
-_EXAMPLES = _REPO_ROOT / "apis" / "examples" / "agent-skills"
+_SCHEMA_FILE = "agent-skills-manifest.schema.json"
 _SERVICES = ("pfactory", "aifactory", "tfactory", "cfactory")
 
 # Metadata the aggregator adds when folding a service manifest into the fleet
@@ -38,25 +36,20 @@ _SERVICES = ("pfactory", "aifactory", "tfactory", "cfactory")
 _FOLD_ONLY_KEYS = ("manifest_url", "fetched_at", "reachable")
 
 
-def _load(path: Path) -> dict[str, Any]:
-    data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    return data
-
-
 def _example(name: str) -> dict[str, Any]:
-    return _load(_EXAMPLES / f"{name}.index.json")
+    return cs.example("agent-skills", name, suffix=".index.json")
 
 
 def _validator() -> Any:
-    return jsonschema.Draft202012Validator(_load(_SCHEMA_PATH))
+    return cs.validator_for(jsonschema, cs.schema(_SCHEMA_FILE))
 
 
 def _errors(doc: dict[str, Any]) -> list[str]:
-    return [e.message for e in _validator().iter_errors(doc)]
+    return cs.error_messages(jsonschema, cs.schema(_SCHEMA_FILE), doc)
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
-    jsonschema.Draft202012Validator.check_schema(_load(_SCHEMA_PATH))
+    jsonschema.Draft202012Validator.check_schema(cs.schema(_SCHEMA_FILE))
 
 
 @pytest.mark.parametrize("name", _SERVICES)

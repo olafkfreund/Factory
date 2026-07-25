@@ -20,36 +20,29 @@ Skips cleanly when jsonschema is unavailable (e.g. outside the Nix devShell);
 
 from __future__ import annotations
 
-import json
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 import pytest
 
+from tests import contract_schema as cs
+
 jsonschema = pytest.importorskip("jsonschema")
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SCHEMA_PATH = _REPO_ROOT / "apis" / "planning-card.schema.json"
-_TAXONOMY_PATH = _REPO_ROOT / "apis" / "status-taxonomy.json"
-_EXAMPLES = _REPO_ROOT / "apis" / "examples" / "planning-cards"
+_SCHEMA_FILE = "planning-card.schema.json"
+_TAXONOMY_FILE = "status-taxonomy.json"
 
 _CARD_STATUSES = ("backlog", "ready", "in_progress", "blocked", "done")
 # Owned by the server, never accepted from a request body (planning-card.md 3).
 _SERVER_OWNED = ("card_key", "tenant_id", "created_at", "updated_at")
 
 
-def _load(path: Path) -> dict[str, Any]:
-    data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    return data
-
-
 def _example(name: str) -> dict[str, Any]:
-    return _load(_EXAMPLES / f"{name}.json")
+    return cs.example("planning-cards", name)
 
 
 def _schema() -> dict[str, Any]:
-    return _load(_SCHEMA_PATH)
+    return cs.schema(_SCHEMA_FILE)
 
 
 def _subschema(ref: str | None = None) -> dict[str, Any]:
@@ -152,7 +145,7 @@ def test_card_statuses_would_be_misread_by_the_runtime_taxonomy() -> None:
     through it lies: a card waiting to be picked up reads as finished, and a card
     a human parked reads as a failure.
     """
-    states = _load(_TAXONOMY_PATH)["states"]
+    states = cs.schema(_TAXONOMY_FILE)["states"]
     assert "ready" in states["done"]["tokens"]
     assert "blocked" in states["failed"]["tokens"]
     assert {"ready", "blocked"} <= set(_CARD_STATUSES)
