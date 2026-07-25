@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from tests import contract_schema as cs
+import contract_schema as cs
 
 jsonschema = pytest.importorskip("jsonschema")
 
