@@ -12,7 +12,7 @@ permalink: /rfc/multi-provider-git-integration/
 > [RFC-0007](./0007-access-and-credential-provisioning.md) (credential provisioning — the custody model here is an instance of it),
 > [RFC-0011](./0011-label-driven-intake-and-difficulty-tiers.md) (intake — which already promises uniform GitHub/GitLab/Azure DevOps),
 > [RFC-0019](./0019-agent-native-planning-control-plane.md) (planning board — section 3.5 card/issue sync is the thing being generalised) ·
-> **Affects:** CFactory (vendors the canonical provider layer, new tenant git-config resource, settings UI + MCP twin); the Factory hub (`shared/factory-github/` gains a fourth consumer and its drift gate). No task-contract changes.
+> **Affects:** CFactory (vendors the canonical provider layer, new tenant git-config resource, issue import, explicit stage actions, settings UI + MCP twins); the Factory hub (`shared/factory-github/` gains a fourth consumer and its drift gate; `apis/planning-card.schema.json` gains a `description` field in Phase 6). Task-contract change limited to provider-qualifying the existing repo reference (Phase 5).
 
 ## 1. Motivation
 
@@ -34,6 +34,24 @@ Both are process-global and both are GitHub-shaped. That has three consequences:
   tenant would file into whatever project the operator's env var names.
 - **GitLab users have no path at all.** RFC-0011 states the intake surface is
   uniform across GitHub, GitLab and Azure DevOps. The board is not.
+
+### 1.2 Connecting a repo has to bring the work with it
+
+Configuration alone is not the feature. RFC-0019 Phase 6 sync is **card-first
+only**: a card can create an issue, or adopt one you name. There is no path that
+pulls a repository's *existing* issues in. Connect a repo with 200 open issues
+today and the board stays empty, which makes it useless to everyone except
+someone starting from nothing.
+
+The same gap exists on the other end of the card's life. Dispatch is *implicit*:
+a card promoted to `ready` with a tier goes wherever its tier says (low/medium to
+AIFactory build, hard to PFactory planning). There is no way to say "plan this",
+"just build this", "re-verify this" from the board. The routing is a policy, not
+a control.
+
+So the board today can neither absorb the work that already exists nor drive the
+factory deliberately. Sections 3.6 and 3.7 close those two, and they are the
+difference between "the board syncs" and "the board is where you work".
 
 ### 1.1 The motivating finding: duplicated capability
 
@@ -70,6 +88,8 @@ no second auth path, no second rate limiter.
 | Credential | `CFACTORY_GITHUB_TOKEN` (global env) | Tenant-scoped custody, obtained by install not by paste |
 | Settings precedent | `PUT /api/settings/copilot` persists provider + model, **never** the key | The same shape, extended to git — with the credential question answered honestly rather than deferred |
 | Tenancy | `CFACTORY_MULTI_TENANT`, `X-Tenant-Id`, tenant-scoped cards | Integration config is not tenant-scoped |
+| Issue listing | `fetch_issues(IssueFilters)` — `state`, `labels`, `author`, `assignee`, `since`, `limit`, `include_prs`, provider-agnostic | Nothing calls it: sync is card-first, so a repo's existing issues never reach the board |
+| Dispatch transport | `actions.py` routes to PFactory, AIFactory **and** TFactory (`tfactory_api_url` configured) | `card_intake.py` uses only two of the three, and only implicitly, driven by tier |
 
 ## 3. Design
 
@@ -210,6 +230,180 @@ gets board sync, intake and PARR; it does not get Copilot assignment or
 auto-merge until those provider methods are implemented. That is a capability
 matrix to publish, not a blocker.
 
+### 3.6 Import: the repository's existing issues become cards
+
+Connecting a repo populates the board. The protocol already has the read side —
+`fetch_issues(IssueFilters)`, where `IssueFilters` carries `state` (default
+`"open"`), `labels`, `author`, `assignee`, `since`, `limit` (default 100) and
+`include_prs` (default `False`) — and it is provider-agnostic, so import works on
+GitLab and Azure DevOps for free.
+
+**Backfill.** On connect (and on demand via an explicit action), import **all
+open issues**, not a label-filtered subset. Recommending the wider default
+deliberately: the user's mental model of "connect my repo" is "show me my
+backlog", and a filter that silently hides most of it produces the worst failure
+mode this feature has — "where are my issues?" — with no error to diagnose. A
+label filter is available as opt-in configuration (`import_labels`), and
+`import_state` may be widened to `all`, but neither is the default. `include_prs`
+is pinned `False` and is **not** configurable: a pull request is not a plan, and
+a board full of PR cards is noise nobody asked for.
+
+`limit` defaults to 100, so backfill pages to completion rather than taking the
+first page. It carries a ceiling (`import_max`, default 1000) and — per the fleet
+rule against silent caps — when the ceiling truncates, the import result says so
+explicitly and the Settings panel shows how many were dropped.
+
+**Ongoing reconciliation.** Issues filed after connect must appear, and without
+webhooks that is a poll. Saying it plainly rather than implying freshness:
+RFC-0019 Phase 6 deferred inbound webhooks and this RFC does not undefer them
+(section 4), so **import is not live**. Design:
+
+- A `last_synced_at` watermark per tenant git-config, set to the maximum
+  `updated_at` observed in the previous pass, **minus a 60-second overlap** to
+  tolerate clock skew between us and the host. Overlapping re-reads are free
+  because import is an upsert.
+- Poll with `IssueFilters(since=watermark, state="all", include_prs=False)`.
+  `state="all"` on the incremental pass, not `"open"`, because closures and
+  reopenings are exactly the changes the board would otherwise miss.
+- Cadence: default 5 minutes, configurable per tenant. Fast enough that a board
+  is rarely more than one coffee out of date, slow enough that a hundred tenants
+  do not exhaust a rate limit.
+- The board surfaces "last synced" as a timestamp, for the same reason RFC-0019
+  stores `issue_state` rather than inferring it: staleness should be visible, not
+  assumed away.
+
+**Idempotency.** Re-running import must never duplicate a card. This is the
+single most likely bug in the feature, so it is enforced by the database and not
+by application logic: a **UNIQUE index on (`tenant_id`, `issue_ref`)**, with the
+provider-qualified ref from section 3.2 as the key, and import written as an
+upsert against it. An application-level "does this exist?" check does not survive
+two concurrent polls; a unique constraint does. A card that already carries an
+`issue_ref` is updated in place — the same code path as adopting an issue
+somebody else filed.
+
+**Mapping.**
+
+| Issue field | Card field | Ownership |
+|---|---|---|
+| `title` | `title` | mirrored (host wins) |
+| `body` | `description` (new field — see below) | mirrored (host wins) |
+| `labels` matching `factory:<tier>` | `tier` (`low`/`medium`/`hard` — note `hard`, not `high`) | mirrored |
+| other `labels` | `labels` | mirrored |
+| `assignees[0]` | `assignee` | mirrored |
+| `milestone` | `milestone` (the title — already the documented semantics) | mirrored |
+| `state` | `issue_state`, and `status` per the rule below | mirrored |
+| — | `acceptance_criteria` | **not** derived from the body |
+| — | `priority` | planning-only, default 100 |
+
+Two of those need their reasoning on the record.
+
+*The body does not become acceptance criteria.* `acceptance_criteria` is a list
+of testable statements that dispatch turns into the RFC-0002 task contract's
+criteria; parsing prose into that list would **fabricate** the thing the factory
+verifies against. Import leaves it empty, which is a legal planning state, and
+the board shows a dispatch-readiness warning on a card that has none.
+
+*The body needs somewhere to go, and the card contract has no field for it.*
+`apis/planning-card.schema.json` has no `description`. Importing an issue without
+its body produces a title-only card, which is not a plan. So Phase 6 includes a
+**contract change**: add `description` (free-form markdown, nullable) to the card
+resource, `card_create` and `card_patch`, with the schema, the examples and the
+contracts CI updated. It is classified as a *mirrored* field — the host owns it,
+like `title` — which keeps RFC-0019 section 3.5's property that no field has two
+owners, so "the host wins" stays a one-line rule instead of a merge algorithm.
+
+**An imported card never dispatches. This is a safety property, not a default.**
+An open issue imports as `backlog`; a closed issue imports as `done`. Neither is
+ever `ready`. The dispatch trigger is `ready` + a tier, and issues commonly carry
+`factory:low` labels already — so importing 200 of them as `ready` would fire 200
+builds from a single "connect repo" click. Import is therefore forbidden from
+producing `ready` at all, in the importer and in a test that asserts it.
+
+**Closure, deletion and disappearance.**
+
+- *Issue closed on the host* -> `issue_state: closed`, card `status: done`.
+  Reopened -> back to `backlog`.
+- *Card already in the factory* (non-NULL `correlation_key`) -> the poll mirrors
+  `title`, `description`, `labels` and `issue_state`, but **not** `status`. A run
+  in flight owns its status; a poll must not stomp it back to `backlog` because
+  someone reopened the issue.
+- *Card deleted locally* -> the issue is **not** touched. Deleting a card means
+  "not on my board", never "destroy the record of truth". It is a soft delete
+  (`deleted_at`), which both keeps the unique index doing its job and stops the
+  next poll resurrecting the card — the resurrection failure RFC-0019 already
+  names as a risk.
+- *Issue deleted or transferred on the host* -> a 404 on the next poll sets
+  `issue_state: missing`. The card stays. Human planning data is not destroyed by
+  a 404.
+
+### 3.7 Explicit stage actions: plan, code, test, or the whole sequence
+
+Give the board buttons that push a card into a specific stage, and one that runs
+the sequence. The transport already exists: `actions.py` routes to all three
+services (`Service.PFACTORY`, `Service.AIFACTORY`, `Service.TFACTORY`, with
+`tfactory_api_url` configured). `card_intake.py` simply only ever calls two of
+them. Phase 7 is wiring, not new plumbing.
+
+**Surface** (parity law, section 3.3 of RFC-0019 — each REST mutation ships its
+MCP twin in the same PR or `tests/test_board_parity.py` fails):
+
+| REST | MCP twin | Effect |
+|---|---|---|
+| `POST /api/cards/{key}/actions/plan` | `plan_card` | dispatch to PFactory |
+| `POST /api/cards/{key}/actions/code` | `code_card` | dispatch to AIFactory |
+| `POST /api/cards/{key}/actions/test` | `test_card` | dispatch to TFactory |
+| `POST /api/cards/{key}/actions/run` | `run_card` | plan -> code -> test in sequence |
+
+**An explicit action overrides tier routing.** The tier still supplies the
+*payload* (model, planning depth, the `factory:<tier>` label AIFactory's
+classifier reads); the button decides the *destination*. A `low` card can be sent
+to PFactory because a human wants a plan first; a `hard` card can be sent
+straight to AIFactory because a human already has one. A NULL tier still refuses,
+for the same reason implicit dispatch refuses: there is no payload to build.
+
+**Preconditions — refuse, never dispatch into nothing.** Every refusal is a 409
+with a machine-readable reason code and a human sentence; never a silent no-op.
+
+- `plan` — requires a tier. Nothing else.
+- `code` — requires a tier. Permitted with or without a prior plan: that is the
+  existing low/medium path. A `hard` card built without a plan is allowed but the
+  response carries a warning naming the skipped stage, because refusing would
+  make a button the user pressed lie about what it does.
+- `test` — requires something to verify: a non-NULL `correlation_key` **and** a
+  completed AIFactory build stage on the work-item timeline. Asking to test a
+  card that was never built is refused with `no_build_to_verify`. This is the
+  case the whole precondition rule exists for.
+- Any stage — refused while that same stage has a live dispatch
+  (`stage_already_running`).
+
+**Idempotency, and the one RFC-0019 rule this changes.** Today
+`correlation_key` non-NULL *is* the idempotency check: already in the factory,
+do not dispatch. That rule is precisely what makes a multi-stage sequence
+impossible — after `plan` the key is set, so `code` would be refused. So it is
+refined: **a non-NULL `correlation_key` no longer means "do not dispatch"; it
+means "this card is joined to a run, reuse its key".** Per-stage idempotency
+moves to a per-stage dispatch record (`stage`, `service`, `dispatched_at`,
+upstream ref, terminal status). A card cannot hold two live dispatches of the
+same stage. The write-once property of `correlation_key` is untouched: it is
+still set exactly once and a server still rejects re-pointing it at a different
+key.
+
+**The sequence.** `run` executes plan -> code -> test, advancing a stage only
+when the previous one reaches a terminal-success status on the existing work-item
+timeline. A stage already recorded complete is **skipped, not re-run**, which is
+what makes `run` safe to press again after a failure — it resumes rather than
+restarts. A failed stage stops the sequence, sets the card `blocked`, and records
+the reason. There is no new orchestrator: the sequence advances off the status
+write-back that already threads PARR events, which means honestly that it
+advances at write-back cadence, not instantly.
+
+**Status write-back across a sequence.** `card_status_for()` maps a runtime state
+onto the card status enum, and a completed *stage* currently maps to `done` — so
+a sequenced card would flash "done" the moment planning finished. The sequence
+therefore records its remaining stages, and write-back may only resolve a card to
+`done` when none remain; until then it holds `in_progress`. Without that, the
+board lies twice per run.
+
 ## 4. Non-goals
 
 - **Not new providers.** Bitbucket and Gitea stay stubs. This RFC only makes the
@@ -222,8 +416,15 @@ matrix to publish, not a blocker.
 - **Not a change to the record of truth.** The git host — whichever one — stays
   authoritative (RFC-0003, RFC-0019 section 3.5). The board remains a projection.
 - **Not inbound webhooks.** RFC-0019 Phase 6 deferred live inbound sync; this RFC
-  does not undefer it. It does mean a future webhook receiver needs per-provider
-  signature verification (`X-Hub-Signature-256` vs `X-Gitlab-Token`).
+  does not undefer it. Import (3.6) is therefore poll-based and a board can be
+  minutes stale, which is stated in the UI rather than papered over. It does mean
+  a future webhook receiver needs per-provider signature verification
+  (`X-Hub-Signature-256` vs `X-Gitlab-Token`).
+- **Not two-way field sync.** Import (3.6) adds a read direction; it does not add
+  a write direction. RFC-0019 section 3.5's single card-to-issue write (create,
+  once) is unchanged, and no local edit to a mirrored field is ever pushed up.
+- **Not an orchestrator.** The sequence in 3.7 advances off the existing status
+  write-back. No scheduler, no queue, no retry policy engine.
 - **Not a migration of the other three services' vendored copies.** They already
   have theirs.
 
@@ -238,6 +439,8 @@ Effort is honest working time for one engineer, not a sprint-planning fiction.
 | 3 | Encrypted tenant credential store; per-tenant credential injection into the provider (env-per-invocation, never argv) | ~2 weeks | 2, and a decision from Factory#314/#315 |
 | 4 | GitHub App install flow + GitLab OAuth/group token; callback hosting + oauth2-proxy exemption; token refresh | ~2-3 weeks | 3 |
 | 5 | Fleet propagation (3.5): provider qualification through the task contract to PFactory/AIFactory/TFactory; publish the capability matrix | ~1 week | 1, 2 |
+| 6 | Issue import (3.6): backfill, poll reconciliation with watermark, unique-index dedupe, mapping, `description` contract change, closure/delete semantics | ~1.5 weeks | 1, 2 |
+| 7 | Explicit stage actions (3.7): four REST routes + four MCP twins, preconditions, per-stage dispatch record, sequence runner, write-back fix | ~1 week | nothing new (RFC-0019 Phase 3 dispatch) |
 
 **Phase 1 is the whole GitLab story on its own.** It is not blocked by, and
 should not wait for, any of the credential work. Phases 1 and 2 together deliver
@@ -248,6 +451,16 @@ what make the same thing safe to offer to more than one tenant.
 Phase 3 is where the real risk sits, and it is deliberately the phase that does
 not depend on OAuth being finished — because the store is needed either way.
 
+**Phase 6 is what makes phases 1-2 worth having.** A configurable, multi-provider
+connection to an empty board is a demo; the same connection that fills the board
+with the work already in the repo is the feature. It should follow Phase 2
+immediately, ahead of the credential work, on every deployment that has a
+credential already.
+
+**Phase 7 depends on none of the provider work** and can be built in parallel by
+a second pair of hands. It touches dispatch and the card store, not the git
+layer.
+
 ## 6. What it unlocks
 
 - **GitLab and Azure DevOps users can use the board**, which RFC-0011 already
@@ -256,6 +469,11 @@ not depend on OAuth being finished — because the store is needed either way.
 - **Multi-tenant becomes real**, rather than nominal-with-a-shared-token.
 - **One VCS client in the fleet instead of two.** A bug fixed in the canonical is
   fixed for four services.
+- **Connecting a repo shows you your actual backlog**, on any of the three
+  providers, instead of an empty board — the point at which the planning surface
+  stops being a demo.
+- **Deliberate control of the factory from the board:** plan this, build this,
+  verify this, or run the lot, instead of a routing policy inferred from a label.
 
 ## 7. Risks
 
@@ -288,6 +506,28 @@ not depend on OAuth being finished — because the store is needed either way.
 - **Capability asymmetry surprises users.** A GitLab tenant expecting auto-merge
   gets `NotImplementedError`. Mitigation: publish the capability matrix in Phase
   5 and surface it in the Settings panel next to the provider selector.
+- **Import duplicates cards.** The likeliest bug in Phase 6, and the one a user
+  notices instantly. Mitigation: a UNIQUE index on (`tenant_id`, `issue_ref`) and
+  an upsert, not an application-level existence check — plus a test that runs the
+  importer twice and asserts the card count is unchanged.
+- **A large repo floods the board.** Importing thousands of issues makes the
+  backlog unusable and burns rate limit. Mitigation: `import_max` with the
+  truncation reported rather than silent, the optional `import_labels` filter,
+  and open-only by default.
+- **Import mass-dispatches.** The highest-consequence failure in this RFC:
+  imported issues carrying `factory:low` labels landing as `ready` would fire a
+  build per issue. Mitigation: import can produce only `backlog` or `done`, never
+  `ready`, asserted by a test whose failure mode is "someone made import smarter".
+- **Poll cost scales with tenants.** Mitigation: `since` watermark so each pass
+  reads only what changed, a per-tenant cadence, and the provider layer's
+  existing `rate_limiter.py`.
+- **Relaxing the `correlation_key` dispatch guard (3.7) re-opens double
+  dispatch.** That guard is the only thing stopping a card being built twice
+  today. Mitigation: the per-stage dispatch record replaces it before it is
+  relaxed, in the same change, with a concurrent double-press test.
+- **A sequenced card reports `done` mid-run.** Real today in
+  `card_status_for()`. Mitigation: the remaining-stages marker in 3.7, and a test
+  that a card mid-sequence never reads `done`.
 
 ## 8. Open questions
 
@@ -311,3 +551,19 @@ not depend on OAuth being finished — because the store is needed either way.
   should degrade to `credential_missing` and keep serving rather than fail
   writes silently. Where is that surfaced — the card, the Settings panel, or an
   alert?
+- **Does `since` mean the same thing on all three providers?** GitHub filters by
+  `updated_at`. GitLab and Azure DevOps need verifying before the watermark is
+  trusted; if one filters by creation instead, the incremental pass silently
+  misses edits and the poll must fall back to a full compare for that provider.
+- **Is `description` the right contract change**, or should the issue body live
+  outside the card resource (a linked body blob) so the card stays a planning
+  record? Shipping it on the card is the lazy answer and probably right, but it
+  is a schema change to a published contract and deserves the question.
+- **Should a re-import ever revive a soft-deleted card?** "I deleted this by
+  mistake" and "stop showing me this" want opposite answers. Assumed: stays
+  deleted, with an explicit undelete action if anyone asks.
+- **Default poll cadence.** Five minutes is a guess informed by nothing but
+  taste. Revisit once a real tenant has a real repo attached.
+- **Should `run` be resumable across a restart?** The sequence state lives in the
+  per-stage dispatch record, so in principle yes; whether anything drives it
+  forward after a cockpit restart depends on where the advance loop lives.
