@@ -24,6 +24,12 @@ evidence. Certification is a separate engagement.
   with justification, evidence, and owner). Factory#311.
 - [`risk-register.md`](risk-register.md) — the risk methodology and the seeded
   register of the fleet's top real risks with treatment status. Factory#311.
+- [`remediation-sla.md`](remediation-sla.md) — the adopted vulnerability
+  remediation time-to-fix standard by severity, with governed `.trivyignore` /
+  `--ignore-unfixed` exceptions. Factory#317.
+- [`vulnerability-register.md`](vulnerability-register.md) — the register process
+  that turns transient scan output into tracked, dated, owned findings with SLA
+  due dates and closure evidence, plus the penetration-testing program. Factory#317.
 - [`roles.md`](roles.md) — named security roles and control owners, the quarterly
   management-review cadence, and the continuous-monitoring plan. Factory#311.
 
@@ -54,7 +60,7 @@ that references its technical domain document rather than duplicating it.
 | Encryption at rest and key management | [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | [#314](https://github.com/olafkfreund/Factory/issues/314) |
 | Secrets management and rotation | [secrets-management.md](policies/secrets-management.md) | [#315](https://github.com/olafkfreund/Factory/issues/315) |
 | Change management and separation of duties | [change-management-sod.md](policies/change-management-sod.md) | [#316](https://github.com/olafkfreund/Factory/issues/316) |
-| Vulnerability and patch management | [vuln-patch-management.md](policies/vuln-patch-management.md) | [#317](https://github.com/olafkfreund/Factory/issues/317) |
+| Vulnerability and patch management | [vuln-patch-management.md](policies/vuln-patch-management.md) (+ [remediation-sla.md](remediation-sla.md), [vulnerability-register.md](vulnerability-register.md)) | [#317](https://github.com/olafkfreund/Factory/issues/317) |
 | Supply-chain integrity | [supply-chain-integrity.md](policies/supply-chain-integrity.md) | [#318](https://github.com/olafkfreund/Factory/issues/318) |
 | Incident response and breach notification | [incident-response.md](policies/incident-response.md) | [#319](https://github.com/olafkfreund/Factory/issues/319) |
 | Data governance and PII egress | [data-governance.md](policies/data-governance.md) | [#320](https://github.com/olafkfreund/Factory/issues/320) |
