@@ -91,6 +91,50 @@ def test_fleet_aggregate_is_not_stale(name: str) -> None:
     )
 
 
+def test_unavailable_sibling_is_accepted_beside_the_fetched_ones() -> None:
+    """A service the aggregator has never reached is announced, not omitted."""
+    doc = deepcopy(_example("fleet"))
+    dropped = next(s for s in doc["services"] if s["service"]["name"] == "tfactory")
+    doc["services"] = [s for s in doc["services"] if s["service"]["name"] != "tfactory"]
+    doc["unavailable"] = [
+        {
+            "name": "tfactory",
+            "title": "TFactory",
+            "manifest_url": dropped["manifest_url"],
+            "reason": "unreachable",
+            "checked_at": "2026-07-25T09:05:00Z",
+        }
+    ]
+    assert _errors(doc) == []
+
+
+def test_unavailable_entry_needs_a_name_and_a_manifest_url() -> None:
+    doc = deepcopy(_example("fleet"))
+    doc["unavailable"] = [{"reason": "unreachable"}]
+    assert _errors(doc) != []
+
+
+def test_unavailable_entry_may_not_smuggle_extra_fields() -> None:
+    """The thin shape is the point: no invented body, no leaked internals."""
+    doc = deepcopy(_example("fleet"))
+    doc["unavailable"] = [
+        {
+            "name": "tfactory",
+            "manifest_url": "https://tfactory.example.com/.well-known/agent-skills/index.json",
+            "upstream_token": "nope",
+        }
+    ]
+    assert _errors(doc) != []
+
+
+def test_a_body_less_service_entry_is_still_rejected() -> None:
+    """`unavailable[]` is the ONLY place a manifest-less service may appear -
+    `services[]` stays strictly conformant so consumers need no defensive checks."""
+    doc = deepcopy(_example("fleet"))
+    doc["services"].append({"name": "tfactory", "manifest_url": "/x", "reachable": False})
+    assert _errors(doc) != []
+
+
 def test_unknown_kind_is_rejected() -> None:
     doc = deepcopy(_example("aifactory"))
     doc["kind"] = "partner"

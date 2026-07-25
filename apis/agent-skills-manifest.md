@@ -123,6 +123,43 @@ Partial availability degrades, it does not fail: if one origin is unreachable,
 serve the other three plus the stale entry marked `reachable: false`. An agent
 with three quarters of the fleet can still work.
 
+### 4.1 Services with no manifest at all
+
+`reachable: false` covers the origin that was fetched once and is down now - the
+aggregator still has a body to serve. It does not cover the origin the
+aggregator has **never** reached: a cold start against a stopped service, or one
+that does not serve a manifest yet. There is no body to fold in, and inventing a
+version, an MCP endpoint or a skills list would put fiction in a discovery
+document.
+
+Such a service goes in `unavailable[]`, never in `services[]`:
+
+```json
+{
+  "unavailable": [
+    {
+      "name": "tfactory",
+      "title": "TFactory",
+      "manifest_url": "https://tfactory.freundcloud.org.uk/.well-known/agent-skills/index.json",
+      "reason": "unreachable",
+      "checked_at": "2026-07-25T09:05:00Z"
+    }
+  ]
+}
+```
+
+This keeps `services[]` strictly conformant - a consumer iterates it and reads
+`skills`, `mcp` and `openapi_url` off every entry without defensive checks -
+while the service is still announced rather than silently missing, so an agent
+does not conclude the fleet is smaller than it is. `manifest_url` is included so
+a consumer can retry the origin directly; it may be up again by the time it
+asks.
+
+`reason` is for a human reading the aggregate and MUST stay coarse
+(`unreachable`, `manifest incomplete`). This document is public and
+unauthenticated: raw exception text, stack traces and internal hostnames do not
+belong in it.
+
 ## 5. Caching and versioning
 
 **Caching.** The manifest is public, small and changes only on deploy:
