@@ -74,28 +74,15 @@ jobs:
         # pydantic is required only by the generated module (the generator and
         # the staleness check above are dependency-free). The self-test imports
         # the generated package, so it is installed here.
-        run: pip install pytest "pydantic>=2"
+        run: pip install pytest "pydantic>=2" jsonschema
 
       - name: Run the contracts self-test
         run: pytest -v tests/test_gen_contracts.py
 
-  agent-skills-manifest:
-    name: agent-skills manifest examples validate (blocking)
-    # RFC-0019 section 3.4 (Factory#302): the reference instances under
-    # apis/examples/agent-skills/ are what every service copies, and the fleet
-    # aggregate is folded from them. If an example stops validating — or drifts
-    # from the fleet copy — the contract is lying to whoever reads it, so this
-    # is a hard gate like the staleness check above.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install test deps
-        run: pip install pytest jsonschema
-
-      - name: Validate the manifest schema + examples
+      - name: Validate the agent-skills manifest schema + examples
+        # RFC-0019 section 3.4 (Factory#302): the reference instances under
+        # apis/examples/agent-skills/ are what every service copies, and the
+        # fleet aggregate is folded from them. Runs as a step of this job
+        # rather than its own, so the checkout/setup boilerplate is not
+        # duplicated (jscpd clone budget).
         run: pytest -v tests/test_agent_skills_manifest.py
