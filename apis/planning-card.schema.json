@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/olafkfreund/Factory/blob/main/apis/planning-card.schema.json",
+  "title": "Factory Planning Card (RFC-0019 section 3.1)",
+  "description": "One card on the CFactory planning board: the human-owned, editable unit of PLANNED work, served over `/api/cards`. A card is deliberately NOT a `work_items` row. `work_items` is a correlation store that CFactory reconciles and prunes from upstream completion events; a card carries fields no upstream event knows about (title, acceptance criteria, priority, milestone, assignee) and a reconcile would overwrite or drop them. The two live in separate tables and `correlation_key` is the join: NULL while the card is planned, set once the card enters the factory. This schema describes the card RESOURCE as served; `$defs.card_create` and `$defs.card_patch` describe the request bodies, and `$defs.card_list` the list response. Companion document: apis/planning-card.md.",
+  "version": "1.0.0",
+  "$ref": "#/$defs/card",
+  "$defs": {
+    "card": {
+      "type": "object",
+      "description": "The card resource as served by GET /api/cards/{card_key}. Every field is always present: the nullable ones carry an explicit null rather than being omitted, so a consumer never has to distinguish `not set` from `not sent by this version of the server`.",
+      "required": [
+        "card_key",
+        "tenant_id",
+        "title",
+        "acceptance_criteria",
+        "status",
+        "priority",
+        "tier",
+        "assignee",
+        "milestone",
+        "correlation_key",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "card_key": { "$ref": "#/$defs/card_key" },
+        "tenant_id": { "$ref": "#/$defs/tenant_id" },
+        "title": { "$ref": "#/$defs/title" },
+        "acceptance_criteria": { "$ref": "#/$defs/acceptance_criteria" },
+        "status": { "$ref": "#/$defs/status" },
+        "priority": { "$ref": "#/$defs/priority" },
+        "tier": { "$ref": "#/$defs/tier" },
+        "assignee": { "$ref": "#/$defs/assignee" },
+        "milestone": { "$ref": "#/$defs/milestone" },
+        "correlation_key": { "$ref": "#/$defs/correlation_key" },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the card was created. Server-owned: set on POST and never mutable thereafter."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When any field last changed. Server-owned: rewritten on every accepted mutation, including one made by a factory runtime writing status back."
+        }
+      }
+    },
+    "card_key": {
+      "type": "string",
+      "pattern": "^FCT-[1-9][0-9]{0,8}$",
+      "description": "Stable, human-quotable id, e.g. `FCT-42`. Server-assigned from a per-tenant sequence and IMMUTABLE once issued - it is the path segment of every single-card route, so a rename would break every link a human or an agent has kept. Not the correlation key: see `correlation_key`."
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "description": "Which tenant owns this card. Present in the resource so a consumer can assert what it is reading, but NEVER accepted from a request body: the server derives it from the calling credential (`CFACTORY_API_KEYS` / `CFACTORY_MULTI_TENANT`). Accepting it from the body would make cross-tenant writes a matter of typing a different string."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "One line: what is to be done. Human-owned - no upstream event ever rewrites it."
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "What `done` means, one testable statement per entry. Human-owned. When the card dispatches (RFC-0019 section 3.2) these become the acceptance criteria of the RFC-0002 task contract, which is why an empty list is allowed while planning but a card dispatched without any gives the factory nothing to verify against."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["backlog", "ready", "in_progress", "blocked", "done"],
+      "description": "Board column. `ready` is the dispatch trigger: a `ready` card WITH a `tier` is a first-class intake source alongside a labelled GitHub issue (RFC-0019 section 3.2). This vocabulary is the card's own and MUST NOT be classified through apis/status-taxonomy.json, which exists to normalise the four services' RUNTIME statuses: `ready` is a `done` token there and `blocked` is a `failed` token, so a card waiting to be picked up would read as finished and a card a human parked would read as a failure."
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Backlog order, LOWER IS HIGHER priority (0 is the top of the board). An integer rather than an enum so a card can be inserted between two others without renumbering the column. Ties are legal; the server orders by (priority ASC, created_at ASC, card_key ASC) so a list is stable across requests. Defaults to 100 when omitted on create, leaving room to insert above and below."
+    },
+    "tier": {
+      "type": ["string", "null"],
+      "enum": ["low", "medium", "hard", null],
+      "description": "RFC-0011 difficulty tier, the same vocabulary as the `factory:low|medium|hard` labels and the task contract's `execution.autonomy_tier`. Note `hard`, not `high`. NULL means not yet classified: the card is still a plan. The tier drives model, planning depth, human gate, VAL floor and merge behaviour once the card dispatches, so a `ready` card with a NULL tier is not dispatched - it stays on the board waiting for a human or an agent to classify it."
+    },
+    "assignee": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "Who is on it: a human handle, or a factory runtime (`pfactory` / `aifactory` / `tfactory` / `cfactory`) once the card is in flight. Free-form because the board must be able to name a person who has no account here. NULL is unassigned."
+    },
+    "milestone": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "Milestone name this card belongs to, free-form. Deliberately a string and not a foreign key: the roadmap view groups by it, and RFC-0019 section 3.5 keeps GitHub authoritative, so this holds the GitHub milestone TITLE once card-to-issue mirroring lands (phase 6). NULL is unscheduled."
+    },
+    "correlation_key": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "RFC-0001 correlation key: the GitHub issue number as a string, or a synthetic <prefix>-<id>. THE JOIN between this card and the `work_items` timeline, and the reason the two are separate tables. NULL for as long as the card is only planned; set exactly once, when the card enters the factory. Write-once: a server MUST reject an attempt to point an already-joined card at a different key (a card is one unit of work, and re-pointing it would silently reattribute its history)."
+    },
+    "card_create": {
+      "type": "object",
+      "description": "POST /api/cards request body. Only human-owned planning fields are settable. `card_key`, `tenant_id`, `created_at` and `updated_at` are server-owned, and `correlation_key` is set later by whatever dispatches the card - so none of them are accepted here and `additionalProperties: false` makes sending one an error rather than a silently ignored field.",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "$ref": "#/$defs/title" },
+        "acceptance_criteria": { "$ref": "#/$defs/acceptance_criteria" },
+        "status": { "$ref": "#/$defs/status" },
+        "priority": { "$ref": "#/$defs/priority" },
+        "tier": { "$ref": "#/$defs/tier" },
+        "assignee": { "$ref": "#/$defs/assignee" },
+        "milestone": { "$ref": "#/$defs/milestone" }
+      }
+    },
+    "card_patch": {
+      "type": "object",
+      "description": "PATCH /api/cards/{card_key} request body: a partial card. Every mutable field may be sent, including `status` (move) and `priority` (reprioritise) - one route covers both, so an agent needs no special-case endpoints to do what a human does by dragging. Sending no field at all is a mistake, not a no-op, hence `minProperties: 1`.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "title": { "$ref": "#/$defs/title" },
+        "acceptance_criteria": { "$ref": "#/$defs/acceptance_criteria" },
+        "status": { "$ref": "#/$defs/status" },
+        "priority": { "$ref": "#/$defs/priority" },
+        "tier": { "$ref": "#/$defs/tier" },
+        "assignee": { "$ref": "#/$defs/assignee" },
+        "milestone": { "$ref": "#/$defs/milestone" },
+        "correlation_key": { "$ref": "#/$defs/correlation_key" }
+      }
+    },
+    "card_list": {
+      "type": "object",
+      "description": "GET /api/cards response. An envelope rather than a bare array so pagination and echoed filters can be added additively later without breaking every consumer; `total` is the number of cards matching the filter, which equals `len(cards)` while there is no pagination.",
+      "required": ["cards", "total"],
+      "additionalProperties": false,
+      "properties": {
+        "cards": {
+          "type": "array",
+          "description": "Cards for the calling tenant only, ordered by (priority ASC, created_at ASC, card_key ASC).",
+          "items": { "$ref": "#/$defs/card" }
+        },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

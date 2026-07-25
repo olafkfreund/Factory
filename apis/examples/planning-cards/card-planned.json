@@ -1,0 +1,18 @@
+{
+  "card_key": "FCT-42",
+  "tenant_id": "freundcloud",
+  "title": "Rate-limit the completion-event ingress",
+  "acceptance_criteria": [
+    "A burst above the configured rate returns 429 with a Retry-After header",
+    "Events accepted under the limit are still idempotent by (service, correlation_key, status)",
+    "The limit is configurable per tenant and defaults to a documented value"
+  ],
+  "status": "ready",
+  "priority": 20,
+  "tier": "medium",
+  "assignee": "olafkfreund",
+  "milestone": "Cockpit hardening",
+  "correlation_key": null,
+  "created_at": "2026-07-25T09:00:00Z",
+  "updated_at": "2026-07-25T09:12:00Z"
+}
