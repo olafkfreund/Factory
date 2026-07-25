@@ -469,31 +469,3 @@ spec:
   system: factory-suite
   definition:
     $text: ./apis/agent-skills-manifest.schema.json
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: factory-planning-card
-  title: Factory Planning Card (RFC-0019)
-  description: >-
-    The CFactory planning-board card resource served at /api/cards - the
-    human-owned, editable unit of PLANNED work. A separate table from the
-    work_items correlation store (reconcile/prune would destroy the
-    human-owned fields); correlation_key is the join, NULL while planned and
-    set once the card enters the factory.
-  tags:
-    - json-schema
-    - contract
-    - rfc-0019
-    - planning
-  links:
-    - url: https://factory.freundcloud.com/rfc/agent-native-planning-control-plane/
-      title: RFC-0019 (authoritative)
-      icon: docs
-spec:
-  type: json-schema
-  lifecycle: experimental
-  owner: olafkfreund
-  system: factory-suite
-  definition:
-    $text: ./apis/planning-card.schema.json
