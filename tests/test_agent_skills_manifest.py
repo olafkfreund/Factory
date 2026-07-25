@@ -19,7 +19,6 @@ Skips cleanly when jsonschema is unavailable (e.g. outside the Nix devShell);
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any
 
 import contract_schema as cs
@@ -84,7 +83,7 @@ def test_fleet_aggregate_is_not_stale(name: str) -> None:
 
 def test_unavailable_sibling_is_accepted_beside_the_fetched_ones() -> None:
     """A service the aggregator has never reached is announced, not omitted."""
-    doc = deepcopy(_example("fleet"))
+    doc = _example("fleet")
     dropped = next(s for s in doc["services"] if s["service"]["name"] == "tfactory")
     doc["services"] = [s for s in doc["services"] if s["service"]["name"] != "tfactory"]
     doc["unavailable"] = [
@@ -100,14 +99,14 @@ def test_unavailable_sibling_is_accepted_beside_the_fetched_ones() -> None:
 
 
 def test_unavailable_entry_needs_a_name_and_a_manifest_url() -> None:
-    doc = deepcopy(_example("fleet"))
+    doc = _example("fleet")
     doc["unavailable"] = [{"reason": "unreachable"}]
     assert _errors(doc) != []
 
 
 def test_unavailable_entry_may_not_smuggle_extra_fields() -> None:
     """The thin shape is the point: no invented body, no leaked internals."""
-    doc = deepcopy(_example("fleet"))
+    doc = _example("fleet")
     doc["unavailable"] = [
         {
             "name": "tfactory",
@@ -121,32 +120,32 @@ def test_unavailable_entry_may_not_smuggle_extra_fields() -> None:
 def test_a_body_less_service_entry_is_still_rejected() -> None:
     """`unavailable[]` is the ONLY place a manifest-less service may appear -
     `services[]` stays strictly conformant so consumers need no defensive checks."""
-    doc = deepcopy(_example("fleet"))
+    doc = _example("fleet")
     doc["services"].append({"name": "tfactory", "manifest_url": "/x", "reachable": False})
     assert _errors(doc) != []
 
 
 def test_unknown_kind_is_rejected() -> None:
-    doc = deepcopy(_example("aifactory"))
+    doc = _example("aifactory")
     doc["kind"] = "partner"
     assert _errors(doc) != []
 
 
 def test_skill_without_invocation_is_rejected() -> None:
-    doc = deepcopy(_example("aifactory"))
+    doc = _example("aifactory")
     del doc["skills"][0]["invocation"]
     assert any("invocation" in m for m in _errors(doc))
 
 
 def test_invocation_payload_must_match_its_kind() -> None:
     """A `rest` invocation carrying a slash command is not a valid REST call."""
-    doc = deepcopy(_example("aifactory"))
+    doc = _example("aifactory")
     doc["skills"][0]["invocation"] = {"kind": "rest", "command": "/handover"}
     assert _errors(doc) != []
 
 
 def test_remote_mcp_transport_requires_an_endpoint() -> None:
-    doc = deepcopy(_example("aifactory"))
+    doc = _example("aifactory")
     del doc["mcp"]["endpoint"]
     assert any("endpoint" in m for m in _errors(doc))
     # ...while a stdio server legitimately has none.
@@ -156,6 +155,6 @@ def test_remote_mcp_transport_requires_an_endpoint() -> None:
 
 def test_unknown_top_level_field_is_rejected() -> None:
     """`unevaluatedProperties: false` must survive the kind-dispatching allOf."""
-    doc = deepcopy(_example("cfactory"))
+    doc = _example("cfactory")
     doc["secrets"] = {"token": "nope"}
     assert _errors(doc) != []

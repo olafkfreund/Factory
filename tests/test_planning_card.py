@@ -20,7 +20,6 @@ Skips cleanly when jsonschema is unavailable (e.g. outside the Nix devShell);
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any
 
 import contract_schema as cs
@@ -95,14 +94,14 @@ def test_a_card_in_the_factory_carries_the_rfc0001_key() -> None:
 
 def test_correlation_key_must_be_present_even_when_null() -> None:
     """Every field is always present, so a consumer never guesses at absence."""
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     del doc["correlation_key"]
     assert any("correlation_key" in m for m in _errors(doc))
 
 
 def test_correlation_key_may_not_be_an_empty_string() -> None:
     """Unjoined is `null`; "" would be a third state nothing knows how to read."""
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     doc["correlation_key"] = ""
     assert _errors(doc) != []
 
@@ -115,14 +114,14 @@ def test_status_enum_is_closed_and_exact() -> None:
 
 
 def test_a_github_issue_state_is_not_a_card_status() -> None:
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     doc["status"] = "open"
     assert _errors(doc) != []
 
 
 def test_tier_is_the_rfc0011_vocabulary_not_high() -> None:
     """RFC-0011 says `hard`; `high` is the mistake everyone makes once."""
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     doc["tier"] = "high"
     assert _errors(doc) != []
     doc["tier"] = "hard"
@@ -130,7 +129,7 @@ def test_tier_is_the_rfc0011_vocabulary_not_high() -> None:
 
 
 def test_tier_is_nullable_because_an_unclassified_card_is_normal() -> None:
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     doc["tier"] = None
     assert _errors(doc) == []
 
@@ -193,7 +192,7 @@ def test_patch_rejects_server_owned_fields(field: str) -> None:
 
 
 def test_priority_is_an_integer_and_never_negative() -> None:
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     doc["priority"] = "20"
     assert _errors(doc) != []
     doc["priority"] = -1
@@ -203,14 +202,14 @@ def test_priority_is_an_integer_and_never_negative() -> None:
 
 
 def test_card_key_must_look_like_fct_n() -> None:
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     for bad in ("42", "FCT-0", "fct-42", "FCT-", "FCT-42-1"):
         doc["card_key"] = bad
         assert _errors(doc) != [], bad
 
 
 def test_acceptance_criteria_entries_may_not_be_blank() -> None:
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     doc["acceptance_criteria"] = [""]
     assert _errors(doc) != []
     doc["acceptance_criteria"] = []
@@ -219,6 +218,6 @@ def test_acceptance_criteria_entries_may_not_be_blank() -> None:
 
 def test_unknown_field_on_the_resource_is_rejected() -> None:
     """Including a field from the hierarchy Phase 1 deliberately does not ship."""
-    doc = deepcopy(_example("card-planned"))
+    doc = _example("card-planned")
     doc["workspace_id"] = "default"
     assert _errors(doc) != []
