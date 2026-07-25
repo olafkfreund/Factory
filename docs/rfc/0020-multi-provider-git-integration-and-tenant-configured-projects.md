@@ -35,7 +35,7 @@ Both are process-global and both are GitHub-shaped. That has three consequences:
 - **GitLab users have no path at all.** RFC-0011 states the intake surface is
   uniform across GitHub, GitLab and Azure DevOps. The board is not.
 
-### 1.2 Connecting a repo has to bring the work with it
+### 1.1 Connecting a repo has to bring the work with it
 
 Configuration alone is not the feature. RFC-0019 Phase 6 sync is **card-first
 only**: a card can create an issue, or adopt one you name. There is no path that
@@ -53,7 +53,7 @@ So the board today can neither absorb the work that already exists nor drive the
 factory deliberately. Sections 3.6 and 3.7 close those two, and they are the
 difference between "the board syncs" and "the board is where you work".
 
-### 1.1 The motivating finding: duplicated capability
+### 1.2 The motivating finding: duplicated capability
 
 The reason GitLab is missing from the board is not that the fleet lacks a GitLab
 implementation. **It has one, and CFactory reimplemented past it.**
