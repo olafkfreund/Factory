@@ -15,10 +15,34 @@ evidence. Certification is a separate engagement.
 - [`control-matrix.md`](control-matrix.md) — the control-to-framework matrix
   (Factory#324): one row per control domain, mapped to every in-scope framework,
   with current status and the child issue that drives it. Start here.
-- [`policies/`](policies/) — one grounded control document per domain. Each
-  carries: purpose, current state (cited against real code and manifests),
-  gaps, a phased remediation plan, acceptance criteria, and the evidence
-  artifacts to collect.
+- [`policies/`](policies/) — the ISMS policy set (the artifacts an assessor opens)
+  plus one grounded control document per domain. Each domain document carries:
+  purpose, current state (cited against real code and manifests), gaps, a phased
+  remediation plan, acceptance criteria, and the evidence artifacts to collect.
+- [`statement-of-applicability.md`](statement-of-applicability.md) — the ISO/IEC
+  27001:2022 Annex A SoA (all 93 controls: Implemented / Planned / Not-Applicable
+  with justification, evidence, and owner). Factory#311.
+- [`risk-register.md`](risk-register.md) — the risk methodology and the seeded
+  register of the fleet's top real risks with treatment status. Factory#311.
+- [`roles.md`](roles.md) — named security roles and control owners, the quarterly
+  management-review cadence, and the continuous-monitoring plan. Factory#311.
+
+### ISMS policy set
+
+The core policies the governance domain calls for. Each is a tight, assessor-usable
+policy (purpose, scope, policy statements, roles, related controls, review cadence)
+that references its technical domain document rather than duplicating it.
+
+| Policy | File |
+|---|---|
+| Information Security (parent) | [information-security-policy.md](policies/information-security-policy.md) |
+| Access Control | [access-control-policy.md](policies/access-control-policy.md) |
+| Acceptable Use | [acceptable-use-policy.md](policies/acceptable-use-policy.md) |
+| Secure SDLC | [secure-sdlc-policy.md](policies/secure-sdlc-policy.md) |
+| Data Classification and Handling | [data-classification-and-handling-policy.md](policies/data-classification-and-handling-policy.md) |
+| Business Continuity | [business-continuity-policy.md](policies/business-continuity-policy.md) |
+| Vendor and Third-Party | [vendor-and-third-party-policy.md](policies/vendor-and-third-party-policy.md) |
+| Incident Response | [incident-response-policy.md](policies/incident-response-policy.md) (cross-links the [IR runbook](policies/incident-response.md)) |
 
 ## Control domains
 
