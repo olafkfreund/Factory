@@ -1,0 +1,91 @@
+{
+  "schema_version": "1",
+  "kind": "service",
+  "service": {
+    "name": "tfactory",
+    "title": "TFactory",
+    "version": "1.0.0",
+    "role": "reflect",
+    "description": "Autonomous test generation and execution. From a branch or PR plus acceptance criteria it runs planner -> gen-functional -> executor (sandboxed) -> evaluator -> triager across five lanes (unit, browser, api, integration, mutation). The evaluator grades every generated test on a 5-signal verdict - coverage delta, stability across re-runs, mutation score, flake lint and semantic relevance - so a pass means meaningful tests, not a green bar.",
+    "homepage": "https://tfactory.freundcloud.org.uk",
+    "repository": "https://github.com/olafkfreund/TFactory"
+  },
+  "openapi_url": "/openapi.json",
+  "mcp": {
+    "transport": "stdio",
+    "command": ["bash", "scripts/start-tfactory-mcp.sh"],
+    "documentation": "https://github.com/olafkfreund/Factory/blob/main/apis/tfactory.mcp.md"
+  },
+  "auth": {
+    "manifest": "none",
+    "schemes": ["bearer"],
+    "documentation": "https://factory.freundcloud.com/dev/secrets-and-tokens/"
+  },
+  "skills": [
+    {
+      "name": "tfactory",
+      "description": "Onboarding skill: how to work inside the TFactory codebase itself - the 4-agent pipeline, the LLM-provider abstraction (never call a vendor SDK directly), the workspace layout, the branching model, how to run the suite, and the non-negotiable conventions. Install this before changing TFactory, not before using it.",
+      "invocation": { "kind": "slash_command", "command": "/tfactory" },
+      "install": {
+        "source": "https://github.com/olafkfreund/TFactory",
+        "path": "docs/.well-known/skills/tfactory/SKILL.md"
+      },
+      "tags": ["onboarding", "codebase", "contributors"]
+    },
+    {
+      "name": "handover-to-tfactory",
+      "description": "Hand a finished feature off to TFactory for polyglot test generation - from AIFactory, from Claude Code, or from any tool via the MCP control plane or a markdown/Gherkin/EARS acceptance-criteria file. Drives the full pipeline across the five lanes and produces a triage report, optionally committing the tests to the feature branch and commenting on the PR.",
+      "invocation": { "kind": "slash_command", "command": "/handover-to-tfactory" },
+      "install": {
+        "source": "https://github.com/olafkfreund/TFactory",
+        "path": ".claude/skills/handover-to-tfactory/SKILL.md"
+      },
+      "tags": ["verify", "handover", "parr"]
+    },
+    {
+      "name": "tfactory-watch",
+      "description": "Poll a running TFactory task to completion, then pick up its triage report and check the generated tests actually cover the acceptance criteria. One check per invocation - drive it under /loop for a hands-off round trip.",
+      "invocation": { "kind": "slash_command", "command": "/tfactory-watch" },
+      "install": {
+        "source": "https://github.com/olafkfreund/TFactory",
+        "path": ".claude/skills/tfactory-watch/SKILL.md"
+      },
+      "tags": ["polling", "reports"]
+    },
+    {
+      "name": "tfactory-fixloop",
+      "description": "Close the AIFactory <-> TFactory loop hands-off: hand the correction back to AIFactory, wait for its QA fixer, re-test in TFactory. One bounded cycle per invocation; it stops when the run passes, when the same tests keep failing (no progress), or when the correction-cycle cap is hit and a human is needed.",
+      "invocation": { "kind": "slash_command", "command": "/tfactory-fixloop" },
+      "install": {
+        "source": "https://github.com/olafkfreund/TFactory",
+        "path": ".claude/skills/tfactory-fixloop/SKILL.md"
+      },
+      "tags": ["loop", "handback", "autonomous"]
+    },
+    {
+      "name": "spec-create",
+      "description": "Create a test spec for a branch or PR from its acceptance criteria, optionally restricted to specific lanes. Returns a spec id and the RFC-0001 correlation key.",
+      "invocation": { "kind": "mcp_tool", "tool": "spec.create" },
+      "tags": ["verify", "rfc-0001"]
+    },
+    {
+      "name": "spec-run",
+      "description": "Execute the generated suite for a spec in the sandbox, optionally for a subset of the five lanes.",
+      "invocation": { "kind": "rest", "method": "POST", "path": "/api/specs/{specId}/run" },
+      "tags": ["execution", "sandbox", "lanes"]
+    },
+    {
+      "name": "spec-report",
+      "description": "Fetch the triage report and the 5-signal verdict for a spec: coverage delta, stability, mutation score, lint and semantic relevance, with the ranked findings a human or an agent should act on.",
+      "invocation": { "kind": "rest", "method": "GET", "path": "/api/specs/{specId}/report" },
+      "tags": ["verdict", "reports", "rfc-0006"]
+    },
+    {
+      "name": "handback",
+      "description": "Route a correction back to AIFactory's QA fixer when the verdict fails: the failing tests plus the report, keyed by correlation key so the fix lands on the original build.",
+      "invocation": { "kind": "rest", "method": "POST", "path": "/api/handback" },
+      "tags": ["handback", "loop"]
+    }
+  ],
+  "generated_at": "2026-07-25T09:00:00Z"
+}

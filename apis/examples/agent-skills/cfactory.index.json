@@ -1,0 +1,62 @@
+{
+  "schema_version": "1",
+  "kind": "service",
+  "service": {
+    "name": "cfactory",
+    "title": "CFactory",
+    "version": "1.1.0",
+    "role": "review",
+    "description": "The control tower. CFactory threads each unit of work across PFactory -> AIFactory -> TFactory using a WorkItem correlation store keyed by the RFC-0001 correlation key, ingesting completion events on a webhook and streaming the cockpit over WebSocket. It is a pure consumer: it observes the other services and only writes through copilot actions, which are prepared first and executed only on human confirmation.",
+    "homepage": "https://cfactory.freundcloud.org.uk",
+    "repository": "https://github.com/olafkfreund/CFactory"
+  },
+  "openapi_url": "/openapi.json",
+  "mcp": {
+    "transport": "stdio",
+    "documentation": "https://github.com/olafkfreund/Factory/blob/main/apis/cfactory.mcp.md"
+  },
+  "auth": {
+    "manifest": "none",
+    "schemes": ["bearer", "api-key"],
+    "documentation": "https://factory.freundcloud.com/dev/secrets-and-tokens/"
+  },
+  "skills": [
+    {
+      "name": "workitems-list",
+      "description": "List work items, optionally filtered by project or status. A work item is one unit of work threaded across the whole fleet, so this is the fastest way for an agent to see everything currently in flight.",
+      "invocation": { "kind": "rest", "method": "GET", "path": "/api/workitems" },
+      "tags": ["observability", "read-only"]
+    },
+    {
+      "name": "workitem-get",
+      "description": "Fetch the aggregated state of one work item across all four services by its RFC-0001 correlation key: where the plan, the build and the verification each stand, in one object.",
+      "invocation": { "kind": "mcp_tool", "tool": "workitem.get" },
+      "tags": ["observability", "rfc-0001"]
+    },
+    {
+      "name": "workitem-timeline",
+      "description": "Get the ordered completion events for one work item - the audit trail of what each service did and when. Use it to answer 'why is this stuck' without opening four portals.",
+      "invocation": { "kind": "rest", "method": "GET", "path": "/api/workitems/{correlationKey}/timeline" },
+      "tags": ["timeline", "events", "debugging"]
+    },
+    {
+      "name": "usage-aggregate",
+      "description": "Aggregate token and cost usage by service, project or work item. Metered providers report currency; subscription and local providers report tokens and time.",
+      "invocation": { "kind": "rest", "method": "GET", "path": "/api/usage" },
+      "tags": ["usage", "cost", "read-only"]
+    },
+    {
+      "name": "copilot-advise",
+      "description": "Prepare - but do not execute - an action against a work item, such as a rerun or a handback. Returns a prepared action describing exactly what would happen. This is the only way CFactory writes anything, and it is deliberately a two-step.",
+      "invocation": { "kind": "mcp_tool", "tool": "copilot.advise" },
+      "tags": ["actions", "advise-and-confirm"]
+    },
+    {
+      "name": "copilot-confirm",
+      "description": "Execute a previously prepared copilot action. Requires the action id from copilot-advise and represents the human-in-the-loop confirmation step; nothing mutates without it.",
+      "invocation": { "kind": "rest", "method": "POST", "path": "/api/copilot/actions/{actionId}/confirm" },
+      "tags": ["actions", "human-in-the-loop"]
+    }
+  ],
+  "generated_at": "2026-07-25T09:00:00Z"
+}

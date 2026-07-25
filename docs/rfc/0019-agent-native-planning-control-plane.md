@@ -115,6 +115,12 @@ so any agent can enumerate what the Factory can do without prior knowledge:
   metadata — the entry point an external agent (or a partner integration) hits
   first.
 
+**Contract (shipped):** [`apis/agent-skills-manifest.md`](../../apis/agent-skills-manifest.md)
++ [`apis/agent-skills-manifest.schema.json`](../../apis/agent-skills-manifest.schema.json),
+with a reference instance per service and the fleet aggregate under
+`apis/examples/agent-skills/`. Phase 4 is independent of the build-vs-integrate
+question in 8 below, so it lands ahead of the board.
+
 ### 3.5 Augment, never replace, GitHub
 
 GitHub issues/PRs remain the **record of truth** (RFC-0003). The board is a

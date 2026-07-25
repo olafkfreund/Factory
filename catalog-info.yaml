@@ -441,3 +441,31 @@ spec:
   system: factory-suite
   definition:
     $text: ./apis/cfactory.mcp.md
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: factory-agent-skills-manifest
+  title: Factory Agent-Skills Manifest (RFC-0019)
+  description: >-
+    The capability-discovery contract served at
+    /.well-known/agent-skills/index.json. Each service publishes its identity,
+    installable skills, MCP endpoint and OpenAPI URL; CFactory serves the fleet
+    aggregate. Readable without authentication so an agent can enumerate what
+    the Factory can do before it holds a token.
+  tags:
+    - json-schema
+    - contract
+    - rfc-0019
+    - discovery
+  links:
+    - url: https://factory.freundcloud.com/rfc/agent-native-planning-control-plane/
+      title: RFC-0019 (authoritative)
+      icon: docs
+spec:
+  type: json-schema
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/agent-skills-manifest.schema.json

@@ -1,0 +1,84 @@
+{
+  "schema_version": "1",
+  "kind": "service",
+  "service": {
+    "name": "aifactory",
+    "title": "AIFactory",
+    "version": "1.0.0",
+    "role": "act",
+    "description": "Spec-first build core. A task is created from a governed GitHub issue or a signed RFC-0002 task contract, then a planner -> coder (isolated git worktree) -> QA pipeline runs against a multi-provider model factory (Claude, OpenAI, Gemini, Ollama, vLLM, Codex, Copilot CLI). It can delegate the build to another coding agent, and it applies TFactory handbacks through its QA fixer.",
+    "homepage": "https://aifactory.freundcloud.org.uk",
+    "repository": "https://github.com/olafkfreund/AIFactory"
+  },
+  "openapi_url": "/openapi.json",
+  "mcp": {
+    "transport": "http+sse",
+    "endpoint": "/api/mcp-remote",
+    "command": ["bash", "scripts/start-aifactory-mcp.sh"],
+    "documentation": "https://github.com/olafkfreund/Factory/blob/main/apis/aifactory.mcp.md"
+  },
+  "auth": {
+    "manifest": "none",
+    "schemes": ["bearer", "saml"],
+    "documentation": "https://factory.freundcloud.com/dev/secrets-and-tokens/"
+  },
+  "skills": [
+    {
+      "name": "handover",
+      "description": "Hand the task you have been discussing interactively off to AIFactory's autonomous pipeline, so planner -> coder -> QA -> human-review runs in the background while you work on something else. Use it for anything you would otherwise babysit.",
+      "invocation": { "kind": "slash_command", "command": "/handover" },
+      "install": {
+        "source": "https://github.com/olafkfreund/AIFactory",
+        "path": ".claude/skills/handover/SKILL.md"
+      },
+      "tags": ["build", "autonomous", "parr"]
+    },
+    {
+      "name": "aifactory-spec",
+      "description": "Kick off AIFactory spec creation for a new feature, driving the spec runner that turns a described feature into the spec the build pipeline consumes.",
+      "invocation": { "kind": "slash_command", "command": "/aifactory-spec" },
+      "install": {
+        "source": "https://github.com/olafkfreund/AIFactory",
+        "path": ".claude/skills/aifactory-spec/SKILL.md"
+      },
+      "tags": ["spec", "planning"]
+    },
+    {
+      "name": "task-create",
+      "description": "Start a build from a governed issue or a spec. Returns a task id and the RFC-0001 correlation key that threads this unit of work across the fleet.",
+      "invocation": { "kind": "mcp_tool", "tool": "task.create" },
+      "tags": ["build", "rfc-0001"]
+    },
+    {
+      "name": "task-from-plan",
+      "description": "Build directly from a signed RFC-0002 task contract, skipping AIFactory's own planning stage. This is the trusted-plan fast path: PFactory has already decided WHAT and HOW, so the coder starts immediately.",
+      "invocation": { "kind": "rest", "method": "POST", "path": "/api/tasks/from-plan" },
+      "tags": ["build", "rfc-0002", "trusted-plan"]
+    },
+    {
+      "name": "task-qa-fix",
+      "description": "Apply a TFactory handback: given the failing tests and the triage report, AIFactory's QA fixer writes the correction on the original task rather than starting a new build. This is the return leg of the AIFactory <-> TFactory loop.",
+      "invocation": { "kind": "mcp_tool", "tool": "task.qa_fix" },
+      "tags": ["handback", "qa", "loop"]
+    },
+    {
+      "name": "task-worktree",
+      "description": "Inspect the isolated git worktree a build is running in: its branch, path and whether the tree is clean. Use it to see what the coder has actually written before a PR exists.",
+      "invocation": { "kind": "mcp_tool", "tool": "task.worktree" },
+      "tags": ["git", "inspection"]
+    },
+    {
+      "name": "task-delegate",
+      "description": "Delegate a build to a different coding agent or executor instead of AIFactory's own coder, keeping the same task id and correlation key.",
+      "invocation": { "kind": "mcp_tool", "tool": "task.delegate" },
+      "tags": ["delegation", "agents"]
+    },
+    {
+      "name": "providers-list",
+      "description": "List the model providers this AIFactory instance has configured, with model and transport for each. Read-only, and the cheapest way for an agent to learn what it can route to.",
+      "invocation": { "kind": "rest", "method": "GET", "path": "/api/providers" },
+      "tags": ["models", "routing", "read-only"]
+    }
+  ],
+  "generated_at": "2026-07-25T09:00:00Z"
+}
