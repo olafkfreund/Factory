@@ -13,7 +13,7 @@ nav:
   - Overview: index.md
   - Architecture: architecture.md
   - Pipeline & Guards: pipeline-and-guards.md
-  - Creating Issues & Work-items: creating-issues-and-workitems.md
+  - Creating Issues & Work-items: https://factory.freundcloud.com/creating-issues-and-workitems/
   - Coding Standards: https://github.com/olafkfreund/Factory/blob/main/standards/coding-standards.md
   - Testing Authenticated Web Apps: testing-authenticated-web-apps.md
   - Dependencies: dependencies.md
