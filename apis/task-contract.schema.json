@@ -24,7 +24,7 @@
         "source": { "type": "string", "description": "Emitting system, e.g. 'pfactory'." },
         "session_id": { "type": "string" },
         "issue_number": { "type": "integer" },
-        "repo": { "type": "string", "description": "owner/name of the target repo." },
+        "repo": { "type": "string", "description": "The target repo, OPTIONALLY provider-qualified as '<provider>:<path>' (RFC-0020 3.5): 'owner/repo' | 'gitlab:group/subgroup/project' | 'azure_devops:organization/project/repo'. GitHub is the UNQUALIFIED default, so a pre-RFC-0020 contract and every GitHub contract are unchanged and need no backfill; an unqualified value reads as 'github:'. Only a KNOWN provider name is a qualification, so a clone URL and any other colon-bearing path are the whole reference. This is the one place a tenant declares which git HOST its work belongs to: PFactory, AIFactory and TFactory read the host off this reference instead of each choosing from their own environment default, which is what stopped a GitLab tenant's run reconnoitring github.com and opening a GitHub PR. There is deliberately no sibling 'provider' field - two would be two sources of truth."},
         "base_ref": { "type": "string", "description": "RFC-0010 reconnaissance: the branch/tag the plan was built against, e.g. 'main'." },
         "baseline_commit": { "type": "string", "description": "RFC-0010 reconnaissance: the resolved commit SHA the RepoMap was built from. Lets AIFactory/TFactory anchor to the exact tree the human approved and detect drift." },
         "content_trust": { "$ref": "#/$defs/content_trust" }
@@ -792,7 +792,7 @@
       "additionalProperties": true,
       "description": "RFC-0010 reconnaissance summary: what PFactory statically observed in the target repo and grounded the plan on. The planner reads code STATICALLY (AST/manifest/HCL parsing) and NEVER executes it. A stable digest of this block (commit + change_mode + resolved language + footprint) is folded into the approval content-hash, so the human approves a plan grounded in a known tree and approval invalidates if the repo drifts. Absent => the plan was not grounded in an existing repo (greenfield).",
       "properties": {
-        "repo": { "type": "string", "description": "owner/name reconnoitred." },
+        "repo": { "type": "string", "description": "The repo reconnoitred, in the same optionally provider-qualified form as provenance.repo (RFC-0020 3.5). Mirrors provenance.repo; provenance.repo is the normative declaration."},
         "base_ref": { "type": "string", "description": "Branch/tag reconnoitred." },
         "commit": { "type": "string", "description": "Resolved commit SHA the RepoMap was built from." },
         "available": { "type": "boolean", "description": "false when the repo could not be read (private/unreachable/empty). Recon degrades to greenfield rather than failing the run." },
