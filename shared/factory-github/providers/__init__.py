@@ -23,13 +23,16 @@ from .github_provider import GitHubProvider
 from .gitlab_provider import GitLabProvider
 from .protocol import (
     GitProvider,
+    IssueComment,
     IssueData,
     IssueFilters,
     PRData,
     PRFilters,
+    ProviderCommentError,
     ProviderType,
     ReviewData,
     ReviewFinding,
+    fanout_comments,
 )
 
 __all__ = [
@@ -37,11 +40,14 @@ __all__ = [
     "GitProvider",
     "PRData",
     "IssueData",
+    "IssueComment",
     "ReviewData",
     "ReviewFinding",
     "IssueFilters",
     "PRFilters",
     "ProviderType",
+    "ProviderCommentError",
+    "fanout_comments",
     # Implementations
     "GitHubProvider",
     "GitLabProvider",

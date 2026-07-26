@@ -38,6 +38,7 @@ on:
       - "tests/test_planning_card.py"
       - "shared/factory-github/**"
       - "tests/test_provider_credential_repr.py"
+      - "tests/test_provider_comments.py"
       - ".github/workflows/contracts.yml"
   push:
     branches: [main]
@@ -110,3 +111,14 @@ jobs:
         # job as the steps above for the same reason - a separate job would
         # duplicate the checkout/setup block against the jscpd clone budget.
         run: pytest -v tests/test_provider_credential_repr.py
+
+      - name: Guard the shared providers' issue-comment read
+        # Factory#375: comments are one API call PER ISSUE, and Factory#373
+        # multiplies that per repository, so the guard asserts on the REQUESTS
+        # the providers make (server-side `since`, GitHub's repository-wide bulk
+        # endpoint, early stop on GitLab/ADO) and not only on the results - a
+        # client-side filter over a full download returns correct data and is
+        # still the rate-limit failure. Same job as the steps above for the same
+        # reason: a separate job would duplicate the checkout/setup block against
+        # the jscpd clone budget.
+        run: pytest -v tests/test_provider_comments.py
