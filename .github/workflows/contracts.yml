@@ -36,6 +36,8 @@ on:
       - "apis/planning-card.schema.json"
       - "apis/examples/planning-cards/**"
       - "tests/test_planning_card.py"
+      - "shared/factory-github/**"
+      - "tests/test_provider_credential_repr.py"
       - ".github/workflows/contracts.yml"
   push:
     branches: [main]
@@ -77,7 +79,9 @@ jobs:
         # pydantic is required only by the generated module (the generator and
         # the staleness check above are dependency-free). The self-test imports
         # the generated package, so it is installed here.
-        run: pip install pytest "pydantic>=2" jsonschema
+        # httpx is imported at module scope by the shared provider modules,
+        # which the credential-repr guard constructs for its behavioural check.
+        run: pip install pytest "pydantic>=2" jsonschema httpx
 
       - name: Run the contracts self-test
         run: pytest -v tests/test_gen_contracts.py
@@ -96,3 +100,13 @@ jobs:
         # above - a second job would duplicate the checkout/setup block and
         # eat into the jscpd clone budget, which only ratchets down.
         run: pytest -v tests/test_planning_card.py
+
+      - name: Guard the shared providers against credential-repr leaks
+        # Factory#372: a @dataclass field holding a PAT renders that PAT in the
+        # generated __repr__, which reaches traceback frames, f-string logs and
+        # error-reporting payloads. The guard is generic (it parses every module
+        # under shared/factory-github/providers/ with ast), so a provider added
+        # later is covered without anyone remembering to extend the test. Same
+        # job as the steps above for the same reason - a separate job would
+        # duplicate the checkout/setup block against the jscpd clone budget.
+        run: pytest -v tests/test_provider_credential_repr.py
