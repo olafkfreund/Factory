@@ -22,6 +22,7 @@ from .factory import get_provider, register_provider
 from .github_provider import GitHubProvider
 from .gitlab_provider import GitLabProvider
 from .protocol import (
+    FanoutCommentsMixin,
     GitProvider,
     IssueComment,
     IssueData,
@@ -33,6 +34,7 @@ from .protocol import (
     ReviewData,
     ReviewFinding,
     fanout_comments,
+    oldest_first,
 )
 
 __all__ = [
@@ -47,7 +49,9 @@ __all__ = [
     "PRFilters",
     "ProviderType",
     "ProviderCommentError",
+    "FanoutCommentsMixin",
     "fanout_comments",
+    "oldest_first",
     # Implementations
     "GitHubProvider",
     "GitLabProvider",

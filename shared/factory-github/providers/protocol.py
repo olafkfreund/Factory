@@ -134,6 +134,17 @@ def to_iso_utc(dt: datetime) -> str:
     return to_utc(dt).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def oldest_first(comments: list[IssueComment]) -> list[IssueComment]:
+    """Normalise comment order.
+
+    Providers return threads in whatever order their pagination needed (GitHub
+    ascending, GitLab and ADO newest-first for the ``since`` early stop). The
+    protocol promises one order to the caller, so every implementation ends on
+    this rather than each sorting for itself.
+    """
+    return sorted(comments, key=lambda comment: comment.created_at)
+
+
 async def fanout_comments(
     provider: GitProvider,
     issue_numbers: list[int],
@@ -141,12 +152,33 @@ async def fanout_comments(
 ) -> dict[int, list[IssueComment]]:
     """Per-issue fallback for providers with no bulk comment endpoint.
 
-    Costs exactly ``len(issue_numbers)`` API calls — bounded and predictable,
-    which is the point: the alternative failure mode is an unbounded walk of a
-    whole repository's comment history. Sequential on purpose; concurrency here
-    would spend the rate-limit budget faster, not save any calls.
+    Costs exactly ``len(set(issue_numbers))`` API calls — bounded and
+    predictable, which is the point: the alternative failure mode is an
+    unbounded walk of a whole repository's comment history. Sequential on
+    purpose; concurrency here would spend the rate-limit budget faster, not save
+    any calls. Deduping and ordering live here so callers stay one line.
     """
-    return {number: await provider.fetch_comments(number, since=since) for number in issue_numbers}
+    return {
+        number: await provider.fetch_comments(number, since=since)
+        for number in sorted({int(number) for number in issue_numbers})
+    }
+
+
+class FanoutCommentsMixin:
+    """``fetch_comments_bulk`` for providers whose API has no batch endpoint.
+
+    GitLab exposes notes only per resource (there is no project-wide notes
+    endpoint) and Azure DevOps has no batch comments API (``workitemsbatch``
+    expands fields, relations and links, not comments). Both therefore answer a
+    bulk read the only way their API allows — one call per issue — so the
+    fallback lives here once instead of being pasted into each provider.
+    """
+
+    async def fetch_comments_bulk(
+        self, issue_numbers: list[int], since: datetime | None = None
+    ) -> dict[int, list[IssueComment]]:
+        """One call per issue; single-paged per issue when ``since`` is set."""
+        return await fanout_comments(self, issue_numbers, since)
 
 
 @dataclass

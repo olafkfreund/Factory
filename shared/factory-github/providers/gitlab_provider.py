@@ -25,7 +25,8 @@ from .protocol import (
     ProviderCommentError,
     ProviderType,
     ReviewData,
-    fanout_comments,
+    FanoutCommentsMixin,
+    oldest_first,
     to_utc,
 )
 
@@ -38,7 +39,7 @@ _COMMENT_MAX_PAGES = 20
 
 
 @dataclass
-class GitLabProvider:
+class GitLabProvider(FanoutCommentsMixin):
     """
     GitLab implementation of the GitProvider protocol.
     Works with both gitlab.com and self-hosted GitLab CE/EE instances.
@@ -445,9 +446,7 @@ class GitLabProvider:
             return issue_resp.json()["id"]
 
     async def fetch_comments(
-        self,
-        issue_number: int,
-        since: datetime | None = None,
+        self, issue_number: int, since: datetime | None = None
     ) -> list[IssueComment]:
         """Read one issue's notes (Factory#375).
 
@@ -485,13 +484,13 @@ class GitLabProvider:
                             note.get("updated_at") or note.get("created_at")
                         )
                         if cutoff is not None and to_utc(updated) <= cutoff:
-                            return self._sorted(collected)
+                            return oldest_first(collected)
                         if note.get("system"):
                             continue
                         collected.append(self._parse_note(note, issue_number))
 
                     if len(notes) < _COMMENT_PAGE_SIZE:
-                        return self._sorted(collected)
+                        return oldest_first(collected)
         except ProviderCommentError:
             raise
         except Exception as exc:
@@ -504,27 +503,6 @@ class GitLabProvider:
             f"{_COMMENT_MAX_PAGES} pages; narrow the `since` window rather than "
             "accept a truncated thread"
         )
-
-    async def fetch_comments_bulk(
-        self,
-        issue_numbers: list[int],
-        since: datetime | None = None,
-    ) -> dict[int, list[IssueComment]]:
-        """Read many issues' notes.
-
-        GitLab exposes notes only per resource — there is no project-wide notes
-        endpoint to batch against — so this is an explicit per-issue fan-out:
-        one call per issue, and with ``since`` set each of those is a single
-        page thanks to the newest-first ordering above.
-        """
-        return await fanout_comments(
-            self, sorted({int(number) for number in issue_numbers}), since=since
-        )
-
-    @staticmethod
-    def _sorted(comments: list[IssueComment]) -> list[IssueComment]:
-        """Oldest-first, matching the normalised order the protocol promises."""
-        return sorted(comments, key=lambda comment: comment.created_at)
 
     def _parse_note(self, note: dict[str, Any], issue_number: int) -> IssueComment:
         """Parse a GitLab note into the normalised shape."""

@@ -31,6 +31,7 @@ from .protocol import (
     ProviderType,
     ReviewData,
     fanout_comments,
+    oldest_first,
     to_iso_utc,
 )
 
@@ -363,9 +364,7 @@ class GitHubProvider:
         return 0
 
     async def fetch_comments(
-        self,
-        issue_number: int,
-        since: datetime | None = None,
+        self, issue_number: int, since: datetime | None = None
     ) -> list[IssueComment]:
         """Read one issue's comment thread (Factory#375).
 
@@ -379,14 +378,10 @@ class GitHubProvider:
         raw = await self._fetch_comment_pages(
             f"/repos/{self._repo}/issues/{issue_number}/comments", params
         )
-        comments = [self._parse_comment(item, issue_number) for item in raw]
-        comments.sort(key=lambda comment: comment.created_at)
-        return comments
+        return oldest_first([self._parse_comment(item, issue_number) for item in raw])
 
     async def fetch_comments_bulk(
-        self,
-        issue_numbers: list[int],
-        since: datetime | None = None,
+        self, issue_numbers: list[int], since: datetime | None = None
     ) -> dict[int, list[IssueComment]]:
         """Read many issues' threads, using GitHub's repository-wide endpoint.
 
@@ -417,9 +412,7 @@ class GitHubProvider:
             number = self._issue_number_from_url(item.get("issue_url", ""))
             if number in grouped:
                 grouped[number].append(self._parse_comment(item, number))
-        for comments in grouped.values():
-            comments.sort(key=lambda comment: comment.created_at)
-        return grouped
+        return {number: oldest_first(comments) for number, comments in grouped.items()}
 
     async def _fetch_comment_pages(
         self, path: str, params: dict[str, str]

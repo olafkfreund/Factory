@@ -25,7 +25,8 @@ from .protocol import (
     ProviderCommentError,
     ProviderType,
     ReviewData,
-    fanout_comments,
+    FanoutCommentsMixin,
+    oldest_first,
     to_utc,
 )
 
@@ -41,7 +42,7 @@ _COMMENT_API_VERSION = "7.1-preview.4"
 
 
 @dataclass
-class AzureDevOpsProvider:
+class AzureDevOpsProvider(FanoutCommentsMixin):
     """
     Azure DevOps implementation of the GitProvider protocol.
     Works with dev.azure.com.
@@ -436,9 +437,7 @@ class AzureDevOpsProvider:
             return resp_wi.json()["id"]
 
     async def fetch_comments(
-        self,
-        issue_number: int,
-        since: datetime | None = None,
+        self, issue_number: int, since: datetime | None = None
     ) -> list[IssueComment]:
         """Read a work item's comment thread (Factory#375).
 
@@ -475,12 +474,12 @@ class AzureDevOpsProvider:
                             comment.get("modifiedDate") or comment.get("createdDate")
                         )
                         if cutoff is not None and to_utc(updated) <= cutoff:
-                            return self._sorted(collected)
+                            return oldest_first(collected)
                         collected.append(self._parse_comment(comment, issue_number))
 
                     token = payload.get("continuationToken")
                     if not token:
-                        return self._sorted(collected)
+                        return oldest_first(collected)
         except ProviderCommentError:
             raise
         except Exception as exc:
@@ -493,26 +492,6 @@ class AzureDevOpsProvider:
             f"{_COMMENT_MAX_PAGES} pages; narrow the `since` window rather than "
             "accept a truncated thread"
         )
-
-    async def fetch_comments_bulk(
-        self,
-        issue_numbers: list[int],
-        since: datetime | None = None,
-    ) -> dict[int, list[IssueComment]]:
-        """Read many work items' threads.
-
-        ADO has no batch comments endpoint — ``workitemsbatch`` expands fields,
-        relations and links but not comments — so this is an explicit per-item
-        fan-out of one call each, single-paged when ``since`` is set.
-        """
-        return await fanout_comments(
-            self, sorted({int(number) for number in issue_numbers}), since=since
-        )
-
-    @staticmethod
-    def _sorted(comments: list[IssueComment]) -> list[IssueComment]:
-        """Oldest-first, matching the normalised order the protocol promises."""
-        return sorted(comments, key=lambda comment: comment.created_at)
 
     def _parse_comment(self, comment: dict[str, Any], issue_number: int) -> IssueComment:
         """Parse an ADO work item comment into the normalised shape."""
