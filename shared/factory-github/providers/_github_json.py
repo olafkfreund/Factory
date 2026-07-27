@@ -32,10 +32,11 @@ not semantic.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from .protocol import IssueComment, ProviderType
+from .protocol import IssueComment, ProviderCommentError, ProviderType
 
 # GitHub caps both the issue and the comment endpoints at 100 per page.
 PAGE_SIZE = 100
@@ -95,3 +96,49 @@ def milestone_title(milestone: Any) -> str | None:
         title = milestone.get("title")
         return title if isinstance(title, str) else None
     return milestone if isinstance(milestone, str) else None
+
+
+async def collect_comment_pages(
+    fetch_page: Callable[[int], Awaitable[Any]],
+    path: str,
+) -> list[dict[str, Any]]:
+    """Page a GitHub comments endpoint to completion, or FAIL — never truncate.
+
+    Shared by both providers (Factory#370). They differ only in transport —
+    ``gh api`` versus httpx — so ``fetch_page`` takes a 1-based page number and
+    returns the decoded body; everything about *when to stop* and *what counts
+    as a failure* lives here, once.
+
+    That policy is the part worth having in one place:
+
+    * a short page ends the walk (fewer than ``PAGE_SIZE`` items means the last
+      one);
+    * a non-list body is an error, not an empty result;
+    * exhausting ``COMMENT_MAX_PAGES`` is an error too.
+
+    The last two matter because **a truncated thread stored as a whole one is
+    indistinguishable from a short one**. Returning what was collected so far
+    would silently corrupt the caller's copy; raising lets it keep the complete
+    copy it already had.
+    """
+    collected: list[dict[str, Any]] = []
+    for page in range(1, COMMENT_MAX_PAGES + 1):
+        try:
+            batch = await fetch_page(page)
+        except ProviderCommentError:
+            raise
+        except Exception as exc:
+            raise ProviderCommentError(
+                f"GitHub comment read failed for {path} (page {page}): {exc}"
+            ) from exc
+        if not isinstance(batch, list):
+            raise ProviderCommentError(
+                f"GitHub returned a non-list comment page for {path}: {type(batch).__name__}"
+            )
+        collected.extend(item for item in batch if isinstance(item, dict))
+        if len(batch) < PAGE_SIZE:
+            return collected
+    raise ProviderCommentError(
+        f"GitHub comment read for {path} exceeded {COMMENT_MAX_PAGES} pages; "
+        "narrow the `since` window rather than accept a truncated thread"
+    )

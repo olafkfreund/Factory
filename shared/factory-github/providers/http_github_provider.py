@@ -62,7 +62,7 @@ from typing import Any
 import httpx
 
 from ._github_json import (
-    COMMENT_MAX_PAGES as _COMMENT_MAX_PAGES,
+    collect_comment_pages as _collect_comment_pages,
 )
 from ._github_json import (
     PAGE_SIZE as _GITHUB_PAGE_SIZE,
@@ -257,37 +257,17 @@ class HttpGitHubProvider:
         return {number: oldest_first(comments) for number, comments in grouped.items()}
 
     async def _comment_pages(self, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-        """Page through a comments endpoint, or FAIL — never truncate.
+        """Transport half of the shared comment walk — see providers/_github_json.py."""
 
-        A truncated thread stored as a whole one is indistinguishable from a short
-        one, so every failure mode raises :class:`ProviderCommentError` and the
-        caller keeps whatever complete copy it already had.
-        """
-        collected: list[dict[str, Any]] = []
-        async with self._client() as client:
-            for page in range(1, _COMMENT_MAX_PAGES + 1):
-                try:
-                    resp = await client.get(
-                        path, params={**params, "per_page": _GITHUB_PAGE_SIZE, "page": page}
-                    )
-                    resp.raise_for_status()
-                    batch = resp.json()
-                except Exception as exc:
-                    raise ProviderCommentError(
-                        f"GitHub comment read failed for {path} (page {page}): {exc}"
-                    ) from exc
-                if not isinstance(batch, list):
-                    raise ProviderCommentError(
-                        f"GitHub returned a non-list comment page for {path}: "
-                        f"{type(batch).__name__}"
-                    )
-                collected.extend(item for item in batch if isinstance(item, dict))
-                if len(batch) < _GITHUB_PAGE_SIZE:
-                    return collected
-        raise ProviderCommentError(
-            f"GitHub comment read for {path} exceeded {_COMMENT_MAX_PAGES} pages; "
-            "narrow the `since` window rather than accept a truncated thread"
-        )
+        async def fetch_page(page: int) -> Any:
+            async with self._client() as client:
+                resp = await client.get(
+                    path, params={**params, "per_page": _GITHUB_PAGE_SIZE, "page": page}
+                )
+                resp.raise_for_status()
+                return resp.json()
+
+        return await _collect_comment_pages(fetch_page, path)
 
     # ── repository ───────────────────────────────────────────────────────────
 

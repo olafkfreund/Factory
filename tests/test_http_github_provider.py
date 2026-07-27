@@ -215,3 +215,54 @@ async def test_the_vcs_half_says_which_provider_to_use_instead():
 def test_it_still_reports_itself_as_github():
     """Callers switch on provider_type; a second GitHub class must not look new."""
     assert HttpGitHubProvider(_repo=_REPO).provider_type is ProviderType.GITHUB
+
+
+# ── the shared comment walk (providers/_github_json.collect_comment_pages) ────
+
+
+@pytest.mark.asyncio
+async def test_comment_paging_walks_every_page():
+    pages = {
+        1: [{"id": n, "user": {"login": "a"}, "issue_url": ".../1"} for n in range(100)],
+        2: [{"id": 100, "user": {"login": "a"}, "issue_url": ".../1"}],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=pages.get(int(request.url.params.get("page", 1)), []))
+
+    provider = HttpGitHubProvider(
+        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
+    )
+    comments = await provider.fetch_comments(1)
+
+    assert len(comments) == 101
+
+
+@pytest.mark.asyncio
+async def test_a_non_list_comment_page_raises_rather_than_truncating():
+    """MUTATION GUARD: a truncated thread stored as a whole one is
+    indistinguishable from a short one, so this must never return partial data."""
+    from providers.protocol import ProviderCommentError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": "not a list"})
+
+    provider = HttpGitHubProvider(
+        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
+    )
+    with pytest.raises(ProviderCommentError, match="non-list"):
+        await provider.fetch_comments(1)
+
+
+@pytest.mark.asyncio
+async def test_a_failing_comment_page_raises_rather_than_truncating():
+    from providers.protocol import ProviderCommentError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"message": "boom"})
+
+    provider = HttpGitHubProvider(
+        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
+    )
+    with pytest.raises(ProviderCommentError, match="comment read failed"):
+        await provider.fetch_comments(1)

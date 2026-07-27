@@ -24,6 +24,9 @@ from ._github_json import (
     COMMENT_MAX_PAGES as _SHARED_COMMENT_MAX_PAGES,
 )
 from ._github_json import (
+    collect_comment_pages as _collect_comment_pages,
+)
+from ._github_json import (
     issue_number_from_url as _shared_issue_number_from_url,
 )
 from ._github_json import (
@@ -429,36 +432,16 @@ class GitHubProvider:
     async def _fetch_comment_pages(
         self, path: str, params: dict[str, str]
     ) -> list[dict[str, Any]]:
-        """Page through a GitHub comments endpoint, or fail — never truncate."""
-        collected: list[dict[str, Any]] = []
-        for page in range(1, _COMMENT_MAX_PAGES + 1):
-            query = urlencode(
-                {**params, "per_page": str(_COMMENT_PAGE_SIZE), "page": str(page)}
-            )
-            try:
-                # The query string is built into the endpoint rather than passed
-                # as `params`: GHClient.api_get renders those as `gh api -f k=v`,
-                # and gh switches the request method to POST as soon as any field
-                # is present.
-                batch = await self._gh_client.api_get(f"{path}?{query}")
-            except Exception as exc:
-                raise ProviderCommentError(
-                    f"GitHub comment read failed for {path} (page {page}): {exc}"
-                ) from exc
+        """Transport half of the shared comment walk — see providers/_github_json.py."""
 
-            if not isinstance(batch, list):
-                raise ProviderCommentError(
-                    f"GitHub returned a non-list comment page for {path}: {type(batch).__name__}"
-                )
+        async def fetch_page(page: int) -> Any:
+            query = urlencode({**params, "per_page": str(_COMMENT_PAGE_SIZE), "page": str(page)})
+            # The query string is built into the endpoint rather than passed as
+            # `params`: GHClient.api_get renders those as `gh api -f k=v`, and gh
+            # switches the request method to POST as soon as any field is present.
+            return await self._gh_client.api_get(f"{path}?{query}")
 
-            collected.extend(batch)
-            if len(batch) < _COMMENT_PAGE_SIZE:
-                return collected
-
-        raise ProviderCommentError(
-            f"GitHub comment read for {path} exceeded {_COMMENT_MAX_PAGES} pages; "
-            "narrow the `since` window rather than accept a truncated thread"
-        )
+        return await _collect_comment_pages(fetch_page, path)
 
     @staticmethod
     def _issue_number_from_url(url: str) -> int | None:
