@@ -6,14 +6,56 @@ permalink: /rfc/earned-memory-and-promotion-gates/
 
 # RFC-0021 — Earned Memory and Promotion Gates
 
-> **Status:** Proposed · **Created:** 2026-07-27 · **Owner:** AIFactory (memory subsystem; PFactory and TFactory vendor the same tree) ·
+> **Status:** Proposed — **§1 CORRECTED 2026-07-27, see §0** · **Created:** 2026-07-27 · **Owner:** AIFactory (memory subsystem; PFactory and TFactory vendor the same tree) ·
 > **Extends:**
 > [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (code-aware planning — memory is what makes the second pass over a codebase cheaper than the first),
 > [RFC-0012](./0012-external-knowledge-grounding.md) (external grounding — this is the *internal* counterpart: what the fleet learned by doing, rather than what it read),
 > [RFC-0014](./0014-cost-aware-model-and-runtime-routing.md) (cost routing — retrieval quality is a token-cost lever) ·
 > **Affects:** `apps/backend/memory/` and `apps/backend/analysis/insight_extractor.py` in AIFactory, PFactory and TFactory. No task-contract change. No new external dependency in Phase 1.
 
-## 1. Motivation
+## 0. Correction — the premise below was wrong
+
+**Added 2026-07-27, the same day this RFC merged.** Going to record the baseline
+§6 demands, I found there was nothing to measure, and why turned out to invert
+the argument. AIFactory#1030 carries the defect; this section stays so the record
+shows what was claimed and what was true.
+
+§1 asserts *"the problem is not that nothing is remembered — it is that everything
+is."* **That is backwards. Almost nothing is remembered.**
+
+On the live cluster:
+
+- **8** session-insight files exist, and **all 8 sit inside a per-task worktree**
+  (`worktrees/tasks/035-…/.aifactory/specs/034-…/memory/session_insights/`).
+  Memory for spec 034 is written inside the worktree for task 035.
+- `agents/utils.py sync_plan_to_source()` copies **`implementation_plan.json`
+  only**. `memory/` is never synced back, so it dies with the worktree and the
+  next task starts blind.
+- There are **zero `gotchas.md` or `patterns.md` files anywhere**.
+- There are **no `GRAPHITI_*` variables in the running pod**, so the
+  knowledge-graph path is disabled in production.
+
+**§1.1's example is dead code.** The exact-string dedup in `memory/patterns.py`
+is real, and `append_gotcha` appears to have 14 callers per repo — but every one
+is a package re-export or a **usage example inside `memory/main.py`'s module
+docstring**. There are no real call sites. A grep count was taken as a usage
+count.
+
+So of three memory mechanisms, one is dead code, one is disabled, and the live
+one writes somewhere that is thrown away.
+
+**What survives.** The promotion-gate design in §2–§3 is still the right shape,
+and §1.4's reasoning about token cost still applies — *once memory accumulates*.
+It does not today. A novelty filter, a cap and an expiry policy all presuppose a
+store that grows; ours does not. So every phase in §5 now sits behind a new
+Phase 0: **make memory survive a task** (AIFactory#1030).
+
+**What this vindicates.** §6 insists the acceptance criteria are measurements
+rather than assertions. That is what caught this. Had the novelty gate been built
+on the strength of §1, it would have passed its tests, changed nothing, and
+hidden a correctness bug behind a plausible improvement.
+
+## 1. Motivation (as originally written — see §0)
 
 The fleet already has a memory subsystem, and it already extracts insights with
 an LLM after every session (`analysis/insight_extractor.py` → Graphiti /
