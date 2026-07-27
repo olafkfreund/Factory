@@ -20,6 +20,18 @@ try:
 except (ImportError, ValueError, SystemError):
     from gh_client import GHClient
 
+from ._github_json import (
+    COMMENT_MAX_PAGES as _SHARED_COMMENT_MAX_PAGES,
+)
+from ._github_json import (
+    issue_number_from_url as _shared_issue_number_from_url,
+)
+from ._github_json import (
+    parse_comment as _shared_parse_comment,
+)
+from ._github_json import (
+    parse_datetime as _shared_parse_datetime,
+)
 from .protocol import (
     IssueComment,
     IssueData,
@@ -39,7 +51,7 @@ from .protocol import (
 # repository-wide fetch (50 x 100 = 5000 comments) rather than paging forever
 # against an unknown history size; hitting it is an error, not a truncation.
 _COMMENT_PAGE_SIZE = 100
-_COMMENT_MAX_PAGES = 50
+_COMMENT_MAX_PAGES = _SHARED_COMMENT_MAX_PAGES
 
 
 @dataclass
@@ -450,26 +462,12 @@ class GitHubProvider:
 
     @staticmethod
     def _issue_number_from_url(url: str) -> int | None:
-        """Recover the issue number from a comment's ``issue_url``."""
-        tail = (url or "").rstrip("/").rsplit("/", 1)[-1]
-        return int(tail) if tail.isdigit() else None
+        """Shared with the REST provider — see providers/_github_json.py."""
+        return _shared_issue_number_from_url(url)
 
     def _parse_comment(self, data: dict[str, Any], issue_number: int) -> IssueComment:
-        """Parse a GitHub issue comment into the normalised shape."""
-        user = data.get("user") or {}
-        author = user.get("login", "") if isinstance(user, dict) else str(user)
-        created = data.get("created_at")
-        return IssueComment(
-            id=str(data.get("id", "")),
-            issue_number=issue_number,
-            author=author,
-            body=data.get("body") or "",
-            created_at=self._parse_datetime(created),
-            updated_at=self._parse_datetime(data.get("updated_at") or created),
-            url=data.get("html_url") or "",
-            provider=ProviderType.GITHUB,
-            raw_data=data,
-        )
+        """Shared with the REST provider — ``gh api`` returns this payload verbatim."""
+        return _shared_parse_comment(data, issue_number)
 
     # The Copilot Coding Agent's bot login on GitHub.
     # Verified via GraphQL suggestedActors(capabilities: [CAN_BE_ASSIGNED]).
@@ -785,9 +783,8 @@ class GitHubProvider:
         )
 
     def _parse_datetime(self, dt_str: str | None) -> datetime:
-        """Parse ISO datetime string."""
-        if not dt_str:
-            return datetime.now(UTC)
+        """Shared with the REST provider — see providers/_github_json.py."""
+        return _shared_parse_datetime(dt_str)
         try:
             return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
         except (ValueError, AttributeError):

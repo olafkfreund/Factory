@@ -61,6 +61,24 @@ from typing import Any
 
 import httpx
 
+from ._github_json import (
+    COMMENT_MAX_PAGES as _COMMENT_MAX_PAGES,
+)
+from ._github_json import (
+    PAGE_SIZE as _GITHUB_PAGE_SIZE,
+)
+from ._github_json import (
+    issue_number_from_url as _issue_number_from_url,
+)
+from ._github_json import (
+    milestone_title as _milestone_title,
+)
+from ._github_json import (
+    parse_comment as _shared_parse_comment,
+)
+from ._github_json import (
+    parse_datetime as _parse_datetime,
+)
 from .protocol import (
     IssueComment,
     IssueData,
@@ -72,14 +90,6 @@ from .protocol import (
 )
 
 _TIMEOUT_SECONDS = 10.0
-
-# GitHub caps a page at 100 on both the issue and comment endpoints.
-_GITHUB_PAGE_SIZE = 100
-
-# The page cap bounds a repository-wide comment fetch (50 x 100 = 5000) rather
-# than paging forever against an unknown history size. Hitting it is an ERROR,
-# never a silent truncation — see :meth:`_comment_pages`.
-_COMMENT_MAX_PAGES = 50
 
 
 @dataclass
@@ -360,47 +370,8 @@ class HttpGitHubProvider:
         )
 
     def _parse_comment(self, data: dict[str, Any], issue_number: int) -> IssueComment:
-        """GitHub's comment JSON as the provider-neutral :class:`IssueComment`."""
-        user = data.get("user")
-        author = user.get("login", "") if isinstance(user, dict) else str(user or "")
-        created = data.get("created_at")
-        return IssueComment(
-            id=str(data.get("id", "")),
-            issue_number=issue_number,
-            author=author,
-            body=data.get("body") or "",
-            created_at=_parse_datetime(created),
-            updated_at=_parse_datetime(data.get("updated_at") or created),
-            url=data.get("html_url") or "",
-            provider=ProviderType.GITHUB,
-            raw_data=data,
-        )
+        """Shared with the gh-CLI provider — ``gh api`` returns this payload verbatim."""
+        return _shared_parse_comment(data, issue_number)
 
 
-def _issue_number_from_url(url: str) -> int | None:
-    """Recover the issue number from a comment's ``issue_url``.
 
-    The repository-wide comments endpoint does not carry the issue number as a
-    field; the only link back is the URL it was made against.
-    """
-    tail = (url or "").rstrip("/").rsplit("/", 1)[-1]
-    return int(tail) if tail.isdigit() else None
-
-
-def _milestone_title(milestone: Any) -> str | None:
-    """GitHub's milestone object as the title a caller stores."""
-    if isinstance(milestone, dict):
-        title = milestone.get("title")
-        return title if isinstance(title, str) else None
-    return milestone if isinstance(milestone, str) else None
-
-
-def _parse_datetime(value: Any) -> datetime:
-    """Tolerant parse, matching the other providers: a missing or odd timestamp
-    is not worth failing a sync over."""
-    if not isinstance(value, str):
-        return datetime.now(UTC)
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return datetime.now(UTC)
