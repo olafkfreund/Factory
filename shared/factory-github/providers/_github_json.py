@@ -36,7 +36,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from .protocol import IssueComment, ProviderCommentError, ProviderType
+from .protocol import IssueComment, ProviderCommentError, ProviderType, oldest_first
 
 # GitHub caps both the issue and the comment endpoints at 100 per page.
 PAGE_SIZE = 100
@@ -142,3 +142,35 @@ async def collect_comment_pages(
         f"GitHub comment read for {path} exceeded {COMMENT_MAX_PAGES} pages; "
         "narrow the `since` window rather than accept a truncated thread"
     )
+
+
+def group_bulk_comments(
+    raw: list[dict[str, Any]], wanted: list[int]
+) -> dict[int, list[IssueComment]]:
+    """Fan a repository-wide comment stream back out per issue (Factory#370).
+
+    ``GET /repos/{repo}/issues/comments`` returns every issue comment in the
+    repository in one paginated stream and honours ``since`` server-side. That
+    is what makes an incremental poll affordable — one call covers a whole board
+    instead of one call per card — and it is why both providers have a bulk
+    method rather than a loop at the call site.
+
+    The stream answers for issues the caller does not track, and for pull-request
+    comments, which share the endpoint. Those are DROPPED rather than stored
+    against nothing: ``wanted`` is the caller's list, and an issue in it with no
+    comments must still come back as an empty list, or the caller cannot tell
+    "no comments" from "not asked about".
+
+    Note what is NOT here: the ``since is None`` case. Without a window to narrow,
+    the repository-wide stream would page over the project's entire comment
+    history to answer a question about a handful of issues, so each provider
+    fans out per issue instead — bounded by the caller's list rather than by the
+    size of the repository. That fan-out is transport-specific, so it stays with
+    each provider.
+    """
+    grouped: dict[int, list[IssueComment]] = {number: [] for number in wanted}
+    for item in raw:
+        number = issue_number_from_url(item.get("issue_url", ""))
+        if number in grouped:
+            grouped[number].append(parse_comment(item, number))
+    return {number: oldest_first(comments) for number, comments in grouped.items()}

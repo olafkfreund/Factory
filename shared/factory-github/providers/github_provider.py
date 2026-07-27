@@ -27,6 +27,9 @@ from ._github_json import (
     collect_comment_pages as _collect_comment_pages,
 )
 from ._github_json import (
+    group_bulk_comments as _group_bulk_comments,
+)
+from ._github_json import (
     issue_number_from_url as _shared_issue_number_from_url,
 )
 from ._github_json import (
@@ -398,36 +401,17 @@ class GitHubProvider:
     async def fetch_comments_bulk(
         self, issue_numbers: list[int], since: datetime | None = None
     ) -> dict[int, list[IssueComment]]:
-        """Read many issues' threads, using GitHub's repository-wide endpoint.
-
-        ``GET /repos/{repo}/issues/comments`` returns every issue comment in the
-        repository in one paginated stream and honours ``since`` server-side.
-        That is the bulk path the protocol asks for, and it is what makes the
-        incremental poll affordable: one call covers all 46 cards instead of 46.
-
-        Without ``since`` there is no window to narrow, so the repository-wide
-        stream would page over the project's entire comment history to answer a
-        question about a handful of issues. The cold backfill therefore fans out
-        per issue instead — ``len(issue_numbers)`` calls, bounded by the caller's
-        own list and independent of how big the repository is.
-        """
+        """Bulk read over ``gh api``. Grouping and the rationale: ``_github_json``."""
         wanted = sorted({int(number) for number in issue_numbers})
         if not wanted:
             return {}
         if since is None:
             return await fanout_comments(self, wanted, since=None)
-
         raw = await self._fetch_comment_pages(
             f"/repos/{self._repo}/issues/comments",
             {"since": to_iso_utc(since), "sort": "updated", "direction": "asc"},
         )
-
-        grouped: dict[int, list[IssueComment]] = {number: [] for number in wanted}
-        for item in raw:
-            number = self._issue_number_from_url(item.get("issue_url", ""))
-            if number in grouped:
-                grouped[number].append(self._parse_comment(item, number))
-        return {number: oldest_first(comments) for number, comments in grouped.items()}
+        return _group_bulk_comments(raw, wanted)
 
     async def _fetch_comment_pages(
         self, path: str, params: dict[str, str]

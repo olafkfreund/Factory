@@ -65,6 +65,9 @@ from ._github_json import (
     collect_comment_pages as _collect_comment_pages,
 )
 from ._github_json import (
+    group_bulk_comments as _group_bulk_comments,
+)
+from ._github_json import (
     PAGE_SIZE as _GITHUB_PAGE_SIZE,
 )
 from ._github_json import (
@@ -222,39 +225,17 @@ class HttpGitHubProvider:
     async def fetch_comments_bulk(
         self, issue_numbers: list[int], since: datetime | None = None
     ) -> dict[int, list[IssueComment]]:
-        """Read MANY issues' threads in one call where possible.
-
-        ``GET /repos/{repo}/issues/comments`` streams every issue comment in the
-        repository and honours ``since`` server-side, so one request answers a
-        whole board: a 55-card refresh costs ONE call, not 55. That is what makes
-        storing comments affordable, and why this method exists rather than a
-        loop at the call site.
-
-        Without ``since`` there is no window to narrow, so the repository-wide
-        stream would page over the entire comment history to answer a question
-        about a handful of issues. A cold backfill therefore fans out per issue —
-        ``len(issue_numbers)`` calls, bounded by the caller's list rather than by
-        the size of the repository.
-        """
+        """Bulk read over REST. Grouping and the rationale: ``_github_json``."""
         wanted = sorted({int(number) for number in issue_numbers})
         if not wanted:
             return {}
         if since is None:
             return {number: await self.fetch_comments(number, since=None) for number in wanted}
-
         raw = await self._comment_pages(
             f"/repos/{self._repo}/issues/comments",
             {"since": to_iso_utc(since), "sort": "updated", "direction": "asc"},
         )
-        grouped: dict[int, list[IssueComment]] = {number: [] for number in wanted}
-        for item in raw:
-            number = _issue_number_from_url(item.get("issue_url", ""))
-            # A repository-wide read answers for issues the caller does not track
-            # (and for PR comments, which share the endpoint); drop rather than
-            # store against nothing.
-            if number in grouped:
-                grouped[number].append(self._parse_comment(item, number))
-        return {number: oldest_first(comments) for number, comments in grouped.items()}
+        return _group_bulk_comments(raw, wanted)
 
     async def _comment_pages(self, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Transport half of the shared comment walk — see providers/_github_json.py."""
