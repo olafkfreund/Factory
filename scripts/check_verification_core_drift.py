@@ -67,11 +67,17 @@ from pathlib import Path
 # as they live, flat, in the hub's scripts/ directory.
 CANONICAL_MODULES: tuple[str, ...] = (
     "verification_gate.py",
-    "verification_profiles.py",
-    "verification_runner.py",
     "factory_sandbox.py",
     "nix_provisioner.py",
 )
+# Removed 2026-07-28 (Factory#401): verification_profiles.py (397L) and
+# verification_runner.py (120L) were listed here but mapped by NO service, so
+# nothing vendored them and the gate never compared them anywhere. Declaring a
+# module canonical when it is shared with nobody is not governance, it is
+# paperwork - and it inflated the "OK: matches (N modules)" count with modules
+# that were never checked. The files still live in scripts/; they are simply no
+# longer claimed to be a vendored contract. _unmapped_modules() below now makes
+# this state impossible to reach again silently.
 
 # Per-service vendored layout: which canonical modules each service hand-vendors,
 # and the path (relative to that service's repo root) where its copy lives. The
@@ -80,7 +86,12 @@ CANONICAL_MODULES: tuple[str, ...] = (
 # canonical module simply means that service does not vendor it (and so it is not
 # checked there) — only divergence of a *vendored* copy is drift.
 SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
-    "pfactory": {},
+    # No "pfactory" entry (removed 2026-07-28, Factory#401): PFactory has no
+    # workflow that invokes this gate and vendors none of these modules, so the
+    # empty dict was dead config whose only effect was printing
+    # "OK: pfactory vendors no verification-core modules" - a service that was
+    # never checked was indistinguishable from one that passed. An unknown
+    # service now exits 2 (loud) instead of 0 (falsely reassuring).
     "aifactory": {
         "factory_sandbox.py": "apps/backend/core/factory_sandbox.py",
         "nix_provisioner.py": "apps/backend/core/nix_provisioner.py",
@@ -105,6 +116,12 @@ def _emit(message: str) -> None:
     print(message)  # noqa: T201
 
 
+def _unmapped_modules() -> list[str]:
+    """Canonical modules that no service in SERVICE_LAYOUTS vendors."""
+    mapped = {module for layout in SERVICE_LAYOUTS.values() for module in layout}
+    return [m for m in CANONICAL_MODULES if m not in mapped]
+
+
 def check_drift(
     canonical_root: Path,
     service_root: Path,
@@ -116,8 +133,21 @@ def check_drift(
     *layout*, the file under *service_root* must exist and match the canonical
     module under *canonical_root* byte-for-byte. Modules the service does not
     vendor (absent from *layout*) are not checked.
+
+    Checked FIRST: that every canonical module is vendored by SOMEONE. This is
+    the inverse of the factory-github gate's guard (Factory#397). There, the
+    canonical is a dedicated directory, so the risk is a canonical file the
+    contract omits. Here the canonical root is the hub's scripts/ - a directory
+    of ~25 unrelated tools - so "every file must be listed" would be nonsense.
+    The equivalent rot is a module DECLARED canonical that no service maps: it is
+    unchecked by definition, and it silently inflates the count the gate reports
+    as OK.
     """
-    problems: list[str] = []
+    problems: list[str] = [
+        f"{module}: listed in CANONICAL_MODULES but vendored by no service — "
+        "nothing compares it anywhere, so declaring it canonical is unenforced"
+        for module in _unmapped_modules()
+    ]
     for module, rel_path in layout.items():
         canonical_file = canonical_root / module
         service_file = service_root / rel_path
