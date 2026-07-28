@@ -58,7 +58,7 @@ from pathlib import Path
 # meant to be copied wholesale into each product repo, NOT imported here). Those
 # per-product copies are deliberate, non-extractable duplication that only added
 # jscpd noise; excluding them lowers the real-code clone count from 75 to 39.
-CLONE_BUDGET = 39
+CLONE_BUDGET = 38
 
 _DEFAULT_REPORT = Path(__file__).resolve().parent.parent / "reports/jscpd/jscpd-report.json"
 

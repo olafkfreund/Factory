@@ -9,16 +9,13 @@ against the real checked-in canonical modules under ``scripts/``.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+# scripts/ is put on sys.path by tests/conftest.py.
+import check_verification_core_drift as gate
 import pytest
 
-# The gate lives in <repo>/scripts/.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO_ROOT / "scripts"))
-
-import check_verification_core_drift as gate  # noqa: E402
 
 _LAYOUT = {
     "verification_gate.py": "apps/backend/agents/verification_gate.py",
