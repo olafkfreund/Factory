@@ -42,9 +42,13 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from collections import Counter
 from pathlib import Path
+
+# Canonical shared ratchet rules, vendored byte-exact from the hub and
+# drift-gated (Factory#403). scripts/ is sys.path[0] when this runs as a
+# script, so the sibling import resolves without packaging.
+from ratchet_helpers import MYPY_TEST_RELAX, is_test_file, write_temp
 
 PACKAGE_DEFAULT = "scripts"
 
@@ -81,22 +85,9 @@ def changed_python_files(base: str, package: str) -> list[str]:
     return out
 
 
-def _write_temp(source: str, filename: str) -> tuple[str, str]:
-    """Write *source* under the REAL basename inside a fresh temp dir.
-
-    A random-prefixed name (the old NamedTemporaryFile suffix trick) defeats
-    per-file-ignores like `**/test_*.py`, so test files were held to the
-    non-test bar. Returns (tmpdir, tmp) for the caller to clean up.
-    """
-    tmpdir = tempfile.mkdtemp()
-    tmp = str(Path(tmpdir) / Path(filename).name)
-    Path(tmp).write_text(source)
-    return tmpdir, tmp
-
-
 def ruff_counts(source: str, filename: str) -> Counter[str]:
     """Per-rule ruff violation counts for *source* checked as *filename*."""
-    tmpdir, tmp = _write_temp(source, filename)
+    tmpdir, tmp = write_temp(source, filename)
     try:
         res = _run(["ruff", "check", "--config", "ruff.toml", "--output-format", "json", tmp])
         if not res.stdout.strip():
@@ -110,23 +101,6 @@ def ruff_counts(source: str, filename: str) -> Counter[str]:
     finally:
         Path(tmp).unlink(missing_ok=True)
         Path(tmpdir).rmdir()
-
-
-def _is_test_file(path: str) -> bool:
-    """Does *path* name a test file, by the same shape ruff per-file-ignores use?
-
-    Kept deliberately in step with the ruff config (`**/test_*.py`,
-    `**/*_test.py`, `**/tests/**`) so one tool cannot treat a file as a test
-    while the other holds it to the production bar.
-    """
-    norm = path.replace("\\", "/")
-    name = norm.rsplit("/", 1)[-1]
-    return (
-        "/tests/" in f"/{norm}"
-        or "/test/" in f"/{norm}"
-        or name.startswith("test_")
-        or name.endswith("_test.py")
-    )
 
 
 def mypy_command(target: str, original: str | None = None) -> list[str]:
@@ -149,8 +123,8 @@ def mypy_command(target: str, original: str | None = None) -> list[str]:
     checks one file at a time.
     """
     relax: list[str] = []
-    if _is_test_file(original if original is not None else target):
-        relax = ["--allow-untyped-defs", "--allow-incomplete-defs"]
+    if is_test_file(original if original is not None else target):
+        relax = list(MYPY_TEST_RELAX)
     return [
         "mypy",
         "--config-file",
@@ -178,7 +152,7 @@ def mypy_count(source: str, filename: str, package: str) -> int:
     was explicitly given, so every error line belongs to this file. Base and
     HEAD are both checked from a temp file so the comparison is symmetric.
     """
-    tmpdir, tmp = _write_temp(source, filename)
+    tmpdir, tmp = write_temp(source, filename)
     try:
         res = _run(mypy_command(tmp, filename), env=_mypy_env(package))
         return sum(1 for line in res.stdout.splitlines() if _MYPY_ERROR_RE.match(line))
