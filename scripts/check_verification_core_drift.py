@@ -117,6 +117,14 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         "artifact_store.py": "apps/backend/core/artifact_store.py",
         "cost_router_core.py": "apps/backend/core/cost_router_core.py",
     },
+    # CFactory vendors exactly one canonical module and nothing else. It was
+    # deliberately left unregistered when ratchet_helpers.py was gated
+    # (Factory#412) because it had no workflow to run this gate, and a service
+    # the hub cannot actually check is the dead config Factory#401 removed.
+    # Registered here together with the workflow that invokes it (CFactory#233).
+    "cfactory": {
+        "ratchet_helpers.py": "scripts/ratchet_helpers.py",
+    },
     "tfactory": {
         "ratchet_helpers.py": "scripts/ratchet_helpers.py",
         "verification_gate.py": "apps/backend/agents/verification_gate.py",
