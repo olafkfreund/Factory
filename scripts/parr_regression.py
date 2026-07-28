@@ -25,7 +25,7 @@ Modes:
 
 Teardown: the smoke probe creates a PFactory plan session, and --full creates an
 AIFactory task. Both are cleaned up best-effort after the run (the AIFactory task
-is DELETEd; the PFactory session is rejected/closed, since PFactory has no
+is DELETEd; the PFactory session is discarded, since PFactory has no
 plan-session DELETE endpoint). Cleanup never fails the gate — a teardown error is
 logged, not raised — so it is safe to point at a live environment.
 Set PARR_NO_TEARDOWN=1 to keep probe artifacts (e.g. to debug a failure).
@@ -140,7 +140,7 @@ def _teardown() -> None:
     """Remove probe artifacts created during the run, best-effort.
 
     A cleanup failure MUST NOT fail the gate, so everything here is swallowed and
-    logged. PFactory has no plan-session DELETE, so its probe session is rejected
+    logged. PFactory has no plan-session DELETE, so its probe session is discarded
     (closed) rather than hard-deleted; the AIFactory task is DELETEd."""
     if os.environ.get("PARR_NO_TEARDOWN"):
         if _CLEANUP:
@@ -190,12 +190,22 @@ def check_pfactory_ingest_shape() -> Seam:
     )
     if code == 200 and (body.get("session_id") or body.get("id")):
         sid = body.get("session_id") or body.get("id")
-        # PFactory has no plan-session DELETE; reject closes the probe session.
+        # PFactory has no plan-session DELETE. Use /discard, NOT /reject:
+        # reject is a post-review verdict and refuses an un-processed session
+        # with 400 "process the plan before rejecting", so every probe session
+        # leaked. Field names differ between the two endpoints as well --
+        # discard wants actor/reason, reject wants approver/feedback -- so the
+        # old call was wrong twice over and 422'd before the 400 could fire.
+        #
+        # This went unnoticed because the whole probe was crashing earlier
+        # (Factory#416); it only became observable once the gate started
+        # running, and the first live run left a stray `ingested` session
+        # behind.
         _register_cleanup(
             "pfactory",
             "POST",
-            f"/api/plan/sessions/{sid}/reject",
-            {"reason": "parr-regression teardown"},
+            f"/api/plan/sessions/{sid}/discard",
+            {"actor": "parr-regression", "reason": "automated seam-probe teardown"},
         )
         return s.passed(f"session={sid}")
     return s.failed(f"ingest-text -> {code}: {str(body)[:160]}")
