@@ -79,6 +79,11 @@ CANONICAL_MODULES: tuple[str, ...] = (
     # touching the workflow in every consumer, tracked separately.
     "artifact_store.py",  # RFC-0016
     "cost_router_core.py",  # RFC-0014
+    # Added 2026-07-28 (Factory#403). The five per-repo lint ratchets had
+    # forked the same three rules; Factory#410 extracted them into a single
+    # canonical module and each service vendors it. Without a gate that is
+    # five copies free to drift again, which is the problem #403 opened on.
+    "ratchet_helpers.py",
 )
 # Removed 2026-07-28 (Factory#401): verification_profiles.py (397L) and
 # verification_runner.py (120L) were listed here but mapped by NO service, so
@@ -101,16 +106,19 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
     # because it DOES vendor two of the shared libraries added in Factory#400 —
     # which is precisely why an empty layout must never read as a pass.
     "pfactory": {
+        "ratchet_helpers.py": "scripts/ratchet_helpers.py",
         "artifact_store.py": "apps/backend/runners/artifact_store.py",
         "cost_router_core.py": "apps/backend/plan/emit/cost_router_core.py",
     },
     "aifactory": {
+        "ratchet_helpers.py": "scripts/ratchet_helpers.py",
         "factory_sandbox.py": "apps/backend/core/factory_sandbox.py",
         "nix_provisioner.py": "apps/backend/core/nix_provisioner.py",
         "artifact_store.py": "apps/backend/core/artifact_store.py",
         "cost_router_core.py": "apps/backend/core/cost_router_core.py",
     },
     "tfactory": {
+        "ratchet_helpers.py": "scripts/ratchet_helpers.py",
         "verification_gate.py": "apps/backend/agents/verification_gate.py",
         "nix_provisioner.py": "apps/backend/tools/runners/nix_provisioner.py",
         "artifact_store.py": "apps/backend/tools/runners/artifact_store.py",
