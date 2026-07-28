@@ -57,6 +57,14 @@ from factory_common.http import (
     bearer_auth,
 )
 
+# HTTP status class boundaries, named so the seam predicates read as intent
+# rather than arithmetic (and so ruff's magic-value rule stays quiet).
+_HTTP_OK = 200
+_HTTP_REDIRECT = 300
+_HTTP_CLIENT_ERROR = 400
+_HTTP_SERVER_ERROR = 500
+_HTTP_NOT_FOUND = 404
+
 DEFAULTS = {
     "pfactory": "https://pfactory.freundcloud.org.uk",
     "aifactory": "https://aifactory.freundcloud.org.uk",
@@ -105,6 +113,19 @@ class Seam:
         self.ok, self.detail = False, detail
         return self
 
+    def skipped(self, detail: str) -> Seam:
+        """Not assertable in this environment. NOT a pass.
+
+        Distinct from both outcomes on purpose. Reporting an unprobeable seam
+        as PASS is what let `cfactory:cockpit-api` claim success for months
+        while measuring Keycloak's login page; reporting it as FAIL forever
+        would train everyone to ignore the gate, which is the same disease.
+        A SKIP is visible in the output, named with its reason, and excluded
+        from the exit code.
+        """
+        self.ok, self.detail = None, detail
+        return self
+
 
 def _call(svc: str, method: str, path: str, body: dict | None = None, timeout: int = 30):
     """JSON request with the Cloudflare-friendly UA + bearer auth + 5xx retry the
@@ -120,6 +141,12 @@ def _call(svc: str, method: str, path: str, body: dict | None = None, timeout: i
         base_url=_endpoint(svc),
         auth=bearer_auth(_token(svc)),
         timeout=timeout,
+        # Do NOT follow redirects. A service behind an OIDC proxy answers an
+        # unauthenticated API call with a 302 to the identity provider, and
+        # following it records the LOGIN PAGE's 200. This probe reported
+        # `cfactory:cockpit-api -> 200` for months while never reaching
+        # CFactory: the 200 was Keycloak's "Sign in to factory" HTML.
+        follow_redirects=False,
     )
     resp = client.request(method, path, body=body)
     return resp.status, resp.json
@@ -167,7 +194,17 @@ def check_health(svc: str) -> Seam:
     s = Seam(f"{svc}:reachable")
     for path in ("/api/health", "/api/healthz", "/health", "/api/projects"):
         code, _ = _call(svc, "GET", path, timeout=15)
-        if code and code < 500 and code != 404:
+        # A 3xx to an identity provider means an auth proxy answered, not the
+        # service. For CFactory that is the CORRECT response to a machine
+        # client -- its ingress is oauth2-proxy in front of Keycloak, and a
+        # challenge proves the ingress is alive and still protecting the app.
+        # Treating it as "reachable" for anything else would hide an auth
+        # proxy accidentally fronting a service that should answer directly.
+        if code and _HTTP_REDIRECT <= code < _HTTP_CLIENT_ERROR:
+            if svc == "cfactory":
+                return s.passed(f"{path} -> {code} (oauth2-proxy challenge, as expected)")
+            return s.failed(f"{path} -> {code} (redirected to an identity provider)")
+        if code and code < _HTTP_SERVER_ERROR and code != _HTTP_NOT_FOUND:
             return s.passed(f"{path} -> {code}")
     return s.failed(f"no healthy endpoint (last code {code})")
 
@@ -229,11 +266,23 @@ def check_cfactory_threading() -> Seam:
     """CFactory's cockpit API answers for work items / events (the observability
     seam — events must land somewhere we can see)."""
     s = Seam("cfactory:cockpit-api")
+    last = 0
     for path in ("/api/workitems", "/api/events", "/api/refresh"):
         code, _ = _call("cfactory", "GET", path, timeout=20)
-        if code and code < 500 and code != 404:
+        # Needs a real 2xx. The old predicate (`< 500 and != 404`) passed on a
+        # 302 to Keycloak, so this seam reported the LOGIN PAGE's 200 and
+        # never reached CFactory at all (Factory#420).
+        if code and _HTTP_OK <= code < _HTTP_REDIRECT:
             return s.passed(f"{path} -> {code}")
-    return s.failed(f"no cockpit endpoint answered (last {code})")
+        last = code
+    if _HTTP_REDIRECT <= last < _HTTP_CLIENT_ERROR:
+        # Not a regression, and not something this probe can fix: CFactory's
+        # ingress is oauth2-proxy, which challenges before the app sees the
+        # request -- an x-api-key header does not get through either. From
+        # outside the cluster the cockpit API is simply not probeable.
+        # SKIPPED, not passed: a green tick here is what hid the problem.
+        return s.skipped("behind oauth2-proxy; not probeable from CI (Factory#420)")
+    return s.failed(f"no cockpit endpoint answered with 2xx (last {last})")
 
 
 # ── Full end-to-end (opt-in) ─────────────────────────────────────────────────
@@ -334,13 +383,21 @@ def main() -> int:
         # Always clean up probe artifacts, even if a seam raised mid-run.
         _teardown()
 
-    failed = [s for s in seams if not s.ok]
+    # `ok is None` means SKIPPED -- neither asserted nor broken, so it must
+    # not colour the exit code in either direction.
+    failed = [s for s in seams if s.ok is False]
+    skipped = [s for s in seams if s.ok is None]
     print("\nPARR cross-service seam regression")
     print("=" * 50)
     for s in seams:
-        mark = "PASS" if s.ok else "FAIL"
+        mark = "SKIP" if s.ok is None else ("PASS" if s.ok else "FAIL")
         print(f"  [{mark}] {s.name:32} {s.detail}")
     print("=" * 50)
+    if skipped:
+        print(  # noqa: T201
+            f"\n{len(skipped)} seam(s) SKIPPED (not assertable here): "
+            + ", ".join(s.name for s in skipped)
+        )
     if failed:
         print(f"\n{len(failed)} seam(s) FAILED: " + ", ".join(s.name for s in failed))
         print("A boundary regressed — this is the bug class unit tests can't see.")

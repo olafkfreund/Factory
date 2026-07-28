@@ -58,7 +58,23 @@ class _Transport:
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, transport: _Transport) -> None:
+    """Stub BOTH request paths.
+
+    A client with ``follow_redirects=False`` (the PARR seam probe, so a 302 to
+    an identity provider is not silently followed to a login page) goes through
+    a custom opener rather than ``urlopen``. Stubbing only ``urlopen`` left
+    those tests hitting the real network.
+    """
     monkeypatch.setattr(urllib.request, "urlopen", transport)
+
+    class _StubOpener:
+        def open(self, req, timeout=None):  # noqa: ANN001, ANN201, ARG002
+            return transport(req, timeout=timeout)
+
+    monkeypatch.setattr(
+        "factory_common.http.HttpClient._no_redirect_opener",
+        lambda _self: _StubOpener(),
+    )
 
 
 def test_parr_call_returns_status_and_json(monkeypatch: pytest.MonkeyPatch) -> None:
