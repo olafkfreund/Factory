@@ -69,6 +69,16 @@ CANONICAL_MODULES: tuple[str, ...] = (
     "verification_gate.py",
     "factory_sandbox.py",
     "nix_provisioner.py",
+    # Added 2026-07-28 (Factory#400). These are not verification-core modules;
+    # they are hub shared libraries that were vendored into 3-4 services with NO
+    # gate of any kind, so nothing detected them diverging and they had. The
+    # mechanism this gate implements — canonical modules living flat in scripts/,
+    # per-service paths, byte-exact — is exactly what they need, and a second
+    # near-identical script would be another fork of the logic Factory#403 is
+    # about. The gate's NAME is now narrower than its job; renaming it means
+    # touching the workflow in every consumer, tracked separately.
+    "artifact_store.py",  # RFC-0016
+    "cost_router_core.py",  # RFC-0014
 )
 # Removed 2026-07-28 (Factory#401): verification_profiles.py (397L) and
 # verification_runner.py (120L) were listed here but mapped by NO service, so
@@ -86,19 +96,24 @@ CANONICAL_MODULES: tuple[str, ...] = (
 # canonical module simply means that service does not vendor it (and so it is not
 # checked there) — only divergence of a *vendored* copy is drift.
 SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
-    # No "pfactory" entry (removed 2026-07-28, Factory#401): PFactory has no
-    # workflow that invokes this gate and vendors none of these modules, so the
-    # empty dict was dead config whose only effect was printing
-    # "OK: pfactory vendors no verification-core modules" - a service that was
-    # never checked was indistinguishable from one that passed. An unknown
-    # service now exits 2 (loud) instead of 0 (falsely reassuring).
+    # PFactory was removed in Factory#401 as dead config (it vendored none of the
+    # verification-core modules and no workflow invoked the gate). It is back
+    # because it DOES vendor two of the shared libraries added in Factory#400 —
+    # which is precisely why an empty layout must never read as a pass.
+    "pfactory": {
+        "artifact_store.py": "apps/backend/runners/artifact_store.py",
+        "cost_router_core.py": "apps/backend/plan/emit/cost_router_core.py",
+    },
     "aifactory": {
         "factory_sandbox.py": "apps/backend/core/factory_sandbox.py",
         "nix_provisioner.py": "apps/backend/core/nix_provisioner.py",
+        "artifact_store.py": "apps/backend/core/artifact_store.py",
+        "cost_router_core.py": "apps/backend/core/cost_router_core.py",
     },
     "tfactory": {
         "verification_gate.py": "apps/backend/agents/verification_gate.py",
         "nix_provisioner.py": "apps/backend/tools/runners/nix_provisioner.py",
+        "artifact_store.py": "apps/backend/tools/runners/artifact_store.py",
     },
 }
 
