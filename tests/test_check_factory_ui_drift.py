@@ -9,14 +9,12 @@ checked-in canonical components under ``shared/factory-ui/``.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-# The gate lives in <repo>/scripts/.
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+# scripts/ is put on sys.path by tests/conftest.py.
+import check_factory_ui_drift as gate
 
-import check_factory_ui_drift as gate  # noqa: E402
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _make_canonical(root: Path) -> Path:

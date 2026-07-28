@@ -9,16 +9,13 @@ checked-in canonical tree at ``shared/factory-github/``.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+# scripts/ is put on sys.path by tests/conftest.py.
+import check_factory_github_drift as gate
 import pytest
 
-# The gate lives in <repo>/scripts/.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO_ROOT / "scripts"))
-
-import check_factory_github_drift as gate  # noqa: E402
 
 
 def _make_canonical(root: Path) -> Path:

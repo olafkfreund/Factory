@@ -112,7 +112,24 @@ def ruff_counts(source: str, filename: str) -> Counter[str]:
         Path(tmpdir).rmdir()
 
 
-def mypy_command(target: str) -> list[str]:
+def _is_test_file(path: str) -> bool:
+    """Does *path* name a test file, by the same shape ruff per-file-ignores use?
+
+    Kept deliberately in step with the ruff config (`**/test_*.py`,
+    `**/*_test.py`, `**/tests/**`) so one tool cannot treat a file as a test
+    while the other holds it to the production bar.
+    """
+    norm = path.replace("\\", "/")
+    name = norm.rsplit("/", 1)[-1]
+    return (
+        "/tests/" in f"/{norm}"
+        or "/test/" in f"/{norm}"
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+    )
+
+
+def mypy_command(target: str, original: str | None = None) -> list[str]:
     """The mypy invocation used for both the base and HEAD version of a file.
 
     ``--follow-imports=silent`` keeps mypy from reporting errors in imported
@@ -120,7 +137,20 @@ def mypy_command(target: str) -> list[str]:
     ``--ignore-missing-imports`` stops third-party stub gaps (and the base
     version's temp-file location) from inflating the count - the strict bar
     still applies to the file's own annotations.
+
+    For TEST files the untyped-def bar is relaxed (Factory#403). The shared
+    ``standards/mypy.ini`` cannot express this: mypy per-module sections need
+    dotted package paths, and a bare ``[mypy-test_*]`` (or even ``[mypy-*]``)
+    silently does not match a top-level test module - measured, it left the
+    error count unchanged. The ratchet knows which file it is checking, so the
+    decision belongs here.
+
+    Production code is untouched: these flags are per-invocation and the ratchet
+    checks one file at a time.
     """
+    relax: list[str] = []
+    if _is_test_file(original if original is not None else target):
+        relax = ["--allow-untyped-defs", "--allow-incomplete-defs"]
     return [
         "mypy",
         "--config-file",
@@ -130,6 +160,7 @@ def mypy_command(target: str) -> list[str]:
         "--no-error-summary",
         "--no-color-output",
         "--hide-error-context",
+        *relax,
         target,
     ]
 
@@ -149,7 +180,7 @@ def mypy_count(source: str, filename: str, package: str) -> int:
     """
     tmpdir, tmp = _write_temp(source, filename)
     try:
-        res = _run(mypy_command(tmp), env=_mypy_env(package))
+        res = _run(mypy_command(tmp, filename), env=_mypy_env(package))
         return sum(1 for line in res.stdout.splitlines() if _MYPY_ERROR_RE.match(line))
     finally:
         Path(tmp).unlink(missing_ok=True)
