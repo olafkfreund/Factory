@@ -22,6 +22,7 @@ happens to flag the section.
 from __future__ import annotations
 
 import pytest
+import ratchet_helpers as rh
 
 # scripts/ is put on sys.path by tests/conftest.py.
 import ratchet_lint as rl
@@ -39,7 +40,7 @@ _UNTYPED = "def helper(a):\n    return a\n"
     ],
 )
 def test_test_paths_are_recognised(path: str) -> None:
-    assert rl._is_test_file(path) is True
+    assert rl.is_test_file(path) is True
 
 
 @pytest.mark.parametrize(
@@ -47,7 +48,7 @@ def test_test_paths_are_recognised(path: str) -> None:
     ["apps/backend/thing.py", "scripts/ratchet_lint.py", "server/auth.py"],
 )
 def test_production_paths_are_not_test_files(path: str) -> None:
-    assert rl._is_test_file(path) is False
+    assert rl.is_test_file(path) is False
 
 
 def test_test_files_get_the_relaxing_flags() -> None:
@@ -70,3 +71,16 @@ def test_same_source_is_judged_by_path_not_content() -> None:
     as_prod = rl.mypy_count(_UNTYPED, "apps/backend/thing.py", "scripts")
     assert as_test == 0, "a test file must not trip the untyped-def bar"
     assert as_prod > 0, "production code must still be held to it"
+
+
+def test_the_rules_live_in_the_canonical_module() -> None:
+    """The ratchet must CONSUME the shared rules, not carry its own copy.
+
+    Factory#403: five forks each reimplemented these. Within an hour of writing
+    the same helper into all five, the hub copy and the fork copies already
+    differed (a docstring), which is exactly how drift starts. ratchet_lint must
+    therefore re-export the canonical objects, not define look-alikes.
+    """
+    assert rl.is_test_file is rh.is_test_file
+    assert rl.write_temp is rh.write_temp
+    assert rl.MYPY_TEST_RELAX is rh.MYPY_TEST_RELAX
