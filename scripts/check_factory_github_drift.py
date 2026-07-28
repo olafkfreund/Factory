@@ -133,13 +133,12 @@ def _missing_from_contract(canonical_root: Path) -> list[str]:
     if not canonical_root.is_dir():
         return []
     listed = set(CANONICAL_FILES)
-    found: list[str] = []
-    for path in sorted(canonical_root.rglob("*.py")):
-        rel = path.relative_to(canonical_root).as_posix()
-        if rel.startswith("tests/") or rel not in listed:
-            if not rel.startswith("tests/"):
-                found.append(rel)
-    return [f for f in found if f not in listed]
+    return [
+        rel
+        for path in sorted(canonical_root.rglob("*.py"))
+        if not (rel := path.relative_to(canonical_root).as_posix()).startswith("tests/")
+        and rel not in listed
+    ]
 
 
 def _self_test() -> int:
