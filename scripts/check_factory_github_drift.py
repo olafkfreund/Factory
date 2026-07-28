@@ -56,6 +56,8 @@ CANONICAL_FILES: tuple[str, ...] = (
     "providers/github_provider.py",
     "providers/gitlab_provider.py",
     "providers/azure_devops_provider.py",
+    "providers/_github_json.py",
+    "providers/http_github_provider.py",
 )
 
 # Default canonical root, relative to the repo that contains this script.
@@ -112,6 +114,32 @@ def run_check(canonical_root: Path, service_root: Path) -> int:
         f"({len(CANONICAL_FILES)} files)."
     )
     return 0
+
+
+def _missing_from_contract(canonical_root: Path) -> list[str]:
+    """Canonical .py files that CANONICAL_FILES does not list.
+
+    The list is deliberately explicit - the service workflows fetch exactly
+    these paths, so it is the contract, not a convenience. But an explicit list
+    ROTS: Factory#370 added providers/_github_json.py and
+    providers/http_github_provider.py to the canonical and nothing added them
+    here, so the gate reported "matches the canonical (8 files)" and exited 0
+    against a service tree that could not even be imported - providers/__init__
+    imports HttpGitHubProvider at module level.
+
+    A gate that does not check a file cannot keep it honest, and a green gate on
+    a broken tree is worse than no gate. This makes the omission loud.
+    """
+    if not canonical_root.is_dir():
+        return []
+    listed = set(CANONICAL_FILES)
+    found: list[str] = []
+    for path in sorted(canonical_root.rglob("*.py")):
+        rel = path.relative_to(canonical_root).as_posix()
+        if rel.startswith("tests/") or rel not in listed:
+            if not rel.startswith("tests/"):
+                found.append(rel)
+    return [f for f in found if f not in listed]
 
 
 def _self_test() -> int:

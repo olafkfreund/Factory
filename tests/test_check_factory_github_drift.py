@@ -109,3 +109,24 @@ def test_real_canonical_matches_itself() -> None:
     # check_drift reads the real files without error.
     canonical = _REPO_ROOT / "shared/factory-github"
     assert gate.check_drift(canonical, canonical) == []
+
+
+def test_the_contract_lists_every_canonical_module():
+    """MUTATION GUARD: an explicit file list rots, and a green gate on a broken
+    tree is worse than no gate.
+
+    Factory#370 added providers/_github_json.py and
+    providers/http_github_provider.py to the canonical and nothing added them to
+    CANONICAL_FILES. The gate then reported "matches the canonical (8 files)"
+    and exited 0 against a service tree that could not be imported at all -
+    providers/__init__ imports HttpGitHubProvider at module level. Three
+    services nearly shipped that.
+    """
+    import check_factory_github_drift as mod
+
+    root = Path(__file__).resolve().parents[1] / "shared" / "factory-github"
+    missing = mod._missing_from_contract(root)
+    assert not missing, (
+        f"canonical modules absent from CANONICAL_FILES: {missing}. "
+        "A file the gate does not check cannot be kept honest."
+    )
