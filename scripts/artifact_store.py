@@ -203,6 +203,10 @@ class ArtifactStore:
         Postgres / the contract."""
         key = ref.key()
         extra = {"ContentType": content_type} if content_type else {}
+        # Tag every object with its role so MinIO lifecycle rules (which filter by
+        # the `role=<role>` object tag) actually match — untagged uploads leave
+        # evidence retention inert (Factory#329, factory-gitops#67).
+        extra["Tagging"] = f"role={ref.role}"
         self._client().put_object(  # type: ignore[attr-defined]
             Bucket=self.config.bucket, Key=key, Body=_as_bytes(data), **extra
         )
@@ -227,10 +231,22 @@ class ArtifactStore:
             keys.extend(obj["Key"] for obj in page.get("Contents", []))
         return keys
 
-    def put_bytes(self, key: str, data: bytes, content_type: str | None = None) -> str:
+    def put_bytes(
+        self,
+        key: str,
+        data: bytes,
+        content_type: str | None = None,
+        role: str | None = None,
+    ) -> str:
         """Upload raw bytes to an explicit key (no ``ArtifactRef``). Used by the
-        workspace packer, which already has the ref-derived key. Returns the URI."""
+        workspace packer, which already has the ref-derived key. Returns the URI.
+
+        Pass ``role`` for objects the MinIO lifecycle rules govern so they carry
+        the matching ``role=<role>`` tag; keys with no governed role (e.g. the
+        graphify cache) leave it unset (Factory#329)."""
         extra = {"ContentType": content_type} if content_type else {}
+        if role:
+            extra["Tagging"] = f"role={role}"
         self._client().put_object(  # type: ignore[attr-defined]
             Bucket=self.config.bucket, Key=key, Body=data, **extra
         )
@@ -418,6 +434,24 @@ def _selftest() -> None:
     _require(_as_bytes("hello") == b"hello", "str->bytes")
     _require(_as_bytes(b"\x00\x01") == b"\x00\x01", "bytes passthrough")
 
+    # Uploads carry role as an object tag so MinIO lifecycle rules match. Without
+    # this the rules filter on `role=<role>` and never hit, so evidence retention
+    # silently never fires (Factory#329, promoted to the canonical in #399).
+    tagged = _fake_store()
+    calls = cast("list[dict[str, object]]", tagged._s3.calls)  # type: ignore[attr-defined]
+    tagged.put_artifact(ArtifactRef("tfactory", "j1", "evidence", 7), b"proof")
+    tagged.put_artifact(ArtifactRef("tfactory", "j1", "log", 7), "line")
+    _require(calls[0].get("Tagging") == "role=evidence", f"evidence tag: {calls[0]}")
+    _require(calls[1].get("Tagging") == "role=log", f"log tag: {calls[1]}")
+
+    # put_bytes tags only when a governed role is given: an ungoverned key (the
+    # graphify cache) must NOT be tagged, or it matches a lifecycle rule that was
+    # never meant for it.
+    tagged.put_bytes("aifactory/_/j/build/pack.tgz", b"x", role="build")
+    tagged.put_bytes("graphify-cache/blob", b"x")
+    _require(calls[2].get("Tagging") == "role=build", f"put_bytes role: {calls[2]}")
+    _require("Tagging" not in calls[3], f"ungoverned key must be untagged: {calls[3]}")
+
     # Transport stays lazy: constructing the store must not need boto3 or an endpoint.
     store = ArtifactStore(StoreConfig.from_env({}))
     _require(store.config.bucket == DEFAULT_BUCKET, "store builds without S3")
@@ -427,7 +461,7 @@ def _selftest() -> None:
     sys.stdout.write(
         "artifact_store self-test: PASS — key layout, uri, null/int corr, nested path, "
         "validation, env config, bytes coercion, lazy transport, workspace round-trip, "
-        "path-traversal guard\n"
+        "path-traversal guard, role tagging\n"
     )
 
 
@@ -437,9 +471,14 @@ class _FakeS3:
 
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
+        # Every put's kwargs, so the self-test can assert on the object TAGS and
+        # not just the bytes. The old signature swallowed them into `**_`, which
+        # is why nothing here could have caught untagged uploads (Factory#399).
+        self.calls: list[dict[str, object]] = []
 
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, **_: object) -> None:  # noqa: N803 — boto3 kwarg names
+    def put_object(self, *, Bucket: str, Key: str, Body: bytes, **extra: object) -> None:  # noqa: N803 — boto3 kwarg names
         self.objects[(Bucket, Key)] = Body
+        self.calls.append({"Bucket": Bucket, "Key": Key, **extra})
 
     def get_object(self, *, Bucket: str, Key: str) -> dict[str, io.BytesIO]:  # noqa: N803 — boto3 kwarg names
         return {"Body": io.BytesIO(self.objects[(Bucket, Key)])}
