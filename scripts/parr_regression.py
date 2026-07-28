@@ -43,6 +43,10 @@ import json
 import os
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from functools import cache
 from pathlib import Path
 
 # factory-common is the deduped hub utility layer (epic Factory#154, issue
@@ -93,8 +97,52 @@ def _endpoint(svc: str) -> str:
     return endpoint
 
 
+@cache
+def _oidc_bearer(svc: str) -> str:
+    """Mint a service-account JWT via client_credentials, or "" if unconfigured.
+
+    Needed because a service behind an OIDC proxy will not accept an opaque
+    API token: oauth2-proxy verifies a JWT bearer and builds a session from its
+    claims. CFactory therefore answered every probe with a 302 to Keycloak,
+    which the probe used to follow and score as a 200 (Factory#420).
+
+    A JWT expires in minutes, so this cannot be a static secret in CI -- the
+    token has to be minted per run. Cached per service so one run makes one
+    token request rather than one per seam.
+    """
+    cid = os.environ.get(f"{svc.upper()}_OIDC_CLIENT_ID")
+    secret = os.environ.get(f"{svc.upper()}_OIDC_CLIENT_SECRET")
+    url = os.environ.get(f"{svc.upper()}_OIDC_TOKEN_URL") or os.environ.get("PARR_OIDC_TOKEN_URL")
+    if not (cid and secret and url):
+        return ""
+    body = urllib.parse.urlencode(
+        {"grant_type": "client_credentials", "client_id": cid, "client_secret": secret}
+    ).encode()
+    req = urllib.request.Request(  # noqa: S310 - caller-built trusted host
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mozilla/5.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
+            return str(json.loads(resp.read().decode()).get("access_token", ""))
+    except (urllib.error.URLError, ValueError, KeyError):
+        # Never raise: an unmintable token must degrade to "no credential", so
+        # the seam reports honestly rather than the whole probe crashing.
+        return ""
+
+
 def _token(svc: str) -> str:
-    return os.environ.get(f"{svc.upper()}_TOKEN") or os.environ.get("FACTORY_TOKEN", "")
+    # OIDC first: a JWT is the only thing an oauth2-proxy front end accepts.
+    # Falls back to the opaque token the directly-exposed services use.
+    return (
+        _oidc_bearer(svc)
+        or os.environ.get(f"{svc.upper()}_TOKEN")
+        or os.environ.get("FACTORY_TOKEN", "")
+    )
 
 
 class Seam:
