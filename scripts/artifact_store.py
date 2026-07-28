@@ -358,7 +358,13 @@ def pack_workspace(store: ArtifactStore, ref: ArtifactRef, src_dir: str | os.Pat
     Replaces co-mounting an RWO worktree PVC: the dispatcher packs (or the prior
     stage packs) the worktree, the Job fetches it by URI."""
     blob = _tar_workspace(Path(src_dir))
-    return store.put_bytes(_workspace_key(ref), blob, content_type="application/gzip")
+    # `workspace` is a governed role, so the archive must carry the tag too.
+    # #399 added tagging to put_artifact/put_bytes but missed this caller, which
+    # is the only one that reaches put_bytes from inside the library — packed
+    # workspaces would have uploaded untagged and outlived their lifecycle rule.
+    return store.put_bytes(
+        _workspace_key(ref), blob, content_type="application/gzip", role="workspace"
+    )
 
 
 def unpack_workspace(
@@ -535,6 +541,12 @@ def _selftest_roundtrip(req: _Require, ref: ArtifactRef, tmp: Path) -> None:
     store = _fake_store()
     uri = pack_workspace(store, ref, src)
     req(uri == f"s3://{DEFAULT_BUCKET}/{_workspace_key(ref)}", f"pack uri: {uri}")
+
+    # The packed workspace is itself a governed-role object: without the tag it
+    # matches no lifecycle rule and outlives its retention window (Factory#399
+    # tagged the upload primitives but missed this caller — Factory#400).
+    packed = cast("list[dict[str, object]]", store._s3.calls)[-1]  # type: ignore[attr-defined]
+    req(packed.get("Tagging") == "role=workspace", f"packed workspace tag: {packed}")
 
     # Determinism: packing the same tree twice yields byte-identical archives.
     req(_tar_workspace(src) == _tar_workspace(src), "pack is deterministic")
