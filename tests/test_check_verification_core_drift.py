@@ -110,16 +110,22 @@ def test_run_check_exit_codes(tmp_path: Path) -> None:
 def test_unregistered_service_is_loud_not_a_clean_pass(tmp_path: Path) -> None:
     """A service the gate does not know must exit 2, never 0.
 
-    This test previously asserted the opposite: pfactory mapped to {} and
-    run_check returned 0 with "vendors no verification-core modules". That made a
-    service which was NEVER CHECKED indistinguishable from one that passed, which
-    is the same false-green defect as Factory#397. PFactory has no workflow
-    invoking this gate and vendors none of these modules, so the entry was
-    removed and an unknown service is now an error (Factory#401).
+    Originally this asserted the opposite: pfactory mapped to {} and run_check
+    returned 0 with "vendors no verification-core modules", so a service that was
+    NEVER CHECKED was indistinguishable from one that passed — the same
+    false-green defect as Factory#397. Factory#401 removed the empty entry and
+    made an unknown service an error.
+
+    It then asserted `"pfactory" not in SERVICE_LAYOUTS`, which pinned a
+    CONTINGENT fact rather than the invariant: pfactory was re-registered in
+    Factory#400 because it really does vendor two shared libraries. The rule
+    being locked here is about UNKNOWN services, so the test now uses a name that
+    can never be registered instead of whichever service happens to be absent.
     """
     canonical = _make_canonical(tmp_path)
-    assert "pfactory" not in gate.SERVICE_LAYOUTS
-    assert gate.run_check(canonical, tmp_path, "pfactory") == 2
+    unknown = "definitely-not-a-registered-service"
+    assert unknown not in gate.SERVICE_LAYOUTS
+    assert gate.run_check(canonical, tmp_path, unknown) == 2
 
 
 def test_every_canonical_module_is_vendored_by_someone() -> None:
