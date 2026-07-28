@@ -402,7 +402,16 @@ def main() -> int:
         print(f"\n{len(failed)} seam(s) FAILED: " + ", ".join(s.name for s in failed))
         print("A boundary regressed — this is the bug class unit tests can't see.")
         return 1
-    print(f"\nAll {len(seams)} seams green.")
+    # Count only what was actually asserted. "All 8 seams green" while one was
+    # SKIPPED is the same overclaim this probe exists to catch, just in its own
+    # summary line -- and the summary is the part people read.
+    passed = len([x for x in seams if x.ok is True])
+    if skipped:
+        print(  # noqa: T201
+            f"\n{passed}/{len(seams)} seams green, {len(skipped)} skipped. No seam regressed."
+        )
+    else:
+        print(f"\nAll {len(seams)} seams green.")  # noqa: T201
     return 0
 
 
