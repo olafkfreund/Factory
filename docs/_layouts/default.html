@@ -72,6 +72,19 @@
         <li><a href="{{ '/tour/' | relative_url }}"{% if page.url contains '/tour/' %} class="active"{% endif %}>Tour</a></li>
         <li><a href="{{ '/roadmap/' | relative_url }}"{% if page.url contains '/roadmap/' %} class="active"{% endif %}>Roadmap</a></li>
         <li><a href="{{ '/run-locally/' | relative_url }}"{% if page.url contains '/run-locally/' %} class="active"{% endif %}>Run Locally</a></li>
+        <li class="nav-dd">
+          <a href="{{ '/guides/' | relative_url }}"{% if page.url contains '/guides/' %} class="active"{% endif %}>Guides</a>
+          <ul class="nav-dd-menu">
+            <li><a href="{{ '/guides/onboarding/' | relative_url }}">Onboarding</a></li>
+            <li><a href="{{ '/guides/teams/' | relative_url }}">Working as a team</a></li>
+            <li><a href="{{ '/guides/boards/' | relative_url }}">Boards and work items</a></li>
+            <li class="nav-dd-sep"></li>
+            <li><a href="{{ '/guides/cloud-development/' | relative_url }}">Cloud development</a></li>
+            <li><a href="{{ '/guides/legacy-rewrites/' | relative_url }}">Legacy rewrites</a></li>
+            <li><a href="{{ '/guides/enterprise-scale/' | relative_url }}">Enterprise scale</a></li>
+            <li><a href="{{ '/guides/testing/' | relative_url }}">Testing scenarios</a></li>
+          </ul>
+        </li>
         <li><a href="{{ '/blog/' | relative_url }}"{% if page.url contains '/blog' %} class="active"{% endif %}>Blog</a></li>
         <li><a href="{{ site.repo_url }}" rel="noopener">GitHub</a></li>
       </ul>
