@@ -79,8 +79,17 @@ def check_drift(canonical_root: Path, service_root: Path) -> list[str]:
     Directional and byte-exact: every file in :data:`CANONICAL_FILES` must exist
     under *service_root* and match the canonical byte-for-byte. Extra files in the
     service tree are ignored (they are service-specific, not part of the layer).
+
+    Checked FIRST: that the contract still covers the canonical. Factory#397 added
+    :func:`_missing_from_contract` but never called it, so the guard shipped inert
+    and a newly added canonical file was still certified green - the exact defect
+    #397 existed to fix.
     """
-    problems: list[str] = []
+    problems: list[str] = [
+        f"{rel}: in the canonical but not listed in CANONICAL_FILES — "
+        "the gate cannot check it, and the service workflow will not fetch it"
+        for rel in _missing_from_contract(canonical_root)
+    ]
     for rel in CANONICAL_FILES:
         canonical_file = canonical_root / rel
         service_file = service_root / rel

@@ -130,3 +130,35 @@ def test_the_contract_lists_every_canonical_module():
         f"canonical modules absent from CANONICAL_FILES: {missing}. "
         "A file the gate does not check cannot be kept honest."
     )
+
+
+def test_completeness_guard_is_wired_into_check_drift(tmp_path: Path) -> None:
+    """The guard must be CALLED, not merely defined.
+
+    The test above passes if _missing_from_contract() merely EXISTS and works.
+    It did, and it was dead code: Factory#397 defined the function and never
+    called it from check_drift(), so for a day the gate still certified a
+    canonical addition as green - the exact defect #397 was written to fix.
+
+    So this asserts the wiring, by adding a NEW canonical file (the Factory#370
+    scenario) rather than corrupting an existing one. Corrupting an existing
+    file is covered by the grown CANONICAL_FILES list and passes either way,
+    which is why the original mutation check missed this.
+    """
+    canonical = tmp_path / "canonical"
+    service = tmp_path / "service"
+    for rel in gate.CANONICAL_FILES:
+        for root in (canonical, service):
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# {rel}\n")
+
+    assert gate.check_drift(canonical, service) == [], "identical trees must be clean"
+
+    (canonical / "providers" / "brand_new.py").write_text("# added to the canonical\n")
+    problems = gate.check_drift(canonical, service)
+    assert any("brand_new.py" in p for p in problems), (
+        "check_drift() ignored a canonical file that CANONICAL_FILES does not "
+        "list. The completeness guard is defined but not wired in, so the gate "
+        "is green on a tree it never looked at."
+    )

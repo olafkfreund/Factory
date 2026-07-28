@@ -73,13 +73,32 @@ def _default_canonical() -> Path:
     return Path(__file__).resolve().parent.parent / "shared" / "factory-ui"
 
 
+def _missing_from_contract(canonical: Path) -> list[str]:
+    """Canonical component files that CANONICAL_MODULES does not list.
+
+    An explicit tuple is the contract, but it ROTS. Factory#397 hit exactly this
+    in the factory-github gate: two files were added to the canonical, nothing
+    added them here, and the gate reported OK against a tree it had never looked
+    at. A gate that does not check a file cannot keep it honest, and a green gate
+    on an unchecked tree is worse than no gate.
+    """
+    if not canonical.is_dir():
+        return []
+    listed = set(CANONICAL_MODULES)
+    return [p.name for p in sorted(canonical.glob("*.tsx")) if p.name not in listed]
+
+
 def check_service(service: str, root: Path, canonical: Path) -> list[str]:
     """Return a list of drift messages (empty when the portal copies match)."""
     layout = SERVICE_LAYOUTS.get(service)
     if layout is None:
         return [f"unknown service {service!r}; known: {', '.join(sorted(SERVICE_LAYOUTS))}"]
 
-    problems: list[str] = []
+    problems: list[str] = [
+        f"{name}: in shared/factory-ui/ but not listed in CANONICAL_MODULES — "
+        "the gate cannot check it"
+        for name in _missing_from_contract(canonical)
+    ]
     for module, rel in layout.items():
         canonical_file = canonical / module
         if not canonical_file.is_file():

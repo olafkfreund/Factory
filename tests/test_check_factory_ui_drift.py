@@ -76,3 +76,34 @@ def test_canonical_files_exist_in_repo() -> None:
     canonical = _REPO_ROOT / "shared" / "factory-ui"
     for module in gate.CANONICAL_MODULES:
         assert (canonical / module).is_file(), module
+
+
+def test_the_contract_lists_every_canonical_component() -> None:
+    """A .tsx in shared/factory-ui/ that CANONICAL_MODULES omits is unchecked.
+
+    The inverse of test_canonical_files_exist_in_repo above: that one proves
+    every LISTED file exists, which says nothing about a file that exists but is
+    not listed. Factory#397 is exactly that failure in the sibling gate.
+    """
+    canonical = _REPO_ROOT / "shared" / "factory-ui"
+    assert gate._missing_from_contract(canonical) == []
+
+
+def test_completeness_guard_is_wired_into_check_service(tmp_path: Path) -> None:
+    """The guard must be CALLED by check_service(), not merely defined.
+
+    Factory#397 shipped its guard as dead code - defined, tested directly, never
+    invoked - so the gate stayed green on a canonical it had not looked at. A
+    test that calls the helper itself cannot catch that; this one goes through
+    check_service().
+    """
+    canonical = _make_canonical(tmp_path)
+    service = _make_service(canonical, tmp_path / "svc")
+    assert gate.check_service("pfactory", service, canonical) == []
+
+    (canonical / "BrandNew.tsx").write_text("export const X = 1\n")
+    problems = gate.check_service("pfactory", service, canonical)
+    assert any("BrandNew.tsx" in p for p in problems), (
+        "check_service() ignored a canonical component that CANONICAL_MODULES "
+        "does not list - the completeness guard is not wired in."
+    )

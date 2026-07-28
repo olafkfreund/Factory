@@ -107,10 +107,29 @@ def test_run_check_exit_codes(tmp_path: Path) -> None:
         del gate.SERVICE_LAYOUTS["__pytest__"]
 
 
-def test_run_check_empty_layout_passes(tmp_path: Path) -> None:
+def test_unregistered_service_is_loud_not_a_clean_pass(tmp_path: Path) -> None:
+    """A service the gate does not know must exit 2, never 0.
+
+    This test previously asserted the opposite: pfactory mapped to {} and
+    run_check returned 0 with "vendors no verification-core modules". That made a
+    service which was NEVER CHECKED indistinguishable from one that passed, which
+    is the same false-green defect as Factory#397. PFactory has no workflow
+    invoking this gate and vendors none of these modules, so the entry was
+    removed and an unknown service is now an error (Factory#401).
+    """
     canonical = _make_canonical(tmp_path)
-    # pfactory vendors nothing today: a clean pass with nothing to check.
-    assert gate.run_check(canonical, tmp_path, "pfactory") == 0
+    assert "pfactory" not in gate.SERVICE_LAYOUTS
+    assert gate.run_check(canonical, tmp_path, "pfactory") == 2
+
+
+def test_every_canonical_module_is_vendored_by_someone() -> None:
+    """A module declared canonical but mapped by nobody is unenforced.
+
+    verification_profiles.py and verification_runner.py were listed for weeks
+    while no service vendored them, so nothing ever compared them and they
+    inflated the module count the gate reported as OK.
+    """
+    assert gate._unmapped_modules() == []
 
 
 def test_main_self_test_flag() -> None:
