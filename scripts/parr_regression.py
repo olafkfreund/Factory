@@ -66,7 +66,23 @@ DEFAULTS = {
 
 
 def _endpoint(svc: str) -> str:
-    return os.environ.get(f"{svc.upper()}_API", DEFAULTS[svc]).rstrip("/")
+    """Base URL for *svc*, falling back to the public host.
+
+    `or` rather than `os.environ.get(key, default)`: a GitHub Actions step that
+    passes `PFACTORY_API: ${{ vars.PFACTORY_API }}` for an UNSET variable sets
+    the env var to the EMPTY STRING, not absent. `get`'s default only applies
+    when the key is missing, so every deploy resolved the endpoint to "",
+    called urllib with a bare "/api/health", and died on
+    `ValueError: unknown url type` -- swallowed by the caller's `|| true` and
+    reported green (Factory#416). `_token` below already had it right.
+    """
+    endpoint = (os.environ.get(f"{svc.upper()}_API") or DEFAULTS[svc]).rstrip("/")
+    if not endpoint.startswith(("http://", "https://")):
+        # A host with no scheme fails the same way, just from a different
+        # direction (e.g. PFACTORY_API=localhost:8000). Say what is wrong
+        # instead of raising urllib's "unknown url type" three frames later.
+        raise ValueError(f"{svc.upper()}_API must be an absolute http(s) URL, got {endpoint!r}")
+    return endpoint
 
 
 def _token(svc: str) -> str:
