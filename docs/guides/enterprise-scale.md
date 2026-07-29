@@ -89,7 +89,8 @@ deployed tag to the newest deployable commit on a schedule.
 to the last revision fetched. Compare its revision to repository HEAD.
 
 **Orphaned tasks.** A worker dies, nothing writes the terminal status, and the
-task shows active forever. Report with `GET /api/tasks/stale`. Never judge by
+task shows active forever. Report with `GET /api/maintenance/stale-tasks`.
+Never judge by
 age alone -- tasks awaiting a human are legitimately old.
 
 **Scheduled jobs that stopped.** The general form of all of the above. If a

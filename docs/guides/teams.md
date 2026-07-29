@@ -82,12 +82,27 @@ that worker dies — pod evicted, node drained, out of memory — nothing writes
 terminal status and the task shows as active forever. Report them with:
 
 ```
-GET /api/tasks/stale
+GET  /api/maintenance/stale-tasks
+POST /api/maintenance/stale-tasks/reap
 ```
 
-That reports only. `POST /api/tasks/stale/reap` marks them failed, and defaults
-to `dry_run=true` so the destructive form has to be asked for. Tasks awaiting a
-human are never reaped, at any age.
+The `GET` reports only. The `POST` marks each orphan `cancelled` with the
+reason recorded on it, and defaults to `dry_run=true` so the destructive form
+has to be asked for explicitly.
+
+`cancelled` rather than `failed` for a specific reason: `failed` is not a status
+the task board accepts, and anything it does not recognise it maps back to
+`backlog` — so marking an orphan `failed` would return it to the queue looking
+like fresh work. `cancelled` leaves the active board and lands in the cockpit's
+failed column, without claiming the task succeeded.
+
+Tasks awaiting a human are never reaped, at any age. Neither are tasks in a
+status the reaper was not taught about: guessing wrong in that direction
+destroys live work, whereas guessing wrong the other way merely leaves an
+orphan visible, which is the situation without a reaper at all.
+
+Reaped is terminal, so a task cannot be reaped twice or cycle back round on the
+next sweep.
 
 ---
 
