@@ -11,7 +11,74 @@ Factory is managed as one program across five repositories, tracked on the
 sequencing principle is **spine first**: make the pipeline traceable end-to-end
 before building deep on top of it.
 
-## Recently shipped (June 2026)
+## Recently shipped (July 2026)
+
+260 issues closed across the five repositories this month. The theme was not new
+capability — it was **making the existing signals honest**.
+
+- **Multi-provider git + tenant-configured projects**
+  ([RFC-0020](rfc/0020-multi-provider-git-integration-and-tenant-configured-projects.md),
+  *implemented* — epic #361 and all phases closed, including Phase 8 for multiple
+  git connections per tenant). Repositories and credentials are configured per
+  tenant in the portal rather than baked into env.
+- **Continuous regression verification**
+  ([RFC-0018](rfc/0018-regression-suite-and-continuous-verification.md),
+  *implemented*) — TFactory runs a standing regression suite, so a green verdict
+  now means "and nothing that used to pass has broken".
+- **Job-native defaults flipped live** ([RFC-0017](rfc/0017-full-job-native-execution-and-scale-out.md)) —
+  the build and verify defaults that were converging in June are now on.
+- **CloudEvents cutover** — the legacy completion envelope is gone; every service
+  speaks one event format, consumer-first so nothing broke on the way.
+- **Competitive-gap remediation** (epic #270) — benchmark harness, cost-aware
+  model routing, prompt-injection defences, dependency gating, multi-vote judging.
+- **Pre-demo hardening** (epic #241) — closing the honesty gaps before anything is
+  shown to anyone.
+- **Compliance program under way** (epic #310) — governance/ISMS, change
+  management and separation of duties, incident response with SEC/NIS2 timelines,
+  and agentic-AI governance (model registry, eval gates) all closed. Seven further
+  epics remain open and are the current programme spine.
+
+### The honesty sweep
+
+A run of defects found this month shared one shape: **a gate that reported success
+without checking anything**. They are listed together because the pattern matters
+more than any single fix.
+
+| Reported | Actually |
+|---|---|
+| PARR seam smoke gate green on every deploy | it crashed before its first request (#416) |
+| two drift gates green | one service was 181 lines behind the canonical (#402) |
+| a UI drift checker passing | its guard was defined and never called (#401) |
+| `Synced / Healthy` from GitOps | a commit behind, twice in one day (#425) |
+| a build reporting `human_review` | it wrote no code at all (AIFactory#1070) |
+| `all_verified: true` from the verify leg | the spec body never reached it (TFactory#855) |
+
+These are now tracked as one programme: **[epic #431](https://github.com/olafkfreund/Factory/issues/431)
+— silent fallbacks**, backed by an AST sweep of all five repositories. Of 158
+candidate sites, 19 default to a value that *asserts progress or success* where
+the truth is unknown. A crash is cheap because it names its own cause; a
+plausible wrong value survives, propagates, and surfaces far from where it
+started.
+
+### Also landed
+
+- **Security** — credential-bearing request models no longer render secrets in
+  their `repr` (#377); frontend lockfile vulnerabilities are gated in every repo,
+  not just one (#386); `apps/web-server` is lint- and format-gated in AIFactory
+  (#384); MIT licences added where they were missing (#387).
+- **Operational reliability** — a CronJob can no longer fail silently for weeks
+  (#381); the CLIs are baked into the image rather than installed per run (#383);
+  workspace storage moved to RWX so tasks stop stranding on node-local volumes.
+- **Orphaned-task reaping** (AIFactory#1064) — tasks whose worker died no longer
+  sit on the board looking busy. Machine-owned states are reaped after an idle
+  threshold; tasks awaiting a **human** are never reaped at any age, because age
+  alone cannot tell a dead task from a patient one.
+- **Approve actually approves** (AIFactory#1071/#1073/#1076) — the Approve button
+  did the git work, never advanced the task, and under the Job-based build backend
+  could not identify the branch at all. It now merges the pull request and records
+  the result.
+
+## Previously shipped (June 2026)
 
 The PARR spine is now proven end-to-end on real infrastructure:
 
@@ -29,11 +96,10 @@ The PARR spine is now proven end-to-end on real infrastructure:
   Proven live on the factory cluster: **8 concurrent** Job-per-task runs and a
   **KEDA 1→3** scale-out.
 - **Job-native execution mechanisms** ([RFC-0017](rfc/0017-full-job-native-execution-and-scale-out.md),
-  *in progress* — epic #206) — Job-native log streaming, a Redis-backed
-  multi-replica run-multiplexer (multi-replica running live), and workspace
-  pack/unpack via object storage all landed. The Job-native build+verify *default*
-  flips are **not yet live** — they are converging through bug rounds on safe
-  in-pod defaults; multi-node workspace consumption (Stage E) remains.
+  epic #206) — Job-native log streaming, a Redis-backed multi-replica
+  run-multiplexer, and workspace pack/unpack via object storage. The build and
+  verify *default* flips were still converging at the end of June; they went
+  **live in July** (see above). Multi-node workspace consumption remains.
 - **AWS demo resources cleaned up** — the App Runner / EKS demo stacks were torn
   down; zero ongoing cloud spend.
 
@@ -105,27 +171,44 @@ The PARR spine is now proven end-to-end on real infrastructure:
 - **OAuth-only by default** — agents never silently bill a stray API key
   (direct-key billing is an explicit opt-in).
 
-## Now — standardize the PARR spine
+## Now — compliance and audit-readiness
 
-The connective tissue that lets the four products cooperate, tracked as the
-[PARR-spine epic]({{ site.repo_url }}/issues):
+The PARR spine and the CFactory cockpit are both shipped; the current programme
+is [epic #310](https://github.com/olafkfreund/Factory/issues/310), audit
+readiness for ISO 27001 / SOC 2. Four of its epics closed in July. Seven remain,
+and they are the near-term sequence:
 
-- **PFactory → AIFactory** inbound handoff with issue-number provenance
-- A shared **correlation key** (the GitHub issue number) threaded end-to-end
-- A normalized **completion-event** envelope across all three services
-- A canonical local **port map** (AIFactory 3101 · PFactory 3114/3115 · TFactory 3103 ·
-  CFactory 3110/3111)
+- **IAM & access control** (#312) — enforce MFA, retire the shared wildcard
+- **Audit logging completeness** (#313) — retention policy, SIEM alerting
+- **Encryption at rest & key management** (#314) — DB / MinIO / KMS
+- **Secrets management & rotation** (#315)
+- **Vulnerability & patch management** (#317) — scan SLAs, evidence
+- **Supply-chain integrity** (#318) — SBOM everywhere, signature verification
+- **Data governance & PII egress controls** (#320)
+- **Runtime isolation & config hardening** (#322) — Job NetworkPolicy
+- **Evidence & audit-readiness** (#324) — control-to-framework matrix
 
-## Next — CFactory cockpit
+Two of these have concrete open findings already: image signature verification
+currently fails for **every** fleet image while running in audit mode, so the
+policy reports violations and blocks nothing (#430); and five production
+CronJobs — including the Postgres backup — exist only as cluster state, not in
+git, so they would vanish on a rebuild (#429).
 
-The control tower shipped as a multi-view cockpit (Services, Pipeline board,
-Copilot, Audit — see the [cockpit tour](/cfactory/)). Phases, tracked in the
-[CFactory repo](https://github.com/olafkfreund/CFactory/issues):
+Running alongside: **[epic #431](https://github.com/olafkfreund/Factory/issues/431)**,
+the silent-fallback sweep described above.
 
-- **P1 (shipped)** — skeleton, WorkItem correlation store, read-only pipeline board
-- **P2 (shipped)** — agentic copilot (read tools, timeline summaries, anomaly detection)
-- **P3** — advise + confirm actions, audit, scoped keys
-- **P4** — hardening for hosted / multi-tenant
+## Next — seams beyond GitHub
+
+- **Jira and Bitbucket** ([RFC-0022](rfc/0022-work-item-and-code-seams.md),
+  epic #392) — splitting the *work-item* seam from the *code* seam, so the
+  factory can plan against a Jira board while coding against a different host.
+  RFC-0020 did the code half; this does the work-item half.
+- **Earned memory and promotion gates**
+  ([RFC-0021](rfc/0021-earned-memory-and-promotion-gates.md), epic #389) — what
+  an agent is allowed to remember across runs, and what it must prove before a
+  memory is trusted.
+- **GTM demos** (epic #240) — the demo set, once the honesty gaps behind it are
+  closed.
 
 ## Ongoing — the products
 
