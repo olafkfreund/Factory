@@ -1,0 +1,87 @@
+{
+  "pyproject.toml": {
+    "mtime": 1783667597.2237012,
+    "ast_hash": "d354a24d8fc89ba5a1b26efc6bb18242",
+    "semantic_hash": ""
+  },
+  "tests/test_main.py": {
+    "mtime": 1783667597.223605,
+    "ast_hash": "1020984b127494394c3e06e9cd9e0346",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1783667597.22374,
+    "ast_hash": "ff04ff740b3d923d66d5c0b2f812c9c8",
+    "semantic_hash": ""
+  },
+  "app/__init__.py": {
+    "mtime": 1783667597.2231936,
+    "ast_hash": "bf52d8f0020d4eaa084a9fcfd4306eb8",
+    "semantic_hash": ""
+  },
+  "app/config.py": {
+    "mtime": 1783667597.2232459,
+    "ast_hash": "cc07d4e0481103fc65f89f2b97395676",
+    "semantic_hash": ""
+  },
+  "app/main.py": {
+    "mtime": 1783667597.2232761,
+    "ast_hash": "04b2c4a06808f8dc89ae9ec620e3f802",
+    "semantic_hash": ""
+  },
+  "app/middleware/__init__.py": {
+    "mtime": 1783667597.2233148,
+    "ast_hash": "3a420b9e4f6ce449d123851ba0951d8e",
+    "semantic_hash": ""
+  },
+  "app/middleware/logging.py": {
+    "mtime": 1783667597.2233517,
+    "ast_hash": "991449ea28eccf5e82e389ae97be2fb4",
+    "semantic_hash": ""
+  },
+  "app/middleware/rate_limit.py": {
+    "mtime": 1783667597.223381,
+    "ast_hash": "103b2a172fc0a0e9b64887b798b16175",
+    "semantic_hash": ""
+  },
+  "app/routers/__init__.py": {
+    "mtime": 1783667597.2234163,
+    "ast_hash": "7d54c03eb80f563192bd0ab3e2d8a9e0",
+    "semantic_hash": ""
+  },
+  "app/routers/health.py": {
+    "mtime": 1783667597.223453,
+    "ast_hash": "aa1fbf3d368ee5664ad44adae1c8aba2",
+    "semantic_hash": ""
+  },
+  "app/routers/proxy.py": {
+    "mtime": 1783667597.2234902,
+    "ast_hash": "de144c8dc7b42a7da40222adcd6d27a7",
+    "semantic_hash": ""
+  },
+  "tests/__init__.py": {
+    "mtime": 1783667597.2234902,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "tests/test_health.py": {
+    "mtime": 1783667597.223577,
+    "ast_hash": "6e69777771771f7d4207f24569929f0f",
+    "semantic_hash": ""
+  },
+  "tests/test_proxy.py": {
+    "mtime": 1783667597.2236357,
+    "ast_hash": "e3f865aff17ee96f92789e2abae550d1",
+    "semantic_hash": ""
+  },
+  "tests/test_rate_limit.py": {
+    "mtime": 1783667597.2236671,
+    "ast_hash": "50c0c4accc7cba71d48a1441253a00aa",
+    "semantic_hash": ""
+  },
+  "tests/test_metrics.py": {
+    "mtime": 1783667917.397467,
+    "ast_hash": "a8668c7e4289c508318e7a0ed3db9b1d",
+    "semantic_hash": ""
+  }
+}
