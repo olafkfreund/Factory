@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//mnt/data/Source-home/GitHub/TFactory/**)",
-      "Bash(kubectl --context factory get pod -n factory -l app=tfactory -o jsonpath='{.items[0].status.containerStatuses[0].image}{\"  \"}{.items[0].metadata.creationTimestamp}{\"  \"}{.items[0].status.phase}')",
-      "Bash(kubectl --context factory exec -n factory deploy/tfactory -- sh -c 'echo \"RUNNER_IMAGE=$TFACTORY_NIX_RUNNER_IMAGE\"; echo \"WORKSPACES_PVC=$TFACTORY_WORKSPACES_PVC\"; echo \"NIX_STORE_PVC=$TFACTORY_NIX_STORE_PVC\"; echo \"SANDBOX_NS=$TFACTORY_SANDBOX_NAMESPACE\"; echo \"VERIFY_BACKEND=$TFACTORY_VERIFY_BACKEND\"')"
-    ]
-  }
-}

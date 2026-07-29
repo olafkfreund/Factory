@@ -15,3 +15,10 @@ __pycache__/
 
 # Local direnv env (may hold secrets) — never commit
 .envrc
+
+# Local agent/tool state, not project content. `.claude/settings.local.json`
+# is per-machine tool permissions and `graphify-out/` is a regenerated hash
+# manifest; both landed on main via a `git add -A` that swept the working
+# tree. Ignored so that cannot happen again.
+.claude/settings.local.json
+graphify-out/
