@@ -147,6 +147,35 @@ downgraded).
 4.6 **Ratchet:** gates run on the PR diff; legacy hotspots are allowed until
 touched.
 
+4.7 **A gate that cannot run must fail, never pass.** If a hook cannot resolve
+the tool it needs, it exits non-zero and says what it looked for. Wrapping the
+checks in `if [ -n "$TOOL" ]` turns a missing binary into a silent green
+commit, which is worse than having no hook at all: the absent gate is visible,
+the skipped one is not. An opt-out is allowed only as an env var a developer
+sets deliberately, never as the fallback. Same rule for the executable bit -
+`core.hooksPath` without a `.husky/_` wrapper means git skips a non-executable
+hook without a word, so hook files are committed `100755` and a test asserts
+it.
+
+4.8 **Hooks must scrub git's exported environment before running anything that
+shells git.** During a commit git exports `GIT_DIR`, `GIT_INDEX_FILE`,
+`GIT_WORK_TREE`, `GIT_PREFIX`, `GIT_CONFIG_PARAMETERS` and friends to the hook.
+Any child process that runs git - a test suite with repo fixtures, a `git
+worktree add`, a lint helper - inherits them and operates on the REAL repository
+instead of its own. Observed: a fixture's `git add -A` staging 2,136 deletions
+into the repo mid-commit, a fixture's `git branch -M main` clobbering the local
+branch, and a `git worktree add` emptying the caller's index so the commit being
+gated became empty. Scrub once at the shared boundary (the hook, or the test
+suite's root `conftest.py`), not per call site. Commands that must read the
+in-flight commit - `git diff --cached` - are the deliberate exception and keep
+the exports.
+
+4.9 **Prove a gate both ways.** A check is verified only when a violation makes
+it fail; passing on clean input proves nothing, and every "fix" that merely
+made a gate permissive would have passed that half. Each gate leaves behind a
+test for both directions: a change carrying pre-existing debt is accepted, and
+one new violation is rejected.
+
 ## 5. How to consume the shared baseline
 
 Each service extends the hub baseline and may only tighten:
