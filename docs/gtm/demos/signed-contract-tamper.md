@@ -287,7 +287,16 @@ Notes for a re-record:
 - Shot 5 (key-id retirement) is not in this capture: the deployed signer uses
   the legacy no-`kid` env var, so retirement has nothing to revoke. Recording it
   needs a keyed `AIFACTORY_TRUSTED_PLAN_KEY_PFACTORY__<KID>` in the fleet secret
-  first.
+  first — PFactory#401.
+- The repo-drift beat #247 also asks for is not in this capture and cannot be:
+  the contract carries `baseline.commit` inside the signed bytes, but nothing
+  re-reads the repo HEAD at ingest to compare, so there is no output to film —
+  AIFactory#1109. Signature integrity answers "did anyone edit the
+  instructions"; baseline freshness answers "are the instructions still about
+  this codebase", and only the first is implemented.
+- Rejected plans currently leave an orphan spec dir behind (`/from-plan`
+  allocates the spec id before the gate) — AIFactory#1108. The gate is correct;
+  clean up the orphans after a capture.
 - Never let the signing key into a frame. A `.cast` is plain text: grep every
   artifact for the pod's own secrets before committing. The scan for this capture
   ran inside both pods against every `*TOKEN*`/`*KEY*`/`*SECRET*` value in their
