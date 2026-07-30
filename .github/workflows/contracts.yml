@@ -41,6 +41,9 @@ on:
       - "tests/test_provider_comments.py"
       - "scripts/apply_branch_protection.sh"
       - "tests/test_branch_protection_intent.py"
+      # Factory#483. Without this the self-test below is WIRED but never
+      # TRIGGERED by the only file it guards.
+      - "scripts/job_dispatch.py"
       - ".github/workflows/contracts.yml"
   push:
     branches: [main]
@@ -137,3 +140,18 @@ jobs:
         # reason: a separate job would duplicate the checkout/setup block against
         # the jscpd clone budget.
         run: pytest -v tests/test_provider_comments.py
+
+      - name: Guard the shared job-dispatch policy surface
+        # Factory#483. scripts/job_dispatch.py carries a self-test with the rules
+        # every dispatched Job must obey - including the pod-label rule whose
+        # violation took a portal offline (TFactory#885), fed real API traffic to
+        # a pod listening on nothing (AIFactory#1107), and broke a bucket-create
+        # Job (Factory#458). Nothing ran it. The module is vendored into two
+        # services and those rules are the contract they vendor it FOR, so a
+        # canonical whose own guard never executes is the always-green gate one
+        # level up from the drift it exists to catch. Stdlib-only, no deps, no
+        # network - it runs as the module, not through pytest, because the
+        # self-test IS the module's entry point and the consumers run it the same
+        # way. Same job as the steps above for the same reason: a separate job
+        # would duplicate the checkout/setup block against the jscpd clone budget.
+        run: python3 scripts/job_dispatch.py
