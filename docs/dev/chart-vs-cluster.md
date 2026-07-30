@@ -114,11 +114,21 @@ two-engine split as its remediation.
 
 The general point: a real divergence and a plausible cause for it are two findings, not
 one. This document is about a failure to check, so the standard applies to it too — and it
-had to be applied twice while this document was being written, once to a stale source read
-reported as live fact, and once to the causal claim above. Both times a plausible story ran
-ahead of a verification, on adjacent halves of the same problem, hours apart. That is a
-property of this kind of work, not of whoever happened to make the error, which is why the
-gate in #504 is worth more than either correction.
+had to be applied to this document three times while it was being written:
+
+1. a stale local checkout reported as live fact about running pods;
+2. the causal claim above, where a plausible cause rode along with a real divergence;
+3. **"this CNI does not enforce egress"** — asserted in an earlier revision of this file
+   and in three ISO SoA rows, inherited from a test that had no control pod and most
+   likely probed from a different namespace. A controlled two-pod experiment
+   (factory-gitops#106) disproved it: `1.1.1.1:443` CONNECT and `1.1.1.1:80` BLOCKED from
+   the same pod in the same second. Egress is enforced. Everything written against the
+   old premise was wrong, including parts of this document.
+
+Three times, in one document, in one day, by people actively trying not to. Each was
+caught by someone who happened to be working the same subject in the same session, which
+is luck, not a control. That is the argument for the gate in #504, and it is a stronger
+argument than any of the three corrections.
 
 The `cred-sync` sidecar and the 57 inline env vars are also why "point ArgoCD at the
 chart" is not a small change: the chart models none of that, so rendering it would remove
@@ -143,7 +153,10 @@ Independent evidence that they had never been rendered against this cluster: bot
 while the fleet-wide `OPENAI_COMPATIBLE_BASE_URL` is `http://host.k3d.internal:11434` —
 `172.18.0.1`, plain HTTP, non-443, inside the excluded range. Applying either as written
 would have failed the self-host model path closed on the first task. Nobody noticed,
-because nobody ever applied them. (The policy that gitops *did* apply under Factory#462
+because nobody ever applied them. And this is not academic: egress on this cluster **is**
+enforced (measured with a control pod, factory-gitops#106), so that allow-list is
+load-bearing rather than decorative — a rule set missing the model endpoint really does
+fail the path closed. (The policy that gitops *did* apply under Factory#462
 carries an explicit `172.18.0.1/32:11434` rule — that lesson was learned the second time,
 against the engine that actually runs.)
 
@@ -177,10 +190,10 @@ inventory exposed rather than paper over them.
 
 | Issue | Gap |
 |---|---|
-| Factory#502 | Two of four per-task lanes are matched by no live NetworkPolicy. The applied policy enumerates `app in (aifactory-sandbox, tfactory-sandbox)`; the two `job_dispatch.py` lanes label their pods `<svc>-task` via `task_pod_labels()`'s default `role="task"` and are uncovered. `factory.io/kind: task` is the durable selector — all four builders set it via the shared `task_pod_labels()`, and image ancestry confirms it is in the deployed images. `factory-gitops#102` applies both selectors as two policies, since a podSelector cannot OR across label keys. |
+| Factory#502 | **Closed.** Two of four per-task lanes were matched by no live NetworkPolicy — the applied policy enumerated `app in (aifactory-sandbox, tfactory-sandbox)` while the two `job_dispatch.py` lanes label pods `<svc>-task`. factory-gitops#103 replaced the enumeration with `factory.io/kind: task`, which all four builders set and both deployed images verifiably carry. |
 | Factory#503 | Control-plane pods run with no container `securityContext`; charts claim a hardened one. Found via this inventory but **not caused by it** — the CronJob plain manifests are hardened, so the Deployment manifests were simply never written that way |
 | Factory#504 | No gate compares the chart control subset against the gitops manifests |
-| Factory#462 | This CNI enforces NetworkPolicy ingress, not egress; every egress rule here is documentation of intent |
+| Factory#517 | Task pods have a 3-5 second unconfined window at start before kube-router programs the egress chain (t+3s leaked, t+6s blocked). Any "cannot reach" claim must carry that qualifier |
 
 The same disease on other axes, for reference: Factory#434 (the shared standard vendored to some services and gated in fewer), Factory#483 (services hand-restating a shared contract instead of vendoring it), Factory#512, Factory#513.
 
