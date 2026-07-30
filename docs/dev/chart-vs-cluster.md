@@ -199,10 +199,27 @@ The same disease on other axes, for reference: Factory#434 (the shared standard 
 
 ## How to check this yourself
 
-```
+Run from the directory holding the sibling repo checkouts (`~/Source/GitHub`), not from
+inside a repo — the paths below are relative to it. Substitute `tfactory` / `pfactory` /
+`cfactory` for the other three.
+
+```sh
+# what the chart would create, at default values
 helm template aifactory AIFactory/charts/aifactory --namespace factory \
-  | yq -r 'select(. != null) | [.kind, .metadata.name] | @tsv' | sort -u
-yq -r 'select(. != null) | [.kind, .metadata.name] | @tsv' \
+  | yq -r 'select(.kind != null) | [.kind, (.metadata.name // "-")] | @tsv' | sort -u
+
+# what gitops actually deploys
+yq -r 'select(.kind != null) | [.kind, (.metadata.name // "-")] | @tsv' \
   factory-gitops/apps/aifactory/manifests/*.yaml | sort -u
+
+# what is really running
 kubectl --context factory -n factory get networkpolicy,pdb,sa,cm
 ```
+
+The `select(.kind != null)` matters: a multi-document manifest contains empty documents,
+and the `kustomization.yaml` has no `metadata.name`. Without it the output carries blank
+lines and a literal `null`, which is noise a reader has to decide to ignore.
+
+These three were run verbatim, from that directory, before being published here. A
+document about checks that were never executed should not ship commands that were never
+executed.
