@@ -47,6 +47,10 @@ import argparse
 import tempfile
 from pathlib import Path
 
+# Sibling module in this same scripts/ directory. Consumers run this gate out of
+# a full hub checkout, so it resolves there too (see gate_evidence's docstring).
+from gate_evidence import digest
+
 # Canonical file names as they live, flat, in the hub's shared/factory-ui/.
 CANONICAL_MODULES: tuple[str, ...] = (
     "CommandPalette.tsx",
@@ -88,6 +92,14 @@ def _missing_from_contract(canonical: Path) -> list[str]:
     return [p.name for p in sorted(canonical.glob("*.tsx")) if p.name not in listed]
 
 
+def compared_evidence(service: str, root: Path, canonical: Path) -> list[str]:
+    """One line per component this run compared, each carrying the bytes it read."""
+    return [
+        f"{module} -> {rel} [canonical {digest(canonical / module)} | portal {digest(root / rel)}]"
+        for module, rel in sorted(SERVICE_LAYOUTS.get(service, {}).items())
+    ]
+
+
 def check_service(service: str, root: Path, canonical: Path) -> list[str]:
     """Return a list of drift messages (empty when the portal copies match)."""
     layout = SERVICE_LAYOUTS.get(service)
@@ -99,6 +111,19 @@ def check_service(service: str, root: Path, canonical: Path) -> list[str]:
         "the gate cannot check it"
         for name in _missing_from_contract(canonical)
     ]
+    # Factory#523, the same hole in the sibling gate: check_service can only
+    # compare what the layout points it at, so dropping one entry from a portal's
+    # layout removes that component from the gate's world and the run still
+    # reports a match. Every portal here vendors the WHOLE canonical set (the
+    # layouts are written as comprehensions over it precisely because that is the
+    # contract), so total coverage is the invariant to assert — no tree scan
+    # needed, unlike the verification-core gate where subsets are legitimate.
+    problems.extend(
+        f"{module}: canonical, but {service}'s layout maps it nowhere — nothing "
+        "compares it in this portal, so it is free to drift"
+        for module in CANONICAL_MODULES
+        if module not in layout
+    )
     for module, rel in layout.items():
         canonical_file = canonical / module
         if not canonical_file.is_file():
@@ -178,13 +203,25 @@ def main(argv: list[str] | None = None) -> int:
         _emit(f"ERROR: canonical tree not found: {canonical}")
         return 2
 
-    problems = check_service(args.service, args.root.resolve(), canonical)
+    root = args.root.resolve()
+    problems = check_service(args.service, root, canonical)
+    # Factory#504: name what was compared, not how many. A count is a headline
+    # nobody re-derives, so a component dropping out of scope is indistinguishable
+    # from one that was never in it — and the digests make the PASS verdict
+    # falsifiable, not just the failures.
+    _emit(f"factory-ui: {args.service} vs the canonical at {canonical}")
+    _emit("  compared (each line carries the bytes the verdict was read from):")
+    for line in compared_evidence(args.service, root, canonical):
+        _emit(f"    - {line}")
     if problems:
         _emit(f"factory-ui drift detected for {args.service}:")
         for p in problems:
             _emit(f"  - {p}")
         return 1
-    _emit(f"factory-ui: {args.service} copies match the hub canonical.")
+    _emit(
+        f"factory-ui: {args.service} matches the hub canonical — every component "
+        "enumerated above matched."
+    )
     return 0
 
 

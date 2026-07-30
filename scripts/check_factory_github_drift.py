@@ -44,6 +44,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Sibling module in this same scripts/ directory. Consumers run this gate out of
+# a full hub checkout, so it resolves there too (see gate_evidence's docstring).
+from gate_evidence import digest
+
 # The canonical layer is exactly the deduped VCS-client surface (epic Factory#154,
 # issue Factory#157). Service trees may carry extra, service-specific files; those
 # are intentionally NOT part of the canonical contract and are ignored.
@@ -102,12 +106,28 @@ def check_drift(canonical_root: Path, service_root: Path) -> list[str]:
     return problems
 
 
+def compared_evidence(canonical_root: Path, service_root: Path) -> list[str]:
+    """One line per file this run compared, each carrying the bytes it read."""
+    return [
+        f"{rel} [canonical {digest(canonical_root / rel)} | service {digest(service_root / rel)}]"
+        for rel in CANONICAL_FILES
+    ]
+
+
 def run_check(canonical_root: Path, service_root: Path) -> int:
     """Run the drift check and emit a human-readable report. Return an exit code."""
     if not canonical_root.is_dir():
         _emit(f"ERROR: canonical tree not found: {canonical_root}")
         return _EXIT_BAD_CANONICAL
     problems = check_drift(canonical_root, service_root)
+    # Factory#504: enumerate what was compared rather than counting it, and print
+    # the fragment each verdict came from on the PASS path too. "matches the
+    # canonical (10 files)" is a headline nobody re-derives, so a file dropping
+    # out of scope reads exactly like a file that was never there.
+    _emit(f"factory-github: {service_root} vs the canonical at {canonical_root}")
+    _emit("  compared (each line carries the bytes the verdict was read from):")
+    for line in compared_evidence(canonical_root, service_root):
+        _emit(f"    - {line}")
     if problems:
         _emit("factory-github drift — the service copy diverges from the canonical:")
         for problem in problems:
@@ -119,8 +139,8 @@ def run_check(canonical_root: Path, service_root: Path) -> int:
         )
         return 1
     _emit(
-        f"OK: {service_root} matches the canonical factory-github layer "
-        f"({len(CANONICAL_FILES)} files)."
+        f"OK: {service_root} matches the canonical factory-github layer — every file "
+        "enumerated above matched."
     )
     return 0
 
