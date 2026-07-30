@@ -18,22 +18,25 @@ Two rules are locked here, and the second is the one with teeth: the scope is
 CONFIGURED, not just supported. A `--package` that accepts a list while CI keeps
 passing `scripts` is the same always-green gate one level up.
 
-No `@pytest.mark.parametrize` on purpose. The code-quality job installs ruff and
-mypy and nothing else, so `pytest` is an untyped import there and the decorator
-would make every case it wraps untyped under `mypy --strict` — a net-new error on
-a brand-new file, which the ratchet blocks outright. A plain loop has no such
-dependency.
+Stdlib only, and no `@pytest.mark.parametrize`, on purpose — both learned from
+the ratchet this file is about. The code-quality job installs ruff and mypy and
+nothing else, so under `mypy --strict` there `pytest` is an untyped import whose
+decorator makes every case it wraps untyped, and `yaml` reports
+`import-untyped` (the test carve-out passes `--ignore-missing-imports`, which
+suppresses a MISSING import, not an UNTYPED one). Either is a net-new error on a
+brand-new file, which the ratchet blocks outright. A plain loop and a regex over
+the workflow text have no such dependency — and reading the text is arguably the
+more honest assertion, since the literal string is what CI runs.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
-from typing import Any
 
 # scripts/ is put on sys.path by tests/conftest.py.
 import ratchet_lint as rl
-import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "code-quality.yml"
@@ -65,9 +68,8 @@ def test_mypypath_carries_every_scoped_dir() -> None:
     assert "tests" in parts
 
 
-def _workflow() -> dict[str, Any]:
-    loaded: dict[str, Any] = yaml.safe_load(_WORKFLOW.read_text())
-    return loaded
+def _workflow_text() -> str:
+    return _WORKFLOW.read_text()
 
 
 def test_ci_gates_the_tests_directory() -> None:
@@ -78,7 +80,9 @@ def test_ci_gates_the_tests_directory() -> None:
     PACKAGE_DIR back to `scripts`, tests/ silently stops being linted again and
     every other test in this file still passes.
     """
-    scope = rl.packages(str(_workflow()["env"]["PACKAGE_DIR"]))
+    declared = re.search(r'^\s*PACKAGE_DIR:\s*"([^"]*)"', _workflow_text(), re.MULTILINE)
+    assert declared, "code-quality.yml declares no PACKAGE_DIR"
+    scope = rl.packages(declared.group(1))
     assert "tests" in scope, "the ruff/mypy ratchet must gate tests/"
     assert "scripts" in scope, "widening must not have dropped scripts/"
 
@@ -90,10 +94,9 @@ def test_ci_format_checks_the_tests_directory() -> None:
     That makes it the easiest of the two to quietly leave behind.
     """
     commands = [
-        step.get("run", "")
-        for job in _workflow()["jobs"].values()
-        for step in job.get("steps", [])
-        if "ruff format --check" in step.get("run", "")
+        line.strip()
+        for line in _workflow_text().splitlines()
+        if "ruff format --check" in line and not line.lstrip().startswith("#")
     ]
     assert commands, "no ruff format --check step found in code-quality.yml"
     assert any("tests/" in cmd for cmd in commands), (
