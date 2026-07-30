@@ -90,7 +90,19 @@ jobs:
           # This watchdog would then go quiet exactly when a nested-markdown
           # commit failed to deploy. ':(exclude,glob)' stops '*' at '/', so
           # only root-level markdown is excluded here too.
-          sha=$(git log -1 --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
+          #
+          # --first-parent is load-bearing, and was found by running this against
+          # the real repos rather than by reading it. Without it git's history
+          # simplification walks INTO the merged branch and returns the commit
+          # that touched the files, so on any repo that merges dev into main this
+          # returns the dev-side sha while deploy.yml tags the image from main's
+          # HEAD, which is the merge. Measured 2026-07-30: all four service repos
+          # MISMATCH without it and MATCH with it, and CFactory's live watchdog
+          # was already crying false drift on every merge as a result - which is
+          # how a watchdog gets muted and stops being a watchdog. --first-parent
+          # asks exactly what deploy.yml's push trigger asks: did main itself
+          # move a deployable file?
+          sha=$(git log -1 --first-parent --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
           if [ -z "${sha}" ]; then
             echo "::error::no deployable commit found on main; the pathspec is wrong."
             exit 1
@@ -139,5 +151,4 @@ jobs:
             --expected-sha "${{ steps.expected.outputs.sha }}" \
             --commit-epoch "${{ steps.expected.outputs.epoch }}" \
             --deployed-tag "${{ steps.deployed.outputs.tag }}" \
-            --grace-minutes "${{ inputs.grace_minutes }}" \
-            --repo "${{ github.repository }}"
+            --grace-minutes "${{ inputs.grace_minutes }}"
