@@ -33,8 +33,10 @@ dependencies and base images consumed by the build.
    routed to a local model; see
    [data-classification-and-handling-policy.md](data-classification-and-handling-policy.md).
 4. **Supply-chain integrity for code vendors.** Dependencies and base images are pinned
-   (`flake.lock`, lockfiles, digest-pinned Chainguard bases), scanned (Trivy P0 gate,
-   Renovate), and — for the fleet's own images — signed with provenance. Consuming a new
+   (`flake.lock`, lockfiles, digest-pinned Chainguard bases), scanned (Trivy P0 gate),
+   kept current (Dependabot), and — for the fleet's own images — signed with provenance.
+   Pinning and updating are one control, not two: a pin nobody advances is a stale
+   dependency with an audit trail (Factory#436). Consuming a new
    dependency follows the [secure-sdlc-policy.md](secure-sdlc-policy.md) gates.
 5. **Least-privilege vendor credentials.** Credentials issued to or by vendors (GitHub
    PATs, provider API keys) are scoped minimally, stored per the

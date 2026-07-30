@@ -14,7 +14,7 @@ Severity is the CVSS v3.1 base score from the authoritative advisory (NVD / GHSA
 
 - **Trivy** reports vendor/NVD severity per CVE on image and dependency findings.
 - **CodeQL** reports rule severity (error / warning) and security-severity per alert.
-- **Renovate** and GitHub Dependabot alerts carry the GHSA severity.
+- **Dependabot** alerts and version-update PRs carry the GHSA severity.
 
 Where exposure materially changes real risk (internet-reachable versus cluster-internal, reachable code path versus dormant transitive dependency), the security owner may adjust severity one band and must record the justification in the register entry. The unadjusted scanner severity is retained alongside it.
 

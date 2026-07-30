@@ -48,7 +48,7 @@ as separate columns here.
 | Encryption at rest | TLS at Cloudflare edge; agenix host key | No at-rest encryption on DB/MinIO; no KMS; cluster-internal cleartext | #314 |
 | Secrets management | agenix + cred-broker rotation; `scan_secrets.py` | Rotation one credential deep; no inventory; SOPS claim not real | #315 |
 | Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built) | Direct-to-main gitops auto-deploy; no branch protection; Fides unwired | #316 |
-| Vuln & patch mgmt | CodeQL x5, Trivy P0 gate, Renovate x5; remediation SLA + vulnerability register documented | CFactory even-coverage in flight (CFactory#191); external pen test not yet run | #317 |
+| Vuln & patch mgmt | CodeQL x5, Trivy P0 gate, Dependabot base-image updates x4; remediation SLA + vulnerability register documented | CFactory even-coverage in flight (CFactory#191); external pen test not yet run; factory-gitops agent-CLI pins unmanaged (#436 gap #7) | #317 |
 | Supply-chain integrity | Cosign + dual SBOM on PFactory/AIFactory/TFactory | CFactory unsigned; no signature-verification admission gate | #318 |
 | Incident response | SECURITY.md disclosure; audit chain for forensics | No IR runbook wired to alerting; untested; no paging | #319 |
 | Data governance | Redactor `llm_pii_redactor.py`; local-Ollama egress option | PII egress to LLM providers default-on; no classification/retention | #320 |

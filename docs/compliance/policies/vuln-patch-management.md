@@ -13,16 +13,18 @@ The engineering posture is strong on automated scanning and supply-chain provena
 
 ### Per-repo scanner coverage
 
-| Repo | CodeQL (SAST) | Trivy (image/dep CVE) | Renovate (dep updates) | Cosign + SBOM | Notes |
+| Repo | CodeQL (SAST) | Trivy (image/dep CVE) | Dependency updates | Cosign + SBOM | Notes |
 |---|---|---|---|---|---|
-| Factory (hub) | Yes | No | No | No | Spec/contract + docs; ships no container image, so no Trivy/SBOM by design. No Renovate — gap. |
-| PFactory | Yes | Yes | Yes | Yes | Full stack. |
-| AIFactory | Yes (security-and-quality pack) | Yes | Yes | Yes (3 image variants) | Reference implementation. |
-| TFactory | Yes (custom barrier query pack + `actions`) | Yes | Yes | Yes | Strongest SAST config; also scans the system-under-test with Trivy during verification (`apps/backend/agents/dependency_review.py`). |
-| CFactory | Yes | **No** | Yes | **No** | Cockpit UI. Missing image CVE scanning, SBOM, and image signing — the epic #310 gap #8. |
-| factory-gitops | No | No | Yes | No | Manifests only; Renovate keeps pinned images current. |
+| Factory (hub) | Yes | No | No | No | Spec/contract + docs; ships no container image, so no Trivy/SBOM by design. Its only Dockerfile is the `templates/cloud-deploy/` scaffolding template, which is deliberately unpinned because it is copied into generated projects, not built here. |
+| PFactory | Yes | Yes | Dependabot: security alerts + docker (daily) | Yes | Full stack. |
+| AIFactory | Yes (security-and-quality pack) | Yes | Dependabot: security alerts + docker (daily) | Yes (3 image variants) | Reference implementation. |
+| TFactory | Yes (custom barrier query pack + `actions`) | Yes | Dependabot: security alerts + docker (daily) | Yes | Strongest SAST config; also scans the system-under-test with Trivy during verification (`apps/backend/agents/dependency_review.py`). |
+| CFactory | Yes | **No** | Dependabot: security alerts + docker (weekly) | **No** | Cockpit UI. Missing image CVE scanning, SBOM, and image signing — the epic #310 gap #8. |
+| factory-gitops | No | No | **None** | No | Manifests only. Its `renovate.json` tracks the pinned agent-CLI versions via a regex custom manager and has never run — see gap #7. |
 
-Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron + per-PR); `.github/workflows/ci.yml` and `release.yml` in PFactory/AIFactory/TFactory (`aquasecurity/setup-trivy`, `anchore/sbom-action`, `sigstore/cosign-installer`); `renovate.json` in PFactory/AIFactory/TFactory/CFactory/factory-gitops. No `dependabot.yml` exists in any repo (matches only appear under vendored `node_modules`); dependency automation is Renovate, not Dependabot.
+Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron + per-PR); `.github/workflows/ci.yml` and `release.yml` in PFactory/AIFactory/TFactory (`aquasecurity/setup-trivy`, `anchore/sbom-action`, `sigstore/cosign-installer`); `.github/dependabot.yml` in PFactory/AIFactory/TFactory/CFactory.
+
+**Correction (2026-07-30, Factory#436).** Earlier revisions of this table credited "Renovate x5" as a live control. That was wrong, and wrong in the direction that flatters the posture: a `renovate.json` existed in five repos and Renovate had never run in any of them. The Renovate GitHub App is not installed on this account, so there were zero Renovate PRs fleet-wide and no Dependency Dashboard issue had ever been opened despite `:dependencyDashboard` being configured in four of the five. Committed configuration was being read as operating control. The fleet has standardised on Dependabot for base images (Factory#436), which is verifiable: it has an observable PR history in these repos, and it triggers the workflow runs that gate a base-image bump. `renovate.json` has been deleted from the four service repos so that no config claims coverage it does not deliver.
 
 ### How the scanners gate
 
@@ -38,12 +40,16 @@ Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron
 
 ## Gaps
 
-1. **Uneven supply-chain coverage — CFactory.** CFactory has CodeQL + Renovate but no Trivy image scan, no SBOM, and no cosign signing. Its container image ships to the cluster unscanned and unsigned. (Epic #310 gap #8.)
+1. **Uneven supply-chain coverage — CFactory.** CFactory has CodeQL and Dependabot base-image updates but no Trivy image scan, no SBOM, and no cosign signing. Its container image ships to the cluster unscanned and unsigned, which makes a current base image the only supply-chain control it actually has. (Epic #310 gap #8.)
 2. **No documented remediation SLA.** Trivy gates fixable HIGH/CRITICAL at build, but there is no written, tracked time-to-fix per severity for vulnerabilities found *outside* the build gate (already-deployed images, GitHub security alerts, newly-disclosed CVEs against pinned deps). Assessors (PCI 6.3.3, FedRAMP RA-5/SI-2) require defined and *met* timelines.
 3. **No penetration testing.** Coverage is automated scanning plus internal adversarial review (the TFactory security audit, the CodeQL barrier work). There is no scheduled independent/external penetration test with a remediation record. PCI 11.3 and FedRAMP require at least annual; NYDFS 500.5 requires annual pen test + biannual vulnerability assessment.
 4. **No vulnerability register / management process.** Findings live as transient scan output and ad-hoc issues; there is no single tracked register (finding -> severity -> owner -> due date -> status) that proves the loop closes within SLA.
 5. **Known Trivy blind spot — bundled frontend deps.** Frontend assets bundled into the image (e.g. Monaco, served via CDN under CSP) do not reach a layer Trivy scans. A partial mitigation exists (`test_p0_supply_chain.py::test_frontend_lockfile_no_high_critical` scans the lockfile with `trivy fs`), but this is not applied uniformly (CFactory has no Trivy at all) and lockfile scanning misses vendored/bundled copies.
-6. **No patch-cadence policy.** Renovate is configured everywhere but the merge/review cadence and the base-image digest-bump cadence are not policy-bound, so "current" is best-effort rather than an auditable target. Factory hub has no Renovate at all.
+6. **No patch-cadence policy.** Base-image updates now open as PRs, but the merge/review cadence is not policy-bound, so "current" is best-effort rather than an auditable target. Until 2026-07-30 this gap was worse than recorded: nothing opened those PRs at all, and every base-image digest bump in fleet history — including the Chainguard Python moves for CVE-2026-45447 — was done by hand.
+
+7. **factory-gitops dependency updates are unmanaged.** Its `renovate.json` uses a regex custom manager to track the pinned agent-CLI versions (`@anthropic-ai/claude-code`, `@openai/codex`, `@google/gemini-cli`) inside `apps/*/manifests/manifests.yaml`, so that a broken upstream release cannot reach the fleet on the next pod start without the `cli-canary` gating a bump PR first. It has never run, and Dependabot has no equivalent of a regex custom manager, so this is the one place in the fleet where standardising on Dependabot does not substitute. Those pins are hand-managed today. (Factory#436.)
+
+8. **Dependabot does not read `COPY --from=<image>`.** Verified 2026-07-30 with `dependabot-cli` v1.91.0: its Dockerfile parser only extracts `FROM`. The `COPY --from=ghcr.io/olafkfreund/tfactory-runner-nix:latest@sha256:...` pins in `AIFactory/Dockerfile` are therefore not covered by any bot. Risk is low because that registry is ours, so upstream garbage collection is not a threat, but the pins are hand-managed rather than tracked.
 
 ## Remediation plan (phased)
 
@@ -51,7 +57,7 @@ Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron
 - Add the P0 Trivy image scan (reuse `tests/docker/test_p0_supply_chain.py` from a sibling repo) to CFactory `ci.yml`, gating fixable HIGH/CRITICAL.
 - Add Syft dual-SBOM + cosign keyless signing to CFactory `release.yml`.
 - Add a `.trivyignore` with the same audited-exceptions discipline.
-- Add Renovate to the Factory hub repo.
+- Decide whether the `factory-gitops` agent-CLI pins warrant installing the Renovate App, or whether the `cli-canary` should assert freshness itself (gap #7).
 
 **Phase 2 — Define and adopt remediation SLAs.**
 
@@ -76,13 +82,15 @@ Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron
 
 **Phase 5 — Close the frontend blind spot + patch cadence.**
 - Apply the frontend lockfile scan uniformly across all image-shipping repos; add SBOM-diff review to catch bundled/vendored copies Trivy's filesystem scan misses.
-- Set a Renovate merge cadence (e.g. non-major auto-merge on green CI within 7 days; majors reviewed within 30) and a base-image digest-bump cadence, both documented and tracked.
+- Set a dependency-PR merge cadence (e.g. non-major auto-merge on green CI within 7 days; majors reviewed within 30) and a base-image digest-bump cadence, both documented and tracked.
+- Add a staleness assertion so an *absent* bot is a failure rather than silence. The nine-week outage window behind AIFactory#1091 was invisible precisely because "no PRs" and "nothing to update" look identical from the outside. A check that fails when a pinned digest no longer matches its tag would have caught it on day one.
 
 ## Acceptance criteria
 
 - [ ] Every image-shipping repo (incl. CFactory) runs a fail-closed Trivy HIGH/CRITICAL image scan in CI.
 - [ ] Every image-shipping repo (incl. CFactory) produces a dual-format SBOM and a cosign signature at release.
-- [ ] Renovate is enabled on all six repos, including the Factory hub.
+- [ ] Every repo that builds a container image has a dependency bot that demonstrably runs, evidenced by its PR history rather than by the presence of a config file.
+- [ ] `factory-gitops` agent-CLI pins are tracked by something (gap #7).
 - [ ] Remediation SLAs by severity are documented, adopted, and demonstrably met (evidence of on-time closure).
 - [ ] A vulnerability register exists and is reviewed monthly; no finding is past its SLA due date without a documented, approved exception.
 - [ ] An annual independent penetration test is scheduled and completed, with a report and remediation evidence retained.
@@ -94,7 +102,7 @@ Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron
 - CI logs: Trivy P0 scan results (`tests/docker/test_p0_supply_chain.py`) per repo, per release.
 - `.github/workflows/codeql.yml` runs + CodeQL alert history (all five code repos); TFactory `.github/codeql/codeql-config.yml` custom pack.
 - `release.yml` cosign signature + SBOM attestation logs; published SPDX + CycloneDX SBOMs per image (PFactory/AIFactory/TFactory, and CFactory after Phase 1).
-- `renovate.json` per repo + merged Renovate PR history (patch cadence evidence).
+- `.github/dependabot.yml` per repo **plus** the merged dependency-PR history for that repo. The config alone is not evidence: Factory#436 is the case study in a well-formed config that produced nothing for nine weeks. Evidence is bot activity.
 - `.trivyignore` files (audited exception register) per repo.
 - Base-image digest-bump commits and the CVE remediation history above (#971, #565, Chainguard digest bumps).
 - Vulnerability register export (Phase 3) and penetration-test report + remediation records (Phase 4).

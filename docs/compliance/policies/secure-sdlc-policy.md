@@ -49,9 +49,11 @@ across `Factory`, `PFactory`, `AIFactory`, `TFactory`, `CFactory`, and `factory-
    auto-deploy path and single-owner `CODEOWNERS` weaken this; strengthening it (deploy
    approvals, four-eyes via the built-but-unwired Fides change-gate, signed commits) is
    tracked in the change-management domain and recorded as risk R-005.
-7. **Dependencies are managed.** Renovate keeps dependencies current across the repos;
-   the Trivy gate blocks known-vulnerable additions. A remediation SLA by severity is a
-   tracked gap (Factory#317).
+7. **Dependencies are managed.** Dependabot opens security alerts fleet-wide and
+   base-image update PRs on every image-shipping repo; the Trivy gate blocks
+   known-vulnerable additions. "Managed" means a bot with an observable PR history, not
+   a configuration file describing one — Factory#436 is on record as what the weaker
+   reading costs. A remediation SLA by severity is a tracked gap (Factory#317).
 8. **Reproducible builds.** Builds pin inputs (`flake.lock`, lockfiles, digest-pinned
    base images) so a build is reproducible and its inputs are auditable.
 
