@@ -61,12 +61,41 @@ matrix draw evidence from the same [domain documents](policies/). Owner tags map
 | A.5.29 | Information security during disruption | Planned | BC policy defined; recovery constrained by the open backup gap (R-001, Factory#321). | BC/DR |
 | A.5.30 | ICT readiness for business continuity | Planned | RTO/RPO proposed; backups, tested restore, and DR runbook pending (Factory#321). | BC/DR |
 | A.5.31 | Legal, statutory, regulatory and contractual requirements | Implemented | Notification obligations mapped in the IR runbook's breach-notification matrix; GDPR ROPA `AIFactory/guides/compliance/dpia-data-flow.md`. | Security Owner |
-| A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. **Executable evidence:** `cosign verify-attestation --type spdxjson ghcr.io/olafkfreund/cfactory:latest` exits 0 against the live registry — verified independently of CI 2026-07-30, and observed exiting 1 before the attestation existed (CFactory#191). | Supply-chain |
+| A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. **Executable evidence** — see [the note below this table](#executable-evidence-a532) for what it does and does not prove. | Supply-chain |
 | A.5.33 | Protection of records | Implemented | Audit records are tamper-evident and retained 13 months (`audit_retention.py`); note evidence ILM bug (R-006). | Audit |
 | A.5.34 | Privacy and protection of PII | Planned | Redactor + DPIA exist; PII-egress-by-default and DSAR gaps open (R-004, Factory#320). | Data |
 | A.5.35 | Independent review of information security | Planned | Annual independent review scheduled but not yet performed (governance domain, Factory#311). | Security Owner |
 | A.5.36 | Compliance with policies, rules and standards | Implemented | CI gates enforce SDLC policy; management review checks control effectiveness ([roles.md](roles.md)). | Security Owner |
 | A.5.37 | Documented operating procedures | Implemented | Runbooks and RFCs (`Factory/docs/rfc/`, IR runbook, BC/DR remediation, bootstrap-flow docs). | Security Owner |
+
+### Executable evidence (A.5.32) {#executable-evidence-a532}
+
+Most justifications in this document cite a filename. Factory#499 showed that a filename can be green and absent at the same time — two hardening issues closed against Helm templates that had never been applied to the cluster they were credited to. Where a control can instead cite a **command an assessor runs themselves**, it should.
+
+```sh
+cosign verify-attestation --type spdxjson \
+  --certificate-identity 'https://github.com/olafkfreund/CFactory/.github/workflows/deploy.yml@refs/heads/main' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  ghcr.io/olafkfreund/cfactory:latest
+```
+
+Run against the live registry from outside CI on 2026-07-30: **exit 0**.
+
+**What this proves.** An in-toto attestation with `predicateType: https://spdx.dev/Document` exists for that image, is retrievable from the registry, and is signed by CFactory's own release workflow identity — recorded in the transparency log.
+
+**What it does not prove.** It does not validate the SPDX document's *contents*. An attestation carrying an empty or malformed SBOM would still exit 0. The supportable claim is "a signed, retrievable SBOM attestation exists", not "the SBOM is complete or accurate". Completeness is a separate control and is not evidenced here.
+
+**Why it is pinned and mutation-checked.** Passing `--certificate-identity-regexp '.*'` also exits 0 while proving almost nothing, because it accepts any signer — a command that passes for the wrong reason is the executable form of the same defect as a stale filename. The identity above is pinned, and substituting a different one fails closed:
+
+```
+Error: no matching attestations: none of the expected identities matched what was
+in the certificate, got subjects [https://github.com/olafkfreund/CFactory/...]
+exit=1
+```
+
+The control was also observed exiting 1 before CFactory#191 added the attestation step. So it has been seen failing with the control absent, failing with the wrong signer, and passing with both correct.
+
+Extending this pattern to other rows is tracked in Factory#504. Each row must have its command actually run — and made to fail — before it is cited.
 
 ## A.6 People controls (8)
 
