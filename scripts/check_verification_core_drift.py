@@ -24,6 +24,22 @@ layout is described by :data:`SERVICE_LAYOUTS`; only modules a service actually
 carries are checked (a service that does not vendor a module is not penalised for
 its absence).
 
+Two guards run alongside the byte comparison, because the comparison alone can
+only see what the layout points it at (Factory#523):
+
+* :func:`_unmapped_modules` — a module declared canonical that NO service maps.
+* :func:`_stray_vendored_copies` — the inverse: a file in the service tree whose
+  basename is a canonical module and which THIS service's layout maps nowhere.
+  Deleting one line from :data:`SERVICE_LAYOUTS` used to un-gate a vendored file
+  silently; the copy stayed on disk, kept being imported and was free to drift,
+  and the only trace was the module count in the success line dropping by one.
+
+Every verdict this gate emits — pass and fail alike — carries the bytes it was
+derived from (path plus sha256 of each side), and the success report enumerates
+what it compared rather than counting it. A count is not a check: nobody
+re-derives a headline number, so a scope loss hides inside it. See
+``docs/dev/gate-honesty.md`` (Factory#504).
+
 This mirrors ``scripts/check_factory_github_drift.py``: pure stdlib, no third-
 party imports, hard-fail (exit 1) on real drift.
 
@@ -58,9 +74,14 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tempfile
 from pathlib import Path
+
+# Sibling module in this same scripts/ directory. Consumers run this gate out of
+# a full hub checkout, so it resolves there too (see gate_evidence's docstring).
+from gate_evidence import digest
 
 # The canonical layer is exactly the deduped verification-core surface (epic
 # Factory#154, issue Factory#158). These filenames are the canonical module names
@@ -167,6 +188,17 @@ _DEFAULT_CANONICAL = Path(__file__).resolve().parent
 # Exit code returned for a bad invocation (missing canonical / unknown service).
 _EXIT_BAD_INVOCATION = 2
 
+# Directories the stray-copy scan never walks. Dot-directories cover .git, .venv
+# and the .claude/worktrees/ trees a local checkout accumulates (a worktree holds
+# a second copy of every vendored module and would be reported as a stray on
+# every developer machine). The named entries are dependency and build trees no
+# service imports its own vendored modules from. This prune list is the scan's
+# scope, so the report prints it: a scan whose blind spots are undocumented is
+# the silent scope loss this guard exists to catch, one level up.
+_SCAN_PRUNE: frozenset[str] = frozenset(
+    {"node_modules", "__pycache__", "venv", "site-packages", "dist", "build", "target"}
+)
+
 
 def _emit(message: str) -> None:
     # This is a CLI drift gate; its stdout report IS its purpose, so the T20
@@ -178,6 +210,61 @@ def _unmapped_modules() -> list[str]:
     """Canonical modules that no service in SERVICE_LAYOUTS vendors."""
     mapped = {module for layout in SERVICE_LAYOUTS.values() for module in layout}
     return [m for m in CANONICAL_MODULES if m not in mapped]
+
+
+def _stray_vendored_copies(service_root: Path, layout: dict[str, str]) -> list[str]:
+    """Files in the service tree that look vendored but *layout* maps nowhere.
+
+    The inverse of :func:`_unmapped_modules`, and the guard Factory#523 is about.
+    ``check_drift`` can only compare what the layout points it at, so removing a
+    single line from :data:`SERVICE_LAYOUTS` removes the file from the gate's
+    world entirely: it stays on disk, stays imported, and drifts unobserved while
+    the gate reports success. Asking the question from the tree's side instead of
+    the layout's side catches that, and catches the original Factory#477
+    condition too (AIFactory carried ``job_dispatch.py`` for months with no
+    mapping registered anywhere).
+    """
+    canonical_names = set(CANONICAL_MODULES)
+    mapped = {(service_root / rel).resolve() for rel in layout.values()}
+    strays: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(service_root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in _SCAN_PRUNE)
+        for name in sorted(filenames):
+            if name not in canonical_names:
+                continue
+            found = Path(dirpath) / name
+            if found.resolve() in mapped:
+                continue
+            rel = found.relative_to(service_root)
+            strays.append(
+                f"{name}: the service carries {rel} but this layout maps it nowhere — "
+                "nothing compares it, so it is free to drift (add it to "
+                "SERVICE_LAYOUTS or delete the copy)"
+            )
+    # Sorted: os.walk order is filesystem order, and a gate whose report reorders
+    # between runs is one nobody can diff.
+    return sorted(strays)
+
+
+def compared_evidence(
+    canonical_root: Path,
+    service_root: Path,
+    layout: dict[str, str],
+) -> list[str]:
+    """One line per module this run compared, each carrying the bytes it read.
+
+    This is the enumeration that replaces the module count in the success line.
+    ``OK: aifactory matches the canonical (6 vendored module(s))`` is a headline
+    nobody re-derives — it read 6 the day a seventh was dropped from the layout,
+    and it read 5 the day one was, and neither is legible as a defect. A list is
+    falsifiable at a glance.
+    """
+    return [
+        f"{module} -> {rel_path} "
+        f"[canonical {digest(canonical_root / module)} | "
+        f"service {digest(service_root / rel_path)}]"
+        for module, rel_path in sorted(layout.items())
+    ]
 
 
 def check_drift(
@@ -200,12 +287,19 @@ def check_drift(
     The equivalent rot is a module DECLARED canonical that no service maps: it is
     unchecked by definition, and it silently inflates the count the gate reports
     as OK.
+
+    Checked SECOND (Factory#523): the inverse — a file in the SERVICE tree whose
+    basename is a canonical module and which *layout* maps nowhere. Both guards
+    above ask their question from the layout's side, so neither notices a layout
+    ENTRY being deleted while the vendored file stays on disk. That mutation used
+    to turn the gate green on a deliberately drifted file.
     """
     problems: list[str] = [
         f"{module}: listed in CANONICAL_MODULES but vendored by no service — "
         "nothing compares it anywhere, so declaring it canonical is unenforced"
         for module in _unmapped_modules()
     ]
+    problems.extend(_stray_vendored_copies(service_root, layout))
     for module, rel_path in layout.items():
         canonical_file = canonical_root / module
         service_file = service_root / rel_path
@@ -214,7 +308,10 @@ def check_drift(
             problems.append(f"{module}: present in canonical, missing in service copy ({rel_path})")
             continue
         if service_file.read_bytes() != canonical_bytes:
-            problems.append(f"{module}: differs from canonical (byte mismatch at {rel_path})")
+            problems.append(
+                f"{module}: differs from canonical (byte mismatch at {rel_path}) "
+                f"[canonical {digest(canonical_file)} | service {digest(service_file)}]"
+            )
     return problems
 
 
@@ -227,10 +324,21 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
     if layout is None:
         _emit(f"ERROR: unknown service {service!r}; known: {', '.join(sorted(SERVICE_LAYOUTS))}")
         return _EXIT_BAD_INVOCATION
-    if not layout:
-        _emit(f"OK: {service} vendors no verification-core modules (nothing to check).")
-        return 0
+    # An empty layout used to return 0 here with "vendors no verification-core
+    # modules (nothing to check)" — the Factory#523 mutation taken to its limit,
+    # since deleting every entry is just deleting one entry repeatedly. It now
+    # falls through: with nothing mapped, the stray-copy scan is the whole check,
+    # and a service carrying a vendored file it maps nowhere goes red.
     problems = check_drift(canonical_root, service_root, layout)
+    _emit(f"verification-core: {service} vs the hub canonical at {canonical_root}")
+    _emit("  compared (each line carries the bytes the verdict was read from):")
+    for line in compared_evidence(canonical_root, service_root, layout) or ["(no modules mapped)"]:
+        _emit(f"    - {line}")
+    _emit(
+        f"  scanned {service_root} for copies of a canonical module that this "
+        "layout maps nowhere; pruned: dot-directories, "
+        f"{', '.join(sorted(_SCAN_PRUNE))}"
+    )
     if problems:
         _emit(f"verification-core drift — {service} diverges from the hub canonical:")
         for problem in problems:
@@ -251,8 +359,8 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
         )
         return 1
     _emit(
-        f"OK: {service} matches the canonical verification-core layer "
-        f"({len(layout)} vendored module(s))."
+        f"OK: {service} matches the canonical verification-core layer — every module "
+        "enumerated above matched, and the tree carries no unmapped copy."
     )
     return 0
 
@@ -272,6 +380,89 @@ def _list_layouts() -> int:
         for module, rel_path in sorted(layout.items()):
             _emit(f"    {module} -> {rel_path}")
     return 0
+
+
+def _materialise(canonical: Path, layout: dict[str, str], target: Path) -> Path:
+    """Build a service tree under *target* that matches *canonical* byte-for-byte."""
+    for module, rel_path in layout.items():
+        path = target / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((canonical / module).read_bytes())
+    return target
+
+
+def _scope_self_test(canonical: Path, root: Path, layout: dict[str, str]) -> list[str]:
+    """Cases that move the gate's SCOPE rather than its subject (Factory#523).
+
+    Split out of :func:`_self_test` to keep either function readable, and because
+    these four cases are one idea: the checks above all mutate the files being
+    compared, and none of them can see the gate being pointed at fewer files.
+    """
+    failures: list[str] = []
+
+    def expect(condition: bool, label: str) -> None:
+        if not condition:
+            failures.append(label)
+
+    # An empty layout over a tree that carries vendored files is RED. This used
+    # to assert the opposite ("empty layout must not drift"), which is #523
+    # written down as a requirement: the tree carries two canonical modules, the
+    # layout maps none of them, and that was a pass.
+    carrying = _materialise(canonical, layout, root / "carrying")
+    expect(
+        check_drift(canonical, carrying, {}) != [],
+        "an empty layout over a tree carrying vendored modules must be red",
+    )
+
+    # ...but an empty layout over a tree that carries nothing is clean. The guard
+    # must fire on unmapped COPIES, not on every service that vendors nothing,
+    # or it is red by construction and gets switched off.
+    bare = root / "bare"
+    (bare / "apps").mkdir(parents=True)
+    (bare / "apps/main.py").write_text("# service-only\n")
+    expect(check_drift(canonical, bare, {}) == [], "a tree with no copies must be clean")
+
+    # THE Factory#523 MUTATION. The subject is held constant — the same drifted
+    # file, on disk, untouched — and only the gate's own layout moves. Before the
+    # stray-copy guard the second call returned [] and the run printed success,
+    # with the module count as the only trace.
+    drifted = _materialise(canonical, layout, root / "drifted")
+    (drifted / "apps/backend/agents/verification_gate.py").write_text("# drifted\n")
+    mapped = check_drift(canonical, drifted, layout)
+    expect(
+        any(p.startswith("verification_gate.py") for p in mapped),
+        "baseline: the drifted copy must be flagged while it is mapped",
+    )
+    unmapped_layout = {k: v for k, v in layout.items() if k != "verification_gate.py"}
+    problems = check_drift(canonical, drifted, unmapped_layout)
+    expect(
+        any("verification_gate.py" in p and "maps it nowhere" in p for p in problems),
+        "deleting a layout entry must flag the now-unmapped copy, not go green",
+    )
+    SERVICE_LAYOUTS["__selftest__"] = unmapped_layout
+    try:
+        expect(
+            run_check(canonical, drifted, "__selftest__") == 1,
+            "run_check must exit 1 when a layout entry is deleted from under a copy",
+        )
+    finally:
+        del SERVICE_LAYOUTS["__selftest__"]
+
+    # The scan is scoped, and the scope is the documented one. A copy inside a
+    # pruned directory is not a stray (a local .claude/worktrees checkout would
+    # otherwise redden every developer run); a copy anywhere else is.
+    pruned = root / "pruned"
+    for parent in (".git", "node_modules"):
+        (pruned / parent).mkdir(parents=True)
+        (pruned / parent / "nix_provisioner.py").write_text("# not a vendored copy\n")
+    expect(check_drift(canonical, pruned, {}) == [], "pruned directories must not be scanned")
+    (pruned / "vendor").mkdir()
+    (pruned / "vendor/nix_provisioner.py").write_text("# a real unmapped copy\n")
+    expect(
+        check_drift(canonical, pruned, {}) != [],
+        "an unmapped copy outside the prune list must be flagged",
+    )
+    return failures
 
 
 def _self_test() -> int:
@@ -300,12 +491,7 @@ def _self_test() -> int:
         }
 
         def make_service(name: str) -> Path:
-            svc = root / name
-            for module, rel_path in layout.items():
-                target = svc / rel_path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes((canonical / module).read_bytes())
-            return svc
+            return _materialise(canonical, layout, root / name)
 
         # Case 1: an identical copy -> no drift.
         identical = make_service("identical")
@@ -376,8 +562,8 @@ def _self_test() -> int:
         finally:
             del SERVICE_LAYOUTS["__selftest__"]
 
-        # Case 7: an empty layout (a service that vendors nothing) passes trivially.
-        expect(check_drift(canonical, identical, {}) == [], "empty layout must not drift")
+        # Cases 7-10: the gate's SCOPE, not its subject (Factory#523).
+        failures.extend(_scope_self_test(canonical, root, layout))
 
     if failures:
         _emit("SELF-TEST FAILED:")

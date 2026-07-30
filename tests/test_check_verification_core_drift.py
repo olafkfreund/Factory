@@ -83,11 +83,150 @@ def test_unvendored_module_is_not_checked(tmp_path: Path) -> None:
     assert gate.check_drift(canonical, service, layout) == []
 
 
-def test_empty_layout_has_no_drift(tmp_path: Path) -> None:
+def test_empty_layout_over_an_empty_tree_has_no_drift(tmp_path: Path) -> None:
     canonical = _make_canonical(tmp_path)
     service = tmp_path / "service"
     service.mkdir()
     assert gate.check_drift(canonical, service, {}) == []
+
+
+def test_empty_layout_over_a_carrying_tree_is_red(tmp_path: Path) -> None:
+    """Mapping nothing is not the same as there being nothing to map.
+
+    This asserted the opposite until Factory#523 — "empty layout must not drift"
+    — which is the defect stated as a requirement: a service tree carrying two
+    canonical modules, with a layout mapping none of them, was a pass. Deleting
+    every entry is only deleting one entry repeatedly, so the extreme case and
+    the reported case are the same bug.
+    """
+    canonical = _make_canonical(tmp_path)
+    service = _make_service(canonical, tmp_path / "service", _LAYOUT)
+    problems = gate.check_drift(canonical, service, {})
+    assert [p.split(":")[0] for p in problems] == sorted(_LAYOUT), problems
+
+    # Asserted through run_check() as well, because it used to short-circuit on
+    # an empty layout with "vendors no verification-core modules (nothing to
+    # check)" and exit 0 without calling check_drift at all.
+    gate.SERVICE_LAYOUTS["__pytest_empty__"] = {}
+    try:
+        assert gate.run_check(canonical, service, "__pytest_empty__") == 1
+    finally:
+        del gate.SERVICE_LAYOUTS["__pytest_empty__"]
+
+
+def test_deleting_a_layout_entry_turns_the_gate_red(tmp_path: Path) -> None:
+    """THE Factory#523 mutation: mutate the gate's CONFIGURATION, not its subject.
+
+    Reported reproduction, verbatim: with ``job_dispatch.py`` mapped, a drifted
+    copy is flagged; with the one-line mapping removed, the gate printed
+    ``NO PROBLEMS`` and the run reported success. The only signal was the module
+    count in the success line dropping from 6 to 5 — a headline number nobody
+    re-derives.
+
+    The subject is held constant across the two calls (the same drifted file, on
+    disk, unchanged); the only thing that moves is the gate's own layout. A guard
+    exercised only by mutating its subject cannot see this, which is why every
+    mutation table for this gate passed while the hole was open.
+    """
+    canonical = _make_canonical(tmp_path)
+    service = _make_service(canonical, tmp_path / "service", _LAYOUT)
+    (service / _LAYOUT["verification_gate.py"]).write_text("# deliberately drifted\n")
+
+    mapped = gate.check_drift(canonical, service, _LAYOUT)
+    assert any(p.startswith("verification_gate.py") for p in mapped), mapped
+
+    unmapped_layout = {k: v for k, v in _LAYOUT.items() if k != "verification_gate.py"}
+    unmapped = gate.check_drift(canonical, service, unmapped_layout)
+    assert any("verification_gate.py" in p and "maps it nowhere" in p for p in unmapped), unmapped
+
+
+def test_deleting_a_real_service_mapping_turns_the_gate_red(tmp_path: Path) -> None:
+    """The same mutation against the REAL SERVICE_LAYOUTS, end-to-end.
+
+    The test above proves the logic on a synthetic layout; this one proves the
+    shipped configuration is actually wired to it. It builds a service tree that
+    matches aifactory's real layout byte-for-byte, confirms run_check() exits 0,
+    then deletes one real mapping and requires exit 1 — which is the reproduction
+    on the issue, run against the config the fleet uses.
+    """
+    canonical = _make_canonical(tmp_path)
+    real_layout = dict(gate.SERVICE_LAYOUTS["aifactory"])
+    assert "job_dispatch.py" in real_layout, "fixture assumes aifactory maps job_dispatch.py"
+    service = _make_service(canonical, tmp_path / "service", real_layout)
+
+    gate.SERVICE_LAYOUTS["__pytest_real__"] = real_layout
+    try:
+        assert gate.run_check(canonical, service, "__pytest_real__") == 0
+        del gate.SERVICE_LAYOUTS["__pytest_real__"]["job_dispatch.py"]
+        assert gate.run_check(canonical, service, "__pytest_real__") == 1
+    finally:
+        gate.SERVICE_LAYOUTS.pop("__pytest_real__", None)
+
+
+def test_stray_guard_is_wired_into_check_drift(tmp_path: Path) -> None:
+    """The stray-copy guard must be CALLED by check_drift(), not merely defined.
+
+    Same wiring requirement as the unmapped-module guard below, for the same
+    reason: Factory#397 shipped the sibling gate's completeness guard as dead
+    code — defined, tested directly, never invoked.
+    """
+    canonical = _make_canonical(tmp_path)
+    service = _make_service(canonical, tmp_path / "service", _LAYOUT)
+    stray = service / "apps/backend/copy/nix_provisioner.py"
+    stray.parent.mkdir(parents=True)
+    stray.write_bytes((canonical / "nix_provisioner.py").read_bytes())
+
+    problems = gate.check_drift(canonical, service, _LAYOUT)
+    assert any("apps/backend/copy/nix_provisioner.py" in p for p in problems), (
+        "check_drift() ignored a canonical module carried by the service that the "
+        "layout maps nowhere. The stray-copy guard is defined but not wired in."
+    )
+
+
+def test_stray_scan_prunes_dot_directories_and_dependency_trees(tmp_path: Path) -> None:
+    """The scan's scope is the documented one, in both directions.
+
+    A local checkout keeps whole second copies of the tree under
+    ``.claude/worktrees/`` and ``node_modules/``; flagging those would redden
+    every developer run and the guard would be turned off. Pruning them is a
+    deliberate blind spot, so it is asserted rather than assumed — and the second
+    half asserts the prune list has not quietly swallowed the real case.
+    """
+    canonical = _make_canonical(tmp_path)
+    service = tmp_path / "service"
+    for parent in (".claude/worktrees/x", "node_modules/pkg"):
+        (service / parent).mkdir(parents=True)
+        (service / parent / "nix_provisioner.py").write_text("# not a vendored copy\n")
+    assert gate.check_drift(canonical, service, {}) == []
+
+    (service / "vendor").mkdir()
+    (service / "vendor/nix_provisioner.py").write_text("# a real unmapped copy\n")
+    assert gate.check_drift(canonical, service, {}) != []
+
+
+def test_success_report_enumerates_what_it_compared(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A count is not a check: the pass must name every module and its bytes.
+
+    ``OK: aifactory matches the canonical (6 vendored module(s))`` read 6 the day
+    a seventh was dropped and 5 the day a sixth was, and neither is legible as a
+    defect. Locked here so the enumeration cannot regress to a headline number,
+    and so the per-module evidence (a digest anyone can re-derive with
+    ``sha256sum``) is present on the PASS path — not only on failures.
+    """
+    canonical = _make_canonical(tmp_path)
+    service = _make_service(canonical, tmp_path / "service", _LAYOUT)
+    gate.SERVICE_LAYOUTS["__pytest_ok__"] = _LAYOUT
+    try:
+        assert gate.run_check(canonical, service, "__pytest_ok__") == 0
+    finally:
+        del gate.SERVICE_LAYOUTS["__pytest_ok__"]
+
+    out = capsys.readouterr().out
+    for module, rel_path in _LAYOUT.items():
+        assert f"{module} -> {rel_path}" in out, f"success report never named {module}"
+    assert out.count("sha256:") == 2 * len(_LAYOUT), "each side of each compare must cite its bytes"
 
 
 def test_run_check_exit_codes(tmp_path: Path) -> None:
