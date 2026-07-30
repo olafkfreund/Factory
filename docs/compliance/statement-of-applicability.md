@@ -11,6 +11,10 @@ A.8 Technological 34). Each control is marked:
 
 - **Implemented** — a real control exists; the justification cites the evidence (file,
   RFC, CI job, or domain document).
+- **Partial** — a real control exists but does not cover the whole scope, or is declared
+  and not enforced on the current substrate; the justification states which part is live
+  and cites the issue tracking the remainder. A control that cannot be shown to operate
+  is not Implemented.
 - **Planned** — applicable but not yet fully in place; the justification cites the
   driving Factory child issue and remediation wave.
 - **Not Applicable** — out of scope for a cloud-only, remote, automated fleet; the
@@ -57,12 +61,43 @@ matrix draw evidence from the same [domain documents](policies/). Owner tags map
 | A.5.29 | Information security during disruption | Planned | BC policy defined; recovery constrained by the open backup gap (R-001, Factory#321). | BC/DR |
 | A.5.30 | ICT readiness for business continuity | Planned | RTO/RPO proposed; backups, tested restore, and DR runbook pending (Factory#321). | BC/DR |
 | A.5.31 | Legal, statutory, regulatory and contractual requirements | Implemented | Notification obligations mapped in the IR runbook's breach-notification matrix; GDPR ROPA `AIFactory/guides/compliance/dpia-data-flow.md`. | Security Owner |
-| A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. | Supply-chain |
+| A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. **Executable evidence** — see [the note below this table](#executable-evidence-a532) for what it does and does not prove. | Supply-chain |
 | A.5.33 | Protection of records | Implemented | Audit records are tamper-evident and retained 13 months (`audit_retention.py`); note evidence ILM bug (R-006). | Audit |
 | A.5.34 | Privacy and protection of PII | Planned | Redactor + DPIA exist; PII-egress-by-default and DSAR gaps open (R-004, Factory#320). | Data |
 | A.5.35 | Independent review of information security | Planned | Annual independent review scheduled but not yet performed (governance domain, Factory#311). | Security Owner |
 | A.5.36 | Compliance with policies, rules and standards | Implemented | CI gates enforce SDLC policy; management review checks control effectiveness ([roles.md](roles.md)). | Security Owner |
 | A.5.37 | Documented operating procedures | Implemented | Runbooks and RFCs (`Factory/docs/rfc/`, IR runbook, BC/DR remediation, bootstrap-flow docs). | Security Owner |
+
+### Executable evidence (A.5.32) {#executable-evidence-a532}
+
+Most justifications in this document cite a filename. Factory#499 showed that a filename can be green and absent at the same time — two hardening issues closed against Helm templates that had never been applied to the cluster they were credited to. Where a control can instead cite a **command an assessor runs themselves**, it should.
+
+```sh
+cosign verify-attestation --type spdxjson \
+  --certificate-identity 'https://github.com/olafkfreund/CFactory/.github/workflows/deploy.yml@refs/heads/main' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  ghcr.io/olafkfreund/cfactory:latest
+```
+
+Run against the live registry from outside CI on 2026-07-30: **exit 0**.
+
+**What this proves.** An in-toto attestation with `predicateType: https://spdx.dev/Document` exists for that image, is retrievable from the registry, and is signed by CFactory's own release workflow identity — recorded in the transparency log.
+
+**What it does not prove.** It does not validate the SPDX document's *contents*. An attestation carrying an empty or malformed SBOM would still exit 0. The supportable claim is "a signed, retrievable SBOM attestation exists", not "the SBOM is complete or accurate". Completeness is a separate control and is not evidenced here.
+
+**Why it is pinned and mutation-checked.** Passing `--certificate-identity-regexp '.*'` also exits 0 while proving almost nothing, because it accepts any signer — a command that passes for the wrong reason is the executable form of the same defect as a stale filename. The identity above is pinned, and substituting a different one fails closed:
+
+```
+Error: no matching attestations: none of the expected identities matched what was
+in the certificate, got subjects [https://github.com/olafkfreund/CFactory/...]
+exit=1
+```
+
+The control was also observed exiting 1 before CFactory#191 added the attestation step. So it has been seen failing with the control absent, failing with the wrong signer, and passing with both correct.
+
+**The command above is stricter than the pipeline's own check.** CFactory's `deploy.yml` verifies with `--certificate-identity-regexp '^https://github\.com/<owner>/CFactory/'`, which is correctly owner- and repo-scoped but accepts *any workflow on any ref* in that repo — a feature branch or a `refs/pull/*` merge ref would satisfy it. The exact identity above is the tight form and is what an assessor should run. Do not read this note as describing what CI enforces; tightening the pipeline (and the Kyverno admission rules, which have the same looseness and no `cfactory` rule at all) is Factory#522.
+
+Extending this pattern to other rows is tracked in Factory#504. Each row must have its command actually run — and made to fail — before it is cited.
 
 ## A.6 People controls (8)
 
@@ -124,10 +159,10 @@ Applicable to the fleet's own operation, justified per control below.
 | A.8.17 | Clock synchronization | Implemented | Cluster nodes/pods use host NTP; audit anchor stamps at 00:00 UTC daily. | Runtime |
 | A.8.18 | Use of privileged utility programs | Implemented | Auth-disable switches prohibited in prod ([access-control-policy.md](policies/access-control-policy.md)); privileged actions run in hardened, non-root pods. | Runtime |
 | A.8.19 | Installation of software on operational systems | Implemented | Images are built in CI and deployed via gitops; no ad-hoc installation on running systems (immutable containers). | Change-mgmt |
-| A.8.20 | Networks security | Implemented | Default-deny per-task NetworkPolicy (`networkpolicy-tasks.yaml`, `networkpolicy-jobs.yaml`); Cloudflare edge. | Runtime |
-| A.8.21 | Security of network services | Implemented | Egress restricted to kube-dns + 443 with RFC1918 excepted; edge TLS termination. Partial: coarse egress (R-012). | Runtime |
-| A.8.22 | Segregation of networks | Implemented | Per-task Job network isolation and namespace separation ([runtime-isolation.md](policies/runtime-isolation.md)). | Runtime |
-| A.8.23 | Web filtering | Implemented | Outbound egress allowlist posture (443/DNS only, RFC1918 blocked); per-destination FQDN pinning pending (R-012). | Runtime |
+| A.8.20 | Networks security | Implemented | Default-deny ingress **and egress** per-task NetworkPolicy on the reference cluster (`factory-gitops apps/factory-namespace`, selector `factory.io/kind: task`, Factory#462 / factory-gitops#103); Cloudflare edge. Egress enforcement measured with a control pod, not inferred; the manifest header carries the result and a ~90s reproduce recipe. Qualified by Factory#517: a 3-5s unconfined window at pod start. Evidence is the live object, not the chart templates, which are never rendered here (Factory#499). | Runtime |
+| A.8.21 | Security of network services | Partial | Edge TLS termination; egress allowlist (kube-dns + 443, RFC1918 excepted) **enforced** on task pods, measured with a control pod (factory-gitops#106). Partial for two reasons, neither of them enforcement: the allowlist is coarse (443 to any public IP, R-012), and Factory#517 leaves a 3-5s unconfined window at pod start. | Runtime |
+| A.8.22 | Segregation of networks | Implemented | Namespace separation; per-task Job network isolation enforced both directions across all four task lanes ([runtime-isolation.md](policies/runtime-isolation.md), Factory#462, factory-gitops#103/#106). Note the Factory#517 startup window. | Runtime |
+| A.8.23 | Web filtering | Partial | Outbound egress allowlist (443/DNS only, RFC1918 blocked) enforced on task pods (factory-gitops#106), plus in-process egress/SSRF guards. Partial: no per-destination FQDN pinning, so any public HTTPS endpoint is reachable (R-012); Factory#517 startup window. | Runtime |
 | A.8.24 | Use of cryptography | Implemented | HMAC audit chain/anchor, cosign signing, HMAC task contracts, TLS in transit. Partial: no at-rest encryption/KMS (R-003). | Encryption |
 | A.8.25 | Secure development life cycle | Implemented | [secure-sdlc-policy.md](policies/secure-sdlc-policy.md); PR review + CI gates + independent verification (RFC-0001a/0006). | Change-mgmt |
 | A.8.26 | Application security requirements | Implemented | Signed task contracts (RFC-0002), evidence gates, standards-conformance gate (RFC-0012). | Agentic-AI |

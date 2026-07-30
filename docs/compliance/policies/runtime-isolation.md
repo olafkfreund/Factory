@@ -19,10 +19,30 @@ The coder agent wraps every bash command in bubblewrap (AIFactory #363). Evidenc
 **Fail-closed egress and SSRF guards.**
 In-process egress and SSRF guards (fail-closed) constrain outbound calls from the control plane. These complement, but are not a substitute for, network-layer policy on the Job pods (below).
 
-**Per-task Job NetworkPolicies — now shipped, default-on.**
-The gap the epic recorded (Job pods matched no NetworkPolicy because they carry `app:`/`factory.io/*` labels, not the Helm `selectorLabels`) is closed:
+**Per-task Job NetworkPolicies — written in the charts, applied only via GitOps (Factory#499).**
+
+Read the two-engine note in [chart-vs-cluster.md](../../dev/chart-vs-cluster.md) before using anything in this section as evidence. The service Helm charts are the self-host install path; the reference cluster is deployed from `factory-gitops` plain manifests, and `charts/` is never rendered against it. A control that exists only as a chart template is shipped to self-hosters and absent here.
+
+The chart templates (self-host path, default-on):
 - AIFactory `charts/aifactory/templates/networkpolicy-tasks.yaml` (#812) selects `factory.io/kind: task`. Default-deny ingress; egress limited to kube-dns (53), 443/tcp to public IPs with RFC1918 (`10/8`, `172.16/12`, `192.168/16`) excepted, and the chart's own API + Postgres. Enabled by default: `networkPolicy.enabled: true` (values.yaml, "ALWAYS enabled in production").
 - TFactory `charts/tfactory/templates/networkpolicy-jobs.yaml` (#651) selects `app: tfactory-sandbox` (verify-orchestration, nix lanes, deploy lane). Default-deny ingress; egress to kube-dns, 443/tcp public (RFC1918 excepted), a values-configurable kube API-server rule (nested per-lane Job dispatch), and intra-namespace services (Postgres/MinIO/API). Default-on.
+
+What is actually applied to the reference cluster: a single policy, `factory-gitops/apps/factory-namespace/manifests/networkpolicy-sandbox-jobs.yaml`, created 2026-07-30 under Factory#462. Neither chart template above has ever been evaluated against this cluster, so #812 and #651 closed against controls that reached self-hosters only.
+
+**Both directions are enforced, with one timing exception.** The policy selects `factory.io/kind: task` — the label all four per-task builders set via the shared `task_pod_labels()` and assert in their self-tests — and carries `policyTypes: [Ingress, Egress]` with no ingress rules. Verify the live object with:
+
+```
+$ kubectl --context factory -n factory get networkpolicy \
+    -o custom-columns='NAME:.metadata.name,SELECTOR:.spec.podSelector,TYPES:.spec.policyTypes'
+factory-sandbox-jobs-egress   map[matchLabels:map[factory.io/kind:task]]   [Ingress Egress]
+```
+
+Egress enforcement was measured with a controlled two-pod experiment (factory-gitops#106): two pods in the `factory` namespace, same image, same minute, differing only in the selector label. The decisive result is `1.1.1.1:443` CONNECT and `1.1.1.1:80` BLOCKED from the selected pod in the same second, with the unlabelled control pod connecting on both — a difference nothing but an enforced egress policy produces.
+
+This **supersedes an earlier warning** (factory-gitops#99) that this CNI enforced ingress only. That test had no control pod and its probe most likely ran in a different namespace; NetworkPolicy is namespaced, so a probe outside `factory` is unconstrained regardless. Anything written against "egress is not enforced here" — including earlier revisions of this document — was wrong.
+
+- **The exception, which must not be dropped from any control statement: Factory#517.** There is a 3-5 second unconfined window at pod start before kube-router programs the chain (measured: t+3s leaked, t+6s onward blocked). So the honest phrasing is "egress denied by default **after the first few seconds of pod start**", not an unqualified "cannot reach". The Factory#246 demo must carry the qualifier.
+- **Earlier coverage gap, now closed.** The policy first enumerated `app in (aifactory-sandbox, tfactory-sandbox)`, which matched only two of the four per-task lanes — the `job_dispatch.py` lanes label pods `<service>-task`. factory-gitops#103 replaced the enumeration with the `factory.io/kind: task` selector, which covers all four; image ancestry confirms both deployed images carry the Factory#483 vendoring that sets it. Factory#502 closed.
 
 **Per-task Job securityContext — now pinned in the manifest, default-on.**
 - AIFactory `apps/backend/core/job_dispatch.py` (#812/#848): container `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`; pod `runAsNonRoot: true`, `runAsUser: 65532`, `seccompProfile: RuntimeDefault`; `automountServiceAccountToken: false`; `backoffLimit: 0`, `activeDeadlineSeconds`, TTL, cpu/memory limits.
@@ -51,6 +71,8 @@ The Job NetworkPolicy and securityContext items from the original epic entry are
 
 8. **Minor: referenced gVisor guide missing.** AIFactory `values.yaml` points at `guides/security/gvisor.md`, which does not exist; the gVisor caveats (no `strict` bwrap mode, no Nix builds under runsc) should live there.
 
+9. **Task pods have a 3-5 second unconfined window at start (Factory#517).** kube-router programs the egress chain a few seconds after the pod is running; measured on this cluster, a probe at t+3s reached the network and t+6s onward was blocked. The window is short but it is at the point a task first executes, which is when attacker-controlled code runs earliest. Consequence for wording: no control statement may claim an unqualified "a task cannot reach X" — the honest form is "denied by default after the first few seconds of pod start", and the Factory#246 demo must carry the qualifier. Frameworks: SC-7, CC6.6.
+
 ## Remediation plan
 
 Phased, cheapest-and-highest-value first. None of Phase 1 requires the deferred microVM boundary.
@@ -71,7 +93,7 @@ Phased, cheapest-and-highest-value first. None of Phase 1 requires the deferred 
 
 ## Acceptance criteria
 
-- [x] Every per-task Job pod is covered by a default-deny-ingress NetworkPolicy (AIFactory #812, TFactory #651), enabled by default in production values.
+- [x] Every per-task Job pod is covered by a default-deny-ingress **and default-deny-egress** NetworkPolicy. **Self-host path:** the chart templates (AIFactory #812, TFactory #651, default-on in each chart's values). **Reference cluster:** `factory-gitops apps/factory-namespace`, selector `factory.io/kind: task`, covering all four per-task lanes (Factory#462, factory-gitops#103). Egress enforcement measured with a control pod, factory-gitops#106. Qualified by Factory#517 — a 3-5 second unconfined window at pod start.
 - [x] Per-task Job pods run non-root where the image permits, with `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, and `seccompProfile: RuntimeDefault` pinned in the manifest.
 - [x] `automountServiceAccountToken: false` on untrusted Job pods; deploy lane uses a narrowly-scoped, dry-run-only SA.
 - [x] Inner bwrap OS sandbox default-on for agent commands, with an escape-test corpus.
@@ -87,7 +109,9 @@ Phased, cheapest-and-highest-value first. None of Phase 1 requires the deferred 
 ## Evidence artifacts
 
 - bwrap sandbox: `AIFactory/apps/web-server/server/services/sandbox.py`; escape corpus `AIFactory/tests/test_sandbox_escape_corpus.py`, `AIFactory/tests/test_agent_sandbox.py`.
-- Job NetworkPolicies: `AIFactory/charts/aifactory/templates/networkpolicy-tasks.yaml` (#812); `TFactory/charts/tfactory/templates/networkpolicy-jobs.yaml` (#651); defaults in each chart's `values.yaml` (`networkPolicy.enabled: true`).
+- Job NetworkPolicies — **self-host path only**: `AIFactory/charts/aifactory/templates/networkpolicy-tasks.yaml` (#812); `TFactory/charts/tfactory/templates/networkpolicy-jobs.yaml` (#651); defaults in each chart's `values.yaml` (`networkPolicy.enabled: true`). These are not rendered against the reference cluster (Factory#499).
+- Job NetworkPolicy — **reference cluster**: `factory-gitops/apps/factory-namespace/manifests/networkpolicy-sandbox-jobs.yaml` (Factory#462, selector fixed in factory-gitops#103). The only NetworkPolicy in the `factory` namespace; verify with `kubectl --context factory -n factory get networkpolicy`. **The file's own header carries the egress-enforcement measurement and a ~90-second reproduce recipe** (two throwaway pods, one labelled into the selector and one control) — an assessor can re-run it rather than take the result on trust. Startup-window exception: Factory#517.
+- Which engine deploys what: `Factory/docs/dev/chart-vs-cluster.md` (Factory#499).
 - Job securityContext: `AIFactory/apps/backend/core/job_dispatch.py`; `TFactory/apps/backend/tools/runners/kube_sandbox.py` (`POD_SECURITY_CONTEXT` / `CONTAINER_SECURITY_CONTEXT`).
 - Read-only-rootfs support (non-k8s runners): `AIFactory/apps/backend/core/factory_sandbox.py`; `TFactory/apps/backend/tools/runners/docker_runner.py`.
 - gVisor evaluation and compensating-controls checklist: `Factory/docs/security/sandbox-runtime-class.md` (issue #274); CI: `AIFactory/.github/workflows/gvisor-smoke.yml`; toggle in `AIFactory/charts/aifactory/values.yaml` (`sandbox.gvisor.*`).
