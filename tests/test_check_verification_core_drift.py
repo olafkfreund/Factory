@@ -135,6 +135,35 @@ def test_every_canonical_module_is_vendored_by_someone() -> None:
     assert gate._unmapped_modules() == []
 
 
+def test_unmapped_guard_is_wired_into_check_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The unmapped-module guard must be CALLED by check_drift(), not just defined.
+
+    The test above passes if ``_unmapped_modules()`` merely EXISTS and works. That
+    is not the same property, and the difference is not hypothetical: Factory#397
+    shipped the sibling gate's completeness guard as dead code — defined, tested
+    directly, never invoked — so the gate stayed green on a canonical it had not
+    looked at. Both sibling gates grew a wiring test after that; this one did not,
+    and unwiring the guard here left all sixteen of these cases green.
+
+    Asserted through check_drift() by declaring a module canonical that no service
+    maps, which is the Factory#401 scenario (verification_profiles.py /
+    verification_runner.py listed for weeks, vendored by nobody, compared nowhere).
+    """
+    canonical = _make_canonical(tmp_path)
+    service = _make_service(canonical, tmp_path / "service", _LAYOUT)
+    assert gate.check_drift(canonical, service, _LAYOUT) == [], "identical copies must be clean"
+
+    monkeypatch.setattr(gate, "CANONICAL_MODULES", (*gate.CANONICAL_MODULES, "orphan_module.py"))
+    problems = gate.check_drift(canonical, service, _LAYOUT)
+    assert any("orphan_module.py" in p for p in problems), (
+        "check_drift() ignored a canonical module that no service vendors. The "
+        "unmapped-module guard is defined but not wired in, so the gate reports "
+        "OK for a module it never compares anywhere."
+    )
+
+
 def test_main_self_test_flag() -> None:
     assert gate.main(["--self-test"]) == 0
 

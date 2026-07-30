@@ -22,29 +22,27 @@ name: factory-contracts (staleness gate)
 # the committed output is either in sync with the inputs or it is not. So this is
 # a hard gate from day one.
 
+# NO `paths:` FILTER, DELIBERATELY (Factory#489)
+# ----------------------------------------------
+# This used to carry a hand-maintained paths allowlist paired with a
+# hand-maintained list of per-file pytest steps. Both rotted, in the same
+# direction and for the same reason: a test file added to tests/ is not added
+# to either list by anything, and nothing reports the omission. Ten of the
+# hub's sixteen test files had accumulated that way and had never executed in
+# CI once - including the comparators of all three BLOCKING, FLEET-WIDE drift
+# gates, which every consumer repo fetches from hub main (Factory#405).
+#
+# An allowlist that must be edited by hand to stay correct is the same defect
+# class this repo has already been bitten by twice inside the gates themselves
+# (Factory#397: a canonical file absent from CANONICAL_FILES; Factory#401: a
+# canonical module vendored by nobody). The fix there was to make the omission
+# loud; the fix here is to remove the list. The whole suite now runs on every
+# PR, so "wired but never triggered" is not a state this workflow can reach.
+#
+# Cost of running it unconditionally: two short jobs (the generator is
+# dependency-free; the suite is ~1 minute).
 on:
   pull_request:
-    paths:
-      - "apis/completion-events.asyncapi.yaml"
-      - "apis/status-taxonomy.json"
-      - "scripts/gen_contracts.py"
-      - "shared/factory-contracts/**"
-      - "tests/test_gen_contracts.py"
-      - "apis/agent-skills-manifest.schema.json"
-      - "apis/examples/agent-skills/**"
-      - "tests/test_agent_skills_manifest.py"
-      - "apis/planning-card.schema.json"
-      - "apis/examples/planning-cards/**"
-      - "tests/test_planning_card.py"
-      - "shared/factory-github/**"
-      - "tests/test_provider_credential_repr.py"
-      - "tests/test_provider_comments.py"
-      - "scripts/apply_branch_protection.sh"
-      - "tests/test_branch_protection_intent.py"
-      # Factory#483. Without this the self-test below is WIRED but never
-      # TRIGGERED by the only file it guards.
-      - "scripts/job_dispatch.py"
-      - ".github/workflows/contracts.yml"
   push:
     branches: [main]
 
@@ -82,64 +80,50 @@ jobs:
           python-version: "3.11"
 
       - name: Install test deps
-        # pydantic is required only by the generated module (the generator and
-        # the staleness check above are dependency-free). The self-test imports
-        # the generated package, so it is installed here.
-        # httpx is imported at module scope by the shared provider modules,
-        # which the credential-repr guard constructs for its behavioural check.
-        run: pip install pytest "pydantic>=2" jsonschema httpx
+        # Every entry here is load-bearing for at least one test, and a MISSING
+        # entry is not a loud failure - two of these suites call
+        # pytest.importorskip() at module scope, so an absent dependency turns
+        # the whole file into a SKIP and the step still reports green. That is
+        # the Factory#489 defect in miniature, so what needs what is spelled out:
+        #
+        #   pydantic  the generated factory-contracts module (test_gen_contracts)
+        #   jsonschema  the agent-skills / planning-card schema suites
+        #   httpx     imported at module scope by the shared provider modules;
+        #             importorskip'd by test_http_github_provider
+        #   pyyaml    importorskip'd by test_validate_catalog
+        #   mypy      test_ratchet_test_bar SHELLS OUT to it to prove the
+        #             test-file carve-out is scoped by path. Pinned to the same
+        #             version as code-quality.yml's MYPY_VERSION so the two
+        #             gates measure the same bar.
+        #   pytest-asyncio  nine of test_http_github_provider's cases are
+        #             `async def` behind @pytest.mark.asyncio. Without the
+        #             plugin pytest does not run them; whether that shows up as
+        #             a failure or as a bare PytestUnknownMarkWarning next to a
+        #             green step depends on the pytest version, and the second
+        #             is the Factory#489 shape again.
+        run: >-
+          pip install pytest pytest-asyncio "pydantic>=2" jsonschema httpx
+          pyyaml "mypy==1.18.2"
 
-      - name: Run the contracts self-test
-        run: pytest -v tests/test_gen_contracts.py
-
-      - name: Validate the agent-skills manifest schema + examples
-        # RFC-0019 section 3.4 (Factory#302): the reference instances under
-        # apis/examples/agent-skills/ are what every service copies, and the
-        # fleet aggregate is folded from them. Runs as a step of this job
-        # rather than its own, so the checkout/setup boilerplate is not
-        # duplicated (jscpd clone budget).
-        run: pytest -v tests/test_agent_skills_manifest.py
-
-      - name: Validate the planning-card schema + examples
-        # RFC-0019 section 3.1 (Factory#302): the card resource CFactory's
-        # /api/cards is built to. Same job for the same reason as the step
-        # above - a second job would duplicate the checkout/setup block and
-        # eat into the jscpd clone budget, which only ratchets down.
-        run: pytest -v tests/test_planning_card.py
-
-      - name: Guard the shared providers against credential-repr leaks
-        # Factory#372: a @dataclass field holding a PAT renders that PAT in the
-        # generated __repr__, which reaches traceback frames, f-string logs and
-        # error-reporting payloads. The guard is generic (it parses every module
-        # under shared/factory-github/providers/ with ast), so a provider added
-        # later is covered without anyone remembering to extend the test. Same
-        # job as the steps above for the same reason - a separate job would
-        # duplicate the checkout/setup block against the jscpd clone budget.
-        run: pytest -v tests/test_provider_credential_repr.py
-
-      - name: Guard the branch-protection drift gate's comparator
-        # Factory#468: the drift gate compares the protection GitHub reports live
-        # against the intent declared in scripts/apply_branch_protection.sh. If its
-        # normaliser disagreed between the two wire shapes (live wraps booleans as
-        # {"enabled": bool}, intent uses bare booleans) the gate would be
-        # always-green - an always-green drift gate is the defect one level up from
-        # the drift it exists to catch, and it cannot be noticed by running it.
-        # These cases are offline: they need no token and never reach the network,
-        # so they run on every PR while the gate itself runs nightly with a PAT.
-        # Same job as the steps above for the same reason: a separate job would
-        # duplicate the checkout/setup block against the jscpd clone budget.
-        run: pytest -v tests/test_branch_protection_intent.py
-
-      - name: Guard the shared providers' issue-comment read
-        # Factory#375: comments are one API call PER ISSUE, and Factory#373
-        # multiplies that per repository, so the guard asserts on the REQUESTS
-        # the providers make (server-side `since`, GitHub's repository-wide bulk
-        # endpoint, early stop on GitLab/ADO) and not only on the results - a
-        # client-side filter over a full download returns correct data and is
-        # still the rate-limit failure. Same job as the steps above for the same
-        # reason: a separate job would duplicate the checkout/setup block against
-        # the jscpd clone budget.
-        run: pytest -v tests/test_provider_comments.py
+      - name: Run the hub test suite
+        # WHOLE DIRECTORY, NOT A FILE LIST (Factory#489). This step used to be
+        # seven per-file steps, each with a comment explaining the defect its
+        # test locks. Ten further test files were added to tests/ over the same
+        # period and never got a step, so they had never run in CI - among them
+        # the comparators of the three blocking fleet-wide drift gates
+        # (check_verification_core_drift, check_factory_github_drift,
+        # check_factory_ui_drift). A comparator with a bug reports "no drift"
+        # forever, in four repos at once, and running the gate cannot reveal it.
+        #
+        # The per-file rationale was not deleted: every one of these files
+        # carries it in its own module docstring, which is where it belongs and
+        # where it cannot fall out of step with the test it describes. What is
+        # deleted is the hand-maintained list that made an unrun test possible.
+        #
+        # One step rather than a job per file for the reason the old steps all
+        # cited: a second job duplicates the checkout/setup block against the
+        # jscpd clone budget (Factory#161), which only ratchets down.
+        run: pytest -v tests/
 
       - name: Guard the shared job-dispatch policy surface
         # Factory#483. scripts/job_dispatch.py carries a self-test with the rules
@@ -155,3 +139,28 @@ jobs:
         # way. Same job as the steps above for the same reason: a separate job
         # would duplicate the checkout/setup block against the jscpd clone budget.
         run: python3 scripts/job_dispatch.py
+
+      - name: Guard the shared artifact-store key layout
+        # Factory#488. Same shape as the step above and untestable until now: the
+        # self-test imported job_dispatch._require, which resolves only in the
+        # hub (both files flat in scripts/) and never in PFactory, which vendors
+        # this module and by design vendors no job_dispatch at all. It now
+        # defines its own assert helper, so it runs wherever the module runs.
+        # It locks the canonical S3 key layout of
+        # apis/concurrency-conventions.md §2, the workspace pack/unpack
+        # round-trip, the path-traversal guard on extraction, and the role
+        # object-tagging that MinIO lifecycle rules filter on (Factory#329 —
+        # untagged evidence means retention silently never fires). Stdlib-only:
+        # the S3 transport is lazy and the round-trip uses an in-module fake.
+        run: python3 scripts/artifact_store.py
+
+      - name: Guard the model-availability probe
+        # Factory#489. scripts/test_model_probe.py is the hub's SEVENTEENTH test
+        # file and does not live in tests/, so it is missed by both the audit
+        # that opened #489 and by `pytest tests/` above - which is exactly how it
+        # stayed unrun since #299. It guards model_probe.py, the comparator
+        # behind the nightly model-probe workflow: it decides which models are
+        # "new" and which are "deprecated" against a committed baseline, so a bug
+        # in it reports a clean catalog forever. Offline, stdlib-only, and run as
+        # a module because it is a plain `assert` script with no pytest cases.
+        run: python3 scripts/test_model_probe.py
