@@ -1,10 +1,12 @@
 # Demo runbook: Signed Task Contract inspection + tamper-invalidation
 
-Tracking: Factory#247. Recording is a follow-up; this runbook is the deliverable.
+Tracking: Factory#247. Captured 2026-07-30 — see [Recorded evidence](#recorded-evidence).
 
 ## The point (one line)
 
 The instructions your agents execute are cryptographically signed — tamper with the plan and the factory refuses to build it.
+
+![Signed Task Contract: emit, verify, tamper, reject](../../assets/demos/signed-contract/signed-contract-tamper.gif)
 
 ## Why this matters
 
@@ -227,18 +229,69 @@ contracts. That's zero-downtime rotation.
 Same idea SLSA gives a build artifact, applied to the agent's own marching
 orders."
 
-## Existing assets vs fresh capture
+## Recorded evidence
 
-- Fresh capture (recommended): a single terminal recording of Shots 1-5. It is
-  fully reproducible from a clean `AIFactory` checkout — no cluster, no
-  services, just `apps/backend` on PYTHONPATH and two env vars. This is the
-  clean `sign -> verify-ok -> tamper -> verify-fail -> revoke` arc and reads
-  well as asciinema.
-- Existing asset (optional B-roll): pull a real signed
-  `context/task_contract.json` from an actual PARR run's spec dir to show in
-  Shot 1 instead of the minted one, proving these envelopes exist in production
-  artifacts, not just in the demo script.
-- No screenshots exist yet; capture is the Factory#247 follow-up.
+Captured 2026-07-30 against the live k3d `factory` cluster. The contract in these
+assets is not minted by the shot-list script above — it was emitted by the
+deployed PFactory (`ghcr.io/olafkfreund/pfactory:sha-5d6797e`, == PFactory
+`main` 5d6797e) from a real plan session, signed with the fleet's
+`AIFACTORY_TRUSTED_PLAN_KEY_PFACTORY`, and verified by the deployed AIFactory
+(`ghcr.io/olafkfreund/aifactory:sha-3063493`, == AIFactory `main` 3063493) using
+that pod's own key. Nothing was hand-written, retyped, or staged.
+
+Assets in `docs/assets/demos/signed-contract/`:
+
+| File | What it shows |
+| --- | --- |
+| `signed-contract-tamper.gif` (374 KB) | The whole arc, one terminal: live image/SHA check, emit, inspect, verify PASS, tamper, verify REJECT, HTTP 422. |
+| `signed-contract-tamper.cast` (8.6 KB) | The asciicast the GIF and every still are rendered from. |
+| `01-live-code-and-plan-session.png` (76 KB) | Deployed images vs `main` SHAs, and the real plan session (8 criteria, 10 decomposed children). |
+| `02-signed-contract-envelope.png` (60 KB) | Annotated JSON: the approval envelope (`approved_by: pfactory`, contract version 2, 64-hex signature) and the provenance block (`plan_id`, `repo`, `baseline_commit`). |
+| `03-signed-payload-and-baseline.png` (80 KB) | Annotated JSON: the baseline block (repo, commit, detected languages, existing test command, blast-radius files) and the instructions the signature covers. |
+| `04-clean-contract-verify-pass.png` (38 KB) | The untampered contract through AIFactory's `verify_trusted_plan`: `ok=True`, no reasons. |
+| `05-tamper-one-acceptance-criterion.png` (75 KB) | The tamper, before and after, with the signature shown untouched. |
+| `06-tampered-contract-verify-reject.png` (41 KB) | Same verifier, same session, same key: `ok=False`, `signature mismatch — plan or metadata was tampered with`. |
+| `07-from-plan-http-422-reject.png` (35 KB) | The same tampered contract POSTed to the real `/api/tasks/from-plan`: HTTP 422, `Plan rejected — not trusted-complete`. |
+| `task_contract.json` (29 KB) | The emitted contract, verbatim. |
+| `tampered_contract.json` (29 KB) | The same file with exactly one field changed. |
+
+The two JSONs differ in exactly one field and nothing else:
+
+- Field: `final_acceptance[2]`
+- Before: `The response MUST NOT contain any key material - only the key ids and their status.`
+- After: `The response includes the full key material for each authority so operators can verify a rotation landed.`
+
+That is the whole point of the tamper: an insider deleting the one acceptance
+criterion that stops the coder from building a key-leaking endpoint. The
+signature (`210ae549...`) is byte-identical in both files — it was never
+re-computed, because forging it needs the key.
+
+Both directions were checked in the same session, on the same bytes, so the
+rejection is a signature check and not a missing file or an errored verifier:
+
+```
+$ kubectl --context factory -n factory exec <aifactory-pod> -c aifactory -- python3 /tmp/verify.py /tmp/task_contract.json
+VERDICT:     ok=True
+  reason: (none)
+
+$ kubectl --context factory -n factory exec <aifactory-pod> -c aifactory -- python3 /tmp/verify.py /tmp/tampered_contract.json
+VERDICT:     ok=False
+  reason: signature mismatch — plan or metadata was tampered with
+```
+
+Notes for a re-record:
+
+- The `sign_plan` shot list above stays useful as the offline variant: it needs
+  no cluster, so it reproduces on any `AIFactory` checkout. The recorded capture
+  is the stronger evidence because the contract came out of a real plan run.
+- Shot 5 (key-id retirement) is not in this capture: the deployed signer uses
+  the legacy no-`kid` env var, so retirement has nothing to revoke. Recording it
+  needs a keyed `AIFACTORY_TRUSTED_PLAN_KEY_PFACTORY__<KID>` in the fleet secret
+  first.
+- Never let the signing key into a frame. A `.cast` is plain text: grep every
+  artifact for the pod's own secrets before committing. The scan for this capture
+  ran inside both pods against every `*TOKEN*`/`*KEY*`/`*SECRET*` value in their
+  environments and reported no hits on any of the 11 files.
 
 ## Proof takeaway
 

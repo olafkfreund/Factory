@@ -1,0 +1,743 @@
+{
+  "contract_version": "2",
+  "feature": "Signing key rotation status endpoint",
+  "workflow_type": "feature",
+  "services_involved": [
+    "cicd",
+    "testing"
+  ],
+  "final_acceptance": [
+    "Add a read-only endpoint `GET /api/signing/keys` to the PFactory web server.",
+    "The response lists, for each configured authority, the active key ids and the retired key ids.",
+    "The response MUST NOT contain any key material - only the key ids and their status.",
+    "The endpoint requires the standard bearer-token auth used by the rest of `/api/*`.",
+    "`GET /api/signing/keys` returns 200 with a JSON body `{\"authorities\": [{\"authority\": \"pfactory\", \"active_kids\": [...], \"retired_kids\": [...]}]}`.",
+    "`GET /api/signing/keys` returns 401 without a bearer token.",
+    "No response field contains a key value; a unit test asserts the configured secret does not appear anywhere in the serialised response.",
+    "The endpoint reads the keyring from the environment at request time so a rotation is reflected without a restart."
+  ],
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Implementation",
+      "type": "implementation",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "C1",
+          "description": "Add a read-only endpoint `GET /api/signing/keys` to the PFactory web server.\n\nImplements AC#1 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [
+            "package.json"
+          ],
+          "patterns_from": [
+            ".mcp.json",
+            "package-lock.json"
+          ],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "Add a read-only endpoint `GET /api/signing/keys` to the PFactory web server.",
+            "The service declares its runtime dependencies in a manifest (requirements.txt / package.json / go.mod / pyproject.toml).",
+            "The service exposes a health-check endpoint (GET /health) that returns a success status.",
+            "A rollback path is defined for the deploy (documented revert / previous-revision rollout)."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "Add a read-only endpoint `GET /api/signing/keys` to the PFactory web server.; The service declares its runtime dependencies in a manifest (requirements.txt / package.json / go.mod / pyproject.toml).; The service exposes a health-check endpoint (GET /health) that returns a success status.; A rollback path is defined for the deploy (documented revert / previous-revision rollout)."
+          }
+        },
+        {
+          "id": "C2",
+          "description": "The response lists, for each configured authority, the active key ids and the r\u2026\n\nImplements AC#2 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "The response lists, for each configured authority, the active key ids and the retired key ids."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "The response lists, for each configured authority, the active key ids and the retired key ids."
+          }
+        },
+        {
+          "id": "C3",
+          "description": "The response MUST NOT contain any key material - only the key ids and their sta\u2026\n\nImplements AC#3 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "The response MUST NOT contain any key material - only the key ids and their status."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "The response MUST NOT contain any key material - only the key ids and their status."
+          }
+        },
+        {
+          "id": "C4",
+          "description": "The endpoint requires the standard bearer-token auth used by the rest of `/api/\u2026\n\nImplements AC#4 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "The endpoint requires the standard bearer-token auth used by the rest of `/api/*`."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "The endpoint requires the standard bearer-token auth used by the rest of `/api/*`."
+          }
+        },
+        {
+          "id": "C5",
+          "description": "`GET /api/signing/keys` returns 200 with a JSON body `{\"authorities\": [{\"author\u2026\n\nImplements AC#5 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "`GET /api/signing/keys` returns 200 with a JSON body `{\"authorities\": [{\"authority\": \"pfactory\", \"active_kids\": [...], \"retired_kids\": [...]}]}`."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "`GET /api/signing/keys` returns 200 with a JSON body `{\"authorities\": [{\"authority\": \"pfactory\", \"active_kids\": [...], \"retired_kids\": [...]}]}`."
+          }
+        },
+        {
+          "id": "C6",
+          "description": "`GET /api/signing/keys` returns 401 without a bearer token.\n\nImplements AC#6 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "`GET /api/signing/keys` returns 401 without a bearer token."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "`GET /api/signing/keys` returns 401 without a bearer token."
+          }
+        },
+        {
+          "id": "C7",
+          "description": "No response field contains a key value; a unit test asserts the configured secr\u2026\n\nImplements AC#7 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "No response field contains a key value; a unit test asserts the configured secret does not appear anywhere in the serialised response."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "No response field contains a key value; a unit test asserts the configured secret does not appear anywhere in the serialised response."
+          }
+        },
+        {
+          "id": "C8",
+          "description": "The endpoint reads the keyring from the environment at request time so a rotati\u2026\n\nImplements AC#8 of the plan \"Signing key rotation status endpoint\".\n\n### Context from the plan\n\n## Problem\n\nOperators rotating the Task Contract signing key have no way to see which key ids are currently active and which have been retired. Today the only source of truth is the pod environment, which requires cluster access to read.\n\n## Out of scope\n\n- Mutating keys over the API. Rotation stays an operator action on the deployment environment.",
+          "status": "pending",
+          "service": null,
+          "depends_on": [],
+          "files_to_create": [],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "The endpoint reads the keyring from the environment at request time so a rotation is reflected without a restart."
+          ],
+          "verification": {
+            "type": "manual",
+            "scenario": "The endpoint reads the keyring from the environment at request time so a rotation is reflected without a restart."
+          }
+        }
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "Testing",
+      "type": "integration",
+      "depends_on": [
+        1
+      ],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "TEST",
+          "description": "Set up testing for Signing key rotation status endpoint\n\nImplement the testing strategy specified in `docs/plans/028-signing-key-rotation-status-endpoint-testing-strategy.md`.\n\nLanes: unit / integration / e2e. Each acceptance criterion is mapped to a test approach in the spec. Hand test generation over to TFactory.",
+          "status": "pending",
+          "service": "testing",
+          "depends_on": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "C7",
+            "C8"
+          ],
+          "files_to_create": [
+            "docs/plans/028-signing-key-rotation-status-endpoint-testing-strategy.md"
+          ],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "Unit, integration, and e2e lanes are scaffolded and runnable.",
+            "Every plan acceptance criterion maps to at least one passing test.",
+            "Coverage targets per lane are met or explicitly waived.",
+            "Tests run in CI and gate the build."
+          ],
+          "verification": {
+            "type": "command",
+            "run": "pytest"
+          }
+        },
+        {
+          "id": "CICD",
+          "description": "Set up CI/CD for Signing key rotation status endpoint\n\nImplement the CI/CD pipeline specified in `docs/plans/028-signing-key-rotation-status-endpoint-cicd-pipeline.md`.\n\nStages: lint \u2192 test \u2192 build \u2192 security scan \u2192 deploy.",
+          "status": "pending",
+          "service": "cicd",
+          "depends_on": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "C7",
+            "C8"
+          ],
+          "files_to_create": [
+            "docs/plans/028-signing-key-rotation-status-endpoint-cicd-pipeline.md"
+          ],
+          "files_to_modify": [],
+          "patterns_from": [],
+          "complexity": "standard",
+          "acceptance_criteria": [
+            "Lint, test, build, and security-scan stages run on every push and PR.",
+            "The test stage runs the full suite and publishes a coverage report.",
+            "Deploy stages are gated on a green build and require manual approval."
+          ],
+          "verification": {
+            "type": "command",
+            "run": "ruff check . && pytest"
+          }
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "source": "pfactory",
+    "plan_id": "028-signing-key-rotation-status-endpoint",
+    "repo": "olafkfreund/PFactory",
+    "content_trust": {
+      "default": "trusted"
+    },
+    "baseline_commit": "5d6797edd318b56df8b14d5782c084799db7642c"
+  },
+  "change_mode": "modify",
+  "baseline": {
+    "available": true,
+    "repo": "olafkfreund/PFactory",
+    "commit": "5d6797edd318b56df8b14d5782c084799db7642c",
+    "languages": [
+      "python",
+      "javascript",
+      "typescript"
+    ],
+    "package_managers": [
+      "npm"
+    ],
+    "iac": [
+      "helm",
+      "kubernetes"
+    ],
+    "iac_resources": {
+      "helm": {
+        "charts": [
+          {
+            "name": "pfactory",
+            "file": "charts/pfactory/Chart.yaml",
+            "kinds": [
+              "ClusterSecretStore",
+              "ConfigMap",
+              "Deployment",
+              "ExternalSecret",
+              "HorizontalPodAutoscaler",
+              "Ingress",
+              "NetworkPolicy",
+              "PersistentVolumeClaim",
+              "PodDisruptionBudget",
+              "Secret",
+              "Service",
+              "ServiceAccount",
+              "ServiceMonitor",
+              "StatefulSet"
+            ]
+          }
+        ]
+      },
+      "kubernetes": {
+        "kinds": {
+          "Component": [
+            "catalog-info.yaml"
+          ],
+          "API": [
+            "catalog-info.yaml"
+          ],
+          "Secret": [
+            "charts/pfactory/templates/postgres-bundled.yaml"
+          ],
+          "Service": [
+            "charts/pfactory/templates/postgres-bundled.yaml",
+            "charts/pfactory/templates/service.yaml"
+          ],
+          "StatefulSet": [
+            "charts/pfactory/templates/postgres-bundled.yaml"
+          ],
+          "ConfigMap": [
+            "charts/pfactory/templates/configmap.yaml"
+          ],
+          "Ingress": [
+            "charts/pfactory/templates/ingress.yaml"
+          ],
+          "Deployment": [
+            "charts/pfactory/templates/deployment.yaml",
+            "charts/pfactory/templates/hpa.yaml"
+          ],
+          "NetworkPolicy": [
+            "charts/pfactory/templates/networkpolicy.yaml"
+          ],
+          "PersistentVolumeClaim": [
+            "charts/pfactory/templates/workspaces-pvc.yaml"
+          ],
+          "ServiceAccount": [
+            "charts/pfactory/templates/serviceaccount.yaml"
+          ],
+          "PodDisruptionBudget": [
+            "charts/pfactory/templates/poddisruptionbudget.yaml"
+          ],
+          "ServiceMonitor": [
+            "charts/pfactory/templates/servicemonitor.yaml"
+          ],
+          "ExternalSecret": [
+            "charts/pfactory/templates/externalsecret.yaml"
+          ],
+          "ClusterSecretStore": [
+            "charts/pfactory/templates/externalsecret.yaml"
+          ],
+          "HorizontalPodAutoscaler": [
+            "charts/pfactory/templates/hpa.yaml"
+          ],
+          "Template": [
+            "apps/backend/plan/templates/testing/template.yaml",
+            "apps/backend/plan/templates/gcp-project/template.yaml",
+            "apps/backend/plan/templates/product-planning/template.yaml",
+            "apps/backend/plan/templates/infra-change/template.yaml",
+            "apps/backend/plan/templates/software-service/template.yaml"
+          ]
+        }
+      }
+    },
+    "ci_system": "github-actions",
+    "ci_pipeline_paths": [
+      ".github/workflows/auto-close-issues.yml",
+      ".github/workflows/ci.yml",
+      ".github/workflows/codeql.yml",
+      ".github/workflows/copilot-plan-review.yml",
+      ".github/workflows/cq-ratchet.yml",
+      ".github/workflows/deploy.yml",
+      ".github/workflows/factory-github-drift.yml",
+      ".github/workflows/factory-ui-drift.yml",
+      ".github/workflows/pfactory-task.yml",
+      ".github/workflows/release.yml",
+      ".github/workflows/runner-images.yml",
+      ".github/workflows/verification-core-drift.yml"
+    ],
+    "deploy_system": "helm",
+    "deploy_manifests": {
+      "helm_charts": [
+        "charts/pfactory/Chart.yaml"
+      ],
+      "k8s_manifests": [
+        "apps/backend/plan/templates/gcp-project/template.yaml",
+        "apps/backend/plan/templates/infra-change/template.yaml",
+        "apps/backend/plan/templates/product-planning/template.yaml",
+        "apps/backend/plan/templates/software-service/template.yaml",
+        "apps/backend/plan/templates/testing/template.yaml",
+        "catalog-info.yaml",
+        "charts/pfactory/templates/configmap.yaml",
+        "charts/pfactory/templates/deployment.yaml",
+        "charts/pfactory/templates/externalsecret.yaml",
+        "charts/pfactory/templates/hpa.yaml",
+        "charts/pfactory/templates/ingress.yaml",
+        "charts/pfactory/templates/networkpolicy.yaml",
+        "charts/pfactory/templates/poddisruptionbudget.yaml",
+        "charts/pfactory/templates/postgres-bundled.yaml",
+        "charts/pfactory/templates/service.yaml",
+        "charts/pfactory/templates/serviceaccount.yaml",
+        "charts/pfactory/templates/servicemonitor.yaml",
+        "charts/pfactory/templates/workspaces-pvc.yaml"
+      ],
+      "dockerfiles": [
+        "Dockerfile",
+        "docker/pfactory-runner-cloud/Dockerfile",
+        "docker/pfactory-runner-cypress/Dockerfile",
+        "docker/pfactory-runner-jest/Dockerfile",
+        "docker/pfactory-runner-playwright/Dockerfile",
+        "docker/pfactory-runner-pytest/Dockerfile",
+        "docker/pfactory-runner-vitest/Dockerfile",
+        "docker/runners/python.Dockerfile"
+      ]
+    },
+    "layout": {
+      "dirs": [
+        ".agent-os",
+        ".claude",
+        ".github",
+        ".husky",
+        "apps",
+        "charts",
+        "companion-skills",
+        "docker",
+        "docs",
+        "frameworks",
+        "guides",
+        "run.py",
+        "scripts",
+        "shared_docs",
+        "skills",
+        "standards",
+        "techdocs",
+        "tests"
+      ],
+      "files": [
+        ".coderabbit.yaml",
+        ".dockerignore",
+        ".editorconfig",
+        ".env.example",
+        ".envrc",
+        ".gitignore",
+        ".mcp.json",
+        ".pfactory.yml.example",
+        ".pre-commit-config.yaml",
+        ".secretsignore",
+        ".secretsignore.example",
+        ".trivyignore",
+        "AGENTS.md",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CODEOWNERS",
+        "CODE_OF_CONDUCT.md",
+        "CONTRIBUTING.md",
+        "ContainerAPP.md",
+        "Dockerfile",
+        "GEMINI.md",
+        "Justfile",
+        "LICENSE",
+        "README.md",
+        "RELEASE.md",
+        "SECURITY.md",
+        "SUPPORT.md",
+        "catalog-info.yaml",
+        "devenv.lock",
+        "docker-compose.yml",
+        "flake.lock",
+        "flake.nix",
+        "mkdocs.yml",
+        "mypy.ini",
+        "openapi.yaml",
+        "package-lock.json",
+        "package.json",
+        "renovate.json",
+        "ruff.toml",
+        "shell.nix",
+        "skills-lock.json",
+        "tsconfig.scripts.json"
+      ]
+    },
+    "existing_test_command": "npm run test",
+    "conventions": {
+      "code_quality_tools": [
+        "trivy"
+      ]
+    },
+    "blast_radius": {
+      "files": [
+        "package.json"
+      ]
+    }
+  },
+  "deployment": {
+    "ci_system": "github-actions",
+    "ci_exists": true,
+    "ci_pipeline_paths": [
+      ".github/workflows/auto-close-issues.yml",
+      ".github/workflows/ci.yml",
+      ".github/workflows/codeql.yml",
+      ".github/workflows/copilot-plan-review.yml",
+      ".github/workflows/cq-ratchet.yml",
+      ".github/workflows/deploy.yml",
+      ".github/workflows/factory-github-drift.yml",
+      ".github/workflows/factory-ui-drift.yml",
+      ".github/workflows/pfactory-task.yml",
+      ".github/workflows/release.yml",
+      ".github/workflows/runner-images.yml",
+      ".github/workflows/verification-core-drift.yml"
+    ],
+    "needs_pipeline": false,
+    "deploy_system": "helm",
+    "deploy_target_environments": [],
+    "managed_services": [],
+    "production_classification": "unknown",
+    "risk_class": "medium",
+    "required_scans": [
+      "secret-scan",
+      "sast",
+      "dependency-audit"
+    ],
+    "system_gates": [
+      "ci-green"
+    ],
+    "dora_context": {
+      "source": "github-deployments",
+      "repo": "olafkfreund/PFactory",
+      "env": null,
+      "available": true,
+      "reason": null,
+      "lead_time_p50_hours": null,
+      "change_fail_rate": 0.0,
+      "deploy_success_rate": {
+        "window_days": 30,
+        "value": 0.05,
+        "sample": 20
+      },
+      "last_deploy": {
+        "env": "github-pages",
+        "status": "success",
+        "at": "2026-07-30T09:50:57Z"
+      }
+    },
+    "readiness": [
+      {
+        "check": "ci-pipeline-present",
+        "status": "pass"
+      },
+      {
+        "check": "scans-configured",
+        "status": "not_run",
+        "reason": "required pre-deploy scans are planned but not yet verified present in CI: secret-scan, sast, dependency-audit.",
+        "action": "Wire the required scans into the deploy pipeline and assert they gate it."
+      },
+      {
+        "check": "rollback-defined",
+        "status": "not_run",
+        "reason": "a rollback path could not be confirmed from static analysis.",
+        "action": "Define a rollback for the helm deploy (documented revert / previous-revision rollout)."
+      },
+      {
+        "check": "delivery-health-known",
+        "status": "pass"
+      }
+    ],
+    "deploy_verification": {
+      "target_level": "VAL-3",
+      "mode": "ephemeral-apply"
+    }
+  },
+  "correlation_key": "pf-028-signing-key-rotation-status-endpoint",
+  "epic_ref": "028-signing-key-rotation-status-endpoint",
+  "execution": {
+    "complexity": "standard",
+    "model": "claude-sonnet-4-5-20250929",
+    "provider": "claude",
+    "provider_rationale": "'claude-sonnet-4-5-20250929' \u2192 claude (inferred from the model id)",
+    "phase_models": {
+      "coding": "claude-sonnet-4-6",
+      "qa": "claude-sonnet-4-6",
+      "qa_fixer": "claude-sonnet-4-5-20250929",
+      "planning": "gemini",
+      "test_gen": "claude-sonnet-4-6"
+    },
+    "phase_thinking": {
+      "coding": "medium",
+      "qa": "low"
+    },
+    "parallel": true,
+    "workers": 4,
+    "agents": {
+      "planner": false,
+      "coder": true,
+      "qa_reviewer": true,
+      "qa_fixer": true
+    },
+    "skip_planning": true,
+    "review_tier": "auto",
+    "routing": {
+      "class": "standard",
+      "cost_estimate_usd": 1.735,
+      "cost_ceiling_usd": 3.0,
+      "policy": "operator-default",
+      "rationale": "tier=medium floor=balanced; class=standard; planning=gemini; coding=claude-sonnet-4-6; qa=claude-sonnet-4-6; test_gen=claude-sonnet-4-6",
+      "autonomy": {
+        "verdict": "review",
+        "reason": "difficulty=medium, risk=medium (medium \u21d2 async review)"
+      },
+      "difficulty": "medium",
+      "risk": "medium"
+    }
+  },
+  "required_commands": [
+    "pytest",
+    "ruff",
+    "uv"
+  ],
+  "tfactory": {
+    "lanes": [
+      "unit",
+      "api"
+    ],
+    "frameworks": {
+      "unit": "pytest",
+      "api": "pytest"
+    },
+    "coverage_target": 0.8,
+    "mutation_scope": [],
+    "security_scope": [],
+    "ac_to_code_map": {
+      "AC#1": [],
+      "AC#2": [],
+      "AC#3": [],
+      "AC#4": [],
+      "AC#5": [],
+      "AC#6": [],
+      "AC#7": [],
+      "AC#8": []
+    },
+    "endpoints": {
+      "api_base_url": "http://localhost:8000"
+    }
+  },
+  "environment": {
+    "language": "python",
+    "verify_commands": [
+      "pytest -q",
+      "pytest -q tests/api"
+    ],
+    "system_packages": [],
+    "provisioning": {
+      "method": "nix",
+      "ref": "flake.nix",
+      "generated": true
+    },
+    "network": "restricted",
+    "proof": {
+      "verify": [
+        "python --version"
+      ]
+    }
+  },
+  "epic_context": {
+    "constraints": [],
+    "knowledge_links": [
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/resource/tailscale-sidecar-pattern",
+        "title": "Tailscale sidecar pattern (factory cluster)"
+      },
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/api/factory-agent-skills-manifest",
+        "title": "Factory Agent-Skills Manifest (RFC-0019)"
+      },
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/api/factory-task-contract",
+        "title": "Factory Task Contract v2 (RFC-0002)"
+      },
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/template/nixos-module",
+        "title": "NixOS Module (flake-based service module + agenix-ready)"
+      },
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/component/backstage",
+        "title": "Backstage Portal"
+      },
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/template/cosmic-applet",
+        "title": "COSMIC Desktop Applet (libcosmic + flake)"
+      },
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/api/pfactory-planning-mcp",
+        "title": "PFactory Planning-Context MCP Server"
+      },
+      {
+        "uri": "https://backstage.freundcloud.org.uk/catalog/default/template/python-service",
+        "title": "Python Service (FastAPI + uv + flake)"
+      },
+      {
+        "uri": "https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html",
+        "title": "EKS \u2014 IRSA & secrets management"
+      },
+      {
+        "uri": "https://docs.aws.amazon.com/eks/latest/best-practices/cicd.html",
+        "title": "CI/CD for Kubernetes \u2014 image scanning & progressive delivery"
+      },
+      {
+        "uri": "https://docs.aws.amazon.com/eks/latest/best-practices/network-management.html",
+        "title": "Microservices on EKS \u2014 isolation & NetworkPolicies"
+      }
+    ],
+    "house_standards": {
+      "available": true,
+      "sources": [
+        {
+          "source": "baseline",
+          "kind": "conventions",
+          "conventions": {
+            "code_quality_tools": [
+              "trivy"
+            ]
+          },
+          "content_hash": "sha256:58afe3c6c3ecf26f84946d84a1b5772915d0cbf778414ba2065bd26223ff3d72"
+        }
+      ]
+    },
+    "constitution": {
+      "available": false,
+      "source": ".factory/constitution.md",
+      "principles": [],
+      "enforceable_ids": []
+    }
+  },
+  "approval": {
+    "approved_by": "pfactory",
+    "approval_timestamp": "2026-07-30T10:54:15.233109+00:00",
+    "plan_contract_version": "2",
+    "signature": "210ae5496820844a97123083f17889454244924621f108349c360622c4263a58"
+  }
+}
