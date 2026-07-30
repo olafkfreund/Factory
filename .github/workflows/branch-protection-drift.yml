@@ -1,0 +1,84 @@
+name: branch-protection drift
+
+# Surfaces branch-protection drift without anyone having to remember to look
+# (Factory#468).
+#
+# The defect this closes is not the contents of the protection payload - that was
+# a one-time patch - it is that nothing ever compared the declared intent against
+# the live configuration. The intent was truth once, protection was later tuned by
+# hand via `gh api`, and the two diverged in silence for weeks.
+#
+# WHY SCHEDULED, NOT ON PULL_REQUEST: protection drifts when someone edits it in
+# the UI or with `gh api`, never because of a pull request, so a PR trigger would
+# add latency to every PR to catch a class of change PRs cannot cause. It would
+# also be unrunnable on fork PRs, which cannot see the admin secret. The
+# comparator itself IS covered on every PR, offline, by
+# tests/test_branch_protection_intent.py.
+#
+# WHY A PAT AND NOT github.token: reading branch protection
+# (GET /repos/{o}/{r}/branches/{b}/protection) is an admin-only endpoint. The
+# Actions GITHUB_TOKEN cannot be granted it - `administration` is not one of the
+# permission scopes available under `permissions:` at all, so there is no
+# combination of workflow permissions that makes this work. It needs a token with
+# admin (classic: `repo`; fine-grained: repository "Administration: read") on the
+# six repos in the fleet.
+#
+# SETUP (one action, once): create a fine-grained PAT with
+# "Administration: read-only" + "Metadata: read-only" on olafkfreund/{Factory,
+# AIFactory,PFactory,TFactory,CFactory,factory-gitops} and store it as the repo
+# secret BRANCH_PROTECTION_TOKEN. Until that exists this workflow FAILS rather
+# than skipping: a gate that cannot reach the input it compares against has
+# verified nothing (standards/coding-standards.md rule 4.7). A red nightly run
+# naming the missing secret is visible; a green skipped one is not, and the
+# skipped-gate failure mode is the whole subject of Factory#431.
+
+on:
+  schedule:
+    # 06:17 UTC daily. Note BST != UTC: this is 07:17 local in summer.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-protection-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: live protection matches declared intent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the admin-read token (fail closed, rule 4.7)
+        env:
+          GH_TOKEN: ${{ secrets.BRANCH_PROTECTION_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::secret BRANCH_PROTECTION_TOKEN is not set."
+            echo "Reading branch protection is an admin-only endpoint and the Actions"
+            echo "GITHUB_TOKEN cannot be granted it (no 'administration' permission scope"
+            echo "exists for it). Create a fine-grained PAT with Administration:read on the"
+            echo "fleet repos and store it as BRANCH_PROTECTION_TOKEN."
+            echo "Failing rather than skipping: an unverifiable baseline is not a verified"
+            echo "one (standards/coding-standards.md rule 4.7)."
+            exit 1
+          fi
+
+      - name: Check live protection against scripts/apply_branch_protection.sh
+        env:
+          GH_TOKEN: ${{ secrets.BRANCH_PROTECTION_TOKEN }}
+        # Check mode is the default and writes nothing. Exit 1 = drift,
+        # exit 2 = could not determine (missing branch, token without admin).
+        run: bash scripts/apply_branch_protection.sh
+
+      - name: What to do when this job is red
+        if: failure()
+        run: |
+          echo "Either protection was changed by hand and the change was deliberate"
+          echo "(update the intent table in scripts/apply_branch_protection.sh), or it"
+          echo "was not (re-run the script with --apply to converge it back)."
+          echo "Decide which - do not reflexively --apply, because that is exactly how"
+          echo "a deliberate decision gets reverted (Factory#468)."
