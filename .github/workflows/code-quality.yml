@@ -45,7 +45,14 @@ env:
   # Must match the ruff that formatted scripts/ (hub pin, standards section 4.5).
   RUFF_VERSION: "0.15.17"
   MYPY_VERSION: "1.18.2"
-  PACKAGE_DIR: "scripts"
+  # Comma-separated (Factory#493). tests/ was outside every lint scope this repo
+  # has: `ruff check` never looked at it, `ruff format --check` never looked at
+  # it, and the ratchet's own test-file carve-out (#403) was reachable for
+  # exactly one file — scripts/test_model_probe.py, the one test that does not
+  # live in tests/. Since #496 wired the other seventeen suites into CI they are
+  # load-bearing code (they include the comparators of all three blocking
+  # fleet-wide drift gates), so they get the same gate as scripts/.
+  PACKAGE_DIR: "scripts,tests"
 
 jobs:
   ratchet:
@@ -87,7 +94,7 @@ jobs:
         run: python scripts/ratchet_lint.py --tool mypy --base "${{ steps.base.outputs.ref }}" --package "${PACKAGE_DIR}"
 
   format-check:
-    name: ruff format --check (scripts, blocking)
+    name: ruff format --check (scripts + tests, blocking)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,12 +108,17 @@ jobs:
 
       - name: ruff format --check
         # Formatting is mechanical and already clean under scripts/ (the hub's
-        # first-class Python). Scoped here rather than whole-repo because the
-        # prototypes/, backups/, and review/ trees carry pre-existing unformatted
-        # legacy that is out of this ratchet's adoption scope (allowed until
-        # touched, per section 4.6); widening this to "." would make the gate
-        # instantly red.
-        run: ruff format --check scripts/
+        # first-class Python) and tests/ (Factory#493 — one file needed a
+        # reformat to widen this, done as its own commit). Scoped here rather
+        # than whole-repo because the prototypes/, backups/, and review/ trees
+        # carry pre-existing unformatted legacy that is out of this ratchet's
+        # adoption scope (allowed until touched, per section 4.6); widening this
+        # to "." would make the gate instantly red.
+        #
+        # Unlike the ratchet above, this is a WHOLE-TREE gate: it cannot
+        # grandfather anything, so a directory can only be added here once it is
+        # already clean.
+        run: ruff format --check scripts/ tests/
 
   config-drift:
     name: vendored baseline matches standards/ (drift gate)
