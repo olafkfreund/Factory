@@ -19,7 +19,9 @@ run progresses, the task/subtask graph lights up stage by stage
 (plan -> build -> verify), driven by real backend data, not a canned animation.
 
 - Feature: live execution diagrams, shipped 2026-06-14 (CFactory #94), with
-  plan-stage live status added in #95. All three PARR stages render.
+  plan-stage live status added in #95. The plan and code stages render; the test
+  stage does not, in practice — see CFactory#260 and
+  [What is not captured yet](#what-is-not-captured-yet).
 - Where it lives: CFactory task-detail modal (`TaskDetail.tsx`), renderer in
   `TaskFlow.tsx` with pure layout/classification in `taskFlow.ts`. Hand-rolled
   SVG plus framer-motion, no graph library (cockpit ethos).
@@ -170,7 +172,12 @@ rather than faked, and each has an issue.
   real transition it does produce (all-queued to all-complete) rather than a
   node-by-node walk.
 - **Shot 2, a failure state (node shakes red).** No run in the window produced a
-  failed DAG node, and a failure must never be hand-set. Still open.
+  failed DAG node, and a failure must never be hand-set. Compounding it: the test
+  stage — the one stage whose nodes do move through real intermediate states, and
+  the stage where a red lane would come from — never renders at all. No work item
+  exposes `graphs.test`, not even runs that have reached `triaged`, so shots 4 and 5
+  of this runbook's own shot list (the lane pipeline, and the handback loop) are not
+  currently shootable — CFactory#260.
 - **Shot 4's cost-by-task bar chart.** Mission Control's count-up stats are live
   and real, but `USAGE BY TASK`, `TOKENS` and `AVG LATENCY` are empty because no
   upstream publishes task usage — CFactory#257. Committing a shot of an empty panel
