@@ -100,8 +100,9 @@ program documents reality.
 - Signed task contracts (HMAC plan envelope), fail-closed prompt-injection /
   SSRF / egress guards, independent TFactory verification with evidence gates
   (RFC-0001a) and Verification Assurance Levels (RFC-0006) (#323).
-- CodeQL on all five code repos, a Trivy P0 build gate, and Renovate fleet-wide
-  (#317).
+- CodeQL on all five code repos and a Trivy P0 build gate (#317). The
+  "Renovate fleet-wide" half of this claim was withdrawn — see the corrections
+  below.
 - Per-task Job NetworkPolicy and non-root securityContext, now shipped and
   default-on (AIFactory#812, TFactory#651) — the epic's original "no
   NetworkPolicy / no securityContext" gap is closed (#322).
@@ -118,6 +119,21 @@ program documents reality.
   comments claim 90-day evidence retention, so verification evidence can be
   purged before its claim closes — undermining the audit chain's survivability
   assumption. Independently surfaced by #313, #321, and #317.
+- "Renovate fleet-wide" was never true. A `renovate.json` existed in five repos
+  and Renovate had run in none of them: the GitHub App was never installed, so
+  the fleet had zero Renovate PRs and not one Dependency Dashboard issue despite
+  `:dependencyDashboard` being configured in four. No bot had ever bumped a base
+  image; every digest bump in fleet history was manual. It surfaced when a
+  garbage-collected Chainguard digest took the `docker (P0 acceptance)` gate down
+  in three repos at once, roughly nine weeks after the pin went stale. Now
+  Dependabot base-image updates, chosen because their PR history is observable
+  and their PRs trigger the gate that must review a base-image bump (#436).
+
+The shared shape of all three corrections is worth naming, because it is the one
+an assessor should probe for: each was a control that existed as a file rather
+than as an effect. `.sops.yaml` semantics without the file, a 90-day retention
+comment over a 30-day rule, a digest policy with no bot behind it. Where a
+control's evidence is its configuration, ask for its output instead.
 
 ## Remediation roadmap
 

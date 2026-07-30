@@ -85,7 +85,7 @@ exist, wiring it is a tracked gap (see the referenced issue).
 |---|---|---|---|
 | Audit-chain integrity | Daily signed anchor + air-gapped external verifier | Daily | Anchor failure or chain break pages the Incident Commander (alerting wiring tracked, Factory#313/#319) |
 | Supply-chain provenance | cosign signature + dual SBOM presence in CI | Per build | Missing signature/SBOM fails the build; CFactory parity tracked Factory#318 |
-| Vulnerability posture | CodeQL (5 repos), Trivy P0 build gate, Renovate | Per PR / per build / continuous | P0 fails the build; CodeQL alerts triaged; SLA tracked Factory#317 |
+| Vulnerability posture | CodeQL (5 repos), Trivy P0 build gate, Dependabot (security alerts + base images) | Per PR / per build / daily | P0 fails the build; CodeQL alerts triaged; SLA tracked Factory#317 |
 | Access review | `access_review.py` export | Quarterly | Unexpected grant removed and logged; wildcard-token retirement tracked Factory#312 |
 | CI gate pass rate | GitHub Actions | Continuous | Sustained failures reviewed at management review |
 | Backup success / restore test | Backup jobs (being introduced) | Per backup / periodic restore drill | Backup absence is the current top risk, tracked Factory#321 |
