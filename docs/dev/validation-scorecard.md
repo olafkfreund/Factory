@@ -56,6 +56,67 @@ Rules that keep the scorecard honest:
 
 ---
 
+## Corrections to the matrix as specified
+
+A code-level triage on 2026-07-30 found that some cells cannot be filled as
+written, no matter how the run goes. Correcting the matrix is cheaper than
+running four cells to discover they were never measurable.
+
+**PFactory runs no LLM, so it has no backend.** PFactory's plan pipeline
+decomposes deterministically. `PlanService.process(..., llm=None)` is what every
+production caller passes — the HTTP routes
+(`apps/web-server/server/routes/plan_pipeline.py`, `routes/github.py`) and the
+agent API all omit it, and only tests supply an `llm`. The routing knobs that
+exist (`PFACTORY_PLANNER_PINNED_MODEL`, `PFACTORY_ROUTING_POLICY`) resolve inside
+`decompose_with_llm`, which is only reached when an `llm` is present. PFactory's
+own usage accumulator says the same thing in its docstring: the block is
+"honestly zero".
+
+Consequences, and they are structural rather than cosmetic:
+
+- The four **C-row PFactory cells are N/A**, not TBD. The backend matrix is
+  **8 real cells** (AIFactory and TFactory across four backends), not 12.
+- **B2** ("control which model runs PLANNING") cannot be proven as worded. What
+  can be proven is the adjacent, useful thing: that `PFACTORY_EXECUTION_MODEL`
+  decides the `execution.phase_models` PFactory *emits* for AIFactory. That is a
+  contract-authoring behaviour, not a choice of the model PFactory thinks with.
+- Anything downstream that reads "planning ran on backend X" is reading a
+  routing hint, not evidence.
+
+This is not a defect to fix. A deterministic planner is a legitimate design and
+arguably the better one. It just means the epic's C column asks a question three
+services can't all answer.
+
+---
+
+## Traps that void a cell
+
+Each of these produces a run that completes and looks green while measuring
+something other than what the cell claims. They are listed here because every
+one of them was found by reading code, not by a run failing.
+
+| Trap | Effect | Where |
+|---|---|---|
+| `phaseModels` without `isAutoProfile: true` | The resolver ignores the map entirely and the run uses defaults. Nothing warns. | AIFactory `apps/backend/phase_config.py` precedence chain |
+| A phase key outside `{spec, planning, coding, qa, qa_fixer}` | Silently dropped by both AIFactory and TFactory whitelists. `testing` is the obvious one to reach for and does nothing. | AIFactory `routes/settings.py`; TFactory `tools/task_control.py` |
+| `BENCH_MODEL` alone | Sets the flat model, which loses to the per-phase pins. Observed 2026-06-13 producing an all-Claude build from a Gemini-labelled run. | benchmark-matrix-runbook.md |
+| Pinning `ollama:<model>` for the self-hosted box | The agentic Ollama provider is hard-pinned to `localhost:11434` and reads no env, so it never reaches p510. Use `openai-compatible:<model>`. | AIFactory#1099, TFactory#870 |
+| Reading a TFactory model from `status.json` | `usage.model` is empty even on a Claude run, so the verify leg has no resolved-model evidence at all. | TFactory#869 |
+| Comparing swarms on per-worker wall-clock | `duration_ms` is 0 for every worker; tokens and cost are real, time is not. | AIFactory#1100 |
+
+Two operational constraints in the same spirit:
+
+- **C3 and C4 are mutually exclusive as configured.** Both reach Ollama through
+  `OPENAI_COMPATIBLE_BASE_URL`, which is one deployment-level value. It currently
+  points at the self-hosted host, so running the hosted cell means changing
+  deployment env and rolling the pods between the two runs.
+- **The harness's Ollama preset names models the self-hosted host does not
+  have.** It defaults to `qwen3-coder:480b` / `gpt-oss:120b`, which are
+  ollama.com models. A C3 run must override them (see the measured inventory
+  below).
+
+---
+
 ## A. Handover surfaces
 
 Status rows. One line per surface; `evidence` is the run or PR that proves it.
@@ -74,10 +135,15 @@ Status rows. B1 is the control surface; B2-B4 are one stage each.
 
 | Cell | Control | Status | Resolved model observed | Evidence | Notes |
 |---|---|---|---|---|---|
-| B1 | `phase_models` contract -> `task_metadata.phaseModels` -> resolved per phase | TBD | TBD | TBD | Prove the whole hop, not just that the field is accepted |
-| B2 | Planning model (PFactory) | TBD | TBD | TBD | TBD |
-| B3 | Coding model (AIFactory) | TBD | TBD | TBD | TBD |
-| B4 | Testing/verify model (TFactory) | TBD | TBD | TBD | TBD |
+| B1 | `phase_models` contract -> `task_metadata.phaseModels` -> resolved per phase | code path traced, **run pending** | TBD | code trace 2026-07-30 | Every hop exists: `execution.phase_models` -> `trusted_plan._EXECUTION_TO_METADATA` -> `task_metadata.json` -> `phase_config._resolve_phase_model` -> provider, recorded in `token_usage.json` `workers`. Requires `isAutoProfile: true` or the map is ignored |
+| B2 | Planning model (PFactory) | **not provable as worded** | — | code trace 2026-07-30 | PFactory runs no LLM in production. Re-scope to "`PFACTORY_EXECUTION_MODEL` decides the emitted `execution.phase_models`" — see "Corrections" above |
+| B3 | Coding model (AIFactory) | code path traced, **run pending** | `claude-opus-4-8` observed as the **default** | spec `097`, 2026-07-29 | The `workers` map gives per-worker provider/model/phase, which is exactly the evidence this cell needs. A pinned run is still required |
+| B4 | Testing/verify model (TFactory) | **blocked** | UNKNOWN | TFactory#869 | Control surface exists but is keyed `coding` — there is no `testing` phase. Unprovable until TFactory records the model it resolved |
+
+Measured default, live pods, 2026-07-30 (both AIFactory and TFactory):
+`DEFAULT_PHASE_MODELS = {spec, planning, coding, qa, qa_fixer} -> "opus"`,
+resolving to `claude-opus-4-8`. This supersedes the `sonnet` default quoted in
+benchmark-matrix-runbook.md, which predates the change.
 
 ---
 
@@ -92,20 +158,27 @@ requested.
 
 | Cell | Backend | Service | Run link | Model resolved | Verdict | Notes |
 |---|---|---|---|---|---|---|
-| C1 | Anthropic (Claude) | PFactory | TBD | TBD | TBD | TBD |
-| C1 | Anthropic (Claude) | AIFactory | TBD | TBD | TBD | Prior green exists (api-gateway, 2026-06-13, runbook) — re-run under this matrix for a linkable cell |
-| C1 | Anthropic (Claude) | TFactory | TBD | TBD | TBD | TBD |
-| C2 | Gemini online (gemini-cli / antigravity) | PFactory | TBD | TBD | TBD | TBD |
-| C2 | Gemini online (gemini-cli / antigravity) | AIFactory | TBD | TBD | TBD | Needs `phaseModels`, not `BENCH_MODEL`; workspace trust flag required |
-| C2 | Gemini online (gemini-cli / antigravity) | TFactory | TBD | TBD | TBD | TBD |
-| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | PFactory | TBD | TBD | TBD | TBD |
-| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | AIFactory | TBD | TBD | TBD | TBD |
-| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | TFactory | TBD | TBD | TBD | TBD |
-| C4 | Ollama online (hosted) | PFactory | TBD | TBD | TBD | TBD |
-| C4 | Ollama online (hosted) | AIFactory | TBD | TBD | TBD | TBD |
-| C4 | Ollama online (hosted) | TFactory | TBD | TBD | TBD | TBD |
+| C1 | Anthropic (Claude) | PFactory | — | — | **N/A** | PFactory runs no LLM — see "Corrections" above |
+| C1 | Anthropic (Claude) | AIFactory | [aifactory-demo#449](https://github.com/olafkfreund/aifactory-demo/pull/449) | `claude-opus-4-8` (planning + 5 coding workers) | partial | Read from a prior run's artifact, not driven under this matrix; no `phaseModels` set, so it evidences the **default**, not the control surface. Spec `097-inventory-reservation-service-`, 2026-07-29, 1,992,976 tokens / $3.23 |
+| C1 | Anthropic (Claude) | TFactory | same run as above | **UNKNOWN** | partial | Verdict `triaged` (terminal), 17 tests generated / 15 committed / 2 rejected, ac_fidelity 11/13. Model resolved is UNKNOWN because TFactory records none (TFactory#869). `git_writer` failed to commit tests back (TFactory#868) |
+| C2 | Gemini online (gemini-cli / antigravity) | PFactory | — | — | **N/A** | PFactory runs no LLM |
+| C2 | Gemini online (gemini-cli / antigravity) | AIFactory | TBD | TBD | TBD | Provider is `antigravity`; pin via `BENCH_PHASE_MODELS`, never `BENCH_MODEL`. Trust flag already set on this deployment |
+| C2 | Gemini online (gemini-cli / antigravity) | TFactory | TBD | TBD | TBD | Expected to fail until TFactory#871 lands (no `GEMINI_CLI_TRUST_WORKSPACE` on the deployment) |
+| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | PFactory | — | — | **N/A** | PFactory runs no LLM |
+| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | AIFactory | TBD | TBD | TBD | Must be spelled `openai-compatible:<model>`; `ollama:` cannot reach p510 (AIFactory#1099) |
+| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | TFactory | TBD | TBD | TBD | Same spelling constraint (TFactory#870); resolved-model evidence blocked on TFactory#869 |
+| C4 | Ollama online (hosted) | PFactory | — | — | **N/A** | PFactory runs no LLM |
+| C4 | Ollama online (hosted) | AIFactory | TBD | TBD | TBD | No authenticated Ollama client exists; only route is `openai-compatible:` + `OPENAI_COMPATIBLE_BASE_URL=https://ollama.com`. Requires a deployment env change (mutually exclusive with C3) |
+| C4 | Ollama online (hosted) | TFactory | TBD | TBD | TBD | As above |
 
-Cells filled: 0 / 12.
+Cells filled: 0 / 8 real cells (2 partial). 4 of the original 12 are N/A.
+
+### Endpoint inventory (measured 2026-07-30, from inside the AIFactory pod)
+
+`GET http://host.k3d.internal:11434/api/tags` returned 200 with five models:
+`gemma4:12b`, `gemma4:e4b`, `qwen2.5:7b`, `qwen2.5-coder:14b`,
+`nomic-embed-text:latest`. A C3 run picks its coding and general models from
+this list — nothing else is served there.
 
 ---
 
@@ -136,19 +209,29 @@ scenario — different scenarios are not comparable):
 
 | Cell | Test | Run link | Result | Ceiling / limit found | Notes |
 |---|---|---|---|---|---|
-| E1 | Concurrency ceiling (N simultaneous builds, KEDA scale) | TBD | TBD | TBD | Record peak concurrent build Jobs, peak replicas, Pending pods, and whether quality held |
-| E2 | Polyglot ladder (multiple languages end to end) | TBD | TBD | TBD | One row per language in the sub-table below |
-| E3 | Large / complex single issue (monorepo-scale context) | TBD | TBD | TBD | Record repo size, context strategy, whether the plan decomposed |
+| E1 | Concurrency ceiling (N simultaneous builds, KEDA scale) | partial: [#295 comment](https://github.com/olafkfreund/Factory/issues/295#issuecomment-5006746661) | **no ceiling found** | none reached | Peak 5 concurrent build Jobs, 0 Pending pods, so the resource ceiling is above 5. The "KEDA scale" half was **never measured** — the scaler was misconfigured throughout (PFactory#265). Re-runnable now: see below |
+| E2 | Polyglot ladder (multiple languages end to end) | partial | 4 languages built, 0 verified | toolchain provisioning | The 2026-07 batch needed hand-patching to Claude on all 4 (AIFactory#777), so it grades `partial`, not `pass`, per this page's own rule. Rust was never attempted |
+| E3 | Large / complex single issue (monorepo-scale context) | TBD | TBD | TBD | Not started |
+
+**E1 is unblocked as of 2026-07-30.** The scaler that voided the earlier attempt
+is healthy again — measured: all three `ScaledObject`s report
+`ScaledObjectReady=True` with live HPA metrics (`keda-hpa-aifactory 0/1`,
+`pfactory 0/2`, `tfactory 0/2`), max replicas 6 / 4 / 4, on a 2-node cluster.
+A re-run can therefore measure the KEDA half for the first time.
 
 E2 polyglot ladder — one row per language, all the way to a verify verdict:
 
 | Language | Scenario | Run link | Build verdict | Verify verdict | Wall-clock | Notes |
 |---|---|---|---|---|---|---|
-| Python | TBD | TBD | TBD | TBD | TBD | TBD |
-| Go | TBD | TBD | TBD | TBD | TBD | TBD |
-| Rust | TBD | TBD | TBD | TBD | TBD | TBD |
-| TypeScript | TBD | TBD | TBD | TBD | TBD | TBD |
-| Terraform / IaC | TBD | TBD | TBD | TBD | TBD | TBD |
+| Python | api-gateway | prior: RESULTS.md 2026-06-13..20 | passed | passed | ~53 min | Not driven under this matrix; 2.58M tokens / $1.51 |
+| Go | go-hello | TBD | TBD | TBD | TBD | Blocked at the time of RESULTS.md on TFactory#443 (no Go test-gen). **#443 has since closed** — the recorded failure is stale and the cell needs a re-run, not a re-diagnosis |
+| Rust | rust-hello | prior: RESULTS.md 2026-06-13..20 | passed | passed | ~59 min | Not driven under this matrix; 7.60M tokens / $5.05. Absent from the 2026-07 batch entirely |
+| TypeScript | aws-3tier | prior: RESULTS.md 2026-06-13..20 | passed | **failed** | ~77 min build | Verify rejected the build — a real quality signal, not a pipeline error |
+| Terraform / IaC | eks-aws, tf-k8s | TBD | TBD | TBD | TBD | `validate-only`; never run |
+
+The three prior rows come from `aifactory-demo/benchmarks/results/RESULTS.md`.
+They are recorded here as **prior evidence with links**, not as filled cells:
+they predate this matrix, and the Go row in that document is now known stale.
 
 ---
 
@@ -158,8 +241,13 @@ E2 polyglot ladder — one row per language, all the way to a verify verdict:
 
 | Item | Status | Evidence | Notes |
 |---|---|---|---|
-| `run_benchmark.py` full sweep, all scenarios | TBD | TBD | Scenarios: api-gateway, rust-hello, go-hello, eks-aws, ts-tictactoe, tf-k8s |
+| `run_benchmark.py` full sweep, all scenarios | TBD | TBD | Seven scenarios exist in `benchmarks/scenarios.yaml`: api-gateway, rust-hello, go-hello, aws-3tier, eks-aws, ts-tictactoe, tf-k8s. Four have ever been run; three (eks-aws, ts-tictactoe, tf-k8s) never have |
 | Published numbers in the docs | TBD | TBD | Feeds the fleet blog and TechDocs |
+
+The harness lives in `aifactory-demo/scripts/run_benchmark.py`. The Factory-side
+roll-up tool is `scripts/benchmarks/report.py` in this repo, which reads the
+harness sidecars and emits the F2 and F3 tables — it degrades unknown fields to
+`UNKNOWN` rather than guessing, which is what makes it safe to publish from.
 
 ### F2. Per-backend latency, cost, quality
 
@@ -203,15 +291,21 @@ evidence.
 Update this block whenever a section moves. It is the one place to look for
 "where is the validation program".
 
+Last triage: 2026-07-30 (code + live cluster, no new runs commissioned).
+
 | Section | Cells | Filled | Blocked | Blocker |
 |---|---|---|---|---|
-| A. Handover surfaces | 3 | 0 | TBD | TBD |
-| B. Model control per stage | 4 | 0 | TBD | TBD |
-| C. Backend x service | 12 | 0 | TBD | TBD |
-| D. Swarms | 3 | 0 | TBD | TBD |
-| E. Stress and scale | 3 | 0 | TBD | TBD |
-| F. Benchmarks | 3 | 0 | TBD | TBD |
-| G. Adoption | 2 | 0 | TBD | TBD |
+| A. Handover surfaces | 3 | 0 | 0 | Needs one run each restated under this matrix |
+| B. Model control per stage | 4 | 0 | 2 | B2 not provable as worded (no PFactory LLM); B4 blocked on TFactory#869 |
+| C. Backend x service | 8 (was 12) | 0 (2 partial) | 4 | 4 PFactory cells are N/A. C2/TFactory on TFactory#871; C3 on AIFactory#1099 + TFactory#870; C4 needs a deployment env change |
+| D. Swarms | 3 | 0 | 3 | Per-worker wall-clock is 0 (AIFactory#1100), so D3's comparison has no time axis |
+| E. Stress and scale | 3 | 0 (2 partial) | 0 | E1 unblocked and re-runnable; E2 needs a clean run; E3 not started |
+| F. Benchmarks | 3 | 0 | 3 | Rollup — waits on C, D, E |
+| G. Adoption | 2 | 0 | 0 | Needs a count with links, not a status |
+
+Every remaining cell is now an **execution** cost, not a discovery cost: the
+blockers are named, the traps are written down, and the harness can pin any
+backend per phase (aifactory-demo#450).
 
 ---
 

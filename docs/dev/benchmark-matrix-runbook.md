@@ -122,21 +122,28 @@ A typical build leg is ~20-28 min; verify is ~20-25 min. `BENCH_BUILD_TIMEOUT`
 
 ## The provider matrix (Claude vs Gemini)
 
-- **Claude**: omit `BENCH_MODEL`. All phases use `claude-sonnet-4-6` (the default).
+- **Claude**: omit `BENCH_MODEL`. All phases use the factory default.
+  **The default is `opus` (`claude-opus-4-8`), not `sonnet`** — measured from the
+  live AIFactory and TFactory pods on 2026-07-30. The `sonnet` figure previously
+  recorded here predates the change; anything costed against it is understated.
 - **IMPORTANT — `BENCH_MODEL` alone does NOT switch provider.** The task `model`
-  field does not override the per-phase model pins: `phase_config`
-  `DEFAULT_PHASE_MODELS` pins every phase (spec/planning/coding/qa/qa_fixer) to
-  `sonnet`, and the `start` payload's `model` is ignored for phase routing.
-  Verified 2026-06-13: a run with `BENCH_MODEL=gemini-2.5-pro` still produced an
-  all-Claude build (4 coding workers, all `claude` haiku/sonnet, 1.47M tokens).
-- **To actually use Gemini** the task must carry
-  `metadata.phaseModels = {coding: "gemini-2.5-pro", ...}` (add `planning`/`spec`
-  too for a pure-Gemini build). The harness does **not** send `phaseModels` today —
-  to drive Gemini you must either (a) extend the harness to forward a
-  `phaseModels` map into the `/api/tasks` metadata, or (b) start a task directly
-  against `/api/tasks/{id}/start` with the `phaseModels` field. See
-  "Known gaps / follow-ups". The Gemini coding path was therefore NOT yet
-  exercised end-to-end as of 2026-06-13.
+  field does not override the per-phase model pins in `phase_config`, and the
+  `start` payload's `model` is ignored for phase routing. Verified 2026-06-13: a
+  run with `BENCH_MODEL=gemini-2.5-pro` still produced an all-Claude build (4
+  coding workers, 1.47M tokens). This is the single easiest way to publish a
+  result for a backend that never ran.
+- **To actually change backend**, pin the phases. Since aifactory-demo#450 the
+  harness does this for you:
+  ```sh
+  BENCH_PHASE_MODELS='{"coding": "antigravity-3-pro"}'   # any backend
+  BENCH_OLLAMA=1                                          # all-Ollama preset
+  ```
+  Unknown phase keys are rejected rather than silently dropped, and the requested
+  pins are echoed to the run log. Note `isAutoProfile` must be true for the map to
+  be honoured at all — the harness sets it whenever pins are present.
+- **Ollama needs the `openai-compatible:` spelling.** The `ollama:` provider is
+  hard-pinned to `localhost:11434` and reads no environment, so it cannot reach
+  the p510 host (AIFactory#1099, TFactory#870).
 - The Gemini path runs `antigravity --yolo` (the gemini->antigravity alias) and
   needs `GEMINI_CLI_TRUST_WORKSPACE=true` on the deployment env (already set).
 
@@ -201,12 +208,12 @@ A typical build leg is ~20-28 min; verify is ~20-25 min. `BENCH_BUILD_TIMEOUT`
 
 ## Known gaps / what is still missing (the follow-up list)
 
-- **Per-worker token/cost are `None`.** `token_usage.json`'s `workers` map records
-  each worker's `provider`/`model`/`phase` (verified: 4 workers, even
-  heterogeneous — 1x haiku + 3x sonnet), but `totalTokens`/`costUsd` per worker
-  are not populated; only the scalar aggregate is. The per-worker observability
-  feature ships the structure but not the numbers. (Owner: AIFactory
-  `agents/token_attribution.py`.)
+- **(FIXED) Per-worker token/cost are `None`.** Now populated. Verified against
+  spec `097` on 2026-07-29: six workers each carrying real `total_tokens` and
+  `cost_usd` alongside `provider`/`model`/`phase`.
+- **(OPEN) Per-worker `duration_ms` is 0.** Everything else in the `workers` map
+  is real; the time field is not, which leaves the swarm comparison with no
+  wall-clock axis. AIFactory#1100.
 - **`build_report.json` parallelism not wired.** It reports
   `parallel:false, workers_max:1, total_waves:0` even when the workers map shows 4
   parallel workers. (Owner: AIFactory build-report writer.)
@@ -233,12 +240,14 @@ A typical build leg is ~20-28 min; verify is ~20-25 min. `BENCH_BUILD_TIMEOUT`
     block was moved off the `emit_events` gate. (Owner: AIFactory
     `services/completion.py` + `agent_service.py` terminal block.) Until then, the
     OpenObserve dashboard only shows the synthetic diagnostic point.
-- **Harness edits not upstreamed.** The `BENCH_MODEL` override + the two
-  false-positive fixes exist only in this working tree and in the pod clone. They
-  should be committed/pushed to `olafkfreund/aifactory-demo` so a fresh pod clone
-  (or a new `_ensure_project` re-clone) picks them up.
-- **Pure-Gemini planning.** To benchmark Gemini end-to-end (planning included) the
-  harness needs to send `metadata.phaseModels`. Not implemented.
+- **(FIXED) Harness edits not upstreamed.** The `BENCH_MODEL` override and the two
+  false-positive fixes are in `olafkfreund/aifactory-demo` on `main`.
+- **(FIXED) Per-phase model pinning.** The harness sends `metadata.phaseModels`;
+  see aifactory-demo#450 for the generic `BENCH_PHASE_MODELS` form.
+- **PFactory has no planning model to benchmark.** Its plan pipeline makes no LLM
+  calls in production — no production caller supplies an `llm`. "Gemini planning"
+  and its siblings are not achievable through PFactory; see the Corrections
+  section of [validation-scorecard.md](./validation-scorecard.md).
 - **PFactory plan-stage robustness.** Make `emit` tolerant of missing labels (see
   problem 2) so a fresh repo does not 500.
 - **CFactory API auth.** Its REST API 401s on `APP_API_TOKEN`; the per-worker
