@@ -22,6 +22,17 @@
 #   scripts/apply_branch_protection.sh --apply         # APPLY all repos
 #   WITH_VERIFY=1 scripts/apply_branch_protection.sh --repo AIFactory
 #                                                      # include TFactory verify check
+#   scripts/apply_branch_protection.sh --signatures --repo CFactory
+#                                                      # dry-run: what require-signed-commits WOULD do
+#   scripts/apply_branch_protection.sh --signatures --apply --repo CFactory
+#                                                      # ENABLE required_signatures on one repo
+#
+# SIGNED COMMITS (--signatures): OPT-IN and separate from the baseline protection
+# above, because turning it on breaks any identity that pushes UNSIGNED commits to
+# the protected branch. Every pusher (humans AND automation) must have commit
+# signing configured FIRST or their next push is rejected. See the per-repo signer
+# checklist printed in dry-run and docs/compliance/signed-commits-and-sod.md for the
+# rollout order (humans first, bots signing configured, gitops LAST).
 #
 # Requires: gh (authenticated with admin on the repos) and jq.
 # Idempotent: PUT replaces the whole protection object, so re-running converges.
@@ -30,14 +41,16 @@ set -euo pipefail
 OWNER="olafkfreund"
 APPLY=0
 ONLY_REPO=""
+SIGNATURES=0                      # 1 = act on required_signatures (opt-in; see --signatures)
 WITH_VERIFY="${WITH_VERIFY:-0}"   # 1 = also require the TFactory verification status (see docs, phase 3)
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
     --dry-run) APPLY=0 ;;
+    --signatures) SIGNATURES=1 ;;
     --repo) ONLY_REPO="${2:-}"; shift ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -77,6 +90,42 @@ repo_config() {
     factory-gitops) CHECKS='[]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0 ;;
     *) echo "no config for repo: $1" >&2; return 1 ;;
   esac
+}
+
+# Identities that must have commit signing configured BEFORE required_signatures is
+# enabled on each repo's main. Enabling it rejects the next UNSIGNED push from any of
+# these, so this is the pre-flight checklist. Human committers are assumed to have set
+# up their own signing (see the doc); listed here are the AUTOMATION identities that
+# push to (or merge into) main and would otherwise break.
+signers_note() {
+  case "$1" in
+    CFactory|PFactory|TFactory|AIFactory)
+      echo "PARR auto-merge bot (admin token running 'gh pr merge' — merge commits must be signed; enable branch 'Require signed commits' AND ensure the merge is a GitHub-signed merge/squash, which GitHub signs server-side)" ;;
+    Factory)
+      echo "Human committers only (no direct-to-main automation). Confirm every maintainer has verified signing before enabling." ;;
+    factory-gitops)
+      echo "CRITICAL: github-actions[bot] CD bump (GITOPS_PAT) pushes UNSIGNED commits. Enable ONLY after the CD job signs its commits (import a bot GPG/SSH signing key into the workflow and set git user.signingkey + commit.gpgsign=true, OR switch the bump to the GitHub Contents API which server-signs). Enabling before that FREEZES all deploys." ;;
+    *) echo "unknown repo: $1"; return 1 ;;
+  esac
+}
+
+signatures_one() {
+  local repo="$1"
+  echo "-------------------- ${OWNER}/${repo} : main : required_signatures --------------------"
+  echo "signer pre-flight: $(signers_note "$repo")"
+  echo "endpoint: POST repos/${OWNER}/${repo}/branches/main/protection/required_signatures"
+  echo "prereq: branch protection must already exist on main (run this script without --signatures first)."
+  if [ "$APPLY" = "1" ]; then
+    echo ">> enabling required signed commits..."
+    gh api -X POST \
+      -H "Accept: application/vnd.github+json" \
+      "repos/${OWNER}/${repo}/branches/main/protection/required_signatures" >/dev/null
+    echo ">> enabled. Unsigned pushes to main are now rejected."
+  else
+    echo "(dry-run: nothing written. Re-run with --signatures --apply to enforce. Disable later with:"
+    echo "  gh api -X DELETE repos/${OWNER}/${repo}/branches/main/protection/required_signatures )"
+  fi
+  echo
 }
 
 ALL_REPOS=(CFactory Factory PFactory TFactory AIFactory factory-gitops)
@@ -136,12 +185,20 @@ apply_one() {
   echo
 }
 
-if [ -n "$ONLY_REPO" ]; then
+# --signatures acts ONLY on required_signatures (does not touch the protection object);
+# without it, behaviour is unchanged (baseline protection only).
+if [ "$SIGNATURES" = "1" ]; then
+  if [ -n "$ONLY_REPO" ]; then
+    signatures_one "$ONLY_REPO"
+  else
+    for r in "${ALL_REPOS[@]}"; do signatures_one "$r"; done
+  fi
+elif [ -n "$ONLY_REPO" ]; then
   apply_one "$ONLY_REPO"
 else
   for r in "${ALL_REPOS[@]}"; do apply_one "$r"; done
 fi
 
 if [ "$APPLY" = "0" ]; then
-  echo "DRY-RUN complete. No protection was changed. This is a plan only."
+  echo "DRY-RUN complete. Nothing was changed. This is a plan only."
 fi
