@@ -84,6 +84,15 @@ CANONICAL_MODULES: tuple[str, ...] = (
     # canonical module and each service vendors it. Without a gate that is
     # five copies free to drift again, which is the problem #403 opened on.
     "ratchet_helpers.py",
+    # Added 2026-07-30 (Factory#477). job_dispatch.py's own docstring claimed it
+    # was vendored "byte-identically", and it was not: AIFactory's copy had drifted
+    # in BOTH directions and no workflow compared them. The cost was concrete —
+    # the #1107 pod-label defect (task pods joining their service's Service and
+    # answering real traffic with connection refused) had to be found and fixed
+    # twice, once per copy, and a fresh vendoring of the hub copy would have
+    # re-introduced it a fourth time. Registered here only AFTER the two copies
+    # were reconciled and AIFactory's pin bumped, per the standing ordering rule.
+    "job_dispatch.py",
 )
 # Removed 2026-07-28 (Factory#401): verification_profiles.py (397L) and
 # verification_runner.py (120L) were listed here but mapped by NO service, so
@@ -116,6 +125,11 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         "nix_provisioner.py": "apps/backend/core/nix_provisioner.py",
         "artifact_store.py": "apps/backend/core/artifact_store.py",
         "cost_router_core.py": "apps/backend/core/cost_router_core.py",
+        # Factory#477. The ONLY consumer that vendors job_dispatch.py — TFactory
+        # and PFactory dispatch through their own runners and hold no copy, so
+        # they are deliberately absent here rather than mapped to a path that
+        # does not exist.
+        "job_dispatch.py": "apps/backend/core/job_dispatch.py",
     },
     # CFactory vendors exactly one canonical module and nothing else. It was
     # deliberately left unregistered when ratchet_helpers.py was gated
@@ -210,9 +224,17 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
             _emit(f"  - {problem}")
         _emit(
             "\nThe canonical layer is the Factory hub's scripts/ "
-            "(see scripts/README-verification-core.md). Reconcile the service copy "
-            "with it (or, if the change is intentional, land it in the hub canonical "
-            "first via a CODEOWNERS-reviewed PR, then re-vendor)."
+            "(see scripts/README-verification-core.md). There is NO allowed-divergence "
+            "list: these copies are byte-identical or the gate is red. Two ways out, "
+            "and only two:\n"
+            "  1. The service copy is wrong -> re-vendor it from the canonical:\n"
+            "       cp <factory-hub>/scripts/<module> <service>/<vendored path above>\n"
+            "  2. The CHANGE is wanted -> land it in the hub canonical first via a\n"
+            "     CODEOWNERS-reviewed PR, re-vendor into EVERY consumer as in (1),\n"
+            "     then bump HUB_PIN_SHA in each consumer's verification-core-drift\n"
+            "     workflow to the hub commit that carries it.\n"
+            "Never hand-edit one copy to make this gate pass: that is the silent "
+            "divergence the gate exists to catch."
         )
         return 1
     _emit(
