@@ -125,10 +125,13 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         "nix_provisioner.py": "apps/backend/core/nix_provisioner.py",
         "artifact_store.py": "apps/backend/core/artifact_store.py",
         "cost_router_core.py": "apps/backend/core/cost_router_core.py",
-        # Factory#477. The ONLY consumer that vendors job_dispatch.py — TFactory
-        # and PFactory dispatch through their own runners and hold no copy, so
-        # they are deliberately absent here rather than mapped to a path that
-        # does not exist.
+        # Factory#477, extended by Factory#483. No longer the only consumer:
+        # TFactory vendors it too, at its own path below. PFactory is still
+        # deliberately absent and needs no copy — it runs a bounded pooled-worker
+        # model rather than Job-per-task (RFC-0016 §5(c), PFactory#218), so it
+        # builds no Job manifest at all. That is an absence with a reason, not an
+        # oversight; mapping it to a path that does not exist is what Factory#401
+        # removed as dead config.
         "job_dispatch.py": "apps/backend/core/job_dispatch.py",
     },
     # CFactory vendors exactly one canonical module and nothing else. It was
@@ -144,6 +147,16 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         "verification_gate.py": "apps/backend/agents/verification_gate.py",
         "nix_provisioner.py": "apps/backend/tools/runners/nix_provisioner.py",
         "artifact_store.py": "apps/backend/tools/runners/artifact_store.py",
+        # Factory#483. TFactory used to restate this module's naming, labelling
+        # and hardening rules by hand across its Job builders, under comments
+        # naming the hub file — a fork with a citation, which this gate is
+        # structurally unable to catch because there is no vendored file to
+        # compare. It now vendors the file and imports the rules.
+        #
+        # Registered here only AFTER TFactory#907 landed the copy and bumped its
+        # pin, per the standing ordering rule: a module registered for a service
+        # that does not yet carry it turns every PR in that repo red.
+        "job_dispatch.py": "apps/backend/tools/runners/job_dispatch.py",
     },
 }
 
