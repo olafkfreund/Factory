@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diff-scoped lint ratchet for the Factory hub Python (scripts/).
+"""Diff-scoped lint ratchet for the Factory hub Python (scripts/, tests/).
 
 Implements the Factory coding-standards ratchet (coding-standards.md sections 0
 and 4.6): the strict bar (`ruff` with the shared select set + `mypy --strict`)
@@ -28,8 +28,16 @@ This module is intentionally vendored from CFactory's reference implementation
 (cross-service reuse of the proven Factory ratchet); only the default package
 scope differs (the hub's first-class Python is the flat `scripts/` dir).
 
+``--package`` takes a COMMA-SEPARATED list of directories (Factory#493). The hub
+gates `scripts,tests`: with `scripts` alone the ratchet's own test-file carve-out
+(Factory#403) was reachable for exactly one file — `scripts/test_model_probe.py`,
+the seventeenth test file, which lives outside `tests/` — while the other
+seventeen suites under `tests/` were linted by nothing at all. A comma list
+rather than a repeated flag because MYPYPATH must carry every scoped dir at once:
+a changed `tests/` file imports the module it gates out of `scripts/`.
+
 Usage:
-    python scripts/ratchet_lint.py --base <git-ref> [--tool ruff|mypy] [--package <dir>]
+    python scripts/ratchet_lint.py --base <git-ref> [--tool ruff|mypy] [--package <dir>[,<dir>...]]
 
 Exit code 0 if no changed file regressed; 1 otherwise.
 """
@@ -68,19 +76,28 @@ def _run(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.Comple
     return subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)  # noqa: S603
 
 
+def packages(package: str) -> list[str]:
+    """Split the ``--package`` value into its directories.
+
+    Empty segments are dropped so a trailing comma or an accidental `a,,b`
+    cannot silently widen the scope to the repo root.
+    """
+    return [part for part in (p.strip() for p in package.split(",")) if part]
+
+
 def changed_python_files(base: str, package: str) -> list[str]:
-    """Python files under *package* changed (added/modified) vs *base*."""
+    """Python files under any of *package*'s dirs, changed (added/modified) vs *base*."""
     res = _run(["git", "diff", "--name-only", "--diff-filter=AM", f"{base}...HEAD"])
     if res.returncode != 0:
         sys.stderr.write(res.stderr)
         sys.exit(2)
-    pkg = Path(package)
+    pkgs = [Path(p) for p in packages(package)]
     out: list[str] = []
     for line in res.stdout.splitlines():
         path = Path(line)
         # `pkg in path.parents` matches both nested packages and a flat dir like
         # scripts/ (for scripts/foo.py, parents == [scripts, .]).
-        if path.suffix == ".py" and pkg in path.parents and path.exists():
+        if path.suffix == ".py" and any(p in path.parents for p in pkgs) and path.exists():
             out.append(str(path))
     return out
 
@@ -140,9 +157,11 @@ def mypy_command(target: str, original: str | None = None) -> list[str]:
 
 
 def _mypy_env(package: str) -> dict[str, str]:
-    # Put the package dir on MYPYPATH so a changed script's imports of sibling
-    # scripts resolve (the file under test is a temp copy outside the tree).
-    return {**os.environ, "MYPYPATH": package}
+    # Put EVERY scoped dir on MYPYPATH so a changed file's imports of its
+    # siblings resolve (the file under test is a temp copy outside the tree).
+    # A changed test under tests/ imports the module it gates out of scripts/,
+    # so scoping MYPYPATH to the file's own dir would not resolve it.
+    return {**os.environ, "MYPYPATH": os.pathsep.join(packages(package))}
 
 
 def mypy_count(source: str, filename: str, package: str) -> int:
@@ -189,7 +208,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True, help="git ref to diff against")
     parser.add_argument("--tool", choices=["ruff", "mypy"], default="ruff")
-    parser.add_argument("--package", default=PACKAGE_DEFAULT)
+    parser.add_argument(
+        "--package",
+        default=PACKAGE_DEFAULT,
+        help="comma-separated directories to gate (e.g. 'scripts,tests')",
+    )
     args = parser.parse_args()
 
     files = changed_python_files(args.base, args.package)
