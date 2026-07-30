@@ -1,0 +1,154 @@
+name: deploy drift watchdog (reusable)
+
+# "Is main actually deployed?", asked out of band, for any service repo in the
+# fleet (Factory#461).
+#
+# The watchdog was written in CFactory (CFactory#219/#250) and existed there
+# only, which is backwards relative to risk: CFactory bakes no prompts or skills
+# into its image, and AIFactory/PFactory/TFactory do. Factory#461 asked for the
+# other three.
+#
+# WHY REUSABLE AND NOT FOUR COPIES. The pathspec below has to mirror each repo's
+# deploy.yml `paths-ignore` exactly, and Factory#454 is the story of that mirror
+# being silently wrong in one place. Four hand-maintained copies of one contract
+# is the same defect Factory#483 exists to undo. One workflow, one script, four
+# twelve-line callers. Factory is a public repo, so a cross-repo `uses:` here
+# needs no token and no org allow-list.
+#
+# WHY OUT OF BAND. deploy.yml sets cancel-in-progress: true, so anything that
+# verifies a deploy run from inside that run is cancelled along with it. Only a
+# separate scheduled observer sees the gap. See scripts/check_deploy_drift.py.
+
+on:
+  workflow_call:
+    inputs:
+      gitops_path:
+        description: "Path in factory-gitops holding the kustomization, e.g. apps/aifactory/manifests"
+        type: string
+        required: true
+      grace_minutes:
+        description: "How long a commit may be undeployed before it counts as drift"
+        type: number
+        required: false
+        default: 45
+    secrets:
+      GITOPS_PAT:
+        description: "Read access to olafkfreund/factory-gitops"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: main is actually deployed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the calling repo
+        uses: actions/checkout@v4
+        with:
+          # Full history: the deployable commit is found with a pathspec-scoped
+          # git log, which a depth-1 checkout cannot answer.
+          fetch-depth: 0
+          ref: main
+          path: repo
+
+      - name: Check out the hub comparator
+        uses: actions/checkout@v4
+        with:
+          repository: olafkfreund/Factory
+          ref: main
+          path: hub
+          # No sparse-checkout. A non-cone single-file pattern silently produced
+          # an empty tree here - the file was simply absent and the self-test
+          # died on ENOENT. Cheap to check out the hub whole, and one fewer way
+          # for the watchdog to fail for a reason that has nothing to do with
+          # deploys.
+
+      - name: Self-test the comparator before trusting it
+        # First, not last. A comparator that is broken cannot be trusted to say
+        # "no drift", so its own correctness is established before its verdict
+        # is believed - and a broken watchdog then fails as a broken watchdog
+        # instead of quietly passing everything (rule 4.7).
+        run: python3 hub/scripts/check_deploy_drift.py --self-test
+
+      - name: Resolve the newest commit that should have deployed
+        id: expected
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          # deploy.yml ignores docs/** and root-level *.md, so main's HEAD is
+          # NOT necessarily the commit that should be live -- a docs-only merge
+          # legitimately leaves the deployed tag behind. Compare against the
+          # newest commit that would actually have triggered a deploy, or this
+          # watchdog reports drift every time someone edits a README.
+          #
+          # The `glob` magic matters and must match deploy.yml (Factory#454):
+          # a bare ':(exclude)*.md' pathspec is fnmatch WITHOUT pathname
+          # semantics, so its '*' crosses '/' and it would exclude EVERY
+          # markdown file at any depth -- wider than deploy.yml now ignores.
+          # This watchdog would then go quiet exactly when a nested-markdown
+          # commit failed to deploy. ':(exclude,glob)' stops '*' at '/', so
+          # only root-level markdown is excluded here too.
+          #
+          # --first-parent is load-bearing, and was found by running this against
+          # the real repos rather than by reading it. Without it git's history
+          # simplification walks INTO the merged branch and returns the commit
+          # that touched the files, so on any repo that merges dev into main this
+          # returns the dev-side sha while deploy.yml tags the image from main's
+          # HEAD, which is the merge. Measured 2026-07-30: all four service repos
+          # MISMATCH without it and MATCH with it, and CFactory's live watchdog
+          # was already crying false drift on every merge as a result - which is
+          # how a watchdog gets muted and stops being a watchdog. --first-parent
+          # asks exactly what deploy.yml's push trigger asks: did main itself
+          # move a deployable file?
+          sha=$(git log -1 --first-parent --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
+          if [ -z "${sha}" ]; then
+            echo "::error::no deployable commit found on main; the pathspec is wrong."
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "epoch=$(git log -1 --format='%ct' "${sha}")" >> "$GITHUB_OUTPUT"
+          echo "Newest deployable commit: ${sha}"
+
+      - name: Read the tag factory-gitops has deployed
+        id: deployed
+        env:
+          GITOPS_PAT: ${{ secrets.GITOPS_PAT }}
+          GITOPS_PATH: ${{ inputs.gitops_path }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITOPS_PAT}" ]; then
+            # FAIL, do not skip. deploy.yml treats a missing PAT as a soft
+            # notice because it must not break a build - but a watchdog that
+            # cannot see the deployed state and still reports success is a
+            # blind watchdog reporting green, which is the exact class of
+            # false-green this workflow exists to catch (CFactory#219,
+            # Factory#471). The only honest answer to "is main deployed?"
+            # without the credential is "I cannot tell", and that has to be
+            # loud. This workflow only ever runs on a schedule in the trusted
+            # repo, so an empty secret here is always misconfiguration and
+            # never the by-design fork-PR case.
+            echo "::error::GITOPS_PAT is unset, so deploy drift CANNOT be checked."
+            echo "This watchdog is blind. Set the secret or delete the caller;"
+            echo "leaving it green while it checks nothing is worse than both."
+            exit 1
+          fi
+          # Credentials via env, never on the command line. -f so an HTTP error
+          # (renamed path, revoked token) is a failure and not an empty answer
+          # that later reads as "no tag".
+          tag=$(curl -sSf \
+            -H "Authorization: Bearer ${GITOPS_PAT}" \
+            -H "Accept: application/vnd.github.raw" \
+            "https://api.github.com/repos/olafkfreund/factory-gitops/contents/${GITOPS_PATH}/kustomization.yaml" \
+            | awk '/newTag:/ {print $2; exit}')
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Deployed tag: ${tag}"
+
+      - name: Compare (blocking)
+        run: |
+          python3 hub/scripts/check_deploy_drift.py \
+            --expected-sha "${{ steps.expected.outputs.sha }}" \
+            --commit-epoch "${{ steps.expected.outputs.epoch }}" \
+            --deployed-tag "${{ steps.deployed.outputs.tag }}" \
+            --grace-minutes "${{ inputs.grace_minutes }}"
