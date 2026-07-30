@@ -95,6 +95,8 @@ exit=1
 
 The control was also observed exiting 1 before CFactory#191 added the attestation step. So it has been seen failing with the control absent, failing with the wrong signer, and passing with both correct.
 
+**The command above is stricter than the pipeline's own check.** CFactory's `deploy.yml` verifies with `--certificate-identity-regexp '^https://github\.com/<owner>/CFactory/'`, which is correctly owner- and repo-scoped but accepts *any workflow on any ref* in that repo — a feature branch or a `refs/pull/*` merge ref would satisfy it. The exact identity above is the tight form and is what an assessor should run. Do not read this note as describing what CI enforces; tightening the pipeline (and the Kyverno admission rules, which have the same looseness and no `cfactory` rule at all) is Factory#522.
+
 Extending this pattern to other rows is tracked in Factory#504. Each row must have its command actually run — and made to fail — before it is cited.
 
 ## A.6 People controls (8)
