@@ -40,11 +40,19 @@ Today this is a **vendor-canonical + drift-gate** model, deliberately:
 
 The services deliberately vendor **different subsets** at **different paths**:
 
-| Service | Vendored modules | Path (relative to repo root) |
-| --- | --- | --- |
-| PFactory | (none today) | — |
-| AIFactory | `factory_sandbox.py`, `nix_provisioner.py` | `apps/backend/core/` |
-| TFactory | `verification_gate.py`, `nix_provisioner.py` | `apps/backend/agents/`, `apps/backend/tools/runners/` |
+Run `python scripts/check_verification_core_drift.py --list` for the live map —
+`SERVICE_LAYOUTS` in that script is the contract, and this table has been stale
+before (it claimed PFactory vendored nothing long after it vendored three
+modules). Treat it as orientation, not as the source of truth.
+
+`job_dispatch.py` is a second-order case worth calling out (Factory#483):
+AIFactory vendors it and calls `build_job_manifest` wholesale, while TFactory
+vendors it and builds its own manifests — it seeds credentials through an
+initContainer, forwards a provider-env allowlist, and needs a service-account
+token — so it consumes the *policy* helpers (`task_pod_labels`, `job_labels`,
+`assert_job_policy`) instead. Both are legitimate; what is not legitimate is the
+third option TFactory used to take, which was restating the rules by hand under a
+comment citing the hub file. Nothing compares a constant to its source.
 
 We are **not** rewriting imports across the repos in this change. Full package
 consumption (publishing `verification-core` as an installable package and deleting
