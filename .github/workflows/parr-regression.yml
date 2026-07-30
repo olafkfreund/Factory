@@ -41,8 +41,13 @@ on:
         default: false
     secrets:
       FACTORY_TOKEN:
+        # required: true makes GitHub reject a caller that does not declare the
+        # secret at all, before a runner is even allocated. It does NOT cover a
+        # declared-but-empty value (an expired or deleted repo secret resolves to
+        # ""), which is why the guard step below still exists. Two layers, because
+        # the two failure modes are different (Factory#471).
         description: "Fleet token (fallback for all four service tokens)"
-        required: false
+        required: true
 
 permissions:
   contents: read
@@ -58,20 +63,30 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Guard — require the fleet token
-        id: guard
+      - name: Require the fleet token (fail closed, rule 4.7)
         env:
           FACTORY_TOKEN: ${{ secrets.FACTORY_TOKEN }}
         run: |
           if [ -z "${FACTORY_TOKEN}" ]; then
-            echo "FACTORY_TOKEN secret not set — skipping (set it to enable the gate)."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::error::FACTORY_TOKEN is not set; the PARR seam regression cannot run."
+            echo "This job used to skip here and exit 0, so a rotated, expired or"
+            echo "unpassed secret looked exactly like a passing regression suite"
+            echo "(Factory#471). An unverifiable baseline is not a verified one -"
+            echo "standards/coding-standards.md rule 4.7."
+            echo ""
+            echo "Callers must pass the secret through:"
+            echo "    secrets:"
+            echo "      FACTORY_TOKEN: \${{ secrets.FACTORY_TOKEN }}"
+            echo ""
+            echo "NO FORK CARVE-OUT IS NEEDED HERE. A fork PR cannot see repo secrets"
+            echo "and that is by design, but this workflow is workflow_call-only and"
+            echo "its callers run on schedule or on push to a trusted branch, never"
+            echo "on pull_request. So an empty token here always means misconfigured,"
+            echo "never structurally-unavailable, and always deserves to be red."
+            exit 1
           fi
 
       - name: Run the PARR seam regression
-        if: steps.guard.outputs.skip == 'false'
         id: regression
         env:
           FACTORY_TOKEN: ${{ secrets.FACTORY_TOKEN }}
@@ -87,7 +102,7 @@ jobs:
           python3 scripts/parr_regression.py $ARGS | tee regression.out
 
       - name: Open / refresh a tracking issue on failure
-        if: failure() && steps.guard.outputs.skip == 'false' && inputs.open_issue_on_failure
+        if: failure() && steps.regression.outcome == 'failure' && inputs.open_issue_on_failure
         uses: actions/github-script@v7
         with:
           script: |
