@@ -18,6 +18,9 @@ mermaid: true
 .hero .chips span{font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.06em;
   border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:.28rem .7rem;background:rgba(255,255,255,.03)}
 .hero .chips span.p{color:#83a598}.hero .chips span.a{color:#fe8019}.hero .chips span.r{color:#b8bb26}.hero .chips span.v{color:#fabd2f}
+.hero-shot{margin:1.8rem 0 0}
+.hero-shot img{width:100%;height:auto;border-radius:12px;border:1px solid rgba(255,255,255,.10);box-shadow:0 10px 34px rgba(0,0,0,.45)}
+.hero-shot figcaption{font-size:.82rem;opacity:.72;margin-top:.5rem;font-family:'JetBrains Mono',monospace;line-height:1.5}
 .prod-shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:1.4rem 0}
 .prod-shots img{width:100%;height:auto;border-radius:10px;border:1px solid rgba(255,255,255,.10);box-shadow:0 8px 28px rgba(0,0,0,.35)}
 .prod-shots figure{margin:0}
@@ -73,6 +76,15 @@ mermaid: true
   <div class="step"><span class="pill">R</span><b>Reflect</b><span>TFactory generates &amp; grades tests on a 5-signal verdict.</span></div>
   <div class="step"><span class="pill">R</span><b>Review</b><span>CFactory observes the whole pipeline and steers it — with you in the loop.</span></div>
 </div>
+
+<figure class="hero-shot" markdown="0">
+  <img src="{{ '/assets/screenshots/cfactory/execution-dag.png' | relative_url }}"
+       alt="The CFactory cockpit's execution DAG for a finished run: five build subtasks, dependency edges fanning into a serial chain, every node green and stamped, stage complete">
+  <figcaption>One real run, watched from the cockpit. The execution DAG is the build's own
+  task graph — every box a unit of work, every edge a dependency — and it lights up as the
+  work lands. Here: plan signed off, build green end to end, verification returned. The stamp
+  on each node means a machine did it, not a person.</figcaption>
+</figure>
 
 ```mermaid
 flowchart LR
@@ -194,6 +206,8 @@ that explains pipeline state and proposes human-confirmed actions.
 - Built on the family skeleton; reuses AIFactory's enterprise security
 
 <div class="prod-shots">
+  <figure><img src="{{ '/assets/screenshots/cfactory/execution-dag.gif' | relative_url }}" alt="Time-lapse of the CFactory execution DAG for work item 451, from ten queued build subtasks to ten complete"><figcaption>the same graph, time-lapsed as a real build lands</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/cfactory/pipeline-board.png' | relative_url }}" alt="CFactory three-column pipeline board with running, in-review, queued and failed filters"><figcaption>every work item at its current stage, filterable</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/mission-control.png' | relative_url }}" alt="CFactory mission control"><figcaption>mission control — Plan · Code · Test, live</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/pipeline.png' | relative_url }}" alt="CFactory pipeline"><figcaption>one work item threaded by GitHub issue</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/copilot.png' | relative_url }}" alt="CFactory copilot"><figcaption>agentic copilot — advise &amp; confirm</figcaption></figure>

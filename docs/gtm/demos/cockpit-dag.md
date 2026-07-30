@@ -1,6 +1,8 @@
 # Demo Runbook: Animated Cockpit Execution DAG (Hero Shot)
 
-Status: Runbook ready. Recording is a follow-up.
+Status: Runbook ready. Hero still + looping GIF captured 2026-07-30 and committed
+(see [Captured assets](#captured-assets)); two of the four shots are still open on
+known product gaps (see [What is not captured yet](#what-is-not-captured-yet)).
 Tracks: Factory#244. This is the HERO SHOT of the demo set: the single most
 visually striking view of the whole Factory.
 
@@ -17,7 +19,9 @@ run progresses, the task/subtask graph lights up stage by stage
 (plan -> build -> verify), driven by real backend data, not a canned animation.
 
 - Feature: live execution diagrams, shipped 2026-06-14 (CFactory #94), with
-  plan-stage live status added in #95. All three PARR stages render.
+  plan-stage live status added in #95. The plan and code stages render; the test
+  stage does not, in practice — see CFactory#260 and
+  [What is not captured yet](#what-is-not-captured-yet).
 - Where it lives: CFactory task-detail modal (`TaskDetail.tsx`), renderer in
   `TaskFlow.tsx` with pure layout/classification in `taskFlow.ts`. Hand-rolled
   SVG plus framer-motion, no graph library (cockpit ethos).
@@ -130,6 +134,66 @@ This needs a fresh, clean recording. Reasons:
 
 Capture a short screen recording of the task-detail modal, then pull one or two
 hero freeze-frames from it for stills use.
+
+## Captured assets
+
+Captured 2026-07-30 from the live cockpit (`cfactory-frontend:sha-285a2e1`,
+matching CFactory `main`), driving a real PARR run end to end: a plan ingested and
+governed by PFactory, emitted as GitHub epic olafkfreund/aifactory-demo#451 with
+ten child issues, then built by AIFactory.
+
+| Asset | Shows |
+| --- | --- |
+| `docs/assets/screenshots/cfactory/execution-dag.png` | The landing-page hero. A finished run's (#432) code graph: dependency fan-in into a serial chain, every node green and stamped, `stage complete`, with the plan/code stage switcher and the Plan · Code · Test header. |
+| `docs/assets/screenshots/cfactory/execution-dag.gif` | Looping time-lapse of work item #451's build graph: ten subtasks queued, then all ten complete and stamped. Placed in the CFactory section rather than at the top, because the node labels visibly degrade from the acceptance criteria to `Subtask 1..10` at the moment the build lands (AIFactory#1110) — real, but it reads as a glitch in a hero slot. |
+| `docs/assets/screenshots/cfactory/pipeline-board.png` | Shot 3 — the three-column plan/code/test board with the live filter chips (All / Running / In review / Queued / Failed / Finished). |
+
+How they were captured (repeatable): port-forward the frontend
+(`kubectl --context factory -n factory port-forward svc/cfactory-frontend 3110:80`)
+so the SPA self-authenticates through nginx, then drive it with Playwright against
+the system's Chrome. Clip every frame to a **fixed** box (modal header down through
+a full-height `.tf-canvas`, which is capped at 420px) so the PNGs are identical in
+size and `ffmpeg` can stitch them straight into a GIF. Note that the cockpit's
+`fit` control only fits the graph's *width*: a ten-node column only fits
+vertically at ~30% zoom, where the labels are unreadable, so frame on the graph at
+100% instead of shrinking it.
+
+## What is not captured yet
+
+Three things the shot list asks for could not be captured honestly, each blocked on
+a real product gap rather than on the capture technique. They are listed here
+rather than faked, and each has an issue.
+
+- **Shot 1's live mid-build state (active node, cyan pulse, running mm:ss timer).**
+  AIFactory publishes no per-subtask progress on the trusted-plan path:
+  `executionProgress` stays `null` and every subtask stays `pending` for the whole
+  build, then all of them flip to `completed` at once. So the states that make the
+  diagram *live* never occur — AIFactory#1110. The GIF therefore time-lapses the
+  real transition it does produce (all-queued to all-complete) rather than a
+  node-by-node walk.
+- **Shot 2, a failure state (node shakes red).** No run in the window produced a
+  failed DAG node, and a failure must never be hand-set. Compounding it: the test
+  stage — the one stage whose nodes do move through real intermediate states, and
+  the stage where a red lane would come from — never renders at all. No work item
+  exposes `graphs.test`, not even runs that have reached `triaged`, so shots 4 and 5
+  of this runbook's own shot list (the lane pipeline, and the handback loop) are not
+  currently shootable — CFactory#260.
+- **Shot 4's cost-by-task bar chart.** Mission Control's count-up stats are live
+  and real, but `USAGE BY TASK`, `TOKENS` and `AVG LATENCY` are empty because no
+  upstream publishes task usage — CFactory#257. Committing a shot of an empty panel
+  would sell the opposite of the point, so it is not included.
+
+Two further defects hit during the capture, both fixed or worked around at the
+time and worth knowing about before the next take:
+
+- Dispatched Job pods carry `app=<service>`, which enrols them in that service's
+  API Service endpoints, so roughly two thirds of in-cluster calls to AIFactory
+  fail while builds run — Factory#458. Symptom while filming: the cockpit's DAG
+  flapped between the plan and code stage on alternating polls.
+- CFactory treats an unreachable upstream as "that stage does not exist" and
+  silently downgrades the diagram to an earlier stage, then latches there — so a
+  running build renders as a finished plan stage, with the stage switcher gone —
+  CFactory#249.
 
 ## Proof takeaway
 
