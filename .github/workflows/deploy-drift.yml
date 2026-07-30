@@ -59,8 +59,11 @@ jobs:
           repository: olafkfreund/Factory
           ref: main
           path: hub
-          sparse-checkout: scripts/check_deploy_drift.py
-          sparse-checkout-cone-mode: false
+          # No sparse-checkout. A non-cone single-file pattern silently produced
+          # an empty tree here - the file was simply absent and the self-test
+          # died on ENOENT. Cheap to check out the hub whole, and one fewer way
+          # for the watchdog to fail for a reason that has nothing to do with
+          # deploys.
 
       - name: Self-test the comparator before trusting it
         # First, not last. A comparator that is broken cannot be trusted to say
