@@ -33,6 +33,10 @@ one place.
 `E,F,W,I,N,UP,B,C4,S,SIM,RUF,PTH,TID,ASYNC,A,DTZ,T20,ARG,ERA,PL` (curated `PL`
 including `C901,PLR0912,PLR0913,PLR0915`). No bare `ruff check`, no blanket
 category ignores. The shared baseline is [`standards/ruff.toml`](./ruff.toml).
+Aliased imports from one module go in ONE statement (`combine-as-imports`):
+ruff's default splits them one statement per alias, which manufactures
+byte-identical prologues in any two files importing the same helpers and put the
+import-sort rule in direct conflict with the jscpd clone budget (Factory#415).
 
 1.2 **Types.** `mypy --strict` over the whole package as a BLOCKING gate
 (`disallow_untyped_defs`, `disallow_any_generics`, `warn_return_any`,
