@@ -19,10 +19,18 @@ The coder agent wraps every bash command in bubblewrap (AIFactory #363). Evidenc
 **Fail-closed egress and SSRF guards.**
 In-process egress and SSRF guards (fail-closed) constrain outbound calls from the control plane. These complement, but are not a substitute for, network-layer policy on the Job pods (below).
 
-**Per-task Job NetworkPolicies — now shipped, default-on.**
-The gap the epic recorded (Job pods matched no NetworkPolicy because they carry `app:`/`factory.io/*` labels, not the Helm `selectorLabels`) is closed:
+**Per-task Job NetworkPolicies — written in the charts, applied only via GitOps (Factory#499).**
+
+Read the two-engine note in [chart-vs-cluster.md](../../dev/chart-vs-cluster.md) before using anything in this section as evidence. The service Helm charts are the self-host install path; the reference cluster is deployed from `factory-gitops` plain manifests, and `charts/` is never rendered against it. A control that exists only as a chart template is shipped to self-hosters and absent here.
+
+The chart templates (self-host path, default-on):
 - AIFactory `charts/aifactory/templates/networkpolicy-tasks.yaml` (#812) selects `factory.io/kind: task`. Default-deny ingress; egress limited to kube-dns (53), 443/tcp to public IPs with RFC1918 (`10/8`, `172.16/12`, `192.168/16`) excepted, and the chart's own API + Postgres. Enabled by default: `networkPolicy.enabled: true` (values.yaml, "ALWAYS enabled in production").
 - TFactory `charts/tfactory/templates/networkpolicy-jobs.yaml` (#651) selects `app: tfactory-sandbox` (verify-orchestration, nix lanes, deploy lane). Default-deny ingress; egress to kube-dns, 443/tcp public (RFC1918 excepted), a values-configurable kube API-server rule (nested per-lane Job dispatch), and intra-namespace services (Postgres/MinIO/API). Default-on.
+
+What is actually applied to the reference cluster: a single policy, `factory-gitops/apps/factory-namespace/manifests/networkpolicy-sandbox-jobs.yaml`, created 2026-07-30 under Factory#462. Neither chart template above has ever been evaluated against this cluster, so #812 and #651 closed against controls that reached self-hosters only. Two carry-overs from that:
+
+- **Coverage is narrower than the templates'.** The applied policy enumerates `app in (aifactory-sandbox, tfactory-sandbox)`. Of the four per-task Job lanes, that matches two: the `kube_sandbox.py` builders in each service. The two `job_dispatch.py` lanes label their pods `<service>-task` (`task_pod_labels()` default `role="task"`, AIFactory#1114) and are matched by no policy today. `factory.io/kind: task` is the durable selector: all four builders set it via the shared `task_pod_labels()`, assert it in their self-tests, and — confirmed by image ancestry, not by reading a branch — the deployed `aifactory` and `tfactory` images already contain it. Extending the `app` list instead does not cover the current four lanes and would miss the next one. `factory-gitops#102` applies both selectors as two policies, because a podSelector cannot OR across label keys and the `app` policy is the safe fallback during a rollout window; removing it later requires a live `get pod --show-labels` per builder, not a source read. Tracked in Factory#502.
+- **Only the ingress half is enforced here.** Factory#462 established that this cluster's CNI enforces NetworkPolicy ingress and does not enforce egress. The default-deny-ingress claim holds on the applied policy; every egress rule in it, and in both chart templates, is documentation of intent on this substrate. Treat egress as unenforced until #462 resolves.
 
 **Per-task Job securityContext — now pinned in the manifest, default-on.**
 - AIFactory `apps/backend/core/job_dispatch.py` (#812/#848): container `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`; pod `runAsNonRoot: true`, `runAsUser: 65532`, `seccompProfile: RuntimeDefault`; `automountServiceAccountToken: false`; `backoffLimit: 0`, `activeDeadlineSeconds`, TTL, cpu/memory limits.
@@ -71,7 +79,7 @@ Phased, cheapest-and-highest-value first. None of Phase 1 requires the deferred 
 
 ## Acceptance criteria
 
-- [x] Every per-task Job pod is covered by a default-deny-ingress NetworkPolicy (AIFactory #812, TFactory #651), enabled by default in production values.
+- [~] Every per-task Job pod is covered by a default-deny-ingress NetworkPolicy. **Self-host path: yes** (AIFactory #812, TFactory #651, default-on in each chart's values). **Reference cluster: partial** — the applied policy (`factory-gitops apps/factory-namespace`, Factory#462) covers the `kube_sandbox.py` pods but not the `job_dispatch.py` lane (Factory#502), and the charts that would have covered both are never rendered here (Factory#499).
 - [x] Per-task Job pods run non-root where the image permits, with `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, and `seccompProfile: RuntimeDefault` pinned in the manifest.
 - [x] `automountServiceAccountToken: false` on untrusted Job pods; deploy lane uses a narrowly-scoped, dry-run-only SA.
 - [x] Inner bwrap OS sandbox default-on for agent commands, with an escape-test corpus.
@@ -87,7 +95,9 @@ Phased, cheapest-and-highest-value first. None of Phase 1 requires the deferred 
 ## Evidence artifacts
 
 - bwrap sandbox: `AIFactory/apps/web-server/server/services/sandbox.py`; escape corpus `AIFactory/tests/test_sandbox_escape_corpus.py`, `AIFactory/tests/test_agent_sandbox.py`.
-- Job NetworkPolicies: `AIFactory/charts/aifactory/templates/networkpolicy-tasks.yaml` (#812); `TFactory/charts/tfactory/templates/networkpolicy-jobs.yaml` (#651); defaults in each chart's `values.yaml` (`networkPolicy.enabled: true`).
+- Job NetworkPolicies — **self-host path only**: `AIFactory/charts/aifactory/templates/networkpolicy-tasks.yaml` (#812); `TFactory/charts/tfactory/templates/networkpolicy-jobs.yaml` (#651); defaults in each chart's `values.yaml` (`networkPolicy.enabled: true`). These are not rendered against the reference cluster (Factory#499).
+- Job NetworkPolicy — **reference cluster**: `factory-gitops/apps/factory-namespace/manifests/networkpolicy-sandbox-jobs.yaml` (Factory#462). This is the only NetworkPolicy in the `factory` namespace; verify with `kubectl --context factory -n factory get networkpolicy`.
+- Which engine deploys what: `Factory/docs/dev/chart-vs-cluster.md` (Factory#499).
 - Job securityContext: `AIFactory/apps/backend/core/job_dispatch.py`; `TFactory/apps/backend/tools/runners/kube_sandbox.py` (`POD_SECURITY_CONTEXT` / `CONTAINER_SECURITY_CONTEXT`).
 - Read-only-rootfs support (non-k8s runners): `AIFactory/apps/backend/core/factory_sandbox.py`; `TFactory/apps/backend/tools/runners/docker_runner.py`.
 - gVisor evaluation and compensating-controls checklist: `Factory/docs/security/sandbox-runtime-class.md` (issue #274); CI: `AIFactory/.github/workflows/gvisor-smoke.yml`; toggle in `AIFactory/charts/aifactory/values.yaml` (`sandbox.gvisor.*`).

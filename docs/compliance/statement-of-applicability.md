@@ -11,6 +11,10 @@ A.8 Technological 34). Each control is marked:
 
 - **Implemented** — a real control exists; the justification cites the evidence (file,
   RFC, CI job, or domain document).
+- **Partial** — a real control exists but does not cover the whole scope, or is declared
+  and not enforced on the current substrate; the justification states which part is live
+  and cites the issue tracking the remainder. A control that cannot be shown to operate
+  is not Implemented.
 - **Planned** — applicable but not yet fully in place; the justification cites the
   driving Factory child issue and remediation wave.
 - **Not Applicable** — out of scope for a cloud-only, remote, automated fleet; the
@@ -124,10 +128,10 @@ Applicable to the fleet's own operation, justified per control below.
 | A.8.17 | Clock synchronization | Implemented | Cluster nodes/pods use host NTP; audit anchor stamps at 00:00 UTC daily. | Runtime |
 | A.8.18 | Use of privileged utility programs | Implemented | Auth-disable switches prohibited in prod ([access-control-policy.md](policies/access-control-policy.md)); privileged actions run in hardened, non-root pods. | Runtime |
 | A.8.19 | Installation of software on operational systems | Implemented | Images are built in CI and deployed via gitops; no ad-hoc installation on running systems (immutable containers). | Change-mgmt |
-| A.8.20 | Networks security | Implemented | Default-deny per-task NetworkPolicy (`networkpolicy-tasks.yaml`, `networkpolicy-jobs.yaml`); Cloudflare edge. | Runtime |
-| A.8.21 | Security of network services | Implemented | Egress restricted to kube-dns + 443 with RFC1918 excepted; edge TLS termination. Partial: coarse egress (R-012). | Runtime |
-| A.8.22 | Segregation of networks | Implemented | Per-task Job network isolation and namespace separation ([runtime-isolation.md](policies/runtime-isolation.md)). | Runtime |
-| A.8.23 | Web filtering | Implemented | Outbound egress allowlist posture (443/DNS only, RFC1918 blocked); per-destination FQDN pinning pending (R-012). | Runtime |
+| A.8.20 | Networks security | Partial | Default-deny-ingress per-task NetworkPolicy applied to the reference cluster (`factory-gitops apps/factory-namespace`, Factory#462); Cloudflare edge. Partial: covers the `kube_sandbox` Job pods, not the `job_dispatch` lane (Factory#502); the chart templates that cover both ship only to self-hosters (Factory#499). | Runtime |
+| A.8.21 | Security of network services | Partial | Edge TLS termination. Egress allowlist (kube-dns + 443, RFC1918 excepted) is declared but **not enforced on this substrate**: the cluster CNI enforces NetworkPolicy ingress only (Factory#462). Also coarse where it does apply (R-012). | Runtime |
+| A.8.22 | Segregation of networks | Partial | Namespace separation; per-task Job network isolation covers the `kube_sandbox` lane only, ingress-side only ([runtime-isolation.md](policies/runtime-isolation.md), Factory#462/#499/#502). | Runtime |
+| A.8.23 | Web filtering | Planned | Outbound egress allowlist is written (443/DNS only, RFC1918 blocked) but unenforced on this CNI (Factory#462); in-process egress/SSRF guards are the only live control. Per-destination FQDN pinning pending (R-012). | Runtime |
 | A.8.24 | Use of cryptography | Implemented | HMAC audit chain/anchor, cosign signing, HMAC task contracts, TLS in transit. Partial: no at-rest encryption/KMS (R-003). | Encryption |
 | A.8.25 | Secure development life cycle | Implemented | [secure-sdlc-policy.md](policies/secure-sdlc-policy.md); PR review + CI gates + independent verification (RFC-0001a/0006). | Change-mgmt |
 | A.8.26 | Application security requirements | Implemented | Signed task contracts (RFC-0002), evidence gates, standards-conformance gate (RFC-0012). | Agentic-AI |
