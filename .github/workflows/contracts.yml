@@ -39,6 +39,8 @@ on:
       - "shared/factory-github/**"
       - "tests/test_provider_credential_repr.py"
       - "tests/test_provider_comments.py"
+      - "scripts/apply_branch_protection.sh"
+      - "tests/test_branch_protection_intent.py"
       - ".github/workflows/contracts.yml"
   push:
     branches: [main]
@@ -111,6 +113,19 @@ jobs:
         # job as the steps above for the same reason - a separate job would
         # duplicate the checkout/setup block against the jscpd clone budget.
         run: pytest -v tests/test_provider_credential_repr.py
+
+      - name: Guard the branch-protection drift gate's comparator
+        # Factory#468: the drift gate compares the protection GitHub reports live
+        # against the intent declared in scripts/apply_branch_protection.sh. If its
+        # normaliser disagreed between the two wire shapes (live wraps booleans as
+        # {"enabled": bool}, intent uses bare booleans) the gate would be
+        # always-green - an always-green drift gate is the defect one level up from
+        # the drift it exists to catch, and it cannot be noticed by running it.
+        # These cases are offline: they need no token and never reach the network,
+        # so they run on every PR while the gate itself runs nightly with a PAT.
+        # Same job as the steps above for the same reason: a separate job would
+        # duplicate the checkout/setup block against the jscpd clone budget.
+        run: pytest -v tests/test_branch_protection_intent.py
 
       - name: Guard the shared providers' issue-comment read
         # Factory#375: comments are one API call PER ISSUE, and Factory#373
