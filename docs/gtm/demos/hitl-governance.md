@@ -1,7 +1,8 @@
 # Demo runbook: HITL governance approve/merge flow
 
-Tracking: Factory#245. This runbook produces the screencast; recording is a
-follow-up task. Plain text only, no emojis or icons.
+Tracking: Factory#245. The approve/merge core of this runbook is recorded - see
+"Recorded artifacts" below for the GIF and stills, and for the parts of the shot
+list they do and do not cover. Plain text only, no emojis or icons.
 
 ## The point (one line)
 
@@ -44,6 +45,19 @@ is staged (see docs/compliance/branch-protection.md and the Factory#310
 compliance program) - present it as the compliance layer coming online, not as
 already enforced fleet-wide, unless it has been applied on the demo repo by
 showtime. Do not claim more enforcement than is live on the day.
+
+Two open defects that bear directly on what this demo asserts. Check both before
+presenting; if either is still open, say so rather than letting the screen imply
+otherwise.
+
+- Factory#460: the cockpit shows "Done." for an approve/merge that GitHub
+  REFUSED, and the audit entry records it as ok/200. So "the banner said it
+  merged" is not, today, evidence that it merged - confirm against the PR. Found
+  while recording this runbook: the first attempt reported success on a merge that
+  had been refused on a conflict.
+- CFactory#251: the audit actor is the presented API key, not a person. Until that
+  is fixed the trail proves an approval happened, not WHO approved. Do not read
+  the "who approved" line of the narration off the Audit view as it stands.
 
 ## Setup
 
@@ -129,20 +143,49 @@ Existing assets to reuse where they fit:
 - docs/assets/screenshots/portal-ui/cfactory-portal.png - cockpit portal
   overview.
 
-Fresh capture required (these are the substance of the demo and must be current):
+## Recorded artifacts
 
-- The parked green run on the cockpit task-detail with Approve / Remove / cost
-  visible (shots 1, 2).
-- The GitHub PR showing branch protection blocking merge without approval, or a
-  rejected direct push (shot 3). This is the load-bearing governance shot -
-  capture it live, do not reuse a stale screenshot.
-- The Approve click and the resulting merge state change (shot 4).
-- The Remove action on a second run, if included (shot 5).
-- The post-merge re-test going green (shot 6).
-- The audit-trail record of the approval (shot 7).
+Recorded 2026-07-30 against the live cluster, in one unedited take. The run was
+real: AIFactory task `109-add-an-ordinal-n-helper` on the `aifactory-demo` repo
+built to `human_review`, Approve was clicked in the cockpit, and the confirmed
+action opened and merged `aifactory-demo` PR #465 (merge commit 53802e5 on main).
+The cockpit-side software was on the fleet's current main at capture time
+(AIFactory image sha-6df8bf5 = main HEAD 6df8bf5; CFactory sha-285a2e1 = main HEAD
+285a2e1).
 
-Prefer a single screen recording over stills for shots 3-6 so the state
-transitions are visible; pull stills from it for the blog post.
+- docs/assets/demos/hitl-governance.gif - the whole approve/merge chain, 46s,
+  2.9 MB. The state transitions are the point; use the stills for detail.
+- docs/assets/demos/hitl-governance/01-needs-you-review-gate.png - the Needs-you
+  inbox, "Review gates" filter: builds the factory finished and parked for a
+  person.
+- .../02-task-in-human-review.png - the card itself: Code stage `human_review`,
+  2/2 subtasks done, Approve / Reject / Remove offered, Unstick correctly
+  refused because the task is in review, not stuck.
+- .../03-disclosed-endpoint-calls.png - the load-bearing shot. Approve only
+  PROPOSES: the rationale plus the exact upstream writes it will make, as
+  root-relative paths (`POST /api/tasks/.../worktree/create-pr` then `POST
+  .../worktree/merge`), with Cancel and Confirm. Nothing has been written yet.
+  The root-relative form is the SSRF guard in `actions.is_safe_endpoint` made
+  visible.
+- .../04-merged-card-done.png - after Confirm: Code stage `done`, STAGE COMPLETE,
+  and Approve / Reject now refused because the task is no longer in review.
+- .../05-audit-entry.png - the audit trail: `approve_review` against
+  `aifactory/api/tasks/...`, result `ok 200`. The ACTOR column is deliberately
+  covered in this capture - CFactory records the presented API key verbatim as the
+  actor, which is a live credential and must not appear in a committed frame
+  (CFactory#251). The same issue is why this shot does NOT yet prove "a named
+  human approved it".
+- .../06-merged-pull-request.png - the write itself, on GitHub: PR #465 merged
+  into main, two AIFactory commits.
+
+Not covered by this recording - do not present these as captured:
+
+- Branch protection refusing an unapproved merge (runbook shot 3). The demo repo
+  has no branch protection precisely so the throwaway merges are harmless, so the
+  blocked-merge shot has to be taken on a protected repo.
+- The Remove path (shot 5) and the post-merge re-test going green (shot 6).
+
+Existing assets that still fit as establishing shots are listed above.
 
 ## Proof takeaway
 
