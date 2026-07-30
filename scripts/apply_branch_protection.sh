@@ -94,15 +94,17 @@ VERIFY_CTX="tfactory/suite"
 # repo's names and were vendored into repos whose jobs are named differently.
 repo_config() {
   case "$1" in
-    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build"]'; REVIEWS=1; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
-    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts, blocking)"]'; REVIEWS=1; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main" ;;
-    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)"]'; REVIEWS=1; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)"]'; REVIEWS=1; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
-    AIFactory)     CHECKS='["backend (ruff + pytest)"]'; REVIEWS=1; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
-    # gitops is bot-driven CD: NO PR-review requirement (would rely entirely on
-    # the admin bypass); protect only against force-push and branch deletion so
-    # ArgoCD's committed history cannot be rewritten or dropped.
-    factory-gitops) CHECKS='[]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main" ;;
+    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
+    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts, blocking)","generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main" ;;
+    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
+    AIFactory)     CHECKS='["backend (ruff + pytest)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
+    # gitops is bot-driven CD. Its manifests reach the live cluster through
+    # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
+    # fleet with the highest blast radius; `kustomize build + schema` now runs
+    # on every PR. Force-push and deletion stay blocked so ArgoCD's committed
+    # history cannot be rewritten or dropped.
+    factory-gitops) CHECKS='["kustomize build + schema"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main" ;;
     *) echo "no config for repo: $1" >&2; return 1 ;;
   esac
 }

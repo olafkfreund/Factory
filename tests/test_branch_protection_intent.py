@@ -130,17 +130,25 @@ def test_force_push_and_deletion_always_blocked(repo: str, branch: str) -> None:
 
 @pytest.mark.parametrize("repo", ["CFactory", "PFactory", "TFactory", "AIFactory"])
 def test_dev_is_deliberately_looser_than_main(repo: str) -> None:
-    """dev carries the same CI checks as main but no review requirement.
+    """dev carries the same CI checks as main, but is looser about process.
 
-    This is the decision Factory#468 exists to stop a script from silently
-    reverting: a solo maintainer (and the factory's own agents) have nobody to
-    approve their PRs, so a review requirement on the integration branch stalls
-    every merge, and `strict` forces a rebase before each one.
+    The argument this file already made for `dev` -- a solo maintainer (and the
+    factory's own agents) have nobody to approve their PRs -- holds identically
+    on `main`, and Factory#484 is what happens when it is applied to only one of
+    them. GitHub forbids approving your own pull request, so a review
+    requirement on `main` made EVERY promotion an `--admin` bypass, which also
+    skips the required status checks on the way past. The rule was unsatisfiable
+    and the effect was less enforcement, not more.
+
+    So no branch requires a review. What separates `main` from `dev` is
+    `strict` (be up to date with the base before merging) and conversation
+    resolution -- both of which a merge can actually satisfy unaided.
     """
     main, dev = _emit(repo, "main"), _emit(repo, "dev")
 
-    assert main["required_pull_request_reviews"] is not None
-    assert main["required_pull_request_reviews"]["required_approving_review_count"] == 1
+    # Factory#484: unsatisfiable on a single-maintainer account, so every merge
+    # became an admin override. Enforcement now comes from the checks.
+    assert main["required_pull_request_reviews"] is None
     assert main["required_status_checks"]["strict"] is True
     assert main["required_conversation_resolution"] is True
 
@@ -172,11 +180,21 @@ def test_check_contexts_are_per_repo() -> None:
     ]
 
 
-def test_gitops_requires_no_review_and_no_checks() -> None:
-    # Bot-driven CD: a review requirement would rest entirely on the admin bypass.
+def test_gitops_gates_the_branch_that_reaches_the_cluster() -> None:
+    """factory-gitops `main` is what ArgoCD syncs to the live cluster.
+
+    Until factory-gitops#95 this repo had exactly one workflow (`cli-canary`,
+    weekly, on its own files) and NO required checks -- the least gated repo in
+    the fleet holding the highest blast radius. A malformed manifest reached the
+    cluster with nothing in the way. `kustomize build + schema` now runs on
+    every PR and is required here.
+
+    Still no review requirement: bot-driven CD, and one would rest entirely on
+    the admin bypass -- the same reason it was removed everywhere else (#484).
+    """
     intent = _emit("factory-gitops", "main")
     assert intent["required_pull_request_reviews"] is None
-    assert intent["required_status_checks"] is None
+    assert intent["required_status_checks"]["contexts"] == ["kustomize build + schema"]
     assert intent["allow_force_pushes"] is False
     assert intent["allow_deletions"] is False
 
@@ -190,8 +208,19 @@ def test_matching_live_response_compares_equal() -> None:
     If this fails the gate is always-red. Uses the API's own wire shape, so a
     normaliser that only understands the intent shape is caught here.
     """
+    # reviews is None on every row now (#484): no branch requires an approving
+    # review, because a single-maintainer account cannot supply one and the rule
+    # only ever produced admin bypasses. main is still distinguished from dev by
+    # strict and conversation resolution.
     for repo, branch, contexts, strict, reviews, convres in [
-        ("TFactory", "main", ["backend (ruff + pytest)", "critical (fast PR gate)"], True, 1, True),
+        (
+            "TFactory",
+            "main",
+            ["backend (ruff + pytest)", "critical (fast PR gate)"],
+            True,
+            None,
+            True,
+        ),
         (
             "TFactory",
             "dev",
@@ -200,8 +229,10 @@ def test_matching_live_response_compares_equal() -> None:
             None,
             False,
         ),
-        ("CFactory", "main", ["Backend pytest", "Frontend typecheck + build"], True, 1, True),
+        ("CFactory", "main", ["Backend pytest", "Frontend typecheck + build"], True, None, True),
         ("AIFactory", "dev", ["backend (ruff + pytest)"], False, None, False),
+        # The branch ArgoCD syncs to the cluster, gated at last (gitops#95).
+        ("factory-gitops", "main", ["kustomize build + schema"], True, None, True),
     ]:
         code_owner = repo in {"PFactory", "TFactory", "AIFactory"} and reviews is not None
         live = _live_shaped(
