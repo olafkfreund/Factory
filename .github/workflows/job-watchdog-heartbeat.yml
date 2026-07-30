@@ -1,0 +1,103 @@
+name: job-watchdog heartbeat
+
+# Who watches the watchdog (Factory#450).
+#
+# `job-watchdog` (factory-gitops apps/job-watchdog) routes every unhealthy
+# CronJob in the cluster to a GitHub issue. It cannot route ITSELF, because the
+# case that matters is the one where its notification path is what broke: notify
+# fails, the run exits 5, and the next run 30 minutes later fails the same way
+# before reaching the step that would have reported the previous failure. A
+# permanently broken notifier notifies nobody, forever. Same for a CronJob that
+# was suspended, deleted, or whose whole cluster is down: absence is silence.
+#
+# So the watchdog pushes a heartbeat OUT — after each run in which notify
+# SUCCEEDED, it stamps a UTC timestamp into the repo variable
+# JOB_WATCHDOG_HEARTBEAT. This workflow asserts on that heartbeat's ABSENCE.
+#
+# WHY THE DIRECTION IS THE DESIGN. The obvious alternative was this workflow
+# reaching into the cluster to query the `job_health` stream. That needs an
+# SSO-bypassing ingress on the audit log: new external attack surface, opened to
+# close a monitoring gap. Pushing out needs no inbound reachability, no new
+# credential (the watchdog already holds a GITHUB_TOKEN and already calls this
+# API for issues) and no new account. It also fails correctly for every case at
+# once — notify broken, CronJob suspended, CronJob deleted, node gone, cluster
+# down. Every one of them stops the stamp.
+#
+# WHAT THIS WORKFLOW IS NOT. It does not open an issue. A failing scheduled
+# workflow on a repo you own already emails you and shows red in the Actions
+# tab, and an auto-filed issue needs auto-closing logic, which is a second small
+# state machine that can rot in its own right. If the email proves too easy to
+# miss, the upgrade is to add issue-filing here — not to make the check quieter.
+#
+# ORDERING NOTE FOR WHOEVER MERGES THIS: the producer lands first. A scheduled
+# check asserting on a heartbeat nobody writes is red from its first run for a
+# reason that has nothing to do with the thing it watches, which is how a check
+# gets muted in week one.
+
+on:
+  schedule:
+    # Hourly, offset from the watchdog's :00/:30 so a stamp in flight is not
+    # read mid-write. GitHub delays scheduled runs under load, which is part of
+    # why the staleness budget below is generous.
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-watchdog-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    name: the cluster watchdog is still alive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert the watchdog stamped recently
+        env:
+          # Empty string when the variable has never been written, or was
+          # deleted. Both are failures: a heartbeat that does not exist is not
+          # a fresh one.
+          HEARTBEAT: ${{ vars.JOB_WATCHDOG_HEARTBEAT }}
+          # The watchdog runs every 30 minutes. 150 tolerates four missed runs
+          # plus GitHub's own scheduling delay, so a single transient GitHub
+          # blip does not cry wolf, while a genuinely dead watchdog is caught
+          # inside three hours instead of the seven weeks of Factory#381.
+          MAX_AGE_MINUTES: "150"
+        run: |
+          set -euo pipefail
+
+          fail() {
+            echo "::error::$1"
+            { echo "## job-watchdog heartbeat: FAILED"; echo; echo "$1"; echo
+              echo "The cluster CronJob watchdog has not reported a successful"
+              echo "run. It stamps this repo variable only AFTER it has"
+              echo "successfully notified, so any of these produces this:"
+              echo
+              echo "- its GitHub notification path is broken (token revoked or"
+              echo "  expired, ALERT_REPO renamed, rate limited);"
+              echo "- the \`job-watchdog\` CronJob is suspended or deleted;"
+              echo "- the cluster, its node, or OpenObserve is down."
+              echo
+              echo "Check: \`kubectl --context factory -n factory get cronjob"
+              echo "job-watchdog\` and the logs of its most recent Job."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+
+          if [ -z "${HEARTBEAT}" ]; then
+            fail "No JOB_WATCHDOG_HEARTBEAT variable at all — the watchdog has never stamped, or the variable was deleted."
+          fi
+
+          if ! stamped=$(date -u -d "${HEARTBEAT}" +%s 2>/dev/null); then
+            fail "JOB_WATCHDOG_HEARTBEAT is not a parseable timestamp: '${HEARTBEAT}'"
+          fi
+
+          age_min=$(( ( $(date -u +%s) - stamped ) / 60 ))
+          if [ "${age_min}" -gt "${MAX_AGE_MINUTES}" ]; then
+            fail "Last successful watchdog run was ${age_min} minutes ago (budget ${MAX_AGE_MINUTES}), at ${HEARTBEAT}."
+          fi
+
+          echo "job-watchdog stamped ${HEARTBEAT} — ${age_min} minute(s) ago, within ${MAX_AGE_MINUTES}."
+          echo "job-watchdog last succeeded ${age_min} minute(s) ago (${HEARTBEAT}), budget ${MAX_AGE_MINUTES}." >> "$GITHUB_STEP_SUMMARY"
