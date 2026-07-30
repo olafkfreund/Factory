@@ -102,9 +102,7 @@ async def test_the_token_is_sent_as_a_bearer_credential():
         seen["url"] = str(request.url)
         return httpx.Response(200, json={"number": 7, "title": "t", "state": "open"})
 
-    provider = HttpGitHubProvider(
-        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
-    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     issue = await provider.fetch_issue(7)
 
     assert issue.number == 7
@@ -148,9 +146,7 @@ async def test_issue_listing_pages_to_completion():
         page = int(request.url.params.get("page", 1))
         return httpx.Response(200, json=pages.get(page, []))
 
-    provider = HttpGitHubProvider(
-        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
-    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     # `limit` must be raised explicitly: IssueFilters defaults it to 100, which is
     # also GitHub's page size, so the default can never page by construction and
     # a paging test written without this passes against a one-page implementation.
@@ -173,9 +169,7 @@ async def test_pull_requests_are_dropped_from_the_issue_list():
             ],
         )
 
-    provider = HttpGitHubProvider(
-        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
-    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     issues = await provider.fetch_issues()
 
     assert [i.number for i in issues] == [1, 3]
@@ -188,9 +182,7 @@ async def test_a_response_without_an_issue_number_is_an_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"title": "no number here"})
 
-    provider = HttpGitHubProvider(
-        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
-    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     with pytest.raises(ValueError, match="no issue number"):
         await provider.create_issue("t", "b")
 
@@ -230,9 +222,7 @@ async def test_comment_paging_walks_every_page():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=pages.get(int(request.url.params.get("page", 1)), []))
 
-    provider = HttpGitHubProvider(
-        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
-    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     comments = await provider.fetch_comments(1)
 
     assert len(comments) == 101
@@ -247,9 +237,7 @@ async def test_a_non_list_comment_page_raises_rather_than_truncating():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"message": "not a list"})
 
-    provider = HttpGitHubProvider(
-        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
-    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     with pytest.raises(ProviderCommentError, match="non-list"):
         await provider.fetch_comments(1)
 
@@ -261,8 +249,6 @@ async def test_a_failing_comment_page_raises_rather_than_truncating():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"message": "boom"})
 
-    provider = HttpGitHubProvider(
-        _repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler)
-    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     with pytest.raises(ProviderCommentError, match="comment read failed"):
         await provider.fetch_comments(1)
