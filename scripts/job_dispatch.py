@@ -177,7 +177,43 @@ def build_job_manifest(spec: JobSpec) -> dict:
             "backoffLimit": 0,
             "ttlSecondsAfterFinished": spec.ttl_seconds,
             "activeDeadlineSeconds": spec.deadline_seconds,
-            "template": {"metadata": {"labels": {"app": spec.service}}, "spec": pod_spec},
+            # The pod's `app` is DELIBERATELY NOT spec.service. Each service's
+            # Service selects exactly {"app": "<service>"}, and a Service selector
+            # is a SUBSET match, so a task pod carrying that label joined the
+            # Service as an endpoint. The pod listens on nothing, so kube-proxy
+            # handed it a share of real production traffic and answered with
+            # connection refused — a fraction of requests, for a bounded window,
+            # which reads as flakiness and not as a fault. Every normal signal
+            # stays green throughout: the Deployment is Healthy, the Service
+            # exists, the pod is Running.
+            #
+            # Confirmed three times over: TFactory's portal-ui browser test took
+            # the portal it was testing offline and then reported it broken
+            # (TFactory#885 — Cloudflare served 502s for the length of every
+            # run); AIFactory's task Jobs did it to the aifactory API and made
+            # `kubectl exec deploy/aifactory` land in a build pod
+            # (AIFactory#1107); and factory-gitops' minio-create-bucket Job did
+            # it to the minio Service.
+            #
+            # This is the REFERENCE library the per-service consumers vendor, so
+            # the label belongs here rather than in each consumer — the same
+            # defect arriving a fourth time by way of a fresh vendoring is the
+            # failure mode worth spending a comment on.
+            #
+            # factory.io/service keeps the association `app` used to carry, so a
+            # query that legitimately wants "task pods of aifactory" still has
+            # one: the fix removes an accidental selector match, not information.
+            # The JOB's own metadata.labels keep app=spec.service — a Job object
+            # is never a Service endpoint and never a `kubectl exec` target.
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": f"{spec.service}-task",
+                        "factory.io/service": spec.service,
+                    }
+                },
+                "spec": pod_spec,
+            },
         },
     }
 
@@ -212,6 +248,25 @@ def _selftest() -> None:
     ps = m["spec"]["template"]["spec"]
     _require(ps["serviceAccountName"] == "aifactory-sandbox", "SA")
     _require(ps["automountServiceAccountToken"] is False, "no token automount")
+    # A NON-SERVING pod must not be selectable as a Service backend. Asserted as
+    # the rule rather than against one literal, so it still holds for the
+    # pfactory dispatch below and for any service added later: no `app` label may
+    # ever equal the service name, because that is what every Service selects.
+    for svc in ("aifactory", "pfactory", "tfactory"):
+        pod = build_job_manifest(
+            JobSpec(service=svc, job_id="s", commands=["true"], nix_develop=False)
+        )["spec"]["template"]["metadata"]["labels"]
+        _require(
+            pod["app"] != svc,
+            f"pod app label must not equal the service name (would join the "
+            f"{svc} Service and answer real traffic with connection refused): "
+            f"{pod['app']}",
+        )
+        _require(pod["app"] == f"{svc}-task", f"pod app label: {pod['app']}")
+        _require(
+            pod["factory.io/service"] == svc,
+            "factory.io/service keeps the association `app` used to carry",
+        )
     c = ps["containers"][0]
     _require(c["image"] == DEFAULT_NIX_IMAGE, "nix-base image")
     _require("nix develop path:/work#default" in c["command"][2], "nix develop wrap")
