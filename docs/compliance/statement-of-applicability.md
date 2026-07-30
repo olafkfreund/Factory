@@ -61,7 +61,7 @@ matrix draw evidence from the same [domain documents](policies/). Owner tags map
 | A.5.29 | Information security during disruption | Planned | BC policy defined; recovery constrained by the open backup gap (R-001, Factory#321). | BC/DR |
 | A.5.30 | ICT readiness for business continuity | Planned | RTO/RPO proposed; backups, tested restore, and DR runbook pending (Factory#321). | BC/DR |
 | A.5.31 | Legal, statutory, regulatory and contractual requirements | Implemented | Notification obligations mapped in the IR runbook's breach-notification matrix; GDPR ROPA `AIFactory/guides/compliance/dpia-data-flow.md`. | Security Owner |
-| A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. | Supply-chain |
+| A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. **Executable evidence:** `cosign verify-attestation --type spdxjson ghcr.io/olafkfreund/cfactory:latest` exits 0 against the live registry — verified independently of CI 2026-07-30, and observed exiting 1 before the attestation existed (CFactory#191). | Supply-chain |
 | A.5.33 | Protection of records | Implemented | Audit records are tamper-evident and retained 13 months (`audit_retention.py`); note evidence ILM bug (R-006). | Audit |
 | A.5.34 | Privacy and protection of PII | Planned | Redactor + DPIA exist; PII-egress-by-default and DSAR gaps open (R-004, Factory#320). | Data |
 | A.5.35 | Independent review of information security | Planned | Annual independent review scheduled but not yet performed (governance domain, Factory#311). | Security Owner |
