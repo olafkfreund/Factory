@@ -1,12 +1,124 @@
 # Demo runbook: Self-host + local-model data-egress control
 
-Tracking: Factory#246. Recording is a follow-up; this document is the runbook.
+Tracking: Factory#246.
+
+## Recorded artifacts
+
+Captured live on the k3d cluster `factory` on 2026-07-30 against
+`ghcr.io/olafkfreund/pfactory:sha-5d6797e` (== PFactory `main` at `5d6797e`).
+
+| Artifact | What it is |
+| --- | --- |
+| `docs/assets/demos/self-host-egress.gif` | The screencast: baseline egress, fail-closed policy, a real local-model coding call, local verify, provider swap. |
+| `docs/assets/demos/self-host-egress-badge.png` | The CLI badge shot: `byo_llm.py` for two local endpoints and one managed one. |
+| `docs/assets/demos/self-host-egress.cast` | The raw asciicast the GIF was rendered from. Plain text - replay it or grep it to check any frame. |
+
+The GIF is rendered at 1.6x speed with idle gaps capped at 1.2s. Nothing is cut:
+the `.cast` is the unmodified capture.
+
+![Self-host egress demo: fail-closed policy, a local-model coding run, and the provider swap](/assets/demos/self-host-egress.gif)
+
+![byo_llm.py egress classification for two local endpoints and one managed one](/assets/demos/self-host-egress-badge.png)
+
+## What the recording actually proves
+
+Read this before showing the recording to anyone. The demo's claim is a security
+claim, so the standard is higher than "a green badge appeared".
+
+Proven by measurement, in the recording:
+
+- The coding-stage model call went to `172.18.0.1:11434` - the k3d host gateway,
+  an RFC-1918 private address on the operator's own box. `ss -tn state
+  established` inside the pod's network namespace, taken while the call was in
+  flight, shows that one socket and no others.
+- While that call ran, `api.anthropic.com`, `api.openai.com` and
+  `generativelanguage.googleapis.com` were all unreachable from that pod
+  (`curl` exit 7, connect time 0). The same three answered 405 / 401 / 403 from
+  the same pod moments earlier with no policy in place. So a leak to a managed
+  model API during the run could not have succeeded quietly - it would have
+  failed the run.
+- The same code, pointed at `api.openai.com`, fails closed with the policy on
+  (`Errno 111 Connection refused`) and connects with it off (`HTTP 401` - the
+  remote server answered, so the prompt reached a third party). The control, not
+  the wording, is what makes the difference.
+- Verify ran locally too, and caught a real defect in the local model's output.
+
+NOT proven, and the recording says so on screen:
+
+- The `local` verdict from `byo_llm.py` is a **classification of the configured
+  endpoint**, not a measurement of the wire. It cannot prove non-egress and must
+  never be presented as if it does. It is corroborated here by the network
+  measurement above; on its own it is the software asserting its own honesty.
+- **The `factory` namespace has no egress NetworkPolicy today.** The
+  default-deny policy in the recording was applied to an isolated demo namespace
+  for the take. The fleet's real build pods are not fail-closed yet - see the
+  correction below.
+- The recording covers the coding and verify stages of one task. It is not a
+  full four-service PARR run driven through PFactory, AIFactory and TFactory on
+  local models.
+
+The badge screenshot contains emoji glyphs because `byo_llm.py` puts them in the
+badge strings. That is real product output, shown unedited rather than censored;
+PFactory#400 tracks replacing them with plain text, after which re-shoot the PNG.
+
+## Reproducing the measurement
+
+The whole control is this one object. `podSelector` scopes it to the pod under
+test; the only permitted egress is DNS and the local model endpoint.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: local-model-only
+  namespace: egress-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: probe
+  policyTypes:
+    - Egress
+  egress:
+    # DNS only, to the in-cluster resolver.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The self-hosted Ollama endpoint on the host gateway. Nothing else.
+    - to:
+        - ipBlock:
+            cidr: 172.18.0.1/32
+      ports:
+        - protocol: TCP
+          port: 11434
+```
+
+`172.18.0.1` is the k3d host gateway on this cluster - check yours with
+`kubectl --context factory -n <ns> exec <pod> -- getent hosts host.k3d.internal`
+before reusing the manifest.
+
+Then, from inside the selected pod, the three checks that make up the proof:
+
+1. `curl` each managed inference host before and after applying the policy.
+   Reachable (405 / 401 / 403) becomes refused (exit 7).
+2. Run the coding call against the local endpoint and, while it is in flight,
+   `ss -tn state established` in the same pod. Exactly one socket, peer
+   `172.18.0.1:11434`.
+3. Point the same code at `api.openai.com` with the policy on, then off. Refused,
+   then HTTP 401 - proving the policy is what changes the outcome.
 
 ## The point (one line)
 
 Your code and prompts never leave your infrastructure - provably, because the
-fleet runs fully self-hosted and can drive every PARR phase on a local model
-behind a fail-closed egress policy.
+fleet is fully self-hosted, drives its coding and verify stages against a local
+model, and can be run behind a fail-closed egress policy that makes a leak fail
+the build instead of passing silently.
 
 ## Who this is for
 
@@ -36,18 +148,31 @@ capabilities this demo shows:
 - Fully self-hosted fleet. All four services run on your own cluster; the fleet
   today runs against an on-prem Ollama (gemma / qwen) on the local box. See
   `docs/run-locally.md`.
-- Fail-closed egress control. Build pods run under a strict egress NetworkPolicy:
-  default-deny, DNS plus the binary/model caches only; RFC1918 private ranges are
-  handled explicitly and nothing arbitrary leaves the cluster. This is the same
-  policy documented in the BYO-Ollama post
-  (`docs/_posts/2026-06-14-bring-your-own-ollama-cloudflare-tunnel.md`) and the
-  sandbox runtime class (`docs/security/sandbox-runtime-class.md`). The control
-  is default-deny, so it fails closed: if a route is not allowed, the call does
-  not happen.
-- Outbound PII scrub (contrast option). When a buyer DOES use a cloud model, the
-  LiteLLM gateway enforces per-org budgets, allow-lists and PII-redacted audit
-  logs - the outbound scrub - so even the cloud path is governed. See
-  `docs/why.md`, "Enterprise controls."
+- Fail-closed egress control is **enforceable but not deployed**. Corrected
+  2026-07-30: an earlier revision of this runbook stated that build pods already
+  run under a strict default-deny egress NetworkPolicy. They do not.
+  `kubectl --context factory get netpol -A` returns policies in `argocd` only -
+  the `factory` namespace has none, so the fleet's own build pods are not
+  fail-closed today. What was verified is that the mechanism works on this
+  cluster: k3s enforces NetworkPolicy, and the default-deny policy shown in the
+  recording did block all three managed inference APIs while leaving the local
+  Ollama endpoint reachable. Treat this as "we demonstrated the control on demand"
+  and not "it is on in production". Tracked as Factory#462.
+- Outbound PII scrub (contrast option): **not deployable as a shot today.** The
+  LiteLLM gateway described in `docs/why.md` "Enterprise controls" is not running
+  on this cluster (no litellm workload in any namespace, checked 2026-07-30), so
+  shot 5 below cannot be captured. Do not promise a live audit-log view until it
+  is deployed. Tracked as Factory#463.
+- Do not use the planning stage as evidence. PFactory's planner is reported to be
+  deterministic - no LLM call - which would make "the planning stage stayed local"
+  trivially true and therefore worthless as proof that the egress classifier or a
+  local model works. That report is also not fully consistent with the deployed
+  configuration: the pfactory pod carries `CLAUDE_CODE_OAUTH_TOKEN`,
+  `OPENAI_API_KEY`, `GEMINI_API_KEY` and
+  `PFACTORY_EXECUTION_MODEL=claude-sonnet-4-5-20250929` (checked 2026-07-30).
+  Whichever is true, the meaningful demonstration is the coding and verify
+  stages - which is what the recording covers - so do not lean on planning either
+  way without confirming it first.
 
 The honest framing: for a local run the pod-to-model call stays on your private
 network (in-cluster Ollama service or an on-prem host). The proof is not a slide;
@@ -79,6 +204,18 @@ box).
 
 ## Shot list
 
+This is the full target list. The 2026-07-30 recording covers shots 3 and 4 - the
+hero shots - plus a local coding-and-verify sequence, and deliberately does not
+attempt 1, 2 or 5:
+
+| Shot | In the recording? | Note |
+| --- | --- | --- |
+| 1. Model config = local, billing pill in `local` mode | Partly | Shows the configured local endpoint and AIFactory enumerating the local models over it. No cockpit billing pill - not captured. |
+| 2. Full four-service PARR run on local models | No | The recording runs the coding and verify stages against the local model directly. Driving PFactory -> AIFactory -> TFactory on local models is blocked on AIFactory#1099 (local endpoint resolution) and is slow on a 14B model. |
+| 3. Proof of no third-party egress, fail-closed | Yes | The hero shot. Measured, not asserted - see "What the recording actually proves". |
+| 4. Contrast: the cloud path lights up | Yes | Same code pointed at `api.openai.com`: refused with the policy on, HTTP 401 with it off. |
+| 5. Contrast: governed cloud path, LiteLLM audit log | No | Not capturable - the gateway is not deployed (Factory#463). |
+
 1. Model config = local. Show the `phase_models` / model-catalog config with
    every phase resolving to `ollama:<model>`, `provider: ollama`, `class: local`.
    Show the cockpit / billing pill reading tokens-and-time, not dollars
@@ -103,6 +240,10 @@ box).
    air-tight."
 
 ## Narration
+
+Written for the full target shot list. Two paragraphs of it - the all-phases model
+config, and the LiteLLM audit log - describe shots the 2026-07-30 recording does
+not contain (shots 2 and 5 above). Do not read those aloud over that recording.
 
 "Every AI company's pitch has the same asterisk: your code goes to someone
 else's model. For a bank or a hospital, that asterisk is a deal-breaker.
@@ -129,10 +270,12 @@ policy exception."
 
 ## Existing assets vs fresh capture
 
-- Fresh capture (primary): the terminal / network view proving no external calls,
-  and the deliberate fail-closed egress refusal. This does not exist yet and is
-  the whole point of the demo - capture it live.
-- Fresh capture: the `phase_models` config showing all-local, and the cockpit
+- Captured 2026-07-30 (primary): the terminal / network view proving no external
+  calls, and the deliberate fail-closed egress refusal. See "Recorded artifacts"
+  at the top. Re-record it if the cluster's host-gateway address changes or once
+  Factory#462 puts a real policy on the fleet's own build pods, at which point the
+  take can be made against `factory` instead of an isolated namespace.
+- Still to capture: the `phase_models` config showing all-local, and the cockpit
   billing pill in `local` mode.
 - Reusable: the cockpit PARR board footage and the plan-build-verify walkthrough
   overlap with the standard factory demo; reuse framing but re-capture with the
@@ -142,11 +285,18 @@ policy exception."
 
 ## Proof takeaway
 
-Data residency and sovereignty, demonstrated rather than promised: on a
-self-hosted deployment with local models, source code and prompts never cross the
-perimeter, and the control that guarantees it is fail-closed by default. When a
-buyer chooses the cloud path instead, it is budgeted, allow-listed and
-PII-scrubbed. This is the differentiator for regulated and security buyers, and
-it ties directly into the compliance program (Factory#310): the egress control
-and the redacted audit trail are evidence you can hand an auditor, not a claim on
-a slide.
+Data residency demonstrated rather than promised: on a self-hosted deployment with
+a local model, the coding and verify stages completed with the managed inference
+APIs provably unreachable, so the prompts and source could not have crossed the
+perimeter. That is a measurement, and it is the thing to hand an auditor - it ties
+into the compliance program (Factory#310) as evidence rather than a claim on a
+slide.
+
+Two honesty guardrails when you present it:
+
+- The control was demonstrated on demand, not found switched on. The fleet's own
+  build pods have no egress policy yet (Factory#462). Say "here is the control,
+  and here is it working" - not "this is how your builds run today".
+- The governed-cloud half of the story is not yet backed by a deployment
+  (Factory#463). Lead with the local path, which is measured, and describe the
+  cloud path as roadmap.
