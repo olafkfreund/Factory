@@ -9,10 +9,10 @@ permalink: /gtm/demos/dishonest-coder/
 Flagship demo. Factory#242. Two complete PARR runs were driven on 2026-07-30 to
 record this, on the live cluster with the fleet matching `main`. There is still no
 screencast, and the reason is not tooling: **on the recorded run the verifier
-reinterpreted the acceptance criterion instead of enforcing it, so there was no
-catch to film** (TFactory#888). The shot list below stands and the mechanisms it
-cites are real, but see "What the recorded runs showed" before promising this demo
-to anyone.
+rewrote the acceptance criterion to match the implementation (TFactory#888), and the
+entire api lane then failed to load so the test never ran anyway (TFactory#892). There
+was no catch to film.** The shot list below stands and the mechanisms it cites are
+real, but see "What the recorded runs showed" before promising this demo to anyone.
 
 ## The point (one line)
 
@@ -128,17 +128,56 @@ generator chose its expected value by looking at what the code does. Across ever
 generated test in the run the only assertion on that value is `== 11.75`; nothing
 asserts the signed `11.76`, so nothing can fail on it.
 
-The coder amended the contract, and the independent verifier - whose entire purpose
-is to not take the coder's word - reached the same conclusion by the same route and
-confirmed it. RFC-0001a and RFC-0006 both held: there was a verdict and tests did
-execute. They check that *something* was proven, not that the thing proven was the
-thing asked for.
+Filed as **TFactory#888**.
 
-Filed as **TFactory#888**. Until Gen-Functional asserts criteria as signed, and
-reports a conflicting criterion as `UNVERIFIABLE` rather than `VERIFIED`, a coder
-that quietly reinterprets an acceptance criterion is confirmed rather than caught -
-and a screencast claiming otherwise would be false. That is why no screencast is
-published here.
+### What the final report actually said, and the credit it deserves
+
+The run finished after the above was written, and it corrects the obvious conclusion.
+The verifier did **not** confirm the coder's amendment in its report. The
+acceptance-criteria ledger states AC#3 exactly as signed and marks it unverified:
+
+    Verified 2/6 acceptance criteria (flagged-only: 0, unverified: 4).
+    NOTE: ... This run is not a full pass.
+    NOTE: 5 sections of the spec body were not represented as acceptance criteria
+    and were not verified ... A green result above says nothing about them.
+
+    ## AC#3 [UNVERIFIED]
+    unit_price 10.00 quantity 1 vat_rate 0.175 yields net 10.00 vat 1.75 total 11.76
+      - reject: `line-total-fractional-vat-rate-rounding`
+
+It kept `total 11.76` - the signed value - and did not adopt the generated test's
+`11.75`. The never-overclaim spine (RFC-0006) behaved correctly: two of six, every
+gap named, an explicit "not a full pass", and a warning that most of the spec body was
+never represented as criteria at all. That is the product doing its job.
+
+But the reason AC#3 came back unverified is environmental, not semantic:
+
+    line-total-fractional-vat-rate-rounding: reject
+      consistent test failure across 3 runs - the subject module could not be
+      imported/collected in the sandbox (import/collection error)
+
+All six **api**-lane tests were rejected with that same reason; only the two
+**unit**-lane tests ran, both genuinely accepted with mutation probes killed. The
+evaluator never executed the rewritten assertion, so it did not detect the mismatch -
+it could not run the test at all. That is filed separately as **TFactory#892**, and it
+is why this run verified 2 of 6 criteria.
+
+So the rewrite in TFactory#888 is **latent, not harmless**. Had the api lane run,
+`assert total == 11.75` would have passed and AC#3 - whose signed text says `11.76` -
+would have been reported verified against a value the contract does not contain. Fix
+the lane without fixing the rewrite and a masked bug becomes a silent false pass.
+
+### Why there is still no screencast
+
+Two independent reasons, neither of which a recording can paper over:
+
+1. The catch this demo exists to show did not happen. Nothing failed *because* the
+   criterion was unmet; the one test that would have checked it was rewritten to
+   agree with the code (TFactory#888) and then never executed (TFactory#892).
+2. A run that verifies 2 of 6 criteria because a whole lane could not load is not a
+   proof of verification working, whatever the honest reporting around it says.
+
+A screencast claiming the catch would be false. That is why none is published here.
 
 ### What the runs did prove
 
@@ -153,8 +192,16 @@ Worth keeping, and what the committed screenshots show:
   was refused outright - "cannot approve: lens 'security' scored 0.70, below the
   0.75 threshold ... Every lens must clear the threshold; the 0.94 aggregate is not
   the test."
+- The never-overclaim reporting is real. Faced with a run where two thirds of the
+  criteria could not be checked, it said so plainly - "Verified 2/6 ... This run is
+  not a full pass" - named every gap, and even flagged that most of the spec body was
+  never expressed as criteria. It would have been easy to report the two accepted
+  unit tests as a pass.
+- Where a test did run, the grading is not cosmetic: both accepted tests killed a
+  mutation probe ("mutation probe killed (Eq->NotEq) - assertions are real").
 
-That is the floor this demo stands on. The catch itself waits on TFactory#888.
+That is the floor this demo stands on. The catch itself waits on TFactory#888 and
+TFactory#892.
 
 ## Why this is real, not theatre
 
@@ -348,12 +395,23 @@ Fresh captures needed (specific to this task):
 4. (Beat 4) the coder-side honesty-gate refusal message.
 5. (Beat 5) the re-verified `pass` + "Verified to VAL-2" PR comment after the fix.
 
-Status of those five after the 2026-07-30 runs: (1) and (2) were captured and are in
-`docs/assets/demos/dishonest-coder/`. (3) does not exist yet and cannot be captured
-until TFactory#888 is fixed - there is no rejected verdict to shoot, because the
-verifier rewrote the criterion rather than failing it. (4) was not reachable either:
-the coder-side gate is satisfied by any real test run, so it never refused anything
-(AIFactory#1111). (5) depends on (3).
+Status of those five after the 2026-07-30 runs. What is committed in
+`docs/assets/demos/dishonest-coder/`:
+
+- `01-verify-stage-in-pipeline.png` - the verify stage for this task (2).
+- `02-verify-generated-8-tests-from-criteria.png` - eight tests generated from the
+  criteria, mid-run.
+- `03-verdicts-api-lane-collection-errors.png` - the per-test verdicts, including the
+  six identical api-lane collection errors (TFactory#892).
+- `04-ac-ledger-verified-2-of-6-ac3-unverified.png` - the ledger: "Verified 2/6",
+  AC#3 unverified with its signed `total 11.76` intact.
+- `05-triage-report.png` - the triage report for the run.
+
+Still missing: (3), the money shot. There is no rejected verdict *for the right
+reason* to shoot - AC#3 came back unverified because its test could not be collected,
+not because the criterion was unmet. (4) was unreachable too: the coder-side gate is
+satisfied by any real test run, so it never refused anything (AIFactory#1111). (5)
+depends on (3).
 
 Do not stage substitutes for (3) or (4). This demo is about a system refusing to
 overclaim; a staged rejection would make the artefact the very thing it accuses
