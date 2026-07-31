@@ -400,15 +400,7 @@ def test_every_required_context_matches_a_real_job_name() -> None:
     and both carried the same stale name. The only way to merge anything was an
     admin bypass, which is how a protection rule becomes weaker than no rule.
     """
-    emitted = json.loads(
-        subprocess.run(
-            [str(_SCRIPT), "--emit", "Factory", "main"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-    )
-    required = set(emitted["required_status_checks"]["contexts"])
+    required = set(_emit("Factory", "main")["required_status_checks"]["contexts"])
     missing = sorted(required - _workflow_job_names())
     assert not missing, (
         "these contexts are REQUIRED on Factory/main but no workflow job "
