@@ -374,3 +374,51 @@ def test_missing_token_fails_rather_than_reports_clean() -> None:
     assert "exit 2" in body
     assert "Branch not found" in body
     assert "Branch not protected" in body
+
+
+# ── the required contexts must be producible (Factory#529) ──────────────────
+
+
+def _workflow_job_names() -> set[str]:
+    """Every `name:` a job in .github/workflows/ can report as a status context."""
+    names: set[str] = set()
+    for wf in (_REPO_ROOT / ".github" / "workflows").glob("*.yml"):
+        for line in wf.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            # Job-level `name:` is indented; a workflow-level one is not.
+            if stripped.startswith("name:") and line.startswith(" "):
+                names.add(stripped[len("name:") :].strip().strip("\"'"))
+    return names
+
+
+def test_every_required_context_matches_a_real_job_name() -> None:
+    """A required context no job produces can never be satisfied.
+
+    `main` required `ruff format --check (scripts, blocking)` while the job had
+    been renamed to `... (scripts + tests, blocking)`. Nothing compared the two,
+    so the drift gate happily reported green -- it compares intent against LIVE,
+    and both carried the same stale name. The only way to merge anything was an
+    admin bypass, which is how a protection rule becomes weaker than no rule.
+    """
+    required = set(_emit("Factory", "main")["required_status_checks"]["contexts"])
+    missing = sorted(required - _workflow_job_names())
+    assert not missing, (
+        "these contexts are REQUIRED on Factory/main but no workflow job "
+        f"produces them, so they can never report: {missing}"
+    )
+
+
+def test_code_quality_is_not_path_filtered() -> None:
+    """Its jobs are required contexts, so it must run on every PR.
+
+    A path-filtered workflow does not report a "skipped" context -- it reports
+    nothing, and a required context that never reports blocks the PR forever.
+    That made every docs-only PR to main unmergeable (Factory#529).
+    """
+    wf = (_REPO_ROOT / ".github" / "workflows" / "code-quality.yml").read_text(encoding="utf-8")
+    trigger_block = wf.split("jobs:", 1)[0]
+    pull_request_section = trigger_block.split("pull_request:", 1)[1].split("push:", 1)[0]
+    assert "paths:" not in pull_request_section, (
+        "code-quality.yml produces required status contexts; a paths filter "
+        "means they never report on a PR that does not match, blocking it forever"
+    )

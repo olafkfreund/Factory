@@ -24,13 +24,17 @@ name: code-quality (ratchet)
 # Factory ratchet); only the package scope differs (flat scripts/ dir).
 
 on:
+  # NO paths filter, deliberately (Factory#529). Two of these jobs are REQUIRED
+  # status contexts on main. A path-filtered workflow does not report a "skipped"
+  # context -- it reports nothing at all, and a required context that never
+  # reports leaves the PR BLOCKED forever. That made every docs-only PR to main
+  # unmergeable except by admin bypass, which trains the bypass and is worse than
+  # having no rule.
+  #
+  # Running unconditionally is cheap: the ratchet exits 0 immediately on a diff
+  # with no Python ("no changed Python under scripts; nothing to gate"), and the
+  # format check is a few seconds over scripts/ + tests/.
   pull_request:
-    paths:
-      - "**.py"
-      - "ruff.toml"
-      - "mypy.ini"
-      - "standards/**"
-      - ".github/workflows/code-quality.yml"
   push:
     branches: [main]
 
