@@ -60,6 +60,11 @@ The comparator itself is tested offline on every pull request by
 a live response matching intent compares equal, and a live response differing in
 any one field compares unequal.
 
+Related repo-level setting, tracked separately:
+[actions-workflow-permissions.md](actions-workflow-permissions.md) — whether
+GitHub Actions may create and approve pull requests. Enabled on AIFactory as a
+dependency of its base-image bump bot; `false` everywhere else.
+
 ## Why this needs care
 
 Several repos have automation that writes to `main` (directly or by merge).
