@@ -135,6 +135,12 @@ four-eyes approval system.
    production approval checkpoint. One actor can author, self-approve (owner review not
    required, admin bypass), merge, and auto-deploy. (AC-5, CC8.1, SOX ITGC, PCI 6.5.4,
    CM-3)
+
+   As of 2026-07-31 AIFactory also has `can_approve_pull_request_reviews: true`, so a
+   *workflow* can approve there too — the same finding, widened by one actor class. It
+   was enabled deliberately as a dependency of the base-image bump bot; the setting, its
+   trade-off and the fleet state are recorded in
+   [actions-workflow-permissions.md](../actions-workflow-permissions.md).
 4. **Direct-to-main GitOps with no protection or gate.** `factory-gitops` accepts
    unprotected direct commits and ArgoCD reconciles them automatically to production —
    the single largest change-control exposure. (CM-3, CC8.1)
