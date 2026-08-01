@@ -371,6 +371,15 @@ def test_module_self_test_still_passes() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def _metrics_for(events: list[dict[str, Any]], at: str) -> dms.DoraMetricsResult:
+    """Run the metrics over *events* with the window anchored at *at*.
+
+    Extracted because the two cases below differ only in their event list, and
+    jscpd counts the repeated fixture-and-call shape as a clone -- correctly.
+    """
+    return dms.compute_dora_metrics(events, now=at, window_days=10)
+
+
 def test_deploy_with_no_status_is_reported_not_silently_counted_as_success() -> None:
     """`event.get("status", "success")` made an absent status flatter the rate.
 
@@ -383,12 +392,14 @@ def test_deploy_with_no_status_is_reported_not_silently_counted_as_success() -> 
     COUNTABLE, so a reader can see how much of the rate rests on events that
     never said.
     """
-    events: list[dict[str, Any]] = [
-        {"at": "2026-06-15T12:00:00Z", "status": "success"},
-        {"at": "2026-06-15T13:00:00Z"},  # no status at all
-        {"at": "2026-06-15T14:00:00Z", "status": ""},  # present but empty
-    ]
-    result = dms.compute_dora_metrics(events, now="2026-06-15T14:00:00Z", window_days=10)
+    result = _metrics_for(
+        [
+            {"at": "2026-06-15T12:00:00Z", "status": "success"},
+            {"at": "2026-06-15T13:00:00Z"},  # no status at all
+            {"at": "2026-06-15T14:00:00Z", "status": ""},  # present but empty
+        ],
+        at="2026-06-15T14:00:00Z",
+    )
 
     assert result["sample"]["deploys_missing_status"] == 2, (
         "two of the three events never stated a status; the metric must say so"
@@ -400,10 +411,12 @@ def test_deploy_with_no_status_is_reported_not_silently_counted_as_success() -> 
 
 def test_a_stated_status_is_not_counted_as_missing() -> None:
     """The counter must not fire on events that did state something."""
-    events: list[dict[str, Any]] = [
-        {"at": "2026-06-15T12:00:00Z", "status": "success"},
-        {"at": "2026-06-15T13:00:00Z", "status": "failed"},
-    ]
-    result = dms.compute_dora_metrics(events, now="2026-06-15T13:00:00Z", window_days=10)
+    result = _metrics_for(
+        [
+            {"at": "2026-06-15T12:00:00Z", "status": "success"},
+            {"at": "2026-06-15T13:00:00Z", "status": "failed"},
+        ],
+        at="2026-06-15T13:00:00Z",
+    )
     assert result["sample"]["deploys_missing_status"] == 0
     assert result["change_fail_rate"] == 0.5
