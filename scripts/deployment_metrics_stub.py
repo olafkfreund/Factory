@@ -178,7 +178,9 @@ def compute_dora_metrics(
         deploys: Deploy events. Each MAY have ``at`` (ISO-8601 timestamp;
             required for the event to be counted at all), ``status``
             (anything in ``_FAILURE_STATUSES`` counts as failed, else
-            success), and ``lead_time_hours`` (time from commit/merge to this
+            success; an event carrying NO status is counted as a non-failure
+            and reported in ``sample.deploys_missing_status`` so the
+            assumption is visible), and ``lead_time_hours`` (time from commit/merge to this
             deploy — optional; deploys without it still count toward
             frequency and change-failure-rate but not lead time).
         incidents: Incident events, each with ``opened_at`` and
@@ -233,10 +235,21 @@ def compute_dora_metrics(
     ]
 
     total_deploys = len(in_window_deploys)
+    # Factory#431: `event.get("status", "success")` treated a MISSING status as a
+    # success. "A status that is not a known failure is a success" is a defensible
+    # policy for a status that is PRESENT; assuming one that is absent is not --
+    # it silently lowers change_fail_rate, the direction that flatters.
+    #
+    # The headline numbers are deliberately unchanged: quietly recounting them
+    # would be its own overclaim. Instead the assumption is made COUNTABLE, so a
+    # reader can see how much of the rate rests on events that never said.
+    deploys_missing_status = sum(
+        1 for event, _ in in_window_deploys if not str(event.get("status", "")).strip()
+    )
     failed_deploys = sum(
         1
         for event, _ in in_window_deploys
-        if str(event.get("status", "success")).lower() in _FAILURE_STATUSES
+        if str(event.get("status", "")).lower() in _FAILURE_STATUSES
     )
 
     lead_times = [
@@ -265,6 +278,10 @@ def compute_dora_metrics(
             "deploys": total_deploys,
             "lead_time_observations": len(lead_times),
             "resolved_incidents": len(in_window_incidents),
+            # How many of `deploys` carried no status at all and were therefore
+            # counted as non-failures (Factory#431). Non-zero means change_fail_rate
+            # is an optimistic bound, not a measurement.
+            "deploys_missing_status": deploys_missing_status,
         },
     }
 
