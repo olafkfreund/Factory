@@ -44,8 +44,10 @@ _DEFAULT_HISTORY_LIMIT = 20
 _UNAVAILABLE_REASON = "no provider configured (stub default)"
 
 # Deploy `status` values that count as a failed deploy for change-failure-rate.
-# Anything else (including a missing status) counts as success — mirrors the
-# DeployEvent contract, which leaves `status` a free-text field.
+# Any other STATED status counts as success — mirrors the DeployEvent contract,
+# which leaves `status` free text. An event that states NOTHING is also counted
+# as a non-failure, but it is an assumption rather than an observation, so it is
+# reported in `sample.deploys_missing_status` rather than absorbed (Factory#431).
 _FAILURE_STATUSES = frozenset({"failure", "failed", "error", "rolled_back", "rollback"})
 _SECONDS_PER_HOUR = 3600.0
 
@@ -99,6 +101,10 @@ class DoraMetricsSample(TypedDict):
     deploys: int
     lead_time_observations: int
     resolved_incidents: int
+    # Factory#431: of `deploys`, how many carried NO status and were therefore
+    # counted as non-failures. Non-zero means change_fail_rate is an optimistic
+    # bound rather than a measurement.
+    deploys_missing_status: int
 
 
 class DoraMetricsResult(TypedDict):

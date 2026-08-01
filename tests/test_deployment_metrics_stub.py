@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -382,15 +383,12 @@ def test_deploy_with_no_status_is_reported_not_silently_counted_as_success() -> 
     COUNTABLE, so a reader can see how much of the rate rests on events that
     never said.
     """
-    result = dms.compute_dora_metrics(
-        [
-            {"at": "2026-06-15T12:00:00Z", "status": "success"},
-            {"at": "2026-06-15T13:00:00Z"},  # no status at all
-            {"at": "2026-06-15T14:00:00Z", "status": ""},  # present but empty
-        ],
-        now="2026-06-15T14:00:00Z",
-        window_days=10,
-    )
+    events: list[dict[str, Any]] = [
+        {"at": "2026-06-15T12:00:00Z", "status": "success"},
+        {"at": "2026-06-15T13:00:00Z"},  # no status at all
+        {"at": "2026-06-15T14:00:00Z", "status": ""},  # present but empty
+    ]
+    result = dms.compute_dora_metrics(events, now="2026-06-15T14:00:00Z", window_days=10)
 
     assert result["sample"]["deploys_missing_status"] == 2, (
         "two of the three events never stated a status; the metric must say so"
@@ -402,13 +400,10 @@ def test_deploy_with_no_status_is_reported_not_silently_counted_as_success() -> 
 
 def test_a_stated_status_is_not_counted_as_missing() -> None:
     """The counter must not fire on events that did state something."""
-    result = dms.compute_dora_metrics(
-        [
-            {"at": "2026-06-15T12:00:00Z", "status": "success"},
-            {"at": "2026-06-15T13:00:00Z", "status": "failed"},
-        ],
-        now="2026-06-15T13:00:00Z",
-        window_days=10,
-    )
+    events: list[dict[str, Any]] = [
+        {"at": "2026-06-15T12:00:00Z", "status": "success"},
+        {"at": "2026-06-15T13:00:00Z", "status": "failed"},
+    ]
+    result = dms.compute_dora_metrics(events, now="2026-06-15T13:00:00Z", window_days=10)
     assert result["sample"]["deploys_missing_status"] == 0
     assert result["change_fail_rate"] == 0.5
