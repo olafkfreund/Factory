@@ -1,0 +1,103 @@
+name: branch divergence
+
+# "Is the fix actually on the branch we deploy?", asked out of band (Factory#498).
+#
+# CFactory#266 and PFactory#406 were the same accident twice: the fix merged to
+# `dev`, the service deploys from `main`, and for hours the deployed branch kept
+# the broken behaviour. Both were found by someone tripping over them. None of
+# the five existing watchdogs looks at branch divergence at all: `deploy-drift`
+# asks whether main is deployed, and answers "yes" perfectly happily while main
+# is missing the fix entirely.
+#
+# WHY NOT `.ahead_by` / `.behind_by`. Because it does not work, and this was
+# MEASURED rather than guessed. On 2026-08-01 the compare API reported main ahead
+# of dev by 11 / 10 / 8 / 4 commits across PFactory / TFactory / CFactory /
+# AIFactory. Every one of those commits was a `Merge pull request #N from
+# olafkfreund/dev` promotion merge, and `git diff dev main` on the same repos was
+# EMPTY - byte-identical trees. A counting detector is red on all four repos of a
+# perfectly healthy fleet on day one and muted by day seven. See the module
+# docstring of scripts/check_branch_divergence.py for the second trap (the same
+# Dependabot bump applied to each branch separately, counted twice).
+#
+# WHY SCHEDULED, NOT ON PULL_REQUEST. Divergence is created by what is merged and
+# what is NOT merged; a PR trigger cannot see the second half, and the window
+# this watches opens after a merge, not during one. The comparator itself IS
+# covered on every hub PR, offline, by tests/test_branch_divergence.py.
+#
+# WHY NO PAT. The four service repos are public, so an anonymous clone is enough.
+# Nothing here reads an admin endpoint. If a repo is ever made private this job
+# fails on the clone, loudly, which is the correct answer.
+#
+# WHY THIS DOES NOT FILE AN ISSUE, despite Factory#498 asking for one. The hub
+# already made and wrote up this call in job-watchdog-heartbeat.yml (Factory#450):
+# a failing scheduled workflow on a repo you own already emails you and shows red
+# in the Actions tab, whereas an auto-filed issue needs auto-closing logic, which
+# is a second small state machine that rots in its own right. If the email proves
+# too easy to miss, the upgrade is to add issue filing here - not to make the
+# check quieter.
+
+on:
+  schedule:
+    # Every six hours at :47, offset from branch-protection-drift (06:17) and the
+    # watchdog heartbeat (:23). Six-hourly rather than daily because the budget
+    # below is 24h: checking once a day would push worst-case detection of a
+    # merged-but-undeployed fix out to 48h. Note BST != UTC.
+    - cron: "47 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      max_unpromoted_hours:
+        description: "How long work may sit on dev, unpromoted, before it counts as divergence"
+        type: string
+        required: false
+        default: "24"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-divergence
+  cancel-in-progress: false
+
+jobs:
+  divergence:
+    name: dev and main hold the same code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Self-test the comparator before trusting it
+        # First, not last, for the same reason deploy-drift.yml does it: a broken
+        # comparator cannot be trusted to say "no divergence", so it fails as a
+        # broken comparator instead of quietly passing everything (rule 4.7).
+        # This builds real git repositories and asserts the detector both fires
+        # and stays quiet - a detector nobody has watched fire is not verified.
+        run: python3 scripts/check_branch_divergence.py --self-test
+
+      - name: Compare dev against main for every fleet repo that has a dev branch
+        # Exit 1 = divergence. Exit 2 = could not determine (clone failed, branch
+        # renamed, intent table unparseable) and is also a failure, deliberately:
+        # there is no soft-skip path here. PFactory#440 was filed today for a gate
+        # that skipped itself into permanent green, and a watchdog that reports
+        # success while reading nothing is the exact defect this one exists to
+        # catch.
+        env:
+          BUDGET: ${{ inputs.max_unpromoted_hours || '24' }}
+        run: |
+          set -o pipefail
+          python3 scripts/check_branch_divergence.py \
+            --workdir "${RUNNER_TEMP}/fleet" \
+            --max-unpromoted-hours "${BUDGET}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: What to do when this job is red
+        if: failure()
+        run: |
+          echo "BACKFLOW (commits on main with no equivalent on dev) is never normal:"
+          echo "merge main back into dev before the next promotion silently reverts it."
+          echo
+          echo "UNPROMOTED past the budget means a merged fix is not on the branch the"
+          echo "service deploys from. Promote it, or - if it is deliberately parked -"
+          echo "say so by raising --max-unpromoted-hours, not by muting the job."
+          echo
+          echo "CANNOT DETERMINE means this watchdog is blind. Fix the input; do not"
+          echo "add a skip (standards/coding-standards.md rule 4.7, Factory#433)."
