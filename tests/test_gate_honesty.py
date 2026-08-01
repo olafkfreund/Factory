@@ -34,10 +34,13 @@ detection is indistinguishable from a check nobody wrote.
 
 from __future__ import annotations
 
+import re
 import shutil
+import time
 from pathlib import Path
 
 # scripts/ is put on sys.path by tests/conftest.py.
+import check_branch_divergence as divergence_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
 import check_verification_core_drift as vcore_gate
@@ -51,6 +54,7 @@ _COVERED: dict[str, str] = {
     "check_verification_core_drift.py": "test_verification_core_gate_is_honest",
     "check_factory_github_drift.py": "test_factory_github_gate_is_honest",
     "check_factory_ui_drift.py": "test_factory_ui_gate_is_honest",
+    "check_branch_divergence.py": "test_branch_divergence_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -163,4 +167,50 @@ def test_factory_ui_gate_is_honest(
     assert ui_gate.main(["--service", "aifactory", "--root", str(portal)]) == 1, (
         "dropping a component from a portal's layout left the gate green on a "
         "component it no longer compares"
+    )
+
+
+def test_branch_divergence_gate_is_honest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Factory#498's watchdog, held to this file's three criteria.
+
+    Its scope is DERIVED from the ``BRANCHES=`` column of
+    ``scripts/apply_branch_protection.sh`` rather than re-declared, so there is no
+    second registry to delete an entry from. That is not enough on its own: the
+    table itself can be narrowed. So the gate also checks the claim in the other
+    direction, and the mutation below is exactly that narrowing — PFactory leaves
+    the scope while still having a dev branch, and the gate must go red instead of
+    quietly checking one repo fewer.
+    """
+    now = int(time.time())
+    fleet = tmp_path / "fleet"
+    fleet.mkdir()
+    intent = (_SCRIPTS / "apply_branch_protection.sh").read_text()
+
+    for name in ("CFactory", "PFactory", "TFactory", "AIFactory"):
+        divergence_gate._build_benign(fleet, now, name)
+    for name in ("Factory", "factory-gitops"):
+        repo = divergence_gate._new_repo(fleet, name, now)
+        divergence_gate._run(["git", "-C", str(repo), "branch", "-D", "dev"])
+
+    # workdir == clone-base: the repos are already there, so nothing is cloned and
+    # no network is touched.
+    assert divergence_gate.run_check(fleet, str(fleet), intent, 24.0, now) == 0
+    out = capsys.readouterr().out
+    for name in ("CFactory", "PFactory", "TFactory", "AIFactory", "Factory", "factory-gitops"):
+        assert name in out, f"the report never named {name}"
+    # Every verdict carries the bytes it was derived from, on BOTH sides and on
+    # the PASS path — four repos compared, two branch shas each.
+    assert out.count("compared dev=") == 4
+    assert out.count(" against main=") == 4
+
+    # Configuration mutation: the repos are untouched, PFactory leaves the scope.
+    narrowed = re.sub(
+        r'(^\s{4}PFactory\).*)BRANCHES="main dev"', r'\1BRANCHES="main"', intent, flags=re.MULTILINE
+    )
+    assert narrowed != intent, "the mutation did not change the intent table"
+    assert divergence_gate.run_check(fleet, str(fleet), narrowed, 24.0, now) == 2, (
+        "narrowing a repo out of the BRANCHES= table left the gate green on a repo "
+        "that still has a dev branch — scope shrank, nobody noticed"
     )

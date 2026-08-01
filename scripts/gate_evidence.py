@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The fragment a byte-comparison gate's verdict was derived from.
+"""Plumbing shared by the hub's gates: verdict citations, and self-test reporting.
 
 Factory#504. A gate that reports a verdict without the thing it read is a claim
 nobody can falsify, and the direction that costs most is the confident PASS: a
@@ -35,3 +35,21 @@ def digest(path: Path) -> str:
         return "absent"
     data = path.read_bytes()
     return f"sha256:{sha256(data).hexdigest()[:12]} {len(data)}B"
+
+
+def report_self_test(failures: list[str]) -> int:
+    """Print a gate's own self-test outcome and return its exit code.
+
+    Every hub gate carries a dependency-free ``--self-test`` that its scheduled
+    workflow runs BEFORE believing the gate's verdict, and each one collects
+    failures into a list rather than tripping on the first bare assert (so one run
+    reports every broken case, and ``python -O`` cannot silence it). The reporting
+    tail of that pattern was literally identical in three scripts and the clone
+    budget caught the third copy going in -- which is what the budget is for.
+    """
+    for label in failures:
+        print(f"self-test FAILED: {label}")  # noqa: T201
+    if failures:
+        return 1
+    print("self-test OK")  # noqa: T201
+    return 0
