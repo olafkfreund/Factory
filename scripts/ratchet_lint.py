@@ -56,7 +56,7 @@ from pathlib import Path
 # Canonical shared ratchet rules, vendored byte-exact from the hub and
 # drift-gated (Factory#403). scripts/ is sys.path[0] when this runs as a
 # script, so the sibling import resolves without packaging.
-from ratchet_helpers import MYPY_TEST_RELAX, is_test_file, write_temp
+from ratchet_helpers import MYPY_TEST_RELAX, is_test_file, ruff_stdin_argv, write_temp
 
 PACKAGE_DEFAULT = "scripts"
 
@@ -70,10 +70,14 @@ def _emit(message: str) -> None:
     print(message)  # noqa: T201
 
 
-def _run(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str], env: dict[str, str] | None = None, stdin: str | None = None
+) -> subprocess.CompletedProcess[str]:
     # cmd is built from constant git/ruff/mypy argv plus repo-internal paths, not
     # untrusted input; this lint tool legitimately shells out to git and linters.
-    return subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)  # noqa: S603
+    return subprocess.run(  # noqa: S603
+        cmd, capture_output=True, text=True, check=False, env=env, input=stdin
+    )
 
 
 def packages(package: str) -> list[str]:
@@ -103,21 +107,23 @@ def changed_python_files(base: str, package: str) -> list[str]:
 
 
 def ruff_counts(source: str, filename: str) -> Counter[str]:
-    """Per-rule ruff violation counts for *source* checked as *filename*."""
-    tmpdir, tmp = write_temp(source, filename)
+    """Per-rule ruff violation counts for *source* checked as *filename*.
+
+    Fed on stdin under the file's REAL path so ruff's per-file-ignores see the
+    same path ``ruff check`` would (Factory#510). A temp copy could not: outside
+    the project root only basename globs match, so ``**/tests/**`` was dead here
+    and a test helper under ``tests/`` not named ``test_*.py`` was held to the
+    production assert bar the real tree exempts it from.
+    """
+    res = _run(ruff_stdin_argv("ruff.toml", filename), stdin=source)
+    if not res.stdout.strip():
+        return Counter()
     try:
-        res = _run(["ruff", "check", "--config", "ruff.toml", "--output-format", "json", tmp])
-        if not res.stdout.strip():
-            return Counter()
-        try:
-            items = json.loads(res.stdout)
-        except json.JSONDecodeError:
-            sys.stderr.write(res.stdout + res.stderr)
-            sys.exit(2)
-        return Counter(item["code"] for item in items)
-    finally:
-        Path(tmp).unlink(missing_ok=True)
-        Path(tmpdir).rmdir()
+        items = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        sys.stderr.write(res.stdout + res.stderr)
+        sys.exit(2)
+    return Counter(item["code"] for item in items)
 
 
 def mypy_command(target: str, original: str | None = None) -> list[str]:

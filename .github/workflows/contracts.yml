@@ -95,6 +95,13 @@ jobs:
         #             test-file carve-out is scoped by path. Pinned to the same
         #             version as code-quality.yml's MYPY_VERSION so the two
         #             gates measure the same bar.
+        #   ruff      the same suite shells out to ruff for the other half of
+        #             that carve-out (Factory#510: `**/tests/**` was unmatchable
+        #             while the ratchet linted a temp copy). Pinned to
+        #             code-quality.yml's RUFF_VERSION for the same reason as
+        #             mypy - and NOT optional: with ruff absent these cases
+        #             raise FileNotFoundError rather than skipping, which is
+        #             loud, which is the point.
         #   pytest-asyncio  nine of test_http_github_provider's cases are
         #             `async def` behind @pytest.mark.asyncio. Without the
         #             plugin pytest does not run them; whether that shows up as
@@ -103,7 +110,7 @@ jobs:
         #             is the Factory#489 shape again.
         run: >-
           pip install pytest pytest-asyncio "pydantic>=2" jsonschema httpx
-          pyyaml "mypy==1.18.2"
+          pyyaml "mypy==1.18.2" "ruff==0.15.17"
 
       - name: Run the hub test suite
         # WHOLE DIRECTORY, NOT A FILE LIST (Factory#489). This step used to be
