@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -371,7 +370,7 @@ def test_module_self_test_still_passes() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _metrics_for(events: list[dict[str, Any]], at: str) -> dms.DoraMetricsResult:
+def _metrics_for(events: list[dict[str, object]], at: str) -> dms.DoraMetricsResult:
     """Run the metrics over *events* with the window anchored at *at*.
 
     Extracted because the two cases below differ only in their event list, and
