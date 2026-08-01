@@ -44,6 +44,9 @@ def test_empty_input_has_zero_frequency_and_null_metrics() -> None:
         "deploys": 0,
         "lead_time_observations": 0,
         "resolved_incidents": 0,
+        # Factory#431: how many deploys carried no status and were counted as
+        # non-failures. Zero here because there are no deploys at all.
+        "deploys_missing_status": 0,
     }
 
 
@@ -360,3 +363,59 @@ def test_deploy_history_is_unaffected_raw_listing_not_a_metric() -> None:
 def test_module_self_test_still_passes() -> None:
     # Locks the module's own dependency-free self-test as a regression guard.
     dms._test()
+
+
+# --------------------------------------------------------------------------- #
+# Factory#431 — a missing status is an assumption, and it must be countable
+# --------------------------------------------------------------------------- #
+
+
+def _metrics_for(events: list[dict[str, object]], at: str) -> dms.DoraMetricsResult:
+    """Run the metrics over *events* with the window anchored at *at*.
+
+    Extracted because the two cases below differ only in their event list, and
+    jscpd counts the repeated fixture-and-call shape as a clone -- correctly.
+    """
+    return dms.compute_dora_metrics(events, now=at, window_days=10)
+
+
+def test_deploy_with_no_status_is_reported_not_silently_counted_as_success() -> None:
+    """`event.get("status", "success")` made an absent status flatter the rate.
+
+    "Not a known failure means success" is defensible for a status that is
+    PRESENT. Assuming one that is absent is not: it lowers change_fail_rate in
+    the direction that looks better, and nothing downstream could tell.
+
+    The headline numbers stay as they were on purpose -- quietly recounting them
+    would be its own overclaim. What changes is that the assumption is now
+    COUNTABLE, so a reader can see how much of the rate rests on events that
+    never said.
+    """
+    result = _metrics_for(
+        [
+            {"at": "2026-06-15T12:00:00Z", "status": "success"},
+            {"at": "2026-06-15T13:00:00Z"},  # no status at all
+            {"at": "2026-06-15T14:00:00Z", "status": ""},  # present but empty
+        ],
+        at="2026-06-15T14:00:00Z",
+    )
+
+    assert result["sample"]["deploys_missing_status"] == 2, (
+        "two of the three events never stated a status; the metric must say so"
+    )
+    # Unchanged behaviour: they still count as non-failures.
+    assert result["change_fail_rate"] == 0.0
+    assert result["deployment_frequency"]["total_deploys"] == 3
+
+
+def test_a_stated_status_is_not_counted_as_missing() -> None:
+    """The counter must not fire on events that did state something."""
+    result = _metrics_for(
+        [
+            {"at": "2026-06-15T12:00:00Z", "status": "success"},
+            {"at": "2026-06-15T13:00:00Z", "status": "failed"},
+        ],
+        at="2026-06-15T13:00:00Z",
+    )
+    assert result["sample"]["deploys_missing_status"] == 0
+    assert result["change_fail_rate"] == 0.5

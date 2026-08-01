@@ -47,9 +47,15 @@ def run_verification(plan: dict, backend) -> dict:
         if lvl.get("status") == "planned":
             ok, output = backend(lvl["level"], lvl["commands"])
             if ok:
-                entry.update(
-                    status="passed", ran=lvl["commands"], evidence=(output or "ok").strip()[:200]
-                )
+                # Factory#431: `output or "ok"` MANUFACTURED evidence. A command
+                # that printed nothing recorded the literal string "ok", which a
+                # later reader cannot distinguish from a command that actually
+                # printed "ok". `status="passed"` already carries the verdict;
+                # this field is meant to carry what was OBSERVED, and silence is
+                # an observation. This module's own docstring promises an
+                # "honest block" that "forbids overclaiming".
+                evidence = (output or "").strip()[:200] or "(command produced no output)"
+                entry.update(status="passed", ran=lvl["commands"], evidence=evidence)
             else:
                 entry.update(
                     status="failed",
