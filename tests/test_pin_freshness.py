@@ -41,19 +41,23 @@ def _have(ref: str) -> bool:
     )
 
 
-@pytest.fixture(autouse=True)
-def _needs_full_history() -> None:
-    """Fail with the reason, not with 'Invalid revision range'.
+def _require_full_history() -> None:
+    """Fail with the reason, not with "Invalid revision range".
 
     These cases assert the comparator's verdict on real hub commits, so a
-    shallow clone breaks every one of them with a git error that says nothing
-    about clone depth — which is exactly what happened on the first CI run of
-    this file. A guard that cannot run should name its own precondition instead
-    of leaving the next person to decode the symptom.
+    shallow clone breaks them with a git error that says nothing about clone
+    depth — which is exactly what the first CI run of this file did. A guard that
+    cannot run should name its own precondition instead of leaving the next
+    person to decode the symptom.
 
-    Deliberately NOT a skip: the cases would then vanish silently on any runner
-    that clones shallow, which is the gate-that-did-not-run shape this whole
-    file is about.
+    Deliberately a FAILURE, not a skip: skipping would make these cases vanish
+    silently on any runner that clones shallow, which is the gate-that-did-not-run
+    shape this whole file is about.
+
+    A plain function rather than an autouse fixture because the ratchet runs mypy
+    with --ignore-missing-imports, so `pytest.fixture` resolves to Any and
+    `@pytest.fixture(autouse=True)` is an untyped decorator under --strict. No
+    other test in this repo uses a fixture; this is why.
     """
     missing = [ref for ref in (_PIN_AT_519, _HUB_AT_519) if not _have(ref)]
     if missing:
@@ -81,6 +85,7 @@ def _far_future() -> int:
 
 
 def test_builtin_self_test_passes() -> None:
+    _require_full_history()
     assert pf.main(["--self-test"]) == 0
 
 
@@ -97,6 +102,7 @@ def test_behind_but_untouched_is_not_staleness() -> None:
     a service that is correctly configured — and #519 could not settle the
     question precisely because nothing computed it.
     """
+    _require_full_history()
     moved = pf.commits_since(_PIN_AT_519, pf.canonical_paths("cfactory"), until=_HUB_AT_519)
     assert moved == [], "nothing in a9f44033..d9bd01de touches scripts/ratchet_helpers.py"
 
@@ -112,6 +118,7 @@ def test_the_same_pin_is_stale_once_the_canonical_moves() -> None:
     was honestly green above is now gating against a canonical that has changed.
     A watchdog that cannot reach this verdict is decorative.
     """
+    _require_full_history()
     failures, report = pf.check({"cfactory": _PIN_AT_519}, now=_far_future())
     assert failures, "a pin behind a module it vendors must fail"
     assert any("ratchet_helpers" in line or "510" in line for line in report)
@@ -124,6 +131,7 @@ def test_a_fresh_move_is_propagating_not_stale() -> None:
     alerts every single time a shared module changes, which trains people to
     ignore it — the Factory#538 failure shape.
     """
+    _require_full_history()
     moved_at = min(e for _, e in pf.commits_since(_PIN_AT_519, pf.canonical_paths("cfactory")))
     failures, report = pf.check({"cfactory": _PIN_AT_519}, now=moved_at + 3600)
     assert not failures
@@ -136,6 +144,7 @@ def test_the_budget_is_the_only_thing_excusing_it() -> None:
     Without this, a budget accidentally set to infinity would pass every other
     case in this file.
     """
+    _require_full_history()
     moved_at = min(e for _, e in pf.commits_since(_PIN_AT_519, pf.canonical_paths("cfactory")))
     failures, _ = pf.check({"cfactory": _PIN_AT_519}, now=moved_at + 3600, budget_hours=0)
     assert failures
