@@ -119,10 +119,8 @@ def test_the_contract_lists_every_canonical_module():
     providers/__init__ imports HttpGitHubProvider at module level. Three
     services nearly shipped that.
     """
-    import check_factory_github_drift as mod
-
     root = Path(__file__).resolve().parents[1] / "shared" / "factory-github"
-    missing = mod._missing_from_contract(root)
+    missing = gate._missing_from_contract(root)
     assert not missing, (
         f"canonical modules absent from CANONICAL_FILES: {missing}. "
         "A file the gate does not check cannot be kept honest."

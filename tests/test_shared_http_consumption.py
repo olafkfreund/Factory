@@ -68,7 +68,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, transport: _Transport) -> None:
     monkeypatch.setattr(urllib.request, "urlopen", transport)
 
     class _StubOpener:
-        def open(self, req, timeout=None):  # noqa: ANN001, ANN201, ARG002
+        def open(self, req, timeout=None):
             return transport(req, timeout=timeout)
 
     monkeypatch.setattr(

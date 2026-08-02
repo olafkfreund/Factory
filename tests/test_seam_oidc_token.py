@@ -34,7 +34,11 @@ def _stub_transport(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """
     attempts: list[Any] = []
 
-    def _fail(req: Any, timeout: int | None = None) -> Any:  # noqa: ANN401, ARG001
+    # ARG001 is for `timeout`, not `req` — `req` is recorded in `attempts`.
+    # urlopen's signature is fixed by the caller under test, so it cannot be
+    # dropped. Measured: removing the directive reports
+    # "ARG001 Unused function argument: `timeout`".
+    def _fail(req: Any, timeout: int | None = None) -> Any:  # noqa: ARG001
         attempts.append(req)
         raise urllib.error.URLError("stubbed: this test must not reach the network")
 

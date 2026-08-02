@@ -30,7 +30,11 @@ httpx = pytest.importorskip("httpx")
 from providers.factory import get_provider  # noqa: E402
 from providers.github_provider import GitHubProvider  # noqa: E402
 from providers.http_github_provider import HttpGitHubProvider  # noqa: E402
-from providers.protocol import IssueFilters, ProviderType  # noqa: E402
+from providers.protocol import (  # noqa: E402
+    IssueFilters,
+    ProviderCommentError,
+    ProviderType,
+)
 
 # Not a credential: an opaque literal so assertions about where it does and does
 # not appear are meaningful.
@@ -159,7 +163,7 @@ async def test_issue_listing_pages_to_completion():
 async def test_pull_requests_are_dropped_from_the_issue_list():
     """`/issues` returns PRs too. A PR is not a work item."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json=[
@@ -179,7 +183,7 @@ async def test_pull_requests_are_dropped_from_the_issue_list():
 async def test_a_response_without_an_issue_number_is_an_error():
     """The one field with no safe default — a card pointing at nothing is worse."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"title": "no number here"})
 
     provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
@@ -232,9 +236,8 @@ async def test_comment_paging_walks_every_page():
 async def test_a_non_list_comment_page_raises_rather_than_truncating():
     """MUTATION GUARD: a truncated thread stored as a whole one is
     indistinguishable from a short one, so this must never return partial data."""
-    from providers.protocol import ProviderCommentError
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"message": "not a list"})
 
     provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
@@ -244,9 +247,7 @@ async def test_a_non_list_comment_page_raises_rather_than_truncating():
 
 @pytest.mark.asyncio
 async def test_a_failing_comment_page_raises_rather_than_truncating():
-    from providers.protocol import ProviderCommentError
-
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"message": "boom"})
 
     provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
