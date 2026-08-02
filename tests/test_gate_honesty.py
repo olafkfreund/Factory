@@ -43,6 +43,7 @@ from pathlib import Path
 import check_branch_divergence as divergence_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
+import check_pin_freshness as pin_gate
 import check_verification_core_drift as vcore_gate
 import pytest
 
@@ -55,6 +56,7 @@ _COVERED: dict[str, str] = {
     "check_factory_github_drift.py": "test_factory_github_gate_is_honest",
     "check_factory_ui_drift.py": "test_factory_ui_gate_is_honest",
     "check_branch_divergence.py": "test_branch_divergence_gate_is_honest",
+    "check_pin_freshness.py": "test_pin_freshness_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -214,3 +216,60 @@ def test_branch_divergence_gate_is_honest(
         "narrowing a repo out of the BRANCHES= table left the gate green on a repo "
         "that still has a dev branch — scope shrank, nobody noticed"
     )
+
+
+def test_pin_freshness_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> None:
+    """Factory#519's watchdog, held to this file's three criteria.
+
+    Its scope has TWO registries that can shrink independently — SERVICE_LAYOUTS
+    (imported, shared with the byte gate) and the repo mapping that turns a
+    service into a pin URL. Losing either stops a service being checked while the
+    remaining ones still pass, so both are mutated below.
+
+    The pass path matters as much as the fail path here. This watchdog is green
+    almost always, so a green run that stopped enumerating is the realistic way
+    it rots.
+    """
+    now = int(time.time())
+    head = pin_gate._git("rev-parse", "HEAD").strip()
+
+    # PASS path: every service named, every module it vendors enumerated.
+    failures, report = pin_gate.check(dict.fromkeys(pin_gate._REPOS, head), now=now)
+    assert not failures
+    out = "\n".join(report)
+    for service, modules in vcore_gate.SERVICE_LAYOUTS.items():
+        assert service in out, f"the report never named {service}"
+        for module in modules:
+            assert module in out, f"{service}'s vendored {module} was never enumerated"
+
+    # Observed FAILING, on a real pin that really did go stale (Factory#536 moved
+    # scripts/ratchet_helpers.py after CFactory pinned a9f44033).
+    stale = "a9f44033dbb041d8a1468226c6325ea1f175a264"
+    failures, report = pin_gate.check({"cfactory": stale}, now=now)
+    assert failures, "a pin behind a module the service vendors must fail"
+    assert any("a9f44033" in line for line in failures), "the failure never cited the pin"
+
+    # Configuration mutation 1: the service leaves SERVICE_LAYOUTS. Nothing about
+    # the pins changes; the gate must refuse rather than check one fewer.
+    dropped = vcore_gate.SERVICE_LAYOUTS.pop("cfactory")
+    try:
+        assert pin_gate.scope_problems(), (
+            "a service dropped from SERVICE_LAYOUTS left the gate with nothing to "
+            "say — scope shrank, nobody noticed"
+        )
+        assert pin_gate.main(["--no-fetch", "--pin", "pfactory=" + head]) == 2
+    finally:
+        vcore_gate.SERVICE_LAYOUTS["cfactory"] = dropped
+
+    # Configuration mutation 2: the repo mapping loses an entry, so that service
+    # has no pin to fetch and silently stops being covered.
+    removed = pin_gate._REPOS.pop("tfactory")
+    try:
+        assert pin_gate.scope_problems(), (
+            "a service with no repo mapping is never fetched and never checked, "
+            "and the run stayed green"
+        )
+    finally:
+        pin_gate._REPOS["tfactory"] = removed
+
+    capsys.readouterr()
