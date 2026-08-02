@@ -29,6 +29,42 @@ _PIN_AT_519 = "a9f44033dbb041d8a1468226c6325ea1f175a264"  # CFactory's pin when 
 _HUB_AT_519 = "d9bd01de01c357886234dd5f23a546d5799e4e97"  # the other three's pin at that time
 
 
+def _have(ref: str) -> bool:
+    return (
+        subprocess.run(  # noqa: S603
+            ["git", "cat-file", "-e", f"{ref}^{{commit}}"],  # noqa: S607
+            cwd=_REPO,
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+@pytest.fixture(autouse=True)
+def _needs_full_history() -> None:
+    """Fail with the reason, not with 'Invalid revision range'.
+
+    These cases assert the comparator's verdict on real hub commits, so a
+    shallow clone breaks every one of them with a git error that says nothing
+    about clone depth — which is exactly what happened on the first CI run of
+    this file. A guard that cannot run should name its own precondition instead
+    of leaving the next person to decode the symptom.
+
+    Deliberately NOT a skip: the cases would then vanish silently on any runner
+    that clones shallow, which is the gate-that-did-not-run shape this whole
+    file is about.
+    """
+    missing = [ref for ref in (_PIN_AT_519, _HUB_AT_519) if not _have(ref)]
+    if missing:
+        pytest.fail(
+            "this suite needs the full hub history; "
+            f"{', '.join(r[:8] for r in missing)} not present in this clone. "
+            "CI must check out with fetch-depth: 0 (see contracts.yml); "
+            "locally, run `git fetch --unshallow`."
+        )
+
+
 def _epoch(ref: str) -> int:
     out = subprocess.run(  # noqa: S603
         ["git", "log", "-1", "--pretty=format:%ct", ref],  # noqa: S607

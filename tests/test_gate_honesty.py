@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -243,8 +244,20 @@ def test_pin_freshness_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> Non
             assert module in out, f"{service}'s vendored {module} was never enumerated"
 
     # Observed FAILING, on a real pin that really did go stale (Factory#536 moved
-    # scripts/ratchet_helpers.py after CFactory pinned a9f44033).
+    # scripts/ratchet_helpers.py after CFactory pinned a9f44033). Needs real
+    # history, so it names its own precondition rather than dying on "Invalid
+    # revision range" under a shallow clone.
     stale = "a9f44033dbb041d8a1468226c6325ea1f175a264"
+    if subprocess.run(  # noqa: S603
+        ["git", "cat-file", "-e", f"{stale}^{{commit}}"],  # noqa: S607
+        cwd=_SCRIPTS.parent,
+        capture_output=True,
+        check=False,
+    ).returncode:
+        pytest.fail(
+            f"needs the full hub history; {stale[:8]} is not in this clone. "
+            "CI must check out with fetch-depth: 0 (see contracts.yml)."
+        )
     failures, report = pin_gate.check({"cfactory": stale}, now=now)
     assert failures, "a pin behind a module the service vendors must fail"
     assert any("a9f44033" in line for line in failures), "the failure never cited the pin"
