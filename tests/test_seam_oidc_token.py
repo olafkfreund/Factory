@@ -34,7 +34,7 @@ def _stub_transport(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """
     attempts: list[Any] = []
 
-    def _fail(req: Any, timeout: int | None = None) -> Any:  # noqa: ANN401, ARG001
+    def _fail(req: Any, timeout: int | None = None) -> Any:  # noqa: ARG001
         attempts.append(req)
         raise urllib.error.URLError("stubbed: this test must not reach the network")
 
