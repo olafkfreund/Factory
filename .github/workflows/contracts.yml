@@ -74,6 +74,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # FULL HISTORY, and the suite does not run without it. Factory#519's
+          # comparator is a pathspec-scoped `git log <pin>..HEAD`, and
+          # tests/test_pin_freshness.py asserts its verdict on REAL hub commits
+          # — a pin that was honestly green in July and silently went stale two
+          # days later. Under the default depth-1 checkout those revisions do
+          # not exist and every case dies on "Invalid revision range".
+          #
+          # Deleting this line does not degrade the suite gracefully; it fails
+          # six cases with an error that says nothing about clone depth. The
+          # repo is 39M / ~300 commits and code-quality.yml already clones it
+          # this way, so the cost is noise.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:

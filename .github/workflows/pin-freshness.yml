@@ -1,0 +1,109 @@
+name: pin freshness
+
+# "Is anyone gating against a canonical that has since moved?", asked out of
+# band (Factory#519).
+#
+# Each service's verification-core-drift.yml answers "does my vendored copy match
+# my pin?". Nothing answered "is my pin still the current canonical?" — and a
+# byte comparison against a stale target is honestly green, which is the
+# Factory#499 shape: a control green against the wrong thing.
+#
+# WHY NOT COMPARE THE PINS TO EACH OTHER, which is how #519 framed it. Because
+# being different is frequently correct: CFactory vendors ONE canonical module
+# and the others vendor three to six, so a re-vendor that moves a file CFactory
+# does not carry legitimately leaves its pin behind. Measured on the day this
+# landed — CFactory two commits behind, zero of them touching its one module. A
+# pin-equality check calls that a defect and is wrong. The comparator asks the
+# real question instead: for the modules THIS service vendors, has the canonical
+# moved since its pin?
+#
+# WHY SCHEDULED, NOT ON PULL_REQUEST. A consumer cannot re-vendor a canonical
+# until the hub commit exists to pin, so every canonical-changing PR would be red
+# by construction — the train-people-to-ignore-it failure Factory#538 was about.
+# For the same reason the comparator carries a GRACE BUDGET: a module that moved
+# inside the window is reported as PROPAGATING and does not alert. The comparator
+# itself IS covered on every hub PR, offline, by tests/test_pin_freshness.py.
+#
+# WHY NO PAT. All four service repos are public, so an anonymous fetch of one
+# workflow file each is enough. If a repo is ever made private this job fails on
+# the fetch, loudly, which is the correct answer — there is no soft-skip path
+# (standards/coding-standards.md rule 4.7).
+#
+# WHY THIS DOES NOT FILE AN ISSUE: same call as branch-divergence.yml and
+# job-watchdog-heartbeat.yml (Factory#450). A failing scheduled workflow on a repo
+# you own already emails you and shows red in the Actions tab; an auto-filed issue
+# needs auto-closing logic, which is a second small state machine that rots.
+
+on:
+  schedule:
+    # Daily at 05:11, offset from branch-protection-drift (06:17), the watchdog
+    # heartbeat (:23) and branch-divergence (:47 six-hourly). Daily rather than
+    # six-hourly because the budget below is 24h — a shorter period cannot make
+    # the verdict change any sooner, it just repeats it. Note BST != UTC.
+    - cron: "11 5 * * *"
+  workflow_dispatch:
+    inputs:
+      grace_hours:
+        description: "How long a moved canonical may sit unpropagated before it alerts"
+        type: string
+        required: false
+        default: "24"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pin-freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    name: every service pins a current canonical
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the verdict is a pathspec-scoped `git log <pin>..HEAD`,
+          # and a shallow clone cannot resolve a pin from two days ago at all.
+          fetch-depth: 0
+
+      - name: Self-test the comparator before trusting it
+        # First, not last, for the same reason deploy-drift.yml and
+        # branch-divergence.yml do it: a broken comparator cannot be trusted to
+        # say "everything is fresh", so it fails as a broken comparator rather
+        # than quietly passing everything (rule 4.7). The cases assert the
+        # verdict on real hub commits, including the one with teeth — a pin that
+        # WAS honest becoming stale once the canonical moved.
+        run: python3 scripts/check_pin_freshness.py --self-test
+
+      - name: Check every service's live pin against the canonical it vendors
+        # Exit 1 = a service is stale past the budget. Exit 2 = a pin could not
+        # be read, or this gate's own scope is broken, and both are failures
+        # deliberately: a watchdog that reports success while reading nothing is
+        # the exact defect it exists to catch (PFactory#440, Factory#500).
+        env:
+          BUDGET: ${{ inputs.grace_hours || '24' }}
+        run: |
+          set -o pipefail
+          python3 scripts/check_pin_freshness.py \
+            --grace-hours "${BUDGET}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: What to do when this job is red
+        if: failure()
+        run: |
+          echo "STALE means a service's vendored copy is byte-exact against a canonical"
+          echo "that has since changed. Its own drift gate is green and wrong. Re-vendor"
+          echo "the named module(s) into that service and bump its HUB_PIN_SHA."
+          echo
+          echo "Note the direction: the fix is a re-vendor, NOT a pin bump on its own."
+          echo "Bumping the pin without copying the file makes that service's byte gate"
+          echo "go red, which is at least honest; copying without bumping leaves this"
+          echo "watchdog red. Both halves, in one PR."
+          echo
+          echo "SCOPE BROKEN means a service is in SERVICE_LAYOUTS with no repo mapping"
+          echo "or the reverse, so somebody is not being checked at all. Fix the map in"
+          echo "scripts/check_pin_freshness.py; do not narrow the check to match."
+          echo
+          echo "CANNOT FETCH A PIN means this watchdog is blind. Fix the input; do not"
+          echo "add a skip (standards/coding-standards.md rule 4.7, Factory#433)."
