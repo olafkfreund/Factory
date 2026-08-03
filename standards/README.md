@@ -39,9 +39,17 @@ heading - 58 of this file's 198 lines - so a stripped compare would let headings
 and whole section titles drift unnoticed. Byte-exact is both stricter and
 simpler, and costs nothing because the copy is a plain `cp`.
 
-`standards/.hub-sha` is the one pin filename fleet-wide. Tooling that wants to
-know which hub commit a service is on reads that path in every repo, with no
-per-service special case. A SHA hardcoded inside a workflow file is not a pin.
+`standards/.hub-sha` is the pin for this directory, and `.hub-sha` is the one
+pin filename for any vendored DIRECTORY fleet-wide. Tooling that wants to know
+which hub commit a service's `standards/` is on reads that path in every repo,
+with no per-service special case.
+
+The rule is scoped to directories deliberately (Factory#514). It binds a
+directory whose contents ARE the vendored set, which is what makes "beside it" a
+defined location. Sets vendored as individual files scattered through a service
+tree have no such directory; they pin in their gate's workflow, and that is
+permitted only while `scripts/check_pin_freshness.py` declares the gate and reads
+those pins fleet-wide. A workflow SHA no tooling reads is still not a pin.
 
 ### Re-vendoring after a hub change
 
