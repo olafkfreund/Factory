@@ -1,0 +1,114 @@
+name: chart vs gitops
+
+# "Do the two deploy engines agree about the controls that matter?", asked out of
+# band (Factory#504).
+#
+# The fleet deploys twice: `charts/<svc>/` is what a self-hoster installs,
+# `factory-gitops/apps/<svc>/manifests/` is what reaches the reference cluster.
+# Nothing compared them, which is the whole Factory#503 family — four charts
+# claiming a hardened securityContext while the running pods had none, for weeks,
+# with every gate green.
+#
+# WHY NOT A FULL RESOURCE DIFF, settled in Factory#499: the two engines
+# legitimately differ (charts have ConfigMaps and PDBs gitops does not; gitops
+# has PVCs, a cred-sync sidecar and KEDA scaling the charts do not model). A gate
+# failing on "present in one, absent in the other" is red on day one and muted by
+# day two. This compares a DECLARED CONTROL SUBSET and prints which one.
+#
+# WHY SCHEDULED, NOT ON PULL_REQUEST. It needs five checkouts, and the drift it
+# watches is created by a merge in ONE of five repos — a PR trigger in the hub
+# cannot see four of them, and adding this to four service repos would be the
+# four-hand-maintained-copies shape Factory#483 exists to undo. The comparator
+# itself IS covered on every hub PR, offline, by tests/test_chart_vs_gitops.py.
+#
+# WHY NO PAT: all five repos are public. If one is ever made private this job
+# fails on the checkout, loudly, which is the correct answer — there is no
+# soft-skip path (standards/coding-standards.md rule 4.7).
+#
+# WHY IT DOES NOT FILE AN ISSUE: same call as branch-divergence.yml and
+# pin-freshness.yml (Factory#450). A failing scheduled workflow on a repo you own
+# already emails you and shows red in the Actions tab.
+
+on:
+  schedule:
+    # Daily at 05:41, offset from pin-freshness (05:11), branch-protection-drift
+    # (06:17), the watchdog heartbeat (:23) and branch-divergence (:47). Daily
+    # because chart and manifest changes land at merge cadence, not continuously.
+    # Note BST != UTC.
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chart-vs-gitops
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    name: the two deploy engines agree on the declared controls
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the hub (comparator)
+        uses: actions/checkout@v4
+        with:
+          path: Factory
+
+      # Shallow is fine here, unlike pin-freshness: this reads the CURRENT state
+      # of both engines and never resolves a historical commit.
+      - name: Check out the four service repos
+        uses: actions/checkout@v4
+        with: { repository: olafkfreund/AIFactory, ref: dev, path: AIFactory }
+      - uses: actions/checkout@v4
+        with: { repository: olafkfreund/PFactory, ref: dev, path: PFactory }
+      - uses: actions/checkout@v4
+        with: { repository: olafkfreund/TFactory, ref: dev, path: TFactory }
+      - uses: actions/checkout@v4
+        with: { repository: olafkfreund/CFactory, ref: dev, path: CFactory }
+
+      - name: Check out factory-gitops
+        uses: actions/checkout@v4
+        with: { repository: olafkfreund/factory-gitops, ref: main, path: factory-gitops }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        # The only dependency: both engines are YAML, and hand-parsing manifests
+        # is how a comparator starts disagreeing with the thing it compares.
+        run: pip install pyyaml
+
+      - name: Self-test the comparator before trusting it
+        # First, not last, for the same reason deploy-drift.yml, branch-divergence.yml
+        # and pin-freshness.yml do it: a broken comparator cannot be trusted to say
+        # "the engines agree", so it fails as a broken comparator instead of quietly
+        # passing everything (rule 4.7).
+        working-directory: Factory
+        run: python3 scripts/check_chart_vs_gitops.py --self-test
+
+      - name: Compare the declared control subset
+        # Exit 1 = a control the chart declares is missing from gitops and is not
+        # waived. Exit 2 = an input could not be read, which is also a failure:
+        # a comparator that read nothing must not report agreement.
+        run: |
+          set -o pipefail
+          python3 Factory/scripts/check_chart_vs_gitops.py \
+            --gitops factory-gitops \
+            --service-root . \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: What to do when this job is red
+        if: failure()
+        run: |
+          echo "A control the CHART declares is absent from the gitops manifests."
+          echo "The chart is the published claim; the cluster not honouring it is the"
+          echo "defect, which is why that direction fails and the reverse only warns."
+          echo
+          echo "Fix the manifest, or — if the difference is deliberate — add a Waiver"
+          echo "in scripts/check_chart_vs_gitops.py with a reason AND a tracking issue."
+          echo "A waiver with neither is the silent exemption this gate exists to end."
+          echo
+          echo "COULD NOT READ AN INPUT means the comparator is blind. Fix the input;"
+          echo "do not add a skip (standards/coding-standards.md rule 4.7)."
