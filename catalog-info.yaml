@@ -262,6 +262,28 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
+  name: factory-planning-card
+  title: Planning card contract (RFC-0019)
+  description: >-
+    The planning card: a unit of intent on the board, before it becomes work.
+    Carries title, acceptance criteria, status, priority and the RFC-0001
+    correlation_key that JOINS it to the work_items timeline - which is why the
+    two are separate tables. Served by CFactory; see apis/planning-card.md for
+    the ordering, status and correlation rules the schema cannot express.
+  tags:
+    - json-schema
+    - rfc-0019
+spec:
+  type: json-schema
+  lifecycle: experimental
+  owner: olafkfreund
+  system: factory-suite
+  definition:
+    $text: ./apis/planning-card.schema.json
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
   name: aifactory-api
   title: AIFactory REST/WS API
   description: >-

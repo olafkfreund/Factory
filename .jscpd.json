@@ -5,8 +5,17 @@
   "mode": "strict",
   "gitignore": true,
   "absolute": false,
-  "format": ["python", "typescript", "javascript", "yaml", "markup"],
-  "reporters": ["console", "json"],
+  "format": [
+    "python",
+    "typescript",
+    "javascript",
+    "yaml",
+    "markup"
+  ],
+  "reporters": [
+    "console",
+    "json"
+  ],
   "output": "reports/jscpd",
   "ignore": [
     "**/node_modules/**",
@@ -20,6 +29,7 @@
     "**/*.lock",
     "**/dist/**",
     "**/build/**",
+    "catalog-info.yaml",
     "product-catalogs/**"
   ],
   "threshold": 100

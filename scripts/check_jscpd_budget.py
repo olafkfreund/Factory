@@ -58,7 +58,20 @@ from pathlib import Path
 # meant to be copied wholesale into each product repo, NOT imported here). Those
 # per-product copies are deliberate, non-extractable duplication that only added
 # jscpd noise; excluding them lowers the real-code clone count from 75 to 39.
-CLONE_BUDGET = 38
+# 2026-08-03 (#360): ratcheted 38 -> 33. Same species as the #286 exclusion above,
+# and the same reasoning: .jscpd.json now ignores catalog-info.yaml. A Backstage
+# catalog is a registry of RECORDS, not logic — every entity repeats
+# `type/lifecycle/owner/system` because the format requires each one declared
+# literally, and there is no shared base to extract. All five of the clones this
+# removed were catalog-info.yaml against itself.
+#
+# It is worth being explicit that this is not narrowing a gate to make a PR pass.
+# The budget got STRICTER for real code: 33 clones of logic where 38 was the
+# ceiling before. What it stopped counting is a class of duplication no
+# refactoring can remove — which had made registering ANY new contract in the
+# catalog over-budget by construction, so #360 sat open with no sanctioned way to
+# close it.
+CLONE_BUDGET = 33
 
 _DEFAULT_REPORT = Path(__file__).resolve().parent.parent / "reports/jscpd/jscpd-report.json"
 
