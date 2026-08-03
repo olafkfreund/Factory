@@ -70,7 +70,9 @@ def test_card_examples_validate(name: str) -> None:
 def test_card_list_example_validates() -> None:
     doc = _example("card-list")
     assert _errors(doc, "card_list") == []
-    assert doc["total"] == len(doc["cards"])
+    # `count`, not `total`: it is the length of THIS response, not a total
+    # across pages, and the service has always returned that name (Factory#371).
+    assert doc["count"] == len(doc["cards"])
 
 
 def test_list_is_ordered_by_priority_then_created_at_then_key() -> None:
@@ -191,21 +193,42 @@ def test_patch_rejects_server_owned_fields(field: str) -> None:
 # --- scalars ------------------------------------------------------------
 
 
-def test_priority_is_an_integer_and_never_negative() -> None:
+def test_priority_is_an_integer_and_negatives_are_legal() -> None:
+    """Negative priorities are how a card jumps above 0 (Factory#371).
+
+    This test used to assert `minimum: 0`, matching a schema the service never
+    enforced. It was guarding the contradiction rather than the contract: the
+    board documents negatives as the way to insert above the top without
+    renumbering every row beneath. The type bar stays — "20" is still not 20.
+    """
     doc = _example("card-planned")
     doc["priority"] = "20"
-    assert _errors(doc) != []
+    assert _errors(doc) != [], "a string is still not an integer"
     doc["priority"] = -1
-    assert _errors(doc) != []
+    assert _errors(doc) == [], "negatives are legal; the server has always accepted them"
     doc["priority"] = 0
     assert _errors(doc) == []
 
 
-def test_card_key_must_look_like_fct_n() -> None:
+def test_card_key_accepts_a_server_key_or_an_external_one() -> None:
+    """Two origins, so there is no pattern to enforce (Factory#371).
+
+    This test used to require `^FCT-[1-9][0-9]{0,8}$`, which describes only the
+    keys the server assigns. A caller may supply its own to mirror an id from an
+    external tracker, and the service accepts up to 128 characters — so the old
+    assertion encoded a rule that would have rejected valid cards.
+
+    What remains enforceable is the shape a key must have to be usable as a path
+    segment at all: non-empty, and bounded.
+    """
     doc = _example("card-planned")
-    for bad in ("42", "FCT-0", "fct-42", "FCT-", "FCT-42-1"):
-        doc["card_key"] = bad
-        assert _errors(doc) != [], bad
+    for good in ("FCT-42", "JIRA-1234", "gh-9", "42"):
+        doc["card_key"] = good
+        assert _errors(doc) == [], good
+    doc["card_key"] = ""
+    assert _errors(doc) != [], "an empty key is not addressable"
+    doc["card_key"] = "x" * 129
+    assert _errors(doc) != [], "beyond what the service stores"
 
 
 def test_acceptance_criteria_entries_may_not_be_blank() -> None:

@@ -25,16 +25,105 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "card_key": { "$ref": "#/$defs/card_key" },
-        "tenant_id": { "$ref": "#/$defs/tenant_id" },
-        "title": { "$ref": "#/$defs/title" },
-        "acceptance_criteria": { "$ref": "#/$defs/acceptance_criteria" },
-        "status": { "$ref": "#/$defs/status" },
-        "priority": { "$ref": "#/$defs/priority" },
-        "tier": { "$ref": "#/$defs/tier" },
-        "assignee": { "$ref": "#/$defs/assignee" },
-        "milestone": { "$ref": "#/$defs/milestone" },
-        "correlation_key": { "$ref": "#/$defs/correlation_key" },
+        "card_key": {
+          "$ref": "#/$defs/card_key"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/tenant_id"
+        },
+        "title": {
+          "$ref": "#/$defs/title"
+        },
+        "acceptance_criteria": {
+          "$ref": "#/$defs/acceptance_criteria"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "priority": {
+          "$ref": "#/$defs/priority"
+        },
+        "tier": {
+          "$ref": "#/$defs/tier"
+        },
+        "assignee": {
+          "$ref": "#/$defs/assignee"
+        },
+        "milestone": {
+          "$ref": "#/$defs/milestone"
+        },
+        "correlation_key": {
+          "$ref": "#/$defs/correlation_key"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Free-text body. Carries the imported GitHub issue body when the card came from one (RFC-0020 phase 6), and is otherwise whatever a human typed. Distinct from `acceptance_criteria`, which is the testable list."
+        },
+        "issue_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256,
+          "description": "The GitHub issue this card mirrors, as `<owner>/<repo>#<number>`, or NULL for a card that has never been adopted. Writable on create and on PATCH: adopting an existing issue, or re-pointing at another, is a supported move (RFC-0020 phase 6)."
+        },
+        "repository_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Which of the tenant's repositories this card targets, or NULL for the tenant default (RFC-0020 \u00a73.3, phase 8)."
+        },
+        "issue_state": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 16,
+          "description": "The MIRRORED GitHub issue state (`open`/`closed`), read-only on the wire. NOT a card `status`: an issue can be closed while the card is still in review, and conflating the two is the mistake `status`'s enum exists to prevent."
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Labels mirrored from the GitHub issue. Read-only on the wire: the issue is the source of truth, and a card that could set them would silently diverge from it."
+        },
+        "github_sync_error": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why the last sync with GitHub failed, or NULL when the last one succeeded. Present so a stale mirror is legible rather than looking like fresh data \u2014 the absence of an error and the absence of a sync are different states."
+        },
+        "stage_runs": {
+          "type": "object",
+          "description": "Per-stage idempotency records, keyed by stage. Read-only on the wire: it records what the factory was actually asked to do, so a caller must not be able to assert a dispatch that never happened. This is where per-stage idempotency lives now that `correlation_key` is deliberately reused across stages (RFC-0019 phase 7)."
+        },
+        "comment_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many comments are stored for this card. A scalar rather than the thread itself: a backlog of 46 cards each carrying a full thread is a payload nobody asked for (Factory#375)."
+        },
+        "comments_synced_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "When the thread was last read successfully, or NULL if it never has been. Read WITH `comment_count`: zero plus a timestamp means 'no discussion', zero plus NULL means 'we do not know' \u2014 which is the honest answer for an issue whose comments failed to download."
+        },
+        "deleted_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Soft-delete tombstone. Always NULL on anything a read hands back \u2014 a soft-deleted card is off the board. It is on the model because the import asks for a card BY ISSUE and has to be able to see the tombstone, rather than re-creating a card somebody deleted (RFC-0020 \u00a73.6)."
+        },
         "created_at": {
           "type": "string",
           "format": "date-time",
@@ -49,8 +138,9 @@
     },
     "card_key": {
       "type": "string",
-      "pattern": "^FCT-[1-9][0-9]{0,8}$",
-      "description": "Stable, human-quotable id, e.g. `FCT-42`. Server-assigned from a per-tenant sequence and IMMUTABLE once issued - it is the path segment of every single-card route, so a rename would break every link a human or an agent has kept. Not the correlation key: see `correlation_key`."
+      "description": "Stable, human-quotable id. IMMUTABLE once issued - it is the path segment of every single-card route, so a rename would break every link a human or an agent has kept. Two origins, which is why there is no pattern here (Factory#371): the server assigns `FCT-<n>` from a per-tenant sequence when the caller supplies none, and a caller MAY supply its own key to mirror an id from an external tracker. A `^FCT-` pattern described only the first case and rejected the second, which the service accepts. Unique per tenant, not globally: two tenants may each legitimately run an FCT-1. Not the correlation key: see `correlation_key`.",
+      "maxLength": 128,
+      "minLength": 1
     },
     "tenant_id": {
       "type": "string",
@@ -62,57 +152,99 @@
     "title": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 200,
+      "maxLength": 512,
       "description": "One line: what is to be done. Human-owned - no upstream event ever rewrites it."
     },
     "acceptance_criteria": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "description": "What `done` means, one testable statement per entry. Human-owned. When the card dispatches (RFC-0019 section 3.2) these become the acceptance criteria of the RFC-0002 task contract, which is why an empty list is allowed while planning but a card dispatched without any gives the factory nothing to verify against."
     },
     "status": {
       "type": "string",
-      "enum": ["backlog", "ready", "in_progress", "blocked", "done"],
+      "enum": [
+        "backlog",
+        "ready",
+        "in_progress",
+        "blocked",
+        "done"
+      ],
       "description": "Board column. `ready` is the dispatch trigger: a `ready` card WITH a `tier` is a first-class intake source alongside a labelled GitHub issue (RFC-0019 section 3.2). This vocabulary is the card's own and MUST NOT be classified through apis/status-taxonomy.json, which exists to normalise the four services' RUNTIME statuses: `ready` is a `done` token there and `blocked` is a `failed` token, so a card waiting to be picked up would read as finished and a card a human parked would read as a failure."
     },
     "priority": {
       "type": "integer",
-      "minimum": 0,
-      "description": "Backlog order, LOWER IS HIGHER priority (0 is the top of the board). An integer rather than an enum so a card can be inserted between two others without renumbering the column. Ties are legal; the server orders by (priority ASC, created_at ASC, card_key ASC) so a list is stable across requests. Defaults to 100 when omitted on create, leaving room to insert above and below."
+      "description": "Backlog order, LOWER IS HIGHER priority (0 is the top of the board). An integer rather than an enum so a card can be inserted between two others without renumbering the column, and NEGATIVE values are legal for exactly that reason - they are how a card jumps above 0 without rewriting every row beneath it (the board guide documents this; the schema previously said minimum 0 and the server never enforced it, Factory#371). Ties are legal; the server orders by (priority ASC, created_at ASC, card_key ASC) so a list is stable across requests. Defaults to 100 when omitted on create, leaving room to insert above and below."
     },
     "tier": {
-      "type": ["string", "null"],
-      "enum": ["low", "medium", "hard", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "low",
+        "medium",
+        "hard",
+        null
+      ],
       "description": "RFC-0011 difficulty tier, the same vocabulary as the `factory:low|medium|hard` labels and the task contract's `execution.autonomy_tier`. Note `hard`, not `high`. NULL means not yet classified: the card is still a plan. The tier drives model, planning depth, human gate, VAL floor and merge behaviour once the card dispatches, so a `ready` card with a NULL tier is not dispatched - it stays on the board waiting for a human or an agent to classify it."
     },
     "assignee": {
-      "type": ["string", "null"],
-      "maxLength": 200,
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128,
       "description": "Who is on it: a human handle, or a factory runtime (`pfactory` / `aifactory` / `tfactory` / `cfactory`) once the card is in flight. Free-form because the board must be able to name a person who has no account here. NULL is unassigned."
     },
     "milestone": {
-      "type": ["string", "null"],
-      "maxLength": 200,
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128,
       "description": "Milestone name this card belongs to, free-form. Deliberately a string and not a foreign key: the roadmap view groups by it, and RFC-0019 section 3.5 keeps GitHub authoritative, so this holds the GitHub milestone TITLE once card-to-issue mirroring lands (phase 6). NULL is unscheduled."
     },
     "correlation_key": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1,
-      "description": "RFC-0001 correlation key: the GitHub issue number as a string, or a synthetic <prefix>-<id>. THE JOIN between this card and the `work_items` timeline, and the reason the two are separate tables. NULL for as long as the card is only planned; set exactly once, when the card enters the factory. Write-once: a server MUST reject an attempt to point an already-joined card at a different key (a card is one unit of work, and re-pointing it would silently reattribute its history)."
+      "description": "RFC-0001 correlation key: the GitHub issue number as a string, or a synthetic <prefix>-<id>. THE JOIN between this card and the `work_items` timeline, and the reason the two are separate tables. NULL for as long as the card is only planned; set when the card enters the factory. NOT write-once. RFC-0019 phase 7 redefined this as the key the card's work is THREADED ON: a card runs through several stages, each an independent factory run, and they share the key deliberately - per-stage idempotency lives in `cards.stage_runs`, not in a one-shot key. The schema previously said a server MUST reject re-pointing, which is a design the fleet moved away from and which PATCH has never enforced (Factory#371).",
+      "maxLength": 128
     },
     "card_create": {
       "type": "object",
       "description": "POST /api/cards request body. Only human-owned planning fields are settable. `card_key`, `tenant_id`, `created_at` and `updated_at` are server-owned, and `correlation_key` is set later by whatever dispatches the card - so none of them are accepted here and `additionalProperties: false` makes sending one an error rather than a silently ignored field.",
-      "required": ["title"],
+      "required": [
+        "title"
+      ],
       "additionalProperties": false,
       "properties": {
-        "title": { "$ref": "#/$defs/title" },
-        "acceptance_criteria": { "$ref": "#/$defs/acceptance_criteria" },
-        "status": { "$ref": "#/$defs/status" },
-        "priority": { "$ref": "#/$defs/priority" },
-        "tier": { "$ref": "#/$defs/tier" },
-        "assignee": { "$ref": "#/$defs/assignee" },
-        "milestone": { "$ref": "#/$defs/milestone" }
+        "title": {
+          "$ref": "#/$defs/title"
+        },
+        "acceptance_criteria": {
+          "$ref": "#/$defs/acceptance_criteria"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "priority": {
+          "$ref": "#/$defs/priority"
+        },
+        "tier": {
+          "$ref": "#/$defs/tier"
+        },
+        "assignee": {
+          "$ref": "#/$defs/assignee"
+        },
+        "milestone": {
+          "$ref": "#/$defs/milestone"
+        }
       }
     },
     "card_patch": {
@@ -121,28 +253,53 @@
       "minProperties": 1,
       "additionalProperties": false,
       "properties": {
-        "title": { "$ref": "#/$defs/title" },
-        "acceptance_criteria": { "$ref": "#/$defs/acceptance_criteria" },
-        "status": { "$ref": "#/$defs/status" },
-        "priority": { "$ref": "#/$defs/priority" },
-        "tier": { "$ref": "#/$defs/tier" },
-        "assignee": { "$ref": "#/$defs/assignee" },
-        "milestone": { "$ref": "#/$defs/milestone" },
-        "correlation_key": { "$ref": "#/$defs/correlation_key" }
+        "title": {
+          "$ref": "#/$defs/title"
+        },
+        "acceptance_criteria": {
+          "$ref": "#/$defs/acceptance_criteria"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "priority": {
+          "$ref": "#/$defs/priority"
+        },
+        "tier": {
+          "$ref": "#/$defs/tier"
+        },
+        "assignee": {
+          "$ref": "#/$defs/assignee"
+        },
+        "milestone": {
+          "$ref": "#/$defs/milestone"
+        },
+        "correlation_key": {
+          "$ref": "#/$defs/correlation_key"
+        }
       }
     },
     "card_list": {
       "type": "object",
       "description": "GET /api/cards response. An envelope rather than a bare array so pagination and echoed filters can be added additively later without breaking every consumer; `total` is the number of cards matching the filter, which equals `len(cards)` while there is no pagination.",
-      "required": ["cards", "total"],
+      "required": [
+        "count",
+        "cards"
+      ],
       "additionalProperties": false,
       "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many cards this response carries. Named `count`, not `total`: it is the length of `cards` in THIS response, not a total across pages, and the schema said `total` while the service has always returned `count` (Factory#371). Previously described as: "
+        },
         "cards": {
           "type": "array",
           "description": "Cards for the calling tenant only, ordered by (priority ASC, created_at ASC, card_key ASC).",
-          "items": { "$ref": "#/$defs/card" }
-        },
-        "total": { "type": "integer", "minimum": 0 }
+          "items": {
+            "$ref": "#/$defs/card"
+          }
+        }
       }
     }
   }
