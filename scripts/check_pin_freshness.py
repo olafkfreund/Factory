@@ -67,6 +67,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -104,22 +105,72 @@ class PinUnavailableError(RuntimeError):
     """A service's pin could not be read. Never downgraded to a pass."""
 
 
-def fetch_pin(repo: str, *, timeout: int = 20) -> str:
-    """The live ``HUB_PIN_SHA`` from *repo*'s drift workflow on its default branch.
+def fetch_workflow(repo: str, *, timeout: int = 20) -> str:
+    """*repo*'s drift workflow as text, from its default branch.
 
-    Raises :class:`PinUnavailableError` rather than returning a sentinel. A gate that
-    treats "I could not look" as "nothing wrong" is the Factory#500 shape.
+    Raises :class:`PinUnavailableError` rather than returning a sentinel. A gate
+    that treats "I could not look" as "nothing wrong" is the Factory#500 shape.
     """
     url = _RAW.format(owner=_OWNER, repo=repo, path=_PIN_WORKFLOW)
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
-            body = response.read().decode("utf-8")
+            # Bound to a declared str rather than returned straight: urlopen's
+            # result is untyped, so returning it directly is `Any` escaping a
+            # function annotated -> str, which the mypy ratchet blocks.
+            body: str = response.read().decode("utf-8")
+            return body
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise PinUnavailableError(f"{repo}: cannot fetch {url}: {exc}") from exc
+
+
+def pin_from(repo: str, body: str) -> str:
+    """The ``HUB_PIN_SHA`` declared in *body*."""
     match = _PIN_RE.search(body)
     if match is None:
         raise PinUnavailableError(f"{repo}: no HUB_PIN_SHA found in {_PIN_WORKFLOW}")
     return match.group(1)
+
+
+def fetch_pin(repo: str, *, timeout: int = 20) -> str:
+    """The live ``HUB_PIN_SHA`` from *repo*'s drift workflow."""
+    return pin_from(repo, fetch_workflow(repo, timeout=timeout))
+
+
+def trigger_filter_problem(repo: str, body: str) -> str | None:
+    """A ``paths:`` filter on the drift gate's ``pull_request`` trigger, if any.
+
+    This job is a REQUIRED status check in all four consumers (Factory#543), and
+    a path-filtered workflow does not report a "skipped" context — it reports
+    NOTHING. A required context that never reports blocks the pull request
+    forever, so re-adding the filter that Factory#525 removed would wedge every
+    PR in that repo, not merely skip a check.
+
+    The hub already asserts this about its own workflows offline
+    (tests/test_branch_protection_intent.py::test_code_quality_is_not_path_filtered,
+    Factory#529 — the same wedge, discovered the hard way). It cannot assert it
+    about four other repos, and this watchdog is already fetching exactly those
+    files every day, so the claim is checked where the evidence is.
+
+    Deliberately textual rather than a YAML parse: this module is pure stdlib by
+    contract (no PyYAML anywhere in the hub's runtime deps), and the question —
+    "is there a paths: key inside the pull_request block" — does not need a
+    parser. The block is delimited by the next top-level trigger key.
+    """
+    trigger = body.split("jobs:", 1)[0]
+    if "pull_request:" not in trigger:
+        return f"{repo}: the drift gate has no pull_request trigger, so it cannot gate a PR"
+    section = trigger.split("pull_request:", 1)[1]
+    for following in ("\n  push:", "\n  schedule:", "\n  workflow_dispatch:"):
+        if following in section:
+            section = section.split(following, 1)[0]
+    if re.search(r"^\s+paths(-ignore)?:", section, re.MULTILINE):
+        return (
+            f"{repo}: the drift gate's pull_request trigger is path-filtered again. "
+            "It is a REQUIRED check, and a filtered workflow reports nothing rather "
+            "than skipped — every PR that does not match is blocked forever "
+            "(Factory#525 removed this filter, Factory#543 made it required)"
+        )
+    return None
 
 
 def canonical_paths(service: str) -> list[str]:
@@ -319,6 +370,27 @@ def _selftest() -> int:
     return 1 if failed else 0
 
 
+def _gather(
+    overrides: dict[str, str], *, no_fetch: bool, on_missing: Callable[[str], object]
+) -> tuple[dict[str, str], list[str]]:
+    """Each service's pin, plus any trigger problem, from ONE fetch per repo."""
+    pins: dict[str, str] = {}
+    problems: list[str] = []
+    for service, repo in _REPOS.items():
+        if service in overrides:
+            pins[service] = overrides[service]
+            continue
+        if no_fetch:
+            on_missing(f"--no-fetch given but no --pin for {service}")
+            continue
+        body = fetch_workflow(repo)
+        pins[service] = pin_from(repo, body)
+        problem = trigger_filter_problem(repo, body)
+        if problem is not None:
+            problems.append(problem)
+    return pins, problems
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -364,20 +436,24 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"--pin expects SERVICE=SHA with a known service, got {item!r}")
         overrides[service] = sha
 
-    pins: dict[str, str] = {}
     try:
-        for service, repo in _REPOS.items():
-            if service in overrides:
-                pins[service] = overrides[service]
-            elif args.no_fetch:
-                parser.error(f"--no-fetch given but no --pin for {service}")
-            else:
-                pins[service] = fetch_pin(repo)
+        pins, trigger_problems = _gather(overrides, no_fetch=args.no_fetch, on_missing=parser.error)
     except PinUnavailableError as exc:
         sys.stderr.write(f"pin-freshness: {exc}\n")
         return _EXIT_BAD_INVOCATION
 
     failures, report = check(pins, now=int(time.time()), budget_hours=args.grace_hours)
+    if not args.no_fetch:
+        report.append("")
+        report.append(
+            "drift-gate triggers: "
+            + (
+                "unfiltered in every consumer - the required check can report on any PR"
+                if not trigger_problems
+                else "PATH-FILTERED, see below"
+            )
+        )
+    failures = failures + trigger_problems
     print("\n".join(report))  # noqa: T201
     if failures:
         print("\npin-freshness FAILED:")  # noqa: T201

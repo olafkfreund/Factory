@@ -92,13 +92,29 @@ VERIFY_CTX="tfactory/suite"
 # use "backend (ruff + pytest)"). This table is the single place they are
 # declared - the previous per-repo copies of this script each hardcoded one
 # repo's names and were vendored into repos whose jobs are named differently.
+#
+# $VCORE_CTX is the exception: all four consumers name that job identically, and
+# it is spelled once here so a rename cannot be half-applied. Its workflow header
+# has called it a "Blocking drift gate" since Factory#158 while it was required
+# nowhere, so a byte mismatch painted one red X on a mergeable PR - prose
+# asserting an invariant nothing enforced (Factory#543).
+#
+# Requiring it was UNSAFE until Factory#525: the gate filtered its pull_request
+# trigger by paths, so it did not post at all on a PR touching none of the
+# vendored copies, and a required check that never posts blocks the PR forever
+# (the same warning $VERIFY_CTX carries above). That filter is gone in all four
+# repos, the trigger is now `pull_request: branches: [dev, main]` unfiltered, and
+# it was OBSERVED posting on a PR whose whole diff was an unmapped path
+# (CFactory#298). Order mattered; this is the second half.
+VCORE_CTX="vendored copies match the hub canonical (byte-exact)"
+
 repo_config() {
   case "$1" in
-    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
+    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
     Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main" ;;
-    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
-    AIFactory)     CHECKS='["backend (ruff + pytest)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
+    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs
