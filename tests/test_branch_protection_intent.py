@@ -443,3 +443,74 @@ def test_code_quality_is_not_path_filtered() -> None:
         "code-quality.yml produces required status contexts; a paths filter "
         "means they never report on a PR that does not match, blocking it forever"
     )
+
+
+# --- Factory#467: the default branch IS the branching model ------------------
+
+
+def _repo_table() -> dict[str, dict[str, str]]:
+    """Parse `repo_config`'s per-repo declarations out of the script.
+
+    Read from the script text rather than executed, so this stays offline like
+    everything else in this file. `--emit` cannot help here: the default branch
+    is not part of the protection payload it renders.
+    """
+    src = (_REPO_ROOT / "scripts" / "apply_branch_protection.sh").read_text(encoding="utf-8")
+    table: dict[str, dict[str, str]] = {}
+    for line in src.splitlines():
+        stripped = line.strip()
+        if not stripped.endswith(";;") or ")" not in stripped:
+            continue
+        repo = stripped.split(")", 1)[0].strip()
+        if not repo or not repo[0].isalpha():
+            continue
+        fields = {}
+        for key in ("DEFAULT_BRANCH", "BRANCHES"):
+            marker = f'{key}="'
+            if marker in stripped:
+                fields[key] = stripped.split(marker, 1)[1].split('"', 1)[0]
+        if fields:
+            table[repo] = fields
+    return table
+
+
+def test_every_declared_repo_names_a_default_branch() -> None:
+    """A repo with no declared default is one this check silently skips."""
+    table = _repo_table()
+    missing = sorted(r for r, f in table.items() if "DEFAULT_BRANCH" not in f)
+    assert not missing, f"no DEFAULT_BRANCH declared for: {missing}"
+    assert len(table) >= 6, f"expected the whole fleet, parsed only {sorted(table)}"
+
+
+def test_the_service_repos_default_to_dev() -> None:
+    """THE ASSERTION WITH TEETH, and the whole point of Factory#467.
+
+    The branching model was documented in all four repos and followed by 0 of 90
+    PRs, because `gh pr create`, the web button, Renovate and every agent target
+    the repo DEFAULT when given no --base. Documentation said dev; the default
+    said main; the default won every time.
+
+    Flipping one back to main silently restores 0% compliance, so the intended
+    value is asserted rather than left as a setting somebody once clicked.
+    """
+    table = _repo_table()
+    for repo in ("CFactory", "PFactory", "TFactory", "AIFactory"):
+        assert table[repo]["DEFAULT_BRANCH"] == "dev", f"{repo} must default to dev"
+    # The hub and gitops have no dev branch at all: main IS their working branch.
+    for repo in ("Factory", "factory-gitops"):
+        assert table[repo]["DEFAULT_BRANCH"] == "main"
+
+
+def test_the_default_branch_is_always_a_protected_one() -> None:
+    """A default branch outside BRANCHES would be unprotected by construction.
+
+    Every PR lands there by default, so it is the last branch that should sit
+    outside the protection table - and the two lists are declared separately,
+    which is exactly how they drift apart.
+    """
+    for repo, fields in _repo_table().items():
+        protected = fields.get("BRANCHES", "").split()
+        assert fields["DEFAULT_BRANCH"] in protected, (
+            f"{repo}: default branch {fields['DEFAULT_BRANCH']!r} is not in "
+            f"BRANCHES {protected} — every PR would land on an unprotected branch"
+        )

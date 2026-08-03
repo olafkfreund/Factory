@@ -83,6 +83,7 @@ VERIFY_CTX="tfactory/suite"
 #   VERIFY         : 1 = eligible to also require $VERIFY_CTX when WITH_VERIFY=1
 #   BRANCHES       : every branch that MUST be protected in this repo. A declared
 #                    branch that does not exist is an error, not a skip.
+#   DEFAULT_BRANCH : the repo's default branch. NOT cosmetic - see Factory#467.
 #
 # enforce_admins is 0 across the baseline so the factory's own auto-merge loop
 # (admin token running `gh pr merge`) and the gitops CD bot keep working.
@@ -110,17 +111,17 @@ VCORE_CTX="vendored copies match the hub canonical (byte-exact)"
 
 repo_config() {
   case "$1" in
-    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
-    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main" ;;
-    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
-    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev" ;;
+    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
+    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs
     # on every PR. Force-push and deletion stay blocked so ArgoCD's committed
     # history cannot be rewritten or dropped.
-    factory-gitops) CHECKS='["kustomize build + schema"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main" ;;
+    factory-gitops) CHECKS='["kustomize build + schema"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     *) echo "no config for repo: $1" >&2; return 1 ;;
   esac
 }
@@ -303,10 +304,45 @@ apply_one() {
   echo
 }
 
+# Factory#467: the documented branching model was followed by 0 of 90 PRs, and
+# the cause was mechanical rather than cultural - the repo default branch was
+# `main`, and `gh pr create`, the web "Compare & pull request" button, Renovate
+# and every agent in the fleet target the default when given no --base. The
+# documentation said dev; the tooling default said main; the tooling won every
+# time.
+#
+# Setting the default to `dev` fixed it: measured across the last 120 merged PRs,
+# 89 went to dev and the other 31 are dev->main promotions, i.e. zero violations.
+# But NOTHING asserted the setting, so one flip back would silently restore 0%
+# compliance with no gate anywhere noticing - a written rule enforced by nothing,
+# which is the defect class the issue itself names.
+#
+# CHECK ONLY, deliberately, and not for symmetry's sake. Changing a default
+# branch redirects every future PR in the repo, and it is a one-line fix a human
+# should make knowingly; a bug in an --apply path here would silently re-point
+# the fleet. So this reports the exact command instead of running it.
+check_default_branch() {
+  local repo="$1" want="$2" live
+  live="$(gh api "repos/${OWNER}/${repo}" --jq .default_branch 2>/dev/null)" || {
+    echo "UNDETERMINED ${OWNER}/${repo}: could not read default_branch."
+    UNDETERMINED=1
+    return
+  }
+  if [ "$live" != "$want" ]; then
+    echo "DRIFT ${OWNER}/${repo}: default branch is '${live}', intent is '${want}'."
+    echo "    Every PR opened without an explicit --base goes to '${live}' (Factory#467)."
+    echo "    Fix: gh api -X PATCH repos/${OWNER}/${repo} -f default_branch=${want}"
+    DIVERGED=1
+  fi
+}
+
 run_repo() {
   local repo="$1"
   repo_config "$repo"
   local branch
+  if [ "$MODE" = "check" ]; then
+    check_default_branch "$repo" "$DEFAULT_BRANCH"
+  fi
   for branch in $BRANCHES; do
     if [ "$MODE" = "check" ]; then
       check_one "$repo" "$branch"
