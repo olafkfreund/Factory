@@ -42,6 +42,7 @@ from pathlib import Path
 
 # scripts/ is put on sys.path by tests/conftest.py.
 import check_branch_divergence as divergence_gate
+import check_chart_vs_gitops as chart_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
 import check_pin_freshness as pin_gate
@@ -58,6 +59,7 @@ _COVERED: dict[str, str] = {
     "check_factory_ui_drift.py": "test_factory_ui_gate_is_honest",
     "check_branch_divergence.py": "test_branch_divergence_gate_is_honest",
     "check_pin_freshness.py": "test_pin_freshness_gate_is_honest",
+    "check_chart_vs_gitops.py": "test_chart_vs_gitops_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -284,5 +286,62 @@ def test_pin_freshness_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> Non
         )
     finally:
         pin_gate._REPOS["tfactory"] = removed
+
+    capsys.readouterr()
+
+
+def test_chart_vs_gitops_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> None:
+    """Factory#504's comparator, held to this file's three criteria.
+
+    Its scope is three registries that can shrink independently: the service
+    list, the compared securityContext fields, and the waivers. Narrowing any of
+    them leaves every remaining case passing, which is the variant-3 shape.
+    """
+    hard_pod = {
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    hard_ctr = {
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+        "readOnlyRootFilesystem": True,
+    }
+    values = {"podSecurityContext": hard_pod, "containerSecurityContext": hard_ctr}
+
+    def manifests(ctr: dict[str, object]) -> list[dict[str, object]]:
+        return chart_gate.synthetic_manifests(hard_pod, ctr)
+
+    # PASS path enumerates every field it compared, rather than counting them.
+    agree = chart_gate.compare_service("svc", values, manifests(hard_ctr))
+    assert not agree.failures
+    out = "\n".join(agree.report)
+    for field_name in (*chart_gate.POD_FIELDS, *chart_gate.CONTAINER_FIELDS):
+        assert field_name in out, f"the report never named {field_name}"
+
+    # Observed FAILING, on the Factory#503 shape it was built for.
+    missing = chart_gate.compare_service("svc", values, manifests({}))
+    assert missing.failures
+    assert any("readOnlyRootFilesystem" in f for f in missing.failures)
+
+    # Configuration mutation 1: a compared FIELD leaves the set. The engines are
+    # untouched; the gate must stop claiming it checked that field.
+    kept = chart_gate.CONTAINER_FIELDS
+    chart_gate.CONTAINER_FIELDS = tuple(f for f in kept if f != "readOnlyRootFilesystem")
+    try:
+        narrowed = chart_gate.compare_service("svc", values, manifests({}))
+        assert not any("readOnlyRootFilesystem" in f for f in narrowed.failures), (
+            "sanity: the narrowed set should no longer report it"
+        )
+        assert "readOnlyRootFilesystem" not in "\n".join(narrowed.report), (
+            "a dropped field must vanish from the REPORT too — a report still "
+            "naming a field nobody compares is worse than one that omits it"
+        )
+    finally:
+        chart_gate.CONTAINER_FIELDS = kept
+
+    # Configuration mutation 2: a waiver loses its reason. The waiver list is the
+    # escape hatch, so an unexplained entry is the silent exemption this gate ends.
+    assert all(w.reason and w.tracked_by for w in chart_gate.WAIVERS)
 
     capsys.readouterr()
