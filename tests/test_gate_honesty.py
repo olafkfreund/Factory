@@ -34,6 +34,7 @@ detection is indistinguishable from a check nobody wrote.
 
 from __future__ import annotations
 
+import datetime
 import re
 import shutil
 import subprocess
@@ -43,6 +44,7 @@ from pathlib import Path
 # scripts/ is put on sys.path by tests/conftest.py.
 import check_branch_divergence as divergence_gate
 import check_chart_vs_gitops as chart_gate
+import check_cli_freshness as cli_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
 import check_pin_freshness as pin_gate
@@ -60,6 +62,7 @@ _COVERED: dict[str, str] = {
     "check_branch_divergence.py": "test_branch_divergence_gate_is_honest",
     "check_pin_freshness.py": "test_pin_freshness_gate_is_honest",
     "check_chart_vs_gitops.py": "test_chart_vs_gitops_gate_is_honest",
+    "check_cli_freshness.py": "test_cli_freshness_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -345,3 +348,48 @@ def test_chart_vs_gitops_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> N
     assert all(w.reason and w.tracked_by for w in chart_gate.WAIVERS)
 
     capsys.readouterr()
+
+
+def test_cli_freshness_gate_is_honest() -> None:
+    """Factory#459's watchdog, held to this file's three criteria.
+
+    Two registries can shrink independently here — the tracked packages and the
+    repos that bake them — and narrowing either leaves every remaining case
+    passing, which is the variant-3 shape.
+    """
+    now = time.gmtime()
+    del now  # the comparator takes an injected `now`; this case fixes its own
+    when = datetime.datetime(2026, 8, 3, tzinfo=datetime.UTC)
+    pin = cli_gate.Pin("AIFactory", "@openai/codex", "0.144.6")
+
+    def doc(latest: str, published: str) -> dict[str, object]:
+        return {"dist-tags": {"latest": latest}, "time": {latest: published}}
+
+    # PASS path names the versions it compared rather than emitting a verdict.
+    line, failure = cli_gate.assess(
+        pin, doc("0.146.0", "2026-07-29T00:00:00Z"), now=when, max_age_days=30
+    )
+    assert failure is None
+    assert "0.144.6" in line and "0.146.0" in line, "the report must carry both sides"
+
+    # Observed FAILING on the shape it exists for.
+    _, failure = cli_gate.assess(
+        pin, doc("0.146.0", "2026-05-01T00:00:00Z"), now=when, max_age_days=30
+    )
+    assert failure is not None
+
+    # Configuration mutation: a package leaves the tracked set. The Dockerfile is
+    # untouched; the gate must stop claiming it watched that CLI.
+    kept = cli_gate.TRACKED
+    cli_gate.TRACKED = tuple(p for p in kept if p != "@openai/codex")
+    try:
+        pins = cli_gate.parse_pins("AIFactory", "RUN npm install -g @openai/codex@0.144.6\n")
+        assert pins == [], (
+            "a package dropped from TRACKED must vanish from the parse, not be "
+            "silently reported under a stale name"
+        )
+    finally:
+        cli_gate.TRACKED = kept
+
+    # And the repo list is enumerated, so losing one is visible rather than quiet.
+    assert set(cli_gate.REPOS) == {"AIFactory", "PFactory", "TFactory"}

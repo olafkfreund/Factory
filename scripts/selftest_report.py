@@ -19,6 +19,7 @@ inheriting anything.
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass, field
 
 
@@ -49,6 +50,28 @@ class SelfTest:
         return 1 if self.failures else 0
 
 
+def gate_argparser(description: str | None) -> argparse.ArgumentParser:
+    """A gate script's parser, pre-wired with ``--self-test``.
+
+    Every watchdog here takes the same first two lines — a RawDescriptionHelp
+    parser over the module docstring, and a ``--self-test`` flag — and two copies
+    of that preamble tripped the jscpd clone budget while
+    ``check_cli_freshness`` was being added. Same finding as :class:`SelfTest`
+    above, one function along: nobody wrote that duplication, a copy-paste did.
+
+    Only the shared part lives here. Each gate adds its own flags to the returned
+    parser, because a helper that tried to own those would need a flag registry
+    and would be a worse trade than the four lines it saved.
+    """
+    parser = argparse.ArgumentParser(
+        description=description, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="run the built-in self-test and exit"
+    )
+    return parser
+
+
 def _selftest() -> int:
     """This module's own self-test, because the reporter can lie too.
 
@@ -74,6 +97,10 @@ def _selftest() -> int:
 
     must(SelfTest("clean").finish() == 0, "a clean run must exit 0")
     must(SelfTest("dirty", failures=2).finish() == 1, "a run with failures must not exit 0")
+
+    parser = gate_argparser("doc")
+    must(parser.parse_args(["--self-test"]).self_test is True, "--self-test parses")
+    must(parser.parse_args([]).self_test is False, "and defaults to off")
     print("selftest_report self-test: PASSED")  # noqa: T201
     return 0
 

@@ -46,14 +46,13 @@ Exit codes:
 
 from __future__ import annotations
 
-import argparse
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
-from selftest_report import SelfTest
+from selftest_report import SelfTest, gate_argparser
 
 _EXIT_BAD_INVOCATION = 2
 
@@ -404,14 +403,11 @@ def _selftest() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = gate_argparser(__doc__)
     ap.add_argument("--gitops", type=Path, help="path to a factory-gitops checkout")
     ap.add_argument(
         "--service-root", type=Path, help="directory containing AIFactory/, PFactory/, ..."
     )
-    ap.add_argument("--self-test", action="store_true", help="run the built-in self-test and exit")
     args = ap.parse_args(argv)
 
     if args.self_test:
