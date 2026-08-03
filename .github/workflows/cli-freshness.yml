@@ -1,0 +1,99 @@
+name: agent-CLI freshness
+
+# "Are the baked agent-CLI pins drifting behind npm?", asked out of band
+# (Factory#459).
+#
+# The three CLIs are pinned in each service's Dockerfile and baked into the
+# runtime image (TFactory#791). NOTHING proposes bumps for them: the Renovate
+# GitHub App is not installed on this account — zero Renovate PRs across all five
+# repos, ever — and Dependabot's docker ecosystem parses only `FROM` lines, so it
+# cannot see an `npm install -g @pkg@version` bake step. factory-gitops'
+# renovate.json records both facts, and its own customManager has matched nothing
+# since the pins moved out of the manifests.
+#
+# WHAT THIS BUYS, and it is the reason it exists rather than waiting for the App
+# to be installed: "no bump PRs" and "nothing to update" look identical from
+# outside. That is how the same gap sat unnoticed for nine weeks in Factory#436.
+# A freshness assertion cannot be silently not-running — if it stops, this job
+# goes red. Installing the Renovate App (Factory#459 option 1) is the fuller fix
+# and needs account-level authorisation; the two are complementary.
+#
+# WHY SCHEDULED AND NOT A PR GATE, which is the OPPOSITE call from Factory#552
+# and deliberately so. A pull request does not make a pin stale; TIME does. A
+# pre-merge test would fail PRs for something the PR did not cause, which is the
+# cry-wolf shape that gets a gate muted (Factory#538). The comparator itself IS
+# covered on every hub PR, offline, by tests/test_cli_freshness.py.
+#
+# IT REPORTS, IT DOES NOT BUMP. A broken upstream CLI release must not reach the
+# fleet on the next pod start because a bot merged it unattended — the bump
+# belongs in the service repo, behind its own cli-canary run.
+#
+# WHY NO PAT: the service repos are public and the npm registry is anonymous.
+
+on:
+  schedule:
+    # Weekly, Monday 06:41. These CLIs ship every few days and the window is 30
+    # days, so a daily run would repeat the same verdict six times before it
+    # could change. Offset from the daily watchdogs (pin-freshness 05:11,
+    # chart-vs-gitops 05:41, branch-protection-drift 06:17). Note BST != UTC.
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: "How long a newer release may sit unadopted before this alerts"
+        type: string
+        required: false
+        default: "30"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    name: baked agent-CLI pins are not far behind npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Self-test the comparator before trusting it
+        # First, not last, for the same reason every other watchdog here does it:
+        # a broken comparator cannot be trusted to say "everything is current",
+        # so it fails as a broken comparator rather than quietly passing
+        # everything (rule 4.7).
+        run: python3 scripts/check_cli_freshness.py --self-test
+
+      - name: Compare every baked pin against the npm registry
+        # Exit 1 = a pin has been behind for longer than the window. Exit 2 = a
+        # Dockerfile or registry entry could not be read, which is also a
+        # failure: a watchdog that read nothing must not report freshness.
+        env:
+          WINDOW: ${{ inputs.max_age_days || '30' }}
+        run: |
+          set -o pipefail
+          python3 scripts/check_cli_freshness.py --max-age-days "${WINDOW}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: What to do when this job is red
+        if: failure()
+        run: |
+          echo "A pinned agent CLI has been behind npm for longer than the window."
+          echo
+          echo "Bump it in that service's Dockerfile and let the repo's cli-canary run"
+          echo "before merging. Do NOT automate the merge: a broken upstream release"
+          echo "reaching the fleet on the next pod start is exactly what the canary and"
+          echo "the manual pin exist to prevent."
+          echo
+          echo "If the pin is deliberately held back, raise --max-age-days with the"
+          echo "reason rather than muting the job — and say so where the pin lives."
+          echo
+          echo "NO TRACKED PIN FOUND means the bake step moved again, as TFactory#791"
+          echo "moved it out of the gitops manifests. The watchdog is then looking in"
+          echo "the wrong place and is checking nothing; fix the path, do not skip."
