@@ -181,5 +181,83 @@ def test_every_layout_service_is_reachable_by_the_fetcher() -> None:
     assert set(pf._REPOS) == set(SERVICE_LAYOUTS)
 
 
+# --- the drift gate's trigger, which Factory#543 turned into a wedge risk -----
+
+_FILTERED = """name: x
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "scripts/ratchet_helpers.py"
+  push:
+    branches: [dev, main]
+jobs:
+  drift:
+"""
+
+_UNFILTERED = """name: x
+on:
+  pull_request:
+    branches: [dev, main]
+    # no paths filter, deliberately (Factory#525)
+  push:
+    branches: [dev, main]
+    paths:
+      - "scripts/ratchet_helpers.py"
+jobs:
+  drift:
+"""
+
+
+def test_a_re_added_paths_filter_is_flagged() -> None:
+    """THE ASSERTION WITH TEETH, and it guards an outage rather than a gap.
+
+    Since Factory#543 this job is a REQUIRED status check in all four consumers.
+    A path-filtered workflow does not report a "skipped" context, it reports
+    NOTHING, so re-adding the filter Factory#525 removed would block every
+    non-matching PR in that repo forever - the Factory#529 wedge, fleet-wide.
+    """
+    problem = pf.trigger_filter_problem("Repo", _FILTERED)
+    assert problem is not None
+    assert "REQUIRED" in problem, "the message must say why a filter is now fatal"
+
+
+def test_paths_ignore_is_the_same_defect() -> None:
+    """`paths-ignore:` filters just as effectively; spelling it differently
+    would otherwise walk straight past this guard."""
+    assert pf.trigger_filter_problem("Repo", _FILTERED.replace("paths:", "paths-ignore:"))
+
+
+def test_a_filter_on_push_only_is_not_flagged() -> None:
+    """Scope guard in the other direction.
+
+    Only the pull_request trigger can wedge a PR. A guard that also fired on a
+    push filter would be noise, and noise is how a real alert gets muted.
+    """
+    assert pf.trigger_filter_problem("Repo", _UNFILTERED) is None
+
+
+def test_no_pull_request_trigger_at_all_is_flagged() -> None:
+    """Deleting the trigger is the same outcome as filtering it to nothing."""
+    body = "name: x\non:\n  push:\n    branches: [dev, main]\njobs:\n  drift:\n"
+    assert pf.trigger_filter_problem("Repo", body)
+
+
+def test_the_live_consumers_are_unfiltered_right_now() -> None:
+    """The claim that made requiring the check safe, asserted against reality.
+
+    Network, unlike the rest of this file - so it is skipped when offline rather
+    than failing a local run for a reason that has nothing to do with the change
+    under test. The scheduled watchdog checks the same thing every day with no
+    escape hatch, which is where it must not be skippable.
+    """
+    for repo in pf._REPOS.values():
+        try:
+            body = pf.fetch_workflow(repo, timeout=10)
+        except pf.PinUnavailableError as exc:  # offline
+            pytest.skip(f"no network: {exc}")
+        assert pf.trigger_filter_problem(repo, body) is None
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

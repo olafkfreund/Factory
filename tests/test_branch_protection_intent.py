@@ -67,6 +67,12 @@ def _normalise(payload: dict) -> dict:
     return json.loads(out.stdout)
 
 
+# The verification-core drift gate's job display name, identical in all four
+# consumers. Required there since Factory#543 — its own header called it a
+# "Blocking drift gate" while it was required nowhere.
+_VCORE = "vendored copies match the hub canonical (byte-exact)"
+
+
 def _live_shaped(
     *,
     contexts: list[str],
@@ -169,15 +175,23 @@ def test_check_contexts_are_per_repo() -> None:
     assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == [
         "Backend pytest",
         "Frontend typecheck + build",
+        _VCORE,
     ]
     assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == [
         "backend (ruff + pytest)",
         "critical (fast PR gate)",
+        _VCORE,
     ]
     # AIFactory has no required frontend check, despite having a frontend suite.
     assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == [
         "backend (ruff + pytest)",
+        _VCORE,
     ]
+    # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
+    # factory-gitops vendors none of it. A context required where no such
+    # workflow exists can never report, which is the Factory#529 wedge.
+    for repo in ("Factory", "factory-gitops"):
+        assert _VCORE not in _emit(repo, "main")["required_status_checks"]["contexts"]
 
 
 def test_gitops_gates_the_branch_that_reaches_the_cluster() -> None:
@@ -216,7 +230,7 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "main",
-            ["backend (ruff + pytest)", "critical (fast PR gate)"],
+            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
             True,
             None,
             True,
@@ -224,13 +238,20 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "dev",
-            ["backend (ruff + pytest)", "critical (fast PR gate)"],
+            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
             False,
             None,
             False,
         ),
-        ("CFactory", "main", ["Backend pytest", "Frontend typecheck + build"], True, None, True),
-        ("AIFactory", "dev", ["backend (ruff + pytest)"], False, None, False),
+        (
+            "CFactory",
+            "main",
+            ["Backend pytest", "Frontend typecheck + build", _VCORE],
+            True,
+            None,
+            True,
+        ),
+        ("AIFactory", "dev", ["backend (ruff + pytest)", _VCORE], False, None, False),
         # The branch ArgoCD syncs to the cluster, gated at last (gitops#95).
         ("factory-gitops", "main", ["kustomize build + schema"], True, None, True),
     ]:
@@ -249,7 +270,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
     # Newer responses may carry only .checks[].context; both spellings must work,
     # or the gate reports a phantom "all checks removed" drift.
     live = _live_shaped(
-        contexts=["backend (ruff + pytest)"],
+        contexts=["backend (ruff + pytest)", _VCORE],
         strict=False,
         reviews=None,
         conversation_resolution=False,
@@ -262,7 +283,7 @@ def test_unordered_contexts_compare_equal() -> None:
     # GitHub does not promise an order; a spurious diff would train people to
     # ignore the gate.
     live = _live_shaped(
-        contexts=["critical (fast PR gate)", "backend (ruff + pytest)"],
+        contexts=[_VCORE, "critical (fast PR gate)", "backend (ruff + pytest)"],
         strict=False,
         reviews=None,
         conversation_resolution=False,
@@ -334,7 +355,7 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
     reports -- the old per-repo script applied main's payload to dev.
     """
     live = _live_shaped(
-        contexts=["backend (ruff + pytest)", "critical (fast PR gate)"],
+        contexts=["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
         strict=False,
         reviews=None,
         conversation_resolution=False,
