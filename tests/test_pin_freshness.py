@@ -251,12 +251,58 @@ def test_the_live_consumers_are_unfiltered_right_now() -> None:
     under test. The scheduled watchdog checks the same thing every day with no
     escape hatch, which is where it must not be skippable.
     """
-    for repo in pf._REPOS.values():
+    gate = next(g for g in pf.GATES if g.required_check)
+    for service in gate.services():
+        repo = pf._REPOS[service]
         try:
-            body = pf.fetch_workflow(repo, timeout=10)
+            body = pf.fetch_workflow(repo, gate.workflow, timeout=10)
         except pf.PinUnavailableError as exc:  # offline
             pytest.skip(f"no network: {exc}")
         assert pf.trigger_filter_problem(repo, body) is None
+
+
+# --- Factory#514: the rule's exemption is conditional on THIS being true ------
+
+
+def test_every_file_granular_gate_is_read_fleet_wide() -> None:
+    """The condition the narrowed pin rule rests on.
+
+    Rule 5.2 lets a file-granular set pin inside its workflow instead of a
+    `.hub-sha` file, but only because the hub reads those pins fleet-wide — that
+    is what answers the original objection, "nothing outside that workflow can
+    find it". A gate missing from GATES is a pin nobody can find, and the
+    exemption stops being true the moment that happens.
+    """
+    declared = {g.workflow for g in pf.GATES}
+    assert ".github/workflows/verification-core-drift.yml" in declared
+    assert ".github/workflows/factory-ui-drift.yml" in declared
+
+
+def test_a_gate_reads_its_own_canonical_root() -> None:
+    """Each gate must look for movement where its canonical actually lives.
+
+    Pointing factory-ui at `scripts/` would make it permanently green: nothing
+    under scripts/ is a portal component, so no commit would ever count as
+    moving its canonical. That is the silent-scope-loss shape, one level down.
+    """
+    roots = {g.name: g.canonical_root for g in pf.GATES}
+    assert roots["verification-core"] == "scripts"
+    assert roots["factory-ui"] == "shared/factory-ui"
+    for gate in pf.GATES:
+        for service in gate.services():
+            for path in gate.canonical_paths(service):
+                assert path.startswith(gate.canonical_root + "/")
+
+
+def test_only_a_required_gate_is_held_to_an_unfiltered_trigger() -> None:
+    """factory-ui is path-filtered and that is correct while it is not required.
+
+    Flagging it would be noise, and noise is how the verification-core alert
+    beside it gets muted.
+    """
+    by_name = {g.name: g for g in pf.GATES}
+    assert by_name["verification-core"].required_check is True
+    assert by_name["factory-ui"].required_check is False
 
 
 if __name__ == "__main__":
