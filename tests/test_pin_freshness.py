@@ -305,5 +305,40 @@ def test_only_a_required_gate_is_held_to_an_unfiltered_trigger() -> None:
     assert by_name["factory-ui"].required_check is False
 
 
+def test_a_required_gate_must_cover_every_service() -> None:
+    """Fleet-wide coverage stopped being enough at the third gate (Factory#547).
+
+    With one gate, "in no gate's layout" caught a dropped service. With three, a
+    service dropped from ONE layout is still covered by another and that check
+    stays quiet — silent scope loss with extra steps. A required gate has the
+    stronger invariant: its job blocks merges in every consumer, so every
+    consumer must be in its layout.
+    """
+    for gate in pf.GATES:
+        if gate.required_check:
+            assert set(gate.layouts) == set(pf._REPOS), f"{gate.name} does not cover the fleet"
+
+
+def test_the_contracts_gate_reads_a_differently_named_pin() -> None:
+    """Its pin cannot be HUB_PIN_SHA: it shares code-quality.yml with another.
+
+    CFactory's drift job gates two sets from one workflow — the standards
+    directory (pinned by standards/.hub-sha) and this single file. Two variables
+    of the same name in one file is not addressable, so the gate carries the
+    name it reads.
+    """
+    contracts = next(g for g in pf.GATES if g.name == "factory-contracts")
+    assert contracts.pin_var == "CONTRACTS_PIN_SHA"
+    assert contracts.services() == ["cfactory"], "CFactory is the only consumer"
+    assert (
+        pf.pin_from("X", 'env:\n  CONTRACTS_PIN_SHA: "abc1234"\n', "w", "CONTRACTS_PIN_SHA")
+        == "abc1234"
+    )
+    with pytest.raises(pf.PinUnavailableError):
+        # The default name must NOT match it, or one gate would silently read
+        # another's pin out of the same file.
+        pf.pin_from("X", 'env:\n  CONTRACTS_PIN_SHA: "abc1234"\n', "w")
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

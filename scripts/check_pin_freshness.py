@@ -85,7 +85,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_factory_ui_drift import SERVICE_LAYOUTS as UI_LAYOUTS
 from check_verification_core_drift import SERVICE_LAYOUTS
 
-_PIN_RE = re.compile(r'^\s*HUB_PIN_SHA:\s*"([0-9a-fA-F]{7,40})"', re.MULTILINE)
+
+def _pin_re(var: str) -> re.Pattern[str]:
+    """Regex for ``<var>: "<sha>"`` in a workflow's env block.
+
+    Per-gate because the pin variable is not named identically everywhere:
+    the two drift workflows use HUB_PIN_SHA, and CFactory's contracts gate lives
+    inside code-quality.yml alongside a DIFFERENT pin, so one file would carry
+    two variables of the same name (Factory#547).
+    """
+    return re.compile(rf'^\s*{re.escape(var)}:\s*"([0-9a-fA-F]{{7,40}})"', re.MULTILINE)
+
 
 # service key -> GitHub repo name. One table, because a service is one repo
 # whichever gate is asking.
@@ -118,7 +128,9 @@ class Gate:
     """Hub directory holding the canonical modules."""
     layouts: dict[str, dict[str, str]]
     """service -> {canonical module: path in that service}."""
-    required_check: bool
+    pin_var: str = "HUB_PIN_SHA"
+    """Name of the workflow variable holding this gate's pin."""
+    required_check: bool = False
     """Is this gate's job a REQUIRED status check in its consumers?
 
     Decides whether a ``paths:`` filter on its pull_request trigger is a defect.
@@ -160,6 +172,28 @@ GATES: tuple[Gate, ...] = (
         # filter has to go first (Factory#525 then #543, in that order).
         required_check=False,
     ),
+    Gate(
+        name="factory-contracts",
+        # NOT a dedicated *-drift.yml: this gate is a `diff` inlined in
+        # CFactory's code-quality.yml, which is why its pin needed naming
+        # (CFactory#301) before it could be read from here.
+        workflow=".github/workflows/code-quality.yml",
+        pin_var="CONTRACTS_PIN_SHA",
+        canonical_root="shared/factory-contracts/python/factory_contracts",
+        # Declared INLINE, unlike the two above, because there is no hub checker
+        # for this set to import a layout from — the comparison lives in the
+        # service workflow. Extracting that checker is option 1 of Factory#547
+        # and is where this probably wants to end up; this is option 2, the
+        # smallest change that makes the pin readable fleet-wide. A one-entry
+        # map is also the honest shape: CFactory is the only consumer, checked
+        # with `git grep` across the other three.
+        layouts={
+            "cfactory": {
+                "__init__.py": "apps/backend/cfactory/_contracts/factory_contracts/__init__.py"
+            }
+        },
+        required_check=False,
+    ),
 )
 
 _OWNER = "olafkfreund"
@@ -185,6 +219,12 @@ def fetch_workflow(repo: str, workflow: str, *, timeout: int = 20) -> str:
     Raises :class:`PinUnavailableError` rather than returning a sentinel. A gate
     that treats "I could not look" as "nothing wrong" is the Factory#500 shape.
     """
+    # raw.githubusercontent is CDN-cached for a few minutes, so immediately
+    # after a workflow lands this can still serve the previous revision. For a
+    # DAILY watchdog that is self-healing noise, not a correctness problem -
+    # observed once while renaming a pin (Factory#547), gone on the next run.
+    # It is a reason not to wire this into a merge gate, where a stale read
+    # would block a PR for a change that already landed.
     url = _RAW.format(owner=_OWNER, repo=repo, path=workflow)
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
@@ -197,11 +237,11 @@ def fetch_workflow(repo: str, workflow: str, *, timeout: int = 20) -> str:
         raise PinUnavailableError(f"{repo}: cannot fetch {url}: {exc}") from exc
 
 
-def pin_from(repo: str, body: str, workflow: str) -> str:
+def pin_from(repo: str, body: str, workflow: str, pin_var: str = "HUB_PIN_SHA") -> str:
     """The ``HUB_PIN_SHA`` declared in *body*."""
-    match = _PIN_RE.search(body)
+    match = _pin_re(pin_var).search(body)
     if match is None:
-        raise PinUnavailableError(f"{repo}: no HUB_PIN_SHA found in {workflow}")
+        raise PinUnavailableError(f"{repo}: no {pin_var} found in {workflow}")
     return match.group(1)
 
 
@@ -325,6 +365,20 @@ def scope_problems() -> list[str]:
             f"{service} has a repo mapping here but appears in no gate's layout, "
             "so there is nothing to check it against"
         )
+    # Fleet-wide coverage alone is too weak once there is more than one gate:
+    # dropping a service from ONE layout leaves it covered by another and the
+    # check above stays quiet, which is the silent scope loss with extra steps.
+    # A REQUIRED gate has a stronger invariant available - its job blocks merges
+    # in every consumer, so every consumer must be in its layout, and a gap there
+    # means a repo whose merges are gated by a check the hub cannot account for.
+    for gate in GATES:
+        if not gate.required_check:
+            continue
+        for service in sorted(set(_REPOS) - set(gate.layouts)):
+            problems.append(
+                f"{gate.name} is a required check but {service} is absent from its "
+                "layout, so a repo is gated by a check the hub does not track"
+            )
     return problems
 
 
@@ -477,7 +531,7 @@ def _gather(
             on_missing(f"--no-fetch given but no --pin for {service}")
             continue
         body = fetch_workflow(repo, gate.workflow)
-        pins[service] = pin_from(repo, body, gate.workflow)
+        pins[service] = pin_from(repo, body, gate.workflow, gate.pin_var)
         # Only a REQUIRED gate can wedge a PR by being filtered; see Gate.
         if gate.required_check:
             problem = trigger_filter_problem(repo, body)
