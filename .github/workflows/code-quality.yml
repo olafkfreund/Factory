@@ -73,7 +73,12 @@ jobs:
           python-version: "3.11"
 
       - name: Pin the toolchain (standards section 4.5)
-        run: pip install "ruff==${RUFF_VERSION}" "mypy==${MYPY_VERSION}"
+        run: |
+          # types-PyYAML: scripts/check_chart_vs_gitops.py parses both deploy
+          # engines as YAML (Factory#504). Stubs rather than a per-import
+          # `type: ignore` — suppressing the checker to keep the checker quiet
+          # is the shape this repo's ratchet exists to stop.
+          pip install "ruff==${RUFF_VERSION}" "mypy==${MYPY_VERSION}" types-PyYAML
 
       - name: Determine base ref
         id: base

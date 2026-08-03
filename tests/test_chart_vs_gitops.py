@@ -30,22 +30,9 @@ _HARD_CTR = {
 _VALUES = {"podSecurityContext": _HARD_POD, "containerSecurityContext": _HARD_CTR}
 
 
-def _manifests(pod_sc: dict, ctr_sc: dict, extra: list | None = None) -> list[dict]:
-    return [
-        {
-            "kind": "Deployment",
-            "metadata": {"name": "svc"},
-            "spec": {
-                "template": {
-                    "spec": {
-                        "securityContext": pod_sc,
-                        "containers": [{"name": "svc", "securityContext": ctr_sc}],
-                    }
-                }
-            },
-        },
-        *(extra or []),
-    ]
+# One builder, shared with the script's --self-test and the honesty case: the
+# first draft had three copies and the clone budget rejected it.
+_manifests = cvg.synthetic_manifests
 
 
 def test_builtin_self_test_passes() -> None:

@@ -309,21 +309,8 @@ def test_chart_vs_gitops_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> N
     }
     values = {"podSecurityContext": hard_pod, "containerSecurityContext": hard_ctr}
 
-    def manifests(ctr: dict) -> list[dict]:
-        return [
-            {
-                "kind": "Deployment",
-                "metadata": {"name": "svc"},
-                "spec": {
-                    "template": {
-                        "spec": {
-                            "securityContext": hard_pod,
-                            "containers": [{"name": "svc", "securityContext": ctr}],
-                        }
-                    }
-                },
-            }
-        ]
+    def manifests(ctr: dict[str, object]) -> list[dict[str, object]]:
+        return chart_gate.synthetic_manifests(hard_pod, ctr)
 
     # PASS path enumerates every field it compared, rather than counting them.
     agree = chart_gate.compare_service("svc", values, manifests(hard_ctr))

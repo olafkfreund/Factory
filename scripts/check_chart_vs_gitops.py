@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from selftest_report import SelfTest
 
 _EXIT_BAD_INVOCATION = 2
 
@@ -68,15 +69,15 @@ SERVICES: dict[str, str] = {
 # differently (the chart sets runAsGroup, gitops relies on fsGroup), and a
 # whole-dict compare would fail on that and get muted. These are the fields the
 # Factory#503 family was actually about.
-POD_FIELDS = ("runAsNonRoot", "runAsUser", "seccompProfile")
-CONTAINER_FIELDS = (
+POD_FIELDS: tuple[str, ...] = ("runAsNonRoot", "runAsUser", "seccompProfile")
+CONTAINER_FIELDS: tuple[str, ...] = (
     "allowPrivilegeEscalation",
     "capabilities",
     "readOnlyRootFilesystem",
 )
 
 # Controls proposed by Factory#504 that this script does NOT implement.
-UNIMPLEMENTED_CONTROLS = (
+UNIMPLEMENTED_CONTROLS: tuple[str, ...] = (
     "NetworkPolicy coverage (every pod-label set selected by some policy in its "
     "own engine) — needs label-set matching, not a key lookup; would have caught "
     "Factory#502",
@@ -126,6 +127,35 @@ WAIVERS: tuple[Waiver, ...] = (
 )
 
 
+def synthetic_manifests(
+    pod_sc: dict[str, Any], ctr_sc: dict[str, Any], extra: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """A minimal gitops manifest stream for service ``svc``, for tests.
+
+    Public and living beside the comparator rather than in the test tree because
+    THREE places need it — this module's ``--self-test``, tests/test_chart_vs_gitops.py
+    and the honesty case in tests/test_gate_honesty.py — and the first draft had
+    three copies of it, which the jscpd clone budget correctly rejected. The
+    self-test must run standalone with no pytest, so the shared builder cannot
+    live in a test-only helper.
+    """
+    return [
+        {
+            "kind": "Deployment",
+            "metadata": {"name": "svc"},
+            "spec": {
+                "template": {
+                    "spec": {
+                        "securityContext": pod_sc,
+                        "containers": [{"name": "svc", "securityContext": ctr_sc}],
+                    }
+                }
+            },
+        },
+        *(extra or []),
+    ]
+
+
 @dataclass
 class Findings:
     failures: list[str] = field(default_factory=list)
@@ -137,18 +167,41 @@ class InputUnavailableError(RuntimeError):
     """An engine's declaration could not be read. Never downgraded to a pass."""
 
 
-def _load_yaml(path: Path) -> Any:
+def _load_yaml(path: Path) -> dict[str, Any]:
+    """A chart's values.yaml as a mapping.
+
+    The parsed TYPE is checked, not just the parse. An empty or non-mapping
+    values.yaml would otherwise sail through here and fail much later on
+    ``values.get(...)`` with an AttributeError — a crash rather than this
+    module's "input unavailable" path, which is the one that exits 2 and says
+    what it could not read (Factory#500).
+    """
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         raise InputUnavailableError(f"cannot read {path}: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise InputUnavailableError(
+            f"{path}: expected a YAML mapping, got {type(loaded).__name__} — "
+            "an empty or malformed values.yaml cannot be compared"
+        )
+    return loaded
 
 
 def _load_manifests(path: Path) -> list[dict[str, Any]]:
+    """The gitops manifest stream, keeping only the mapping documents.
+
+    Same reasoning as :func:`_load_yaml`: a stray scalar document in the stream
+    would crash a later ``.get`` rather than being reported as unreadable input.
+    """
     try:
-        return [d for d in yaml.safe_load_all(path.read_text(encoding="utf-8")) if d]
+        docs = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
     except (OSError, yaml.YAMLError) as exc:
         raise InputUnavailableError(f"cannot read {path}: {exc}") from exc
+    kept = [d for d in docs if isinstance(d, dict)]
+    if not kept:
+        raise InputUnavailableError(f"{path}: no YAML mapping documents to compare")
+    return kept
 
 
 def _waived(service: str, control: str) -> Waiver | None:
@@ -166,7 +219,7 @@ def _deployment(docs: list[dict[str, Any]], service: str) -> dict[str, Any]:
 
 
 def _app_container(dep: dict[str, Any], service: str) -> dict[str, Any]:
-    containers = dep["spec"]["template"]["spec"]["containers"]
+    containers: list[dict[str, Any]] = dep["spec"]["template"]["spec"]["containers"]
     for c in containers:
         if c.get("name") == service:
             return c
@@ -280,29 +333,10 @@ def run(gitops: Path, service_root: Path) -> tuple[Findings, int]:
 
 def _selftest() -> int:
     """Synthetic engines with known disagreements, so the gate is seen failing."""
-    failed = 0
+    t = SelfTest("chart-vs-gitops")
+    req = t.req
 
-    def req(ok: bool, label: str) -> None:
-        nonlocal failed
-        print(f"  {'PASS' if ok else 'FAIL'}  {label}")  # noqa: T201
-        failed += not ok
-
-    def manifests(pod_sc: dict, ctr_sc: dict, extra: list | None = None) -> list[dict]:
-        return [
-            {
-                "kind": "Deployment",
-                "metadata": {"name": "svc"},
-                "spec": {
-                    "template": {
-                        "spec": {
-                            "securityContext": pod_sc,
-                            "containers": [{"name": "svc", "securityContext": ctr_sc}],
-                        }
-                    }
-                },
-            },
-            *(extra or []),
-        ]
+    manifests = synthetic_manifests
 
     hardened_pod = {
         "runAsNonRoot": True,
@@ -366,8 +400,7 @@ def _selftest() -> int:
     )
     req(bool(UNIMPLEMENTED_CONTROLS), "the unimplemented controls are declared, not implied")
 
-    print("chart-vs-gitops self-test: " + ("PASSED" if not failed else f"FAILED ({failed})"))  # noqa: T201
-    return 1 if failed else 0
+    return t.finish()
 
 
 def main(argv: list[str] | None = None) -> int:

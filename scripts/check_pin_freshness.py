@@ -84,6 +84,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from check_factory_ui_drift import SERVICE_LAYOUTS as UI_LAYOUTS
 from check_verification_core_drift import SERVICE_LAYOUTS
+from selftest_report import SelfTest
 
 
 def _pin_re(var: str) -> re.Pattern[str]:
@@ -460,12 +461,8 @@ def _selftest() -> int:
     a check that flags every difference is the pin-equality check this file
     exists instead of.
     """
-    failed = 0
-
-    def req(ok: bool, label: str) -> None:
-        nonlocal failed
-        print(f"  {'PASS' if ok else 'FAIL'}  {label}")  # noqa: T201
-        failed += not ok
+    t = SelfTest("pin-freshness")
+    req = t.req
 
     # Scope FIRST. Everything below indexes SERVICE_LAYOUTS, so a scope loss
     # would otherwise surface as a KeyError traceback from a later case rather
@@ -512,8 +509,7 @@ def _selftest() -> int:
         any("ratchet_helpers.py" in line for line in report), "report names the module, not a count"
     )
 
-    print("pin-freshness self-test: " + ("PASSED" if not failed else f"FAILED ({failed})"))  # noqa: T201
-    return 1 if failed else 0
+    return t.finish()
 
 
 def _gather(
