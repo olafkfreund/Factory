@@ -14,16 +14,65 @@ repos, and the copies had begun to diverge.
 The canonical set is exactly the deduped verification-core surface — nothing
 service-specific:
 
+This table is `CANONICAL_MODULES` in `scripts/check_verification_core_drift.py`.
+That tuple is the contract; this table is a description of it, so when they
+disagree the tuple is right — run `--list` to settle it.
+
 | File | Role |
 | --- | --- |
 | `verification_gate.py` | RFC-0006 never-overclaim gate: recomputes an honest `achieved_level` from real lane outcomes so a verification block can never overclaim. |
-| `verification_profiles.py` | Verification profile selection / construction. |
-| `verification_runner.py` | Verification lane runner. |
 | `factory_sandbox.py` | Unprivileged-sandbox helper (bubblewrap-based isolation). |
 | `nix_provisioner.py` | Per-task Nix environment provisioner. |
+| `artifact_store.py` | RFC-0016 artifact store. |
+| `cost_router_core.py` | RFC-0014 cost router. |
+| `ratchet_helpers.py` | The rules every service's lint ratchet must agree on (Factory#403, Factory#590). |
+| `job_dispatch.py` | Job manifest naming, labelling and hardening rules (Factory#477, Factory#483). |
+
+`verification_profiles.py` and `verification_runner.py` were **removed** from the
+canonical set in Factory#401: they were listed but vendored by nobody, so the
+gate never compared them anywhere. The files still live in `scripts/`; they are
+simply no longer claimed to be a vendored contract.
 
 Service-specific files that live alongside the vendored copies in some repos are
 **not** part of this canonical contract and are intentionally out of scope.
+
+## Acknowledged forks (not byte-exact, still gated)
+
+Some shared code is not vendored byte-exact and never will be. The five lint
+ratchets — the hub's `scripts/ratchet_lint.py`, the same path in PFactory,
+TFactory and CFactory, and AIFactory's `scripts/cq_ratchet.py` — are
+structurally different programs. They gate different package layouts and run
+mypy five genuinely different ways (in place with `MYPYPATH`, from inside the
+package with `--explicit-package-bases`, from a temp copy next to the file, from
+a temp dir, from a git worktree). Demanding byte equality there would turn every
+repo red for divergence that is real.
+
+Each copy nonetheless carried a docstring citing the hub original — a **fork with
+a citation**, which the byte comparison is structurally unable to catch because
+there is no vendored file to compare. Factory#590 measured what that costs: one
+defect in a rule restated nine times across the five forks took **five PRs to
+fix**, and one of those five shipped a half-fix that read as complete.
+
+So `PORTED_RATCHETS` in the drift gate asks the question that IS answerable of a
+legitimate fork: does it **import** the shared rules from the byte-exact
+canonical it sits next to (`ratchet_helpers.py`), or has it restated them inline?
+Registered names live in `_REQUIRED_RATCHET_RULES`, and the check is: the file
+exists, it imports each name, it calls each name, and it does not restate a rule
+it should import.
+
+To add a shared rule, in this order — the order matters, see below:
+
+1. extract it into `ratchet_helpers.py` (hub PR)
+2. re-vendor and rewire every fork, bumping each `HUB_PIN_SHA`
+3. only then add the name to `_REQUIRED_RATCHET_RULES`
+
+Step 3 last, because the drift CHECKER is fetched from hub `main` in every
+consumer while the CANONICAL is pinned (Factory#405). Registering a rule the
+forks cannot yet satisfy turns all four repos red at once.
+
+The hub's own ratchet is the fifth fork and cannot be reached by a map that runs
+against service checkouts; it is named in `HUB_PORTED_RATCHET` and asserted by
+the hub's own test suite.
 
 ## How the services consume it (pinned-vendor + drift-gate)
 
