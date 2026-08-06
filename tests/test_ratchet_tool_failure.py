@@ -43,12 +43,9 @@ class _Res:
         self.stderr = stderr
 
 
-@pytest.fixture
-def stub(monkeypatch: pytest.MonkeyPatch):
-    def _apply(res: _Res) -> None:
-        monkeypatch.setattr(rl, "_run", lambda *_a, **_k: res)
-
-    return _apply
+def _stub(monkeypatch: pytest.MonkeyPatch, res: _Res) -> None:
+    """Replace the tool invocation with *res*, leaving the rest of the run real."""
+    monkeypatch.setattr(rl, "_run", lambda *_a, **_k: res)
 
 
 # --------------------------------------------------------------------------- #
@@ -56,29 +53,33 @@ def stub(monkeypatch: pytest.MonkeyPatch):
 # --------------------------------------------------------------------------- #
 
 
-def test_ruff_own_failure_exits_rather_than_reporting_clean(stub) -> None:
-    stub(_Res(2, stderr="error: invalid value for '--config <CONFIG_OPTION>'"))
+def test_ruff_own_failure_exits_rather_than_reporting_clean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub(monkeypatch, _Res(2, stderr="error: invalid value for '--config <CONFIG_OPTION>'"))
     with pytest.raises(SystemExit) as exc:
         rl.ruff_counts("x = 1\n", _FILE)
     assert exc.value.code == 2
 
 
-def test_ruff_failure_surfaces_stderr_for_diagnosis(stub, capsys) -> None:
-    stub(_Res(2, stderr="does not point to a configuration file"))
+def test_ruff_failure_surfaces_stderr_for_diagnosis(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _stub(monkeypatch, _Res(2, stderr="does not point to a configuration file"))
     with pytest.raises(SystemExit):
         rl.ruff_counts("x = 1\n", _FILE)
     assert "does not point to a configuration file" in capsys.readouterr().err
 
 
-def test_ruff_clean_file_still_counts_zero(stub) -> None:
+def test_ruff_clean_file_still_counts_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     # Control: exit 0 with "[]" is ruff saying "checked it, nothing wrong".
-    stub(_Res(0, stdout="[]"))
+    _stub(monkeypatch, _Res(0, stdout="[]"))
     assert rl.ruff_counts("x = 1\n", _FILE) == {}
 
 
-def test_ruff_violations_are_still_counted(stub) -> None:
+def test_ruff_violations_are_still_counted(monkeypatch: pytest.MonkeyPatch) -> None:
     # Control: exit 1 is the ordinary "found something" path, not a failure.
-    stub(_Res(1, stdout='[{"code": "S101"}, {"code": "S101"}]'))
+    _stub(monkeypatch, _Res(1, stdout='[{"code": "S101"}, {"code": "S101"}]'))
     assert rl.ruff_counts("x = 1\n", _FILE)["S101"] == 2
 
 
@@ -87,39 +88,45 @@ def test_ruff_violations_are_still_counted(stub) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_mypy_own_failure_exits_rather_than_reporting_zero_errors(stub) -> None:
-    stub(_Res(2, stderr="mypy: error: Cannot find config file 'mypy.ini'"))
+def test_mypy_own_failure_exits_rather_than_reporting_zero_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub(monkeypatch, _Res(2, stderr="mypy: error: Cannot find config file 'mypy.ini'"))
     with pytest.raises(SystemExit) as exc:
         rl.mypy_count("x = 1\n", _FILE, "scripts")
     assert exc.value.code == 2
 
 
-def test_mypy_failure_surfaces_stderr_for_diagnosis(stub, capsys) -> None:
-    stub(_Res(2, stderr="mypy: error: unrecognized arguments: --bogus"))
+def test_mypy_failure_surfaces_stderr_for_diagnosis(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _stub(monkeypatch, _Res(2, stderr="mypy: error: unrecognized arguments: --bogus"))
     with pytest.raises(SystemExit):
         rl.mypy_count("x = 1\n", _FILE, "scripts")
     assert "unrecognized arguments" in capsys.readouterr().err
 
 
-def test_mypy_clean_file_still_counts_zero(stub) -> None:
+def test_mypy_clean_file_still_counts_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     # Control: exit 0 with no error lines is a genuinely clean file.
-    stub(_Res(0, stdout="Success: no issues found in 1 source file\n"))
+    _stub(monkeypatch, _Res(0, stdout="Success: no issues found in 1 source file\n"))
     assert rl.mypy_count("x = 1\n", _FILE, "scripts") == 0
 
 
-def test_mypy_blocking_error_is_counted_not_treated_as_a_crash(stub) -> None:
+def test_mypy_blocking_error_is_counted_not_treated_as_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Control with teeth: a syntax error exits 2 as well, but still emits an
     # error line. Keying the guard on the exit code alone would abort the
     # ratchet here instead of blocking the regression.
-    stub(_Res(2, stdout="_ratchet_x__drift.py:1: error: invalid syntax  [syntax]\n"))
+    _stub(monkeypatch, _Res(2, stdout="_ratchet_x__drift.py:1: error: invalid syntax  [syntax]\n"))
     assert rl.mypy_count("x = 1\n", _FILE, "scripts") == 1
 
 
-def test_mypy_errors_are_still_counted(stub) -> None:
+def test_mypy_errors_are_still_counted(monkeypatch: pytest.MonkeyPatch) -> None:
     # Control: exit 1 is the ordinary "found something" path.
     out = (
         "_ratchet_x__drift.py:3: error: Function is missing a type annotation  [no-untyped-def]\n"
         "_ratchet_x__drift.py:9: error: Returning Any from function  [no-any-return]\n"
     )
-    stub(_Res(1, stdout=out))
+    _stub(monkeypatch, _Res(1, stdout=out))
     assert rl.mypy_count("x = 1\n", _FILE, "scripts") == 2
