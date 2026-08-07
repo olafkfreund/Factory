@@ -191,6 +191,71 @@ def test_no_branch_to_retract_is_the_steady_state_not_a_failure(
     )
 
 
+def _bump_api(pr_state: str = "open") -> tuple[list[tuple[str, str, object]], object]:
+    """A fake GitHub for the bump path. Returns (recorded calls, the fake)."""
+    calls: list[tuple[str, str, object]] = []
+
+    def fake_api(method: str, path: str, _token: str, body: object = None) -> object:
+        calls.append((method, path, body))
+        routes: list[tuple[bool, object]] = [
+            (
+                path.endswith("/contents/Dockerfile?ref=dev"),
+                {"content": base64.b64encode(_BAKE.encode()).decode(), "sha": "filesha"},
+            ),
+            ("/git/ref/heads/dev" in path, {"object": {"sha": "BASEHEAD"}}),
+            ("/git/commits/BASEHEAD" in path, {"tree": {"sha": "basetree"}}),
+            (method == "POST" and path.endswith("/git/trees"), {"sha": "newtree"}),
+            (method == "POST" and path.endswith("/git/commits"), {"sha": "NEWCOMMIT"}),
+            ("/pulls?" in path, []),
+            ("/pulls" in path, {"state": pr_state, "html_url": "https://example.invalid/pr/1"}),
+        ]
+        return next((value for matched, value in routes if matched), {"default_branch": "dev"})
+
+    return calls, fake_api
+
+
+def test_the_branch_never_points_at_the_bare_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression, and the bug that made "refreshed in place" a false claim.
+
+    Forcing the branch back to base and then writing the file onto it leaves the
+    branch byte-identical to base in between, so the PR momentarily has zero
+    commits -- and GitHub CLOSES a PR whose commits all disappear. Measured on
+    real PRs: AIFactory#1198 and TFactory#978 were closed by the refresh that was
+    supposed to update them. The next run then opens a NEW PR every week, which is
+    precisely the churn one fixed branch exists to prevent.
+
+    So no ref write may ever carry the base head.
+    """
+    calls, fake = _bump_api()
+    monkeypatch.setattr(cf, "_api", fake)
+    registry = {pkg: {"dist-tags": {"latest": "9.9.9"}} for pkg in cf.TRACKED}
+    cf.propose_bump("PFactory", registry, "token")
+
+    ref_writes = [
+        (m, p, b) for m, p, b in calls if "/git/ref" in p and m in {"PATCH", "POST", "PUT"}
+    ]
+    assert ref_writes, "the branch must actually be written"
+    for _, path, body in ref_writes:
+        assert isinstance(body, dict)
+        assert body.get("sha") != "BASEHEAD", (
+            f"{path} points the bump branch at the bare base commit, which empties "
+            "the PR and makes GitHub close it"
+        )
+
+
+def test_a_pr_that_is_not_open_is_not_a_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Calling the endpoint is not the same as having an open pull request.
+
+    Without this post-condition the bumper reports success over a closed PR --
+    an automation nobody merges, by construction.
+    """
+    _, fake = _bump_api(pr_state="closed")
+    monkeypatch.setattr(cf, "_api", fake)
+    registry = {pkg: {"dist-tags": {"latest": "9.9.9"}} for pkg in cf.TRACKED}
+    with pytest.raises(cf.SourceUnavailableError, match="not open"):
+        cf.propose_bump("PFactory", registry, "token")
+
+
 def test_one_branch_per_repo_so_a_sitting_pr_is_never_duplicated() -> None:
     """An automation whose PRs pile up unmerged trains people to ignore it.
 

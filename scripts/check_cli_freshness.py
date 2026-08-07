@@ -339,14 +339,54 @@ def propose_bump(repo: str, registry: dict[str, dict[str, Any]], token: str) -> 
             return f"  {repo}: every tracked pin is current, nothing proposed"
         return f"  {repo}: every tracked pin is current, retracted the stale bump branch"
 
+    summary = ", ".join(f"{pkg.split('/')[-1]} {ver}" for pkg, ver in sorted(updates.items()))
     head = _api("GET", f"/repos/{_OWNER}/{repo}/git/ref/heads/{base}", token)["object"]["sha"]
-    # Reset onto the current base every run instead of stacking commits. The PR
-    # then always shows one clean diff, a bump that has sat for weeks never rots
-    # into a merge conflict with everything that landed meanwhile, and -- the
-    # part that matters -- an already-open PR is refreshed rather than joined by
-    # a second one.
+
+    # BUILD THE COMMIT FIRST, THEN MOVE THE BRANCH TO IT IN ONE STEP. The obvious
+    # shape -- force the branch back to base, then write the file onto it -- is
+    # what this did first, and it is WRONG in a way that only shows on the SECOND
+    # run: between those two calls the branch is byte-identical to base, so the
+    # pull request momentarily has zero commits, and GitHub CLOSES a pull request
+    # whose commits all disappear. Measured, not theorised: the refresh that was
+    # meant to update AIFactory#1198 and TFactory#978 closed them both instead,
+    # `closed` and `head_ref_force_pushed` sharing a timestamp in the PR timeline,
+    # while PFactory#483 -- opened fresh, never refreshed -- stayed open. The next
+    # run then sees no open PR and opens a NEW one, every week: exactly the PR
+    # churn one fixed branch exists to prevent, manufactured by the mechanism
+    # meant to prevent it.
+    #
+    # Committing against the base tree and force-updating the ref to the finished
+    # commit means the branch is never equal to base, so the PR is never emptied.
+    # It still rebases onto the base every run: one clean diff, no conflict rot.
+    base_tree = _api("GET", f"/repos/{_OWNER}/{repo}/git/commits/{head}", token)["tree"]["sha"]
+    tree = _api(
+        "POST",
+        f"/repos/{_OWNER}/{repo}/git/trees",
+        token,
+        {
+            "base_tree": base_tree,
+            "tree": [
+                {
+                    "path": "Dockerfile",
+                    "mode": "100644",
+                    "type": "blob",
+                    "content": rewrite(dockerfile, updates),
+                }
+            ],
+        },
+    )["sha"]
+    commit = _api(
+        "POST",
+        f"/repos/{_OWNER}/{repo}/git/commits",
+        token,
+        {
+            "message": f"chore(deps): bump baked agent-CLI pins ({summary})\n\nFactory#459",
+            "tree": tree,
+            "parents": [head],
+        },
+    )["sha"]
     try:
-        _api("PATCH", ref, token, {"sha": head, "force": True})
+        _api("PATCH", ref, token, {"sha": commit, "force": True})
     except urllib.error.HTTPError as exc:
         if exc.code not in (_HTTP_NOT_FOUND, _HTTP_UNPROCESSABLE):
             raise
@@ -354,21 +394,8 @@ def propose_bump(repo: str, registry: dict[str, dict[str, Any]], token: str) -> 
             "POST",
             f"/repos/{_OWNER}/{repo}/git/refs",
             token,
-            {"ref": f"refs/heads/{_BUMP_BRANCH}", "sha": head},
+            {"ref": f"refs/heads/{_BUMP_BRANCH}", "sha": commit},
         )
-
-    summary = ", ".join(f"{pkg.split('/')[-1]} {ver}" for pkg, ver in sorted(updates.items()))
-    _api(
-        "PUT",
-        f"/repos/{_OWNER}/{repo}/contents/Dockerfile",
-        token,
-        {
-            "message": f"chore(deps): bump baked agent-CLI pins ({summary})\n\nFactory#459",
-            "content": base64.b64encode(rewrite(dockerfile, updates).encode()).decode(),
-            "sha": blob["sha"],
-            "branch": _BUMP_BRANCH,
-        },
-    )
 
     title = f"chore(deps): bump baked agent-CLI pins ({summary})"
     body = _pr_body(repo, updates, base)
@@ -378,20 +405,33 @@ def propose_bump(repo: str, registry: dict[str, dict[str, Any]], token: str) -> 
     if open_prs:
         # Refresh the description too: the branch just moved to newer versions
         # than the ones the body was written for.
-        _api(
+        pull = _api(
             "PATCH",
             f"/repos/{_OWNER}/{repo}/pulls/{open_prs[0]['number']}",
             token,
             {"title": title, "body": body},
         )
-        return f"  {repo}: refreshed {open_prs[0]['html_url']} -- {summary}"
-    pull = _api(
-        "POST",
-        f"/repos/{_OWNER}/{repo}/pulls",
-        token,
-        {"title": title, "head": _BUMP_BRANCH, "base": base, "body": body},
-    )
-    return f"  {repo}: opened {pull['html_url']} -- {summary}"
+        verb = "refreshed"
+    else:
+        pull = _api(
+            "POST",
+            f"/repos/{_OWNER}/{repo}/pulls",
+            token,
+            {"title": title, "head": _BUMP_BRANCH, "base": base, "body": body},
+        )
+        verb = "opened"
+
+    # Post-condition, and the check that would have caught the bug above on the
+    # run that introduced it rather than an hour later. "I pushed a branch and
+    # called an endpoint" is not the same as "there is an open pull request", and
+    # a bumper reporting success over a closed PR is an automation nobody merges
+    # by construction. GitHub reports the state it actually has; believe that.
+    if pull.get("state") != "open":
+        raise SourceUnavailableError(
+            f"{repo}: {verb} {pull.get('html_url')} but GitHub reports it "
+            f"{pull.get('state')!r}, not open. The bump was not actually proposed."
+        )
+    return f"  {repo}: {verb} {pull['html_url']} -- {summary}"
 
 
 def _bump(registry: dict[str, dict[str, Any]]) -> int:
