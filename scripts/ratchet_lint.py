@@ -166,6 +166,14 @@ def mypy_command(target: str, original: str | None = None) -> list[str]:
     and pass the gate having measured nothing. Costs ~1.1s per call on a warm
     cache; a gate that is only correct when its cache is cold is not correct.
 
+    AIFactory hit the same cache independently (its #1057: base counts of 9 and
+    then 0 for the same command on the same tree) and keyed a cache dir per tree
+    instead, because ``--no-incremental`` measured ~5x slower there. That trade
+    does not exist here: every call already writes to a FRESH ``mkdtemp``, so a
+    cache keyed to it would be cold every time anyway. CFactory needs neither —
+    its copy carries a random name, so two runs never share an entry (#319).
+    Three forks, three answers, each measured against its own copy strategy.
+
     Production code is untouched: these flags are per-invocation and the ratchet
     checks one file at a time.
     """
