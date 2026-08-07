@@ -294,7 +294,7 @@ def _pr_body(repo: str, updates: dict[str, str], base: str) -> str:
             "",
             "## If this sits",
             "",
-            "The branch is reset onto the base branch on every weekly run, so this PR is",
+            "The branch is rebased onto the base branch on every weekly run, so this PR is",
             "refreshed in place and a second one is never opened. If it is still unmerged",
             "when the newest release passes the 30-day window, the hub `cli-freshness`",
             'job goes red -- that red now means "a bump PR has been ignored" rather than',
