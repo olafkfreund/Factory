@@ -462,8 +462,15 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
     # and a service carrying a vendored file it maps nowhere goes red.
     problems = check_drift(canonical_root, service_root, layout)
     ported = PORTED_RATCHETS.get(service)
+    # Kept separate from `problems` so the evidence line below can state the
+    # verdict it actually reached. Folding it straight in made that line read
+    # "checked that it imports and calls ..." even when the check had FAILED --
+    # a success sentence printed regardless of outcome, which is precisely the
+    # defect this gate exists to catch (Factory#590).
+    ported_problems: list[str] = []
     if ported is not None:
-        problems.extend(ported_ratchet_problems(service_root, ported))
+        ported_problems = ported_ratchet_problems(service_root, ported)
+        problems.extend(ported_problems)
     _emit(f"verification-core: {service} vs the hub canonical at {canonical_root}")
     _emit("  compared (each line carries the bytes the verdict was read from):")
     for line in compared_evidence(canonical_root, service_root, layout) or ["(no modules mapped)"]:
@@ -474,11 +481,19 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
         f"{', '.join(sorted(_SCAN_PRUNE))}"
     )
     if ported is not None:
-        _emit(
-            f"  acknowledged fork {ported} [{digest(service_root / ported)}]: checked that it "
-            f"imports and calls {', '.join(_REQUIRED_RATCHET_RULES)} from ratchet_helpers rather "
-            "than restating them (NOT byte-compared — these forks legitimately differ)"
-        )
+        _rules = ", ".join(_REQUIRED_RATCHET_RULES)
+        if ported_problems:
+            _emit(
+                f"  acknowledged fork {ported} [{digest(service_root / ported)}]: FAILED "
+                f"({len(ported_problems)} problem(s) listed below) — it must import and call "
+                f"{_rules} from ratchet_helpers rather than restating them"
+            )
+        else:
+            _emit(
+                f"  acknowledged fork {ported} [{digest(service_root / ported)}]: imports and "
+                f"calls {_rules} from ratchet_helpers rather than restating them "
+                "(NOT byte-compared — these forks legitimately differ)"
+            )
     if problems:
         _emit(f"verification-core drift — {service} diverges from the hub canonical:")
         for problem in problems:
