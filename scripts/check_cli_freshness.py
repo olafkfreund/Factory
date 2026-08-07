@@ -67,6 +67,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from selftest_report import SelfTest, gate_argparser
 
 _OWNER = "olafkfreund"
+# ponytail: HEAD is the DEFAULT branch (`dev` in all three), which is not the ref
+# the fleet deploys — factory-gitops' cli-canary reads `main` for exactly that
+# reason. So a bump merged to dev silences this watchdog before the image reaches
+# the cluster. Pre-existing since #556 and left alone here to keep this change
+# small; tracked and argued in Factory#612, which is where to fix it.
 _RAW = "https://raw.githubusercontent.com/{owner}/{repo}/HEAD/Dockerfile"
 _REGISTRY = "https://registry.npmjs.org/{pkg}"
 
@@ -258,7 +263,7 @@ def _api(method: str, path: str, token: str, body: dict[str, Any] | None = None)
 
 def _pr_body(repo: str, updates: dict[str, str], base: str) -> str:
     lines = [f"- `{pkg}` -> `{ver}`" for pkg, ver in sorted(updates.items())]
-    others = ", ".join(r for r in REPOS if r != repo)
+    others = ", ".join(f"`{r}`" for r in REPOS if r != repo)
     return "\n".join(
         [
             "Opened by the hub `agent-CLI freshness` job (Factory#459, #556).",
@@ -283,7 +288,7 @@ def _pr_body(repo: str, updates: dict[str, str], base: str) -> str:
             "release fails here rather than in the fleet. Nothing auto-merges this, on",
             "purpose.",
             "",
-            f"`{others}` get the same branch in the same run, to the same versions.",
+            f"{others} get the same branch in the same run, to the same versions.",
             "factory-gitops' `cli-canary` asserts all three repos pin identically, so",
             "merging one alone turns that check red -- merge the set.",
             "",
