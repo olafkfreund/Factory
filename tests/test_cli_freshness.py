@@ -161,7 +161,9 @@ def test_nothing_to_bump_is_a_no_op_not_an_error() -> None:
     assert cf.rewrite(_BAKE, {}) == _BAKE
 
 
-def test_no_branch_to_retract_is_the_steady_state_not_a_failure(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_no_branch_to_retract_is_the_steady_state_not_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Regression: GitHub answers a delete of a missing ref with 422, not 404.
 
     Once the pins are current this is what EVERY weekly run does, so treating it
