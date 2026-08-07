@@ -34,6 +34,17 @@ only see what the layout points it at (Factory#523):
   silently; the copy stayed on disk, kept being imported and was free to drift,
   and the only trace was the module count in the success line dropping by one.
 
+A THIRD guard covers what byte comparison structurally cannot (Factory#590):
+
+* :func:`ported_ratchet_problems` — the fork-with-a-citation case. Some shared
+  code is not vendored byte-exact and never will be: the five lint ratchets are
+  structurally different programs (five package layouts, five mypy invocation
+  strategies), each carrying a docstring that cites the hub original. Byte
+  equality is the wrong demand there, so this gate asks the only question that
+  IS answerable — does the fork IMPORT the shared rules from the byte-exact
+  canonical it sits next to, or has it restated them inline? Nine inline
+  restatements of one rule are what cost five PRs and shipped a half-fix.
+
 Every verdict this gate emits — pass and fail alike — carries the bytes it was
 derived from (path plus sha256 of each side), and the success report enumerates
 what it compared rather than counting it. A count is not a check: nobody
@@ -74,6 +85,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import sys
 import tempfile
@@ -181,6 +193,59 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
     },
 }
 
+# ACKNOWLEDGED FORKS (Factory#590), as opposed to the byte-exact vendorings in
+# SERVICE_LAYOUTS above. Each of these files carries a docstring citing the hub's
+# scripts/ratchet_lint.py as its origin, and each has genuinely diverged: the
+# five ratchets gate different package layouts and run mypy five different ways
+# (in place with MYPYPATH, from inside the package with --explicit-package-bases,
+# from a temp copy next to the file, from a temp dir, from a git worktree). That
+# divergence is real and load-bearing, so byte equality is the wrong demand and
+# registering them in SERVICE_LAYOUTS would simply turn every repo red.
+#
+# What is NOT legitimately divergent is the RULES, and those already have a
+# byte-exact canonical next door: scripts/ratchet_helpers.py, which every one of
+# these services vendors and this gate already compares. So the question this
+# guard asks is the answerable one — does the fork IMPORT the shared rules, or
+# has it restated them inline?
+#
+# It is asked because inline restatement is exactly what happened. `ruff_counts()`
+# read empty ruff stdout as "no violations" when a clean run prints "[]" and empty
+# stdout means ruff FAILED, so a blocking gate reported green on a linter that
+# never ran. Found in TFactory#951, found independently a day later in
+# PFactory#455, and the sweep found it in all five repos in BOTH the ruff and the
+# mypy half: nine guards, five PRs, and TFactory#951 shipped a half-fix because
+# the mypy counter sat directly below the ruff one with the identical shape.
+PORTED_RATCHETS: dict[str, str] = {
+    "pfactory": "scripts/ratchet_lint.py",
+    "tfactory": "scripts/ratchet_lint.py",
+    "cfactory": "scripts/ratchet_lint.py",
+    # AIFactory's fork does not even share the filename, which is part of why no
+    # byte-exact mechanism was ever going to reach it.
+    "aifactory": "scripts/cq_ratchet.py",
+}
+
+# The hub's own ratchet is the FIFTH fork, and it had the same defect (fixed in
+# Factory#589). It cannot be checked by this map — the map runs against a SERVICE
+# checkout — so it is named here and asserted by the hub's own test suite
+# (tests/test_check_verification_core_drift.py), which runs on every hub PR. Four
+# out of five would be the scope loss this gate exists to catch.
+HUB_PORTED_RATCHET = "scripts/ratchet_lint.py"
+
+# Names a ported ratchet must import from ratchet_helpers rather than restate.
+# Growing this tuple is how a future shared rule gets enforced across the forks:
+# extract it into the canonical, re-vendor, rewire the forks, THEN add it here.
+_REQUIRED_RATCHET_RULES: tuple[str, ...] = ("require_tool_ran",)
+
+# ponytail: a verbatim-substring check, not a semantic one. It catches the idiom
+# being COPIED BACK, which is the observed failure mode (the nine restatements
+# were byte-identical apart from their comments) and nothing more — a re-spelling
+# such as `res.returncode >= 2` slips past. Upgrade path if that ever happens: an
+# ast walk for a Compare on a `.returncode` attribute inside a function that also
+# calls subprocess. Not built, because the cheap check covers what actually broke.
+_RESTATED_RULES: tuple[tuple[str, str], ...] = (
+    ("res.returncode not in (0, 1)", "require_tool_ran"),
+)
+
 # Default canonical root, relative to the repo that contains this script: the
 # hub's scripts/ directory (i.e. the directory this file lives in).
 _DEFAULT_CANONICAL = Path(__file__).resolve().parent
@@ -244,6 +309,72 @@ def _stray_vendored_copies(service_root: Path, layout: dict[str, str]) -> list[s
     # Sorted: os.walk order is filesystem order, and a gate whose report reorders
     # between runs is one nobody can diff.
     return sorted(strays)
+
+
+def ported_ratchet_problems(root: Path, rel_path: str) -> list[str]:
+    """Problems with an acknowledged fork at *rel_path* under *root*.
+
+    Three questions, in the order they can go wrong:
+
+    1. Does the file exist? A registered fork that vanished means the map is
+       stale, and a stale map is a check that silently stopped running — the
+       Factory#401 condition, one level up.
+    2. Does it IMPORT each name in :data:`_REQUIRED_RATCHET_RULES` from
+       ``ratchet_helpers``, and CALL it at least once? The call matters
+       separately because an unused import would normally be caught by ruff F401
+       and these files are outside every repo's ruff scope (Factory#590), so an
+       import added only to satisfy this gate would sit there unreferenced.
+    3. Does it restate a rule inline that it is supposed to import? This is the
+       one with teeth: the fork can import the canonical AND keep its old copy
+       of the rule, and then the canonical fix reaches it and changes nothing.
+
+    Parsed with :mod:`ast` rather than grepped for the import half, so a name
+    inside a comment or a docstring cannot satisfy the requirement.
+    """
+    path = root / rel_path
+    if not path.is_file():
+        return [
+            f"{rel_path}: registered in PORTED_RATCHETS but absent — either the fork moved "
+            "(update the map) or this service no longer has one (remove the entry); a map "
+            "pointing at nothing is a check that stopped running"
+        ]
+    source = path.read_text()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return [f"{rel_path}: could not be parsed ({exc})"]
+
+    imported = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "ratchet_helpers"
+        for alias in node.names
+    }
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    problems = [
+        f"{rel_path}: does not import {rule!r} from ratchet_helpers — the shared ratchet "
+        "rules are the byte-exact canonical this fork sits next to; restating them is how "
+        "one defect became nine (Factory#590)"
+        for rule in _REQUIRED_RATCHET_RULES
+        if rule not in imported
+    ]
+    problems.extend(
+        f"{rel_path}: imports {rule!r} but never calls it — an import nothing uses satisfies "
+        "this gate while the fork still measures its own way"
+        for rule in _REQUIRED_RATCHET_RULES
+        if rule in imported and rule not in called
+    )
+    problems.extend(
+        f"{rel_path}: restates the shared rule inline ({idiom!r}) instead of calling "
+        f"{rule!r} — a fix to the canonical would not reach this copy"
+        for idiom, rule in _RESTATED_RULES
+        if idiom in source
+    )
+    return problems
 
 
 def compared_evidence(
@@ -330,6 +461,16 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
     # falls through: with nothing mapped, the stray-copy scan is the whole check,
     # and a service carrying a vendored file it maps nowhere goes red.
     problems = check_drift(canonical_root, service_root, layout)
+    ported = PORTED_RATCHETS.get(service)
+    # Kept separate from `problems` so the evidence line below can state the
+    # verdict it actually reached. Folding it straight in made that line read
+    # "checked that it imports and calls ..." even when the check had FAILED --
+    # a success sentence printed regardless of outcome, which is precisely the
+    # defect this gate exists to catch (Factory#590).
+    ported_problems: list[str] = []
+    if ported is not None:
+        ported_problems = ported_ratchet_problems(service_root, ported)
+        problems.extend(ported_problems)
     _emit(f"verification-core: {service} vs the hub canonical at {canonical_root}")
     _emit("  compared (each line carries the bytes the verdict was read from):")
     for line in compared_evidence(canonical_root, service_root, layout) or ["(no modules mapped)"]:
@@ -339,6 +480,20 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
         "layout maps nowhere; pruned: dot-directories, "
         f"{', '.join(sorted(_SCAN_PRUNE))}"
     )
+    if ported is not None:
+        _rules = ", ".join(_REQUIRED_RATCHET_RULES)
+        if ported_problems:
+            _emit(
+                f"  acknowledged fork {ported} [{digest(service_root / ported)}]: FAILED "
+                f"({len(ported_problems)} problem(s) listed below) — it must import and call "
+                f"{_rules} from ratchet_helpers rather than restating them"
+            )
+        else:
+            _emit(
+                f"  acknowledged fork {ported} [{digest(service_root / ported)}]: imports and "
+                f"calls {_rules} from ratchet_helpers rather than restating them "
+                "(NOT byte-compared — these forks legitimately differ)"
+            )
     if problems:
         _emit(f"verification-core drift — {service} diverges from the hub canonical:")
         for problem in problems:
@@ -355,7 +510,13 @@ def run_check(canonical_root: Path, service_root: Path, service: str) -> int:
             "     then bump HUB_PIN_SHA in each consumer's verification-core-drift\n"
             "     workflow to the hub commit that carries it.\n"
             "Never hand-edit one copy to make this gate pass: that is the silent "
-            "divergence the gate exists to catch."
+            "divergence the gate exists to catch.\n"
+            "\nAn ACKNOWLEDGED FORK problem above (a ratchet that restates a shared rule "
+            "instead of importing it) is a different fix: the fork is allowed to differ, "
+            "so do NOT re-vendor it. Delete the inline copy of the rule and call the "
+            "canonical helper from scripts/ratchet_helpers.py instead. If the rule genuinely "
+            "cannot be shared, that belongs in the hub canonical as a parameter, not as a "
+            "fifth private copy (Factory#590)."
         )
         return 1
     _emit(
@@ -379,6 +540,13 @@ def _list_layouts() -> int:
         _emit(f"  {service}:")
         for module, rel_path in sorted(layout.items()):
             _emit(f"    {module} -> {rel_path}")
+    _emit(
+        "\nacknowledged forks (NOT byte-compared — checked only for importing and "
+        f"calling {', '.join(_REQUIRED_RATCHET_RULES)} from ratchet_helpers):"
+    )
+    for service in sorted(PORTED_RATCHETS):
+        _emit(f"  {service}: {PORTED_RATCHETS[service]}")
+    _emit(f"  factory (hub, asserted by the hub's own suite): {HUB_PORTED_RATCHET}")
     return 0
 
 
@@ -461,6 +629,113 @@ def _scope_self_test(canonical: Path, root: Path, layout: dict[str, str]) -> lis
     expect(
         check_drift(canonical, pruned, {}) != [],
         "an unmapped copy outside the prune list must be flagged",
+    )
+    return failures
+
+
+_PORTED_OK = '''\
+"""Ported from the hub's scripts/ratchet_lint.py."""
+from ratchet_helpers import is_test_file, require_tool_ran
+
+
+def ruff_counts(res):
+    require_tool_ran("ruff", res)
+    return len(res.stdout)
+'''
+
+_PORTED_INLINE_RESTATEMENT = '''\
+"""Ported from the hub's scripts/ratchet_lint.py."""
+from ratchet_helpers import is_test_file
+
+
+def ruff_counts(res):
+    if res.returncode not in (0, 1):
+        raise SystemExit(2)
+    return len(res.stdout)
+'''
+
+_PORTED_SURVIVING_INLINE_COPY = """
+
+def mypy_count(res):
+    if res.returncode not in (0, 1):
+        raise SystemExit(2)
+    return 0
+"""
+
+_PORTED_UNCALLED_IMPORT = '''\
+"""Ported from the hub's scripts/ratchet_lint.py."""
+from ratchet_helpers import require_tool_ran
+
+
+def ruff_counts(res):
+    return len(res.stdout)
+'''
+
+
+def _ported_self_test(root: Path) -> list[str]:
+    """The acknowledged-fork guard (Factory#590), which byte comparison cannot do.
+
+    Each case holds the fork's own orchestration constant — the thing that is
+    legitimately different between the five — and moves only whether the SHARED
+    rule is imported, called, or restated.
+    """
+    failures: list[str] = []
+
+    def expect(condition: bool, label: str) -> None:
+        if not condition:
+            failures.append(label)
+
+    ported = root / "ported"
+    (ported / "scripts").mkdir(parents=True)
+    fork = ported / "scripts/ratchet_lint.py"
+
+    fork.write_text(_PORTED_OK)
+    expect(
+        ported_ratchet_problems(ported, "scripts/ratchet_lint.py") == [],
+        "a fork that imports and calls the shared rule is clean",
+    )
+
+    # THE Factory#590 MUTATION: the rule restated inline instead of imported.
+    # This is the state all five repos were in, and no byte comparison can see it.
+    fork.write_text(_PORTED_INLINE_RESTATEMENT)
+    problems = ported_ratchet_problems(ported, "scripts/ratchet_lint.py")
+    expect(
+        any("does not import" in p for p in problems),
+        "a fork that does not import the shared rule must be red",
+    )
+    expect(
+        any("restates the shared rule" in p for p in problems),
+        "an inline restatement of the shared rule must be red",
+    )
+
+    # Importing it while KEEPING the old inline copy is still red: the canonical
+    # fix would reach the import and change nothing about what the fork measures.
+    # This is precisely the half-fix TFactory#951 shipped and read as complete.
+    fork.write_text(_PORTED_OK + _PORTED_SURVIVING_INLINE_COPY)
+    expect(
+        any(
+            "restates the shared rule" in p
+            for p in ported_ratchet_problems(ported, "scripts/ratchet_lint.py")
+        ),
+        "importing the rule must not excuse a surviving inline copy of it",
+    )
+
+    # An import nobody calls satisfies a naive check and measures nothing. These
+    # files sit outside every repo's ruff scope, so F401 does not cover it.
+    fork.write_text(_PORTED_UNCALLED_IMPORT)
+    expect(
+        any(
+            "never calls it" in p
+            for p in ported_ratchet_problems(ported, "scripts/ratchet_lint.py")
+        ),
+        "an imported-but-uncalled rule must be red",
+    )
+
+    # A registered fork that is not there means the map went stale.
+    fork.unlink()
+    expect(
+        any("absent" in p for p in ported_ratchet_problems(ported, "scripts/ratchet_lint.py")),
+        "a registered fork that does not exist must be red, not skipped",
     )
     return failures
 
@@ -564,6 +839,10 @@ def _self_test() -> int:
 
         # Cases 7-10: the gate's SCOPE, not its subject (Factory#523).
         failures.extend(_scope_self_test(canonical, root, layout))
+
+        # Cases 11-15: acknowledged forks, which byte comparison cannot reach
+        # at all (Factory#590).
+        failures.extend(_ported_self_test(root))
 
     if failures:
         _emit("SELF-TEST FAILED:")

@@ -337,3 +337,67 @@ def test_service_layouts_reference_known_modules() -> None:
     for service, layout in gate.SERVICE_LAYOUTS.items():
         for module in layout:
             assert module in gate.CANONICAL_MODULES, f"{service} references unknown {module}"
+
+
+# --------------------------------------------------------------------------- #
+# acknowledged forks (Factory#590)                                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_hub_own_ratchet_uses_the_shared_rules() -> None:
+    # The hub's scripts/ratchet_lint.py is the FIFTH fork and had the same
+    # defect (Factory#589). PORTED_RATCHETS runs against SERVICE checkouts and
+    # cannot reach it, so this is where it is asserted. Four of five checked is
+    # the scope loss this gate exists to catch.
+    assert gate.ported_ratchet_problems(_REPO_ROOT, gate.HUB_PORTED_RATCHET) == []
+
+
+def test_ported_ratchet_registry_covers_every_service_with_a_layout() -> None:
+    # Every service the gate knows about runs a ratchet. A service present in
+    # SERVICE_LAYOUTS but absent from PORTED_RATCHETS is a fork nothing asks
+    # about, which is the state all five were in before Factory#590.
+    assert set(gate.PORTED_RATCHETS) == set(gate.SERVICE_LAYOUTS)
+
+
+def test_restated_rule_names_a_real_canonical_helper() -> None:
+    # The remedy the failure message names must exist in the canonical, or the
+    # gate tells people to import something that is not there.
+    helpers = (_REPO_ROOT / "scripts/ratchet_helpers.py").read_text()
+    for rule in gate._REQUIRED_RATCHET_RULES:
+        assert f"def {rule}(" in helpers, f"{rule} is required but absent from ratchet_helpers"
+
+
+def test_inline_restatement_is_flagged(tmp_path: Path) -> None:
+    # THE mutation: the shared rule copied back inline. No byte comparison can
+    # see this, because these forks are not byte-comparable to anything.
+    fork = tmp_path / "scripts/ratchet_lint.py"
+    fork.parent.mkdir(parents=True)
+    fork.write_text(
+        "from ratchet_helpers import is_test_file\n\n\n"
+        "def ruff_counts(res):\n"
+        "    if res.returncode not in (0, 1):\n"
+        "        raise SystemExit(2)\n"
+        "    return 0\n"
+    )
+    problems = gate.ported_ratchet_problems(tmp_path, "scripts/ratchet_lint.py")
+    assert any("does not import" in p for p in problems)
+    assert any("restates the shared rule" in p for p in problems)
+
+
+def test_import_in_a_comment_does_not_satisfy_the_gate(tmp_path: Path) -> None:
+    # Parsed with ast, not grepped: a mention is not an import.
+    fork = tmp_path / "scripts/ratchet_lint.py"
+    fork.parent.mkdir(parents=True)
+    fork.write_text(
+        '"""Uses require_tool_ran."""\n# from ratchet_helpers import require_tool_ran\n'
+    )
+    assert any(
+        "does not import" in p
+        for p in gate.ported_ratchet_problems(tmp_path, "scripts/ratchet_lint.py")
+    )
+
+
+def test_missing_fork_is_flagged_not_skipped(tmp_path: Path) -> None:
+    assert any(
+        "absent" in p for p in gate.ported_ratchet_problems(tmp_path, "scripts/ratchet_lint.py")
+    )
