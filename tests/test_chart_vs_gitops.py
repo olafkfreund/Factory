@@ -75,8 +75,43 @@ def test_gitops_ahead_of_the_chart_warns_rather_than_fails() -> None:
     assert found.warnings
 
 
-def test_a_waiver_suppresses_the_failure_but_not_the_report() -> None:
-    """A waiver is not a mute button; the reader must still see the difference."""
+def test_a_chart_only_pdb_fails_when_nothing_waives_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The baseline the waiver case has to visibly suppress.
+
+    Also the LIVE behaviour since Factory#550 emptied ``WAIVERS``: the charts
+    must not enable a PDB that the gitops manifests do not have. Pinned with an
+    explicitly empty waiver list rather than relying on the module's current
+    contents, so this keeps testing the same thing after the next waiver lands.
+    """
+    monkeypatch.setattr(cvg, "WAIVERS", ())
+    values = {**_VALUES, "podDisruptionBudget": {"enabled": True}}
+    found = cvg.compare_service("svc", values, _manifests(_HARD_POD, _HARD_CTR))
+    assert any("podDisruptionBudget" in f for f in found.failures)
+
+
+def test_a_waiver_suppresses_the_failure_but_not_the_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A waiver is not a mute button; the reader must still see the difference.
+
+    Factory#550 closed both of the gate's real waivers, so this injects one. The
+    mechanism has to stay tested while nothing uses it -- an untested escape
+    hatch is discovered broken by whoever next needs it, under time pressure.
+    """
+    monkeypatch.setattr(
+        cvg,
+        "WAIVERS",
+        (
+            cvg.Waiver(
+                service="*",
+                control="podDisruptionBudget",
+                reason="test fixture",
+                tracked_by="Factory#550",
+            ),
+        ),
+    )
     values = {**_VALUES, "podDisruptionBudget": {"enabled": True}}
     found = cvg.compare_service("svc", values, _manifests(_HARD_POD, _HARD_CTR))
     assert not any("podDisruptionBudget" in f for f in found.failures)
@@ -84,13 +119,35 @@ def test_a_waiver_suppresses_the_failure_but_not_the_report() -> None:
 
 
 def test_every_waiver_names_a_reason_and_a_tracking_issue() -> None:
-    """An unexplained waiver is the silent exemption this gate exists to end."""
-    assert cvg.WAIVERS, (
+    """An unexplained waiver is the silent exemption this gate exists to end.
+
+    ``WAIVERS`` is empty as of Factory#550, so the loop below runs zero times.
+    That is a rule passing without evaluating anything, so the ATTRIBUTE is what
+    is asserted -- an empty escape hatch is fine, a deleted one is not, and the
+    old ``assert cvg.WAIVERS`` contradicted its own failure message by demanding
+    a non-empty list. The teeth for this rule live in
+    ``test_a_reasonless_waiver_is_rejected`` below, which supplies its own.
+    """
+    assert isinstance(cvg.WAIVERS, tuple), (
         "the waiver list is the escape hatch; an empty one is fine, an absent one is not"
     )
     for w in cvg.WAIVERS:
         assert w.reason.strip(), f"{w.control} waived with no reason"
         assert w.tracked_by.startswith("Factory#"), f"{w.control} waived with no tracking issue"
+
+
+def test_a_reasonless_waiver_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The rule above, given something to evaluate.
+
+    Without this the "every waiver is explained" claim is green because there
+    are no waivers -- the same shape as a test suite that evaluated no rules.
+    """
+    monkeypatch.setattr(
+        cvg,
+        "WAIVERS",
+        (cvg.Waiver(service="*", control="podDisruptionBudget", reason="", tracked_by=""),),
+    )
+    assert not all(w.reason and w.tracked_by for w in cvg.WAIVERS)
 
 
 def test_the_uncompared_controls_are_declared() -> None:
@@ -127,6 +184,59 @@ def test_an_unreadable_input_is_never_a_pass() -> None:
         cvg._app_container(
             {"spec": {"template": {"spec": {"containers": [{"name": "other"}]}}}}, "svc"
         )
+
+
+def _sa(value: object) -> dict[str, object]:
+    return {
+        "kind": "ServiceAccount",
+        "metadata": {"name": "svc"},
+        "automountServiceAccountToken": value,
+    }
+
+
+def _chart(value: object) -> dict[str, object]:
+    return {**_VALUES, "serviceAccount": {"automountServiceAccountToken": value}}
+
+
+def test_automount_true_on_both_sides_is_a_checked_agreement() -> None:
+    """Factory#550. The case the old presence-of-``false`` compare could not see.
+
+    aifactory and tfactory NEED the token -- they create Jobs via
+    ``load_incluster_config()`` -- so ``true`` is their honest declaration. The
+    previous comparison asked only "does each side declare ``false``?", so a
+    ``true``/``true`` pair reported "absent in both": agreement it never checked.
+    """
+    found = cvg.compare_service("svc", _chart(True), _manifests(_HARD_POD, _HARD_CTR, [_sa(True)]))
+    assert not found.failures
+    assert any("automountServiceAccountToken: agree (True)" in line for line in found.report)
+
+
+def test_automount_disagreement_fails_even_when_neither_side_says_false() -> None:
+    """The same pair diverging. Under presence-of-``false`` both sides scored
+    False, so the gate called them equal and passed on a real divergence."""
+    found = cvg.compare_service("svc", _chart(True), _manifests(_HARD_POD, _HARD_CTR, [_sa(False)]))
+    assert any("automountServiceAccountToken" in f for f in found.failures)
+
+
+def test_automount_declared_in_the_chart_and_nowhere_in_gitops_fails() -> None:
+    """The original Factory#550 shape: four charts declaring the control while
+    every gitops Deployment left it unset, so the token was mounted anyway."""
+    found = cvg.compare_service("svc", _chart(False), _manifests(_HARD_POD, _HARD_CTR))
+    assert any("automountServiceAccountToken" in f for f in found.failures)
+
+
+def test_the_pod_spec_automount_wins_over_the_service_accounts() -> None:
+    """Kubernetes lets the pod spec override the ServiceAccount, so the gate
+    must read it first.
+
+    Reading the ServiceAccount first would pass on the value the cluster
+    ignores. That is not hypothetical: TFactory's chart declared ``false`` on
+    its ServiceAccount while its Deployment rendered ``true`` from
+    ``rbac.jobSandbox.enabled``, and the cluster honoured the ``true``.
+    """
+    docs = _manifests(_HARD_POD, _HARD_CTR, [_sa(False)])
+    docs[0]["spec"]["template"]["spec"]["automountServiceAccountToken"] = True
+    assert not cvg.compare_service("svc", _chart(True), docs).failures
 
 
 if __name__ == "__main__":

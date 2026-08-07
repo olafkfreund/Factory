@@ -98,32 +98,26 @@ class Waiver:
     tracked_by: str
 
 
-WAIVERS: tuple[Waiver, ...] = (
-    Waiver(
-        service="*",
-        control="podDisruptionBudget",
-        reason=(
-            "The charts enable a PDB with minAvailable: 1; the gitops manifests "
-            "declare none. Not yet ported rather than decided against, and "
-            "porting it wants a live check first: minAvailable: 1 against a "
-            "single replica blocks node drains outright, which on a one-node "
-            "k3d cluster is an outage, not a protection."
-        ),
-        tracked_by="Factory#550",
-    ),
-    Waiver(
-        service="*",
-        control="automountServiceAccountToken",
-        reason=(
-            "The charts set it false on the ServiceAccount; the gitops "
-            "Deployments leave it unset, so the token IS mounted into every "
-            "control-plane pod. Real exposure, small blast radius, and a "
-            "one-line fix per manifest - but one that needs a running cluster to "
-            "confirm nothing in the pod was quietly using that token."
-        ),
-        tracked_by="Factory#550",
-    ),
-)
+# Both of this gate's original waivers are CLOSED by Factory#550, and closed by
+# changing the world rather than by widening the exemption:
+#
+#   podDisruptionBudget — the charts enabled one with minAvailable: 1 against
+#   their own pinned replicaCount: 1, which permits zero disruptions and blocks
+#   `kubectl drain` on the node hosting the pod indefinitely (measured; see the
+#   PR). The charts now default it OFF and their templates refuse to render an
+#   unevictable PDB, so "absent in both engines" is a real agreement.
+#
+#   automountServiceAccountToken — verified per workload against the live
+#   cluster. pfactory and cfactory have no in-cluster API caller and now declare
+#   false in both engines; aifactory and tfactory create Jobs via
+#   load_incluster_config() and now declare true in both. The comparison below
+#   changed from presence-of-false to a VALUE compare so the second pair is
+#   actually checked instead of passing as "absent in both".
+#
+# An empty tuple is deliberate and is not the same as deleting the mechanism:
+# the Waiver dataclass and _waived() stay, so the next control that legitimately
+# differs is recorded with a reason and a tracking issue rather than muted.
+WAIVERS: tuple[Waiver, ...] = ()
 
 
 def synthetic_manifests(
@@ -242,6 +236,19 @@ def compare_service(service: str, values: dict[str, Any], docs: list[dict[str, A
     for label, fields, chart, live in (
         ("pod", POD_FIELDS, chart_pod, live_pod),
         ("container", CONTAINER_FIELDS, chart_ctr, live_ctr),
+        # automountServiceAccountToken rides the same per-key comparison rather
+        # than a presence check, which is Factory#550's finding. Presence-of-
+        # ``false`` cannot tell "declared true" from "not declared at all", and
+        # those are exactly the two states that mattered: aifactory and tfactory
+        # NEED the token, so the honest declaration is ``true``, and a gate that
+        # only looks for ``false`` would have called their agreement vacuous.
+        # Both engines must now name a value, and the values must match.
+        (
+            "sa",
+            ("automountServiceAccountToken",),
+            _chart_automount(values),
+            _live_automount(docs, pod_spec),
+        ),
     ):
         for key in fields:
             if key not in chart:
@@ -262,38 +269,59 @@ def compare_service(service: str, values: dict[str, Any], docs: list[dict[str, A
             else:
                 out.report.append(f"  {label}.{key}: agree ({chart[key]!r})")
 
-    _compare_presence(service, values, docs, pod_spec, out)
+    _compare_presence(service, values, docs, out)
     return out
+
+
+_AUTOMOUNT = "automountServiceAccountToken"
+
+
+def _chart_automount(values: dict[str, Any]) -> dict[str, Any]:
+    """The chart's automount declaration, as a 0-or-1 key dict for the loop.
+
+    ``automount`` is accepted as an alias because that is the key the upstream
+    Helm ``common`` chart uses and one of ours could adopt it.
+    """
+    sa = values.get("serviceAccount") or {}
+    for key in (_AUTOMOUNT, "automount"):
+        if key in sa:
+            return {_AUTOMOUNT: sa[key]}
+    return {}
+
+
+def _live_automount(docs: list[dict[str, Any]], pod_spec: dict[str, Any]) -> dict[str, Any]:
+    """The gitops automount declaration, pod spec first, then the ServiceAccount.
+
+    Pod-spec first because that is the precedence Kubernetes itself applies: a
+    pod-level value overrides the ServiceAccount's. Reading them the other way
+    round would let the gate pass on the value the cluster ignores — the exact
+    contradiction Factory#550 found inside TFactory's own chart.
+    """
+    if _AUTOMOUNT in pod_spec:
+        return {_AUTOMOUNT: pod_spec[_AUTOMOUNT]}
+    for d in docs:
+        if d.get("kind") == "ServiceAccount" and _AUTOMOUNT in d:
+            return {_AUTOMOUNT: d[_AUTOMOUNT]}
+    return {}
 
 
 def _compare_presence(
     service: str,
     values: dict[str, Any],
     docs: list[dict[str, Any]],
-    pod_spec: dict[str, Any],
     out: Findings,
 ) -> None:
-    """The two non-securityContext controls, both presence rather than value."""
+    """The one control that is genuinely presence, not value.
+
+    A PDB is a resource: it exists in an engine or it does not. Comparing its
+    ``minAvailable`` across engines would be comparing a number whose correct
+    value depends on the replica and node counts of the specific cluster, which
+    is the reasoning Factory#550 settled — see the fleet decision recorded in
+    factory-gitops apps/README.md.
+    """
     chart_pdb = (values.get("podDisruptionBudget") or {}).get("enabled", False)
     live_pdb = any(d.get("kind") == "PodDisruptionBudget" for d in docs)
     _record(service, "podDisruptionBudget", chart_pdb, live_pdb, out)
-
-    sa = values.get("serviceAccount") or {}
-    chart_automount = sa.get("automountServiceAccountToken", sa.get("automount"))
-    # gitops can set it on the pod spec or the ServiceAccount; either counts.
-    live_automount = pod_spec.get("automountServiceAccountToken")
-    if live_automount is None:
-        for d in docs:
-            if d.get("kind") == "ServiceAccount":
-                live_automount = d.get("automountServiceAccountToken")
-                break
-    _record(
-        service,
-        "automountServiceAccountToken",
-        chart_automount is False,
-        live_automount is False,
-        out,
-    )
 
 
 def _record(service: str, control: str, chart_has: bool, live_has: bool, out: Findings) -> None:
@@ -377,12 +405,43 @@ def _selftest() -> int:
         not ahead.failures and bool(ahead.warnings), "gitops leading the chart warns, does not fail"
     )
 
-    # A waiver suppresses the failure but must still be reported.
-    waived = compare_service(
+    # An UNWAIVED chart-only PDB still fails. This is the baseline the waiver
+    # case below has to visibly suppress, and with WAIVERS now empty it is also
+    # the live behaviour: the charts must not enable a PDB gitops does not have.
+    pdb_only = compare_service(
         "svc",
         {**values, "podDisruptionBudget": {"enabled": True}},
         manifests(hardened_pod, hardened_ctr),
     )
+    req(
+        any("podDisruptionBudget" in f for f in pdb_only.failures),
+        "a chart-only PDB fails when nothing waives it",
+    )
+
+    # The waiver MECHANISM, exercised against a synthetic waiver. Factory#550
+    # closed both real waivers, so WAIVERS is empty -- and an empty tuple would
+    # otherwise let the machinery rot untested until the next person needed it
+    # and found it broken. Injected rather than kept as a live waiver, because a
+    # waiver that exists only to be tested is exactly the mute button the Waiver
+    # docstring says this is not.
+    global WAIVERS  # noqa: PLW0603 - restored in the finally below
+    real_waivers = WAIVERS
+    try:
+        WAIVERS = (
+            Waiver(
+                service="*",
+                control="podDisruptionBudget",
+                reason="self-test only",
+                tracked_by="Factory#550",
+            ),
+        )
+        waived = compare_service(
+            "svc",
+            {**values, "podDisruptionBudget": {"enabled": True}},
+            manifests(hardened_pod, hardened_ctr),
+        )
+    finally:
+        WAIVERS = real_waivers
     req(
         not any("podDisruptionBudget" in f for f in waived.failures),
         "a waived control does not fail the run",
@@ -392,6 +451,8 @@ def _selftest() -> int:
         "a waived control is still printed, with its tracking issue",
     )
 
+    _selftest_automount(req, values, manifests, hardened_pod, hardened_ctr)
+
     # Scope: every waiver names something, and names where it is tracked.
     req(
         all(w.reason and w.tracked_by for w in WAIVERS),
@@ -400,6 +461,62 @@ def _selftest() -> int:
     req(bool(UNIMPLEMENTED_CONTROLS), "the unimplemented controls are declared, not implied")
 
     return t.finish()
+
+
+def _selftest_automount(req, values, manifests, hardened_pod, hardened_ctr) -> None:  # type: ignore[no-untyped-def]
+    """Factory#550: automount is compared by VALUE, and precedence is honoured.
+
+    Split out because the checks above already fill ``_selftest``; the cases
+    here are the ones that would have passed vacuously under the old
+    presence-of-``false`` comparison.
+    """
+
+    def sa_doc(**kw: Any) -> dict[str, Any]:
+        return {"kind": "ServiceAccount", "metadata": {"name": "svc"}, **kw}
+
+    def chart(v: Any) -> dict[str, Any]:
+        return {**values, "serviceAccount": {_AUTOMOUNT: v}}
+
+    # THE CASE THE OLD COMPARISON MISSED. Both engines say `true` -- a real,
+    # deliberate agreement for a pod that creates Jobs. Presence-of-false read
+    # this as "absent in both" and reported agreement it had not checked.
+    agree_true = compare_service(
+        "svc",
+        chart(True),
+        manifests(hardened_pod, hardened_ctr, [sa_doc(**{_AUTOMOUNT: True})]),
+    )
+    req(not agree_true.failures, "chart true / gitops true agrees")
+
+    # And the same pair disagreeing must FAIL, which presence-of-false could not
+    # see either: neither side declares `false`, so it called them equal.
+    disagree = compare_service(
+        "svc",
+        chart(True),
+        manifests(hardened_pod, hardened_ctr, [sa_doc(**{_AUTOMOUNT: False})]),
+    )
+    req(
+        any(_AUTOMOUNT in f for f in disagree.failures),
+        "chart true / gitops false FAILS",
+    )
+
+    # The original Factory#550 shape: chart declares, gitops declares nothing.
+    undeclared = compare_service(
+        "svc", chart(False), manifests(hardened_pod, hardened_ctr)
+    )
+    req(
+        any(_AUTOMOUNT in f for f in undeclared.failures),
+        "a chart automount value gitops never states FAILS",
+    )
+
+    # Precedence: Kubernetes lets the pod spec override the ServiceAccount, so
+    # the gate must read the pod spec first. Reading the SA first would pass on
+    # a value the cluster ignores -- the contradiction inside TFactory's chart.
+    pod_wins = manifests(hardened_pod, hardened_ctr, [sa_doc(**{_AUTOMOUNT: False})])
+    pod_wins[0]["spec"]["template"]["spec"][_AUTOMOUNT] = True
+    req(
+        not compare_service("svc", chart(True), pod_wins).failures,
+        "the pod spec's automount wins over the ServiceAccount's",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

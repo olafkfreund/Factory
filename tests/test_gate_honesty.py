@@ -345,7 +345,41 @@ def test_chart_vs_gitops_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> N
 
     # Configuration mutation 2: a waiver loses its reason. The waiver list is the
     # escape hatch, so an unexplained entry is the silent exemption this gate ends.
+    #
+    # Factory#550 emptied WAIVERS, and this line used to be a bare
+    # `all(... for w in chart_gate.WAIVERS)` -- which over an empty tuple is
+    # vacuously true. A rule that passes without evaluating anything is the
+    # exact failure this file exists to catch, so the mutation now supplies its
+    # own subject instead of borrowing whatever the module happens to hold.
+    kept_waivers = chart_gate.WAIVERS
+    chart_gate.WAIVERS = (
+        chart_gate.Waiver(service="*", control="podDisruptionBudget", reason="", tracked_by=""),
+    )
+    try:
+        assert not all(w.reason and w.tracked_by for w in chart_gate.WAIVERS), (
+            "a waiver with no reason and no tracking issue must not satisfy the rule"
+        )
+    finally:
+        chart_gate.WAIVERS = kept_waivers
     assert all(w.reason and w.tracked_by for w in chart_gate.WAIVERS)
+
+    # Configuration mutation 3: the automount comparison degrades to
+    # presence-of-`false`, which is what Factory#550 replaced. A `true`/`false`
+    # divergence must not survive it -- under the old logic neither side scored
+    # `False`, so the gate called them equal and passed.
+    sa_doc = {
+        "kind": "ServiceAccount",
+        "metadata": {"name": "svc"},
+        "automountServiceAccountToken": False,
+    }
+    diverged = chart_gate.compare_service(
+        "svc",
+        {**values, "serviceAccount": {"automountServiceAccountToken": True}},
+        chart_gate.synthetic_manifests(hard_pod, hard_ctr, [sa_doc]),
+    )
+    assert any("automountServiceAccountToken" in f for f in diverged.failures), (
+        "the gate must compare the automount VALUE, not whether either side says false"
+    )
 
     capsys.readouterr()
 
