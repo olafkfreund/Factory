@@ -62,12 +62,14 @@ than asserted:
 And in every case the branch survives the removal, which is why the files
 survived on 2026-08-07.
 
-**Nothing in this repository manages those worktrees.** A grep for
-`worktree add`, `worktree remove`, `worktree prune` and `worktrees/` across every
-`.sh`, `.py`, `.yml`, `.json` and `.md` in the hub returns no hit that touches
-`.claude/worktrees/`. The nearest thing is
-`docs/dev/benchmark-matrix-runbook.md`, which runs `git worktree prune` against
-an AIFactory workspace -- a different tree, and prune is the safe verb anyway.
+**Nothing in this repository creates, removes or prunes those worktrees.** A grep
+for `worktree add`, `worktree remove`, `worktree prune` and `worktrees/` across
+every `.sh`, `.py`, `.yml`, `.json` and `.md` in the hub returns only: AIFactory's
+own per-task build worktrees (a different tree entirely),
+`docs/dev/benchmark-matrix-runbook.md` running `git worktree prune` against an
+AIFactory workspace (again a different tree, and prune is the safe verb anyway),
+and two places that name `.claude/worktrees/` solely to EXCLUDE it from a drift
+scan. No hub code touches an agent isolation worktree.
 
 **Cleanup is documented harness behaviour.** The Agent tool's own contract says
 `isolation: "worktree"` gives the agent a git worktree "auto-cleaned if
