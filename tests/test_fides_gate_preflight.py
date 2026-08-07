@@ -37,8 +37,7 @@ def _fixture(tmp_path: Path) -> dict[str, str]:
     cli = tmp_path / "cli"
     cli.mkdir()
     (cli / "install.sh").write_text(
-        f"#!/bin/sh\nprintf '#!/bin/sh\\nexit 0\\n' > {bindir}/fides\n"
-        f"chmod +x {bindir}/fides\n",
+        f"#!/bin/sh\nprintf '#!/bin/sh\\nexit 0\\n' > {bindir}/fides\nchmod +x {bindir}/fides\n",
         encoding="utf-8",
     )
 
@@ -71,9 +70,7 @@ def test_preflight_passes_when_all_three_settings_are_present(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("dropped", _SETTINGS)
-def test_preflight_fails_closed_when_one_setting_is_missing(
-    tmp_path: Path, dropped: str
-) -> None:
+def test_preflight_fails_closed_when_one_setting_is_missing(tmp_path: Path, dropped: str) -> None:
     env = _fixture(tmp_path)
     del env[dropped]
     out = _run(env)
@@ -113,6 +110,6 @@ def test_preflight_fails_when_the_installer_produces_no_cli(tmp_path: Path) -> N
 
 def test_preflight_never_echoes_a_setting_value(tmp_path: Path) -> None:
     env = _fixture(tmp_path)
-    env["FIDES_API_TOKEN"] = "fides_ci_SUPERSECRETVALUE"
+    env["FIDES_API_TOKEN"] = "fides_ci_SUPERSECRETVALUE"  # noqa: S105 - the point
     out = _run(env)
     assert "SUPERSECRETVALUE" not in out.stdout + out.stderr
