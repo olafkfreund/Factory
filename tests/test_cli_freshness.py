@@ -10,7 +10,9 @@ rather than the plumbing and do not change meaning as real releases ship.
 
 from __future__ import annotations
 
+import base64
 import sys
+import urllib.error
 from datetime import UTC, datetime
 
 # scripts/ is put on sys.path by tests/conftest.py.
@@ -119,6 +121,81 @@ def test_scope_cannot_shrink_unnoticed() -> None:
     }
     assert set(cf.REPOS) == {"AIFactory", "PFactory", "TFactory"}
     assert "CFactory" not in cf.REPOS, "the cockpit runs no agent and pins none of these"
+
+
+_BAKE = (
+    "RUN npm install -g \\\n"
+    "        @anthropic-ai/claude-code@2.1.215 \\\n"
+    "        @openai/codex@0.144.6 \\\n"
+    "        @google/gemini-cli@0.51.0\n"
+    "RUN npm install -g @some/build-tool@1.0.0\n"
+)
+_PINNED = {
+    "@anthropic-ai/claude-code": "2.1.215",
+    "@openai/codex": "0.144.6",
+    "@google/gemini-cli": "0.51.0",
+}
+
+
+def test_the_rewriter_moves_only_what_it_was_asked_to() -> None:
+    out = cf.rewrite(_BAKE, {"@openai/codex": "0.147.0"})
+    assert "@openai/codex@0.147.0" in out
+    assert "@anthropic-ai/claude-code@2.1.215" in out, "a tracked pin not named is left alone"
+    assert "@some/build-tool@1.0.0" in out, "an untracked package is never rewritten"
+    assert len(cf.parse_pins("AIFactory", out)) == len(cf.TRACKED), "the result still parses"
+
+
+def test_a_rewrite_that_matches_nothing_raises() -> None:
+    """THE ASSERTION WITH TEETH on the bump half, and the defect this issue names.
+
+    factory-gitops' renovate.json customManager is still valid and still "runs";
+    it has matched nothing since TFactory#791 moved the pins out of the manifests
+    it scans, and reports success having found no dependencies. A bumper that
+    edits a file it cannot actually see must be loud, not quietly successful.
+    """
+    with pytest.raises(cf.SourceUnavailableError):
+        cf.rewrite("RUN npm install -g claude-code\n", {"@openai/codex": "0.147.0"})
+
+
+def test_nothing_to_bump_is_a_no_op_not_an_error() -> None:
+    assert cf.rewrite(_BAKE, {}) == _BAKE
+
+
+def test_no_branch_to_retract_is_the_steady_state_not_a_failure(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Regression: GitHub answers a delete of a missing ref with 422, not 404.
+
+    Once the pins are current this is what EVERY weekly run does, so treating it
+    as an error turns the healthy case red every week -- the cry-wolf shape that
+    gets a job muted, on the most common path there is. Caught live, not here,
+    which is why it is pinned here.
+    """
+    calls: list[str] = []
+
+    def fake_api(method: str, path: str, _token: str, _body: object = None) -> object:
+        calls.append(f"{method} {path}")
+        if method == "DELETE":
+            raise urllib.error.HTTPError(path, 422, "Unprocessable Entity", {}, None)  # type: ignore[arg-type]
+        if path.endswith("/contents/Dockerfile?ref=dev"):
+            return {"content": base64.b64encode(_BAKE.encode()).decode(), "sha": "deadbeef"}
+        return {"default_branch": "dev"}
+
+    monkeypatch.setattr(cf, "_api", fake_api)
+    registry = {pkg: {"dist-tags": {"latest": ver}} for pkg, ver in _PINNED.items()}
+    line = cf.propose_bump("PFactory", registry, "token")
+
+    assert "nothing proposed" in line
+    assert not any(c.startswith("POST") or c.startswith("PUT") for c in calls), (
+        "a run with nothing to bump must not write anything"
+    )
+
+
+def test_one_branch_per_repo_so_a_sitting_pr_is_never_duplicated() -> None:
+    """An automation whose PRs pile up unmerged trains people to ignore it.
+
+    A single fixed branch is what makes the weekly run refresh the open PR in
+    place instead of opening a second one, so this name is load-bearing.
+    """
+    assert cf._BUMP_BRANCH == "chore/agent-cli-pins"
 
 
 if __name__ == "__main__":

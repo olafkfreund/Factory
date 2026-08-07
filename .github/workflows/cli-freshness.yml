@@ -24,11 +24,19 @@ name: agent-CLI freshness
 # cry-wolf shape that gets a gate muted (Factory#538). The comparator itself IS
 # covered on every hub PR, offline, by tests/test_cli_freshness.py.
 #
-# IT REPORTS, IT DOES NOT BUMP. A broken upstream CLI release must not reach the
-# fleet on the next pod start because a bot merged it unattended — the bump
-# belongs in the service repo, behind its own cli-canary run.
+# IT REPORTS, AND SINCE Factory#459 IT ALSO PROPOSES — but it never merges. A
+# broken upstream CLI release must not reach the fleet because a bot merged it
+# unattended, so the `propose` job below opens a pull request in the service repo
+# and stops there. See scripts/check_cli_freshness.py for why that is a workflow
+# rather than Renovate, and for the measurement showing Dependabot cannot see
+# these pins even though it bumps the FROM line in the same Dockerfile daily.
 #
-# WHY NO PAT: the service repos are public and the npm registry is anonymous.
+# WHY THE REPORT NEEDS NO PAT: the service repos are public and the npm registry
+# is anonymous. The `propose` job needs one, because opening a pull request is a
+# write — and because a pull request opened with GITHUB_TOKEN does not trigger
+# workflow runs, which would leave the bump unverified by the very image build
+# that makes proposing it safe. That is the objection Factory#459 raised against
+# its option 2, and a PAT is what answers it.
 
 on:
   schedule:
@@ -86,10 +94,14 @@ jobs:
         run: |
           echo "A pinned agent CLI has been behind npm for longer than the window."
           echo
-          echo "Bump it in that service's Dockerfile and let the repo's cli-canary run"
-          echo "before merging. Do NOT automate the merge: a broken upstream release"
-          echo "reaching the fleet on the next pod start is exactly what the canary and"
-          echo "the manual pin exist to prevent."
+          echo "SINCE Factory#459 THIS RED MEANS SOMETHING SHARPER than it used to. The"
+          echo "propose job below has been opening a bump PR on branch chore/agent-cli-pins"
+          echo "in that service repo every week, so a pin this far behind means the PR was"
+          echo "opened and left. Go and look at it: <repo>/pulls?q=head:chore/agent-cli-pins"
+          echo
+          echo "Merge it once its image-build check is green, or close it. Do NOT automate"
+          echo "the merge: a broken upstream release reaching the fleet is exactly what"
+          echo "that build and the manual pin exist to prevent."
           echo
           echo "If the pin is deliberately held back, raise --max-age-days with the"
           echo "reason rather than muting the job — and say so where the pin lives."
@@ -97,3 +109,39 @@ jobs:
           echo "NO TRACKED PIN FOUND means the bake step moved again, as TFactory#791"
           echo "moved it out of the gitops manifests. The watchdog is then looking in"
           echo "the wrong place and is checking nothing; fix the path, do not skip."
+
+  propose:
+    name: open or refresh the bump PR in each service repo
+    runs-on: ubuntu-latest
+    # Runs whatever the report said. Being behind is not yet an alert (that is
+    # what the 30-day window is for) but it IS already something to propose --
+    # which is the whole point: the PR should be sitting there ready long before
+    # the alert fires, so that when it fires it means the PR was ignored.
+    needs: freshness
+    if: always() && needs.freshness.result != 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Open or refresh one bump PR per service repo
+        # Never merges and never enables auto-merge. What makes proposing these
+        # automatically defensible is that each service repo's image-build.yml
+        # compiles `target: runtime` on every PR and the bake step runs
+        # `claude --version` inside that build, so a yanked or broken release
+        # fails on the PR. That gate has to actually RUN, which is why this uses
+        # a PAT: a PR opened with GITHUB_TOKEN triggers no workflows.
+        #
+        # GITOPS_PAT is reused rather than minting a fourth fleet credential; it
+        # needs contents:write and pull-requests:write on AIFactory, PFactory and
+        # TFactory. If it has less, this job fails naming what is missing instead
+        # of reporting that it found nothing to do (rule 4.7) -- the same shape
+        # branch-protection-drift.yml uses for its own token.
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
+        run: |
+          set -o pipefail
+          python3 scripts/check_cli_freshness.py --open-bump-pr \
+            | tee -a "$GITHUB_STEP_SUMMARY"
