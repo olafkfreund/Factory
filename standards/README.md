@@ -22,8 +22,8 @@ may only TIGHTEN (a config-lint check enforces this).
 
 ### The vendored contract
 
-Every service vendors the same four files into its own `standards/`, plus the
-pin:
+Every service vendors the same four files into its own `standards/`, plus
+`tsconfig.base.json` if it has a TypeScript surface, plus the pin:
 
 | Vendored file | Compared how |
 |---|---|
@@ -31,6 +31,7 @@ pin:
 | `mypy.ini` | body only |
 | `.editorconfig` | body only |
 | `coding-standards.md` | **byte-exact** - see below |
+| `tsconfig.base.json` | **byte-exact**; only services with TypeScript vendor it (CFactory today) |
 | `.hub-sha` | not compared; it *is* the pin |
 
 `coding-standards.md` is compared byte-exact and carries no header. The
@@ -38,6 +39,17 @@ body-only comparator strips lines starting with `#`, which in Markdown is every
 heading - 58 of this file's 198 lines - so a stripped compare would let headings
 and whole section titles drift unnoticed. Byte-exact is both stricter and
 simpler, and costs nothing because the copy is a plain `cp`.
+
+`tsconfig.base.json` is byte-exact for the same reason and one of its own. JSON
+has no comment syntax, so there is no provenance header for the body-only
+comparator to key on and nothing it could usefully strip - and a stripped
+compare would be blind to a re-opened hole, which is the single thing this file
+exists to forbid. That is how CFactory#320 wired its own gate (Factory#546).
+
+It is the one CONDITIONAL entry. A service with no TypeScript surface does not
+vendor it, and must not: registering a file a service does not have is the
+inverse of the rule two paragraphs below, and would turn its drift gate red on
+a missing path rather than on drift.
 
 `standards/.hub-sha` is the pin for this directory, and `.hub-sha` is the one
 pin filename for any vendored DIRECTORY fleet-wide. Tooling that wants to know
@@ -55,7 +67,12 @@ those pins fleet-wide. A workflow SHA no tooling reads is still not a pin.
 
 ```sh
 HUB=<hub commit sha>
-for f in ruff.toml mypy.ini .editorconfig coding-standards.md; do
+FILES="ruff.toml mypy.ini .editorconfig coding-standards.md"
+# Only if this service has a TypeScript surface. Omitting it here while the
+# service vendors it is Factory#605: the gate then goes red on a stale copy the
+# documented procedure never refreshed.
+FILES="$FILES tsconfig.base.json"
+for f in $FILES; do
   curl -fsSL "https://raw.githubusercontent.com/olafkfreund/Factory/$HUB/standards/$f" -o "standards/$f"
 done
 printf '%s\n' "$HUB" > standards/.hub-sha
