@@ -65,6 +65,30 @@ Related repo-level setting, tracked separately:
 GitHub Actions may create and approve pull requests. Enabled on AIFactory as a
 dependency of its base-image bump bot; `false` everywhere else.
 
+## Does CODEOWNERS assign anything? (Factory#611)
+
+Wherever the intent table sets `CODE_OWNER=1` — PFactory, TFactory, AIFactory —
+check mode also asks GitHub whether that repo's CODEOWNERS file is valid, via
+`GET /repos/{owner}/{repo}/codeowners/errors`.
+
+It exists because a rule naming an account **without write access is ignored in
+full**, and nothing about the file's appearance changes when that happens. All
+three repos are red on this today: each assigns every path to `@dataseeek`, who
+is not a collaborator, so all 8 rules in each file are reported "Unknown owner"
+and none of those paths has an owner. The three ways out — grant that account
+write access, repoint the rules, or delete the files — are decisions about who
+reviews what, so this reports and never applies.
+
+```bash
+scripts/apply_branch_protection.sh --repo PFactory      # includes the CODEOWNERS check
+echo '{"errors":[]}' | scripts/apply_branch_protection.sh --codeowners-stdin   # -> CLEAN
+```
+
+A payload with no `errors` array reports `UNPARSEABLE` and counts as
+undetermined, not clean (rule 4.7). Both directions are covered offline in
+`tests/test_branch_protection_intent.py`. Background:
+[agent-identity.md](agent-identity.md).
+
 ## Why this needs care
 
 Several repos have automation that writes to `main` (directly or by merge).

@@ -469,6 +469,12 @@ def _repo_table() -> dict[str, dict[str, str]]:
             marker = f'{key}="'
             if marker in stripped:
                 fields[key] = stripped.split(marker, 1)[1].split('"', 1)[0]
+        # The numeric flags are written unquoted (CODE_OWNER=1), so they need
+        # the bare form rather than the quoted one above.
+        for key in ("CODE_OWNER", "REVIEWS"):
+            marker = f"{key}="
+            if marker in stripped:
+                fields[key] = stripped.split(marker, 1)[1].split(";", 1)[0].strip()
         if fields:
             table[repo] = fields
     return table
@@ -514,3 +520,56 @@ def test_the_default_branch_is_always_a_protected_one() -> None:
             f"{repo}: default branch {fields['DEFAULT_BRANCH']!r} is not in "
             f"BRANCHES {protected} — every PR would land on an unprotected branch"
         )
+
+
+# --- Factory#611: a CODEOWNERS file that assigns nothing ----------------------
+
+
+def _codeowners_verdict(payload: dict) -> str:
+    out = subprocess.run(  # noqa: S603
+        ["bash", str(_SCRIPT), "--codeowners-stdin"],  # noqa: S607
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout.strip()
+
+
+def test_a_codeowners_file_with_no_errors_is_clean() -> None:
+    assert _codeowners_verdict({"errors": []}) == "CLEAN"
+
+
+def test_a_codeowners_owner_without_write_access_is_reported() -> None:
+    """The mutation, and it is not hypothetical.
+
+    Measured live 2026-08-07: PFactory, TFactory and AIFactory each carry a root
+    CODEOWNERS assigning all 8 rules to an account that is not a collaborator on
+    any of them. GitHub ignores every such rule, so those paths have no owner at
+    all while the file reads to a reader — an assessor included — as though they
+    do. Three files, 24 rules, zero ownership, and nothing noticed.
+
+    If this ever returns CLEAN the check has stopped seeing that, which is the
+    state the fleet was already in.
+    """
+    verdict = _codeowners_verdict(
+        {"errors": [{"line": 9, "kind": "Unknown owner"}, {"line": 12, "kind": "Unknown owner"}]}
+    )
+    assert verdict.startswith("2 rule(s) assign no owner")
+    assert "line 9 Unknown owner" in verdict
+
+
+def test_a_payload_with_no_errors_array_is_unparseable_not_clean() -> None:
+    """Rule 4.7 in miniature. `.errors // []` would read an unrecognised response
+    shape as "no problems found" — the same false pass this check exists to
+    catch, one level up."""
+    assert _codeowners_verdict({}) == "UNPARSEABLE"
+    assert _codeowners_verdict({"message": "Not Found"}) == "UNPARSEABLE"
+
+
+def test_codeowners_is_checked_exactly_where_the_intent_declares_an_owner() -> None:
+    """Guards against silent scope loss (Factory#523): flipping CODE_OWNER to 0
+    would stop the check running with no other visible effect."""
+    table = _repo_table()
+    declared = {repo for repo, fields in table.items() if fields.get("CODE_OWNER") == "1"}
+    assert declared == {"PFactory", "TFactory", "AIFactory"}

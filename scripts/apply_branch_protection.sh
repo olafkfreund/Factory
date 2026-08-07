@@ -59,6 +59,10 @@ while [ $# -gt 0 ]; do
     # field is changed (tests/test_branch_protection_intent.py, rule 4.9).
     --emit) MODE="emit"; ONLY_REPO="${2:-}"; EMIT_BRANCH="${3:-}"; shift 2 ;;
     --normalise-stdin) MODE="normalise-stdin" ;;
+    # Same idea for the CODEOWNERS verdict: prints the verdict for a
+    # /codeowners/errors payload read from stdin, so both directions are testable
+    # without a token (tests/test_branch_protection_intent.py, rule 4.9).
+    --codeowners-stdin) MODE="codeowners-stdin" ;;
     -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -215,8 +219,48 @@ normalise() {
     }'
 }
 
+# Does a CODEOWNERS file actually assign ownership? (Factory#611)
+#
+# A CODEOWNERS rule naming an account WITHOUT write access is ignored by GitHub
+# in full. The file still sits in the repo root, still lists `*` and `/scripts/`
+# and `/SECURITY.md` against a handle, and still reads to anyone opening the repo
+# - an assessor included - as though those paths have a named owner. They do not.
+#
+# Measured 2026-08-07: PFactory, TFactory and AIFactory each carry a root
+# CODEOWNERS assigning every path to @dataseeek, who is not a collaborator on any
+# of them. GitHub's own validator reports all 8 rules in each file as "Unknown
+# owner". Three files, 24 rules, zero ownership - and nothing anywhere noticed,
+# which is the point. This is the exact shape docs/dev/gate-honesty.md calls a
+# false pass: remove the control and nothing changes, because the control was
+# never doing anything.
+#
+# Checked only where the intent table sets CODE_OWNER=1, since that is the
+# declaration that the file is meant to be load-bearing. Note those three repos
+# also have REVIEWS=0, so `require_code_owner_reviews` is not even reachable
+# today (it lives inside the null required_pull_request_reviews block) - the file
+# would still assign nothing on the day reviews are turned on, which is when
+# somebody would otherwise discover this. See docs/compliance/agent-identity.md.
+#
+# Reads the GET /repos/{o}/{r}/codeowners/errors payload on stdin; prints CLEAN,
+# UNPARSEABLE, or a one-line summary of the errors.
+#
+# A payload with no `errors` array is UNPARSEABLE, not CLEAN. `.errors // []`
+# would have read a response shape this does not understand - a redirect body, an
+# error envelope, a future API change - as "no problems found", which is the
+# false-pass this whole check exists to catch, one level up (rule 4.7).
+codeowners_verdict() {
+  jq -r 'if (.errors | type) != "array" then "UNPARSEABLE"
+         elif (.errors | length) == 0 then "CLEAN"
+         else "\((.errors | length)) rule(s) assign no owner: "
+              + ([.errors[] | "line \(.line) \(.kind)"] | join(", "))
+         end'
+}
+
 # Offline introspection: no network, no token. Handled before anything reaches gh.
 case "$MODE" in
+  codeowners-stdin)
+    codeowners_verdict
+    exit 0 ;;
   emit)
     [ -n "$ONLY_REPO" ] && [ -n "$EMIT_BRANCH" ] || { echo "--emit needs REPO and BRANCH" >&2; exit 2; }
     build_payload "$ONLY_REPO" "$EMIT_BRANCH" | normalise
@@ -336,12 +380,50 @@ check_default_branch() {
   fi
 }
 
+# Live counterpart of codeowners_verdict(). CHECK ONLY - there is no --apply
+# path, deliberately: the fix is either to grant the named account write access
+# or to name a different one, and both are decisions about who reviews what.
+check_codeowners() {
+  local repo="$1" out msg verdict
+  if out="$(gh api "repos/${OWNER}/${repo}/codeowners/errors" 2>/dev/null)"; then
+    verdict="$(printf '%s' "$out" | codeowners_verdict)"
+    if [ "$verdict" = "CLEAN" ]; then
+      echo "ok    ${OWNER}/${repo} CODEOWNERS: every rule names an owner with write access"
+      return
+    fi
+    if [ "$verdict" = "UNPARSEABLE" ]; then
+      echo "  ERROR: ${repo}/codeowners/errors returned no errors array; not reading that as clean." >&2
+      UNDETERMINED=1
+      return
+    fi
+    echo "DRIFT ${OWNER}/${repo}: intent declares CODE_OWNER=1 but CODEOWNERS assigns no ownership."
+    echo "    ${verdict}"
+    echo "    GitHub ignores a rule whose owner lacks write access, so those paths have"
+    echo "    no owner at all while the file reads as though they do (Factory#611)."
+    echo "    Fix: gh api repos/${OWNER}/${repo}/codeowners/errors  # then grant that"
+    echo "    account write access, or point the rules at one that has it."
+    DIVERGED=1
+    return
+  fi
+  msg="$(jq -r '.message // "unparseable response"' <<<"${out:-{\}}" 2>/dev/null || echo "unparseable response")"
+  if [ "$msg" = "Not Found" ]; then
+    echo "DRIFT ${OWNER}/${repo}: intent declares CODE_OWNER=1 but the repo has no CODEOWNERS file."
+    DIVERGED=1
+    return
+  fi
+  echo "  ERROR: cannot read CODEOWNERS validity for ${repo}: ${msg}" >&2
+  UNDETERMINED=1
+}
+
 run_repo() {
   local repo="$1"
   repo_config "$repo"
   local branch
   if [ "$MODE" = "check" ]; then
     check_default_branch "$repo" "$DEFAULT_BRANCH"
+    if [ "$CODE_OWNER" = "1" ]; then
+      check_codeowners "$repo"
+    fi
   fi
   for branch in $BRANCHES; do
     if [ "$MODE" = "check" ]; then

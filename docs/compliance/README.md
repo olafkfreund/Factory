@@ -32,6 +32,10 @@ evidence. Certification is a separate engagement.
   due dates and closure evidence, plus the penetration-testing program. Factory#317.
 - [`roles.md`](roles.md) — named security roles and control owners, the quarterly
   management-review cadence, and the continuous-monitoring plan. Factory#311.
+- [`agent-identity.md`](agent-identity.md) — why "agents must never merge" is an
+  advisory rather than a control: agents authenticate as the operator, so no
+  merge in the fleet is attributable to a human or an agent. Measured, with the
+  operator-only fix stated. Factory#611, domain 6.
 
 ### ISMS policy set
 
