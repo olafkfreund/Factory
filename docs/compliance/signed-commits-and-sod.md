@@ -109,11 +109,40 @@ Signing and SoD are independent; do signing first (it is the lower-risk half).
 The gate proves three roles are distinct people (`compliant: true` only when all
 three are pairwise-distinct):
 
-- **committer** — captured from the trail (the PR head commit author),
+- **committer** — the PR head commit author's email, supplied to the trail as
+  `fides trail start --committer <email>`. With no `--committer` the server
+  records `committer identity unknown` and the comparison has no left-hand side.
 - **approver** — the second human who runs `fides approve --role approver`,
 - **deployer** — whoever triggers the deploy (`--role deployer`, or the merger).
 
-A reviewer approving their own PR fails the check. Fides advises; where ServiceNow
+### What the change-gate exit code does and does not carry
+
+Measured against a live Fides server (Factory#618), `fides change-gate` computes
+its verdict as *no failing controls AND no missing controls AND at least one
+human sign-off*. **The segregation-of-duties result is returned in the same JSON
+but is not an input to that verdict.** Exit 0 is therefore the identical code for
+all three of:
+
+| trail | SoD verdict | `fides change-gate` |
+|---|---|---|
+| no committer recorded | `compliant: false`, "committer identity unknown" | exit **0** |
+| committer *is* the approver | `compliant: false`, "is also an approver" | exit **0** |
+| committer distinct from approver | `compliant: true` | exit **0** |
+
+A reviewer approving their own PR does **not**, by itself, fail `fides
+change-gate`. It fails this repo's gate because
+`scripts/fides_gate_verdict.py` asserts the post-condition the exit code omits:
+a named committer, a named approver, and the two being different people. The
+deployer leg is deferred to the deploy gate, since a pull request has no
+deployer yet.
+
+Two identity traps that the verdict check also rejects, because in both the
+comparison is unfalsifiable rather than passed: a privacy-masked
+`@users.noreply.github.com` committer (it can never equal a Fides SSO identity),
+and a committer that differs from the approver only by letter case (the server
+compares identities with exact string equality, so it reads them as two people).
+
+Fides advises; where ServiceNow
 is wired, `fides servicenow change-check` writes the verdict + risk score onto the
 Change Request, and ServiceNow's CAB remains the system of record.
 

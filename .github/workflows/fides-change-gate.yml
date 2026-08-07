@@ -1,17 +1,21 @@
 # Fides change gate + segregation-of-duties for pull requests (Factory#316).
 #
-# Records the PR as a Fides "change" (a trail) and runs the change gate. The gate
-# returns an approve/hold verdict + risk score and exits 2 on HOLD, which fails
-# this required check and blocks the merge until the segregation-of-duties
-# approval is recorded by a SECOND distinct human (four-eyes):
+# Records the PR as a Fides "change" (a trail) and blocks the merge until a
+# SECOND distinct human has signed the change off (four-eyes):
 #
 #     fides approve --trail <sha> --role approver --reason "reviewed PR #<n>"
 #
-# The committer is captured from the trail; the PR reviewer who runs `fides
-# approve` is the second identity; the person who merges is the third. The gate's
-# `segregation-of-duties` attestation is `compliant: true` only when all three are
-# pairwise-distinct (PCI-DSS 4.0 / SOX ITGC). This maps the four-eyes rule onto
-# the change record. See docs/compliance/signed-commits-and-sod.md.
+# The committer is the head commit's author, supplied to the trail as
+# `--committer`; the PR reviewer who runs `fides approve` is the second identity;
+# the person who merges is the third (PCI-DSS 4.0 / SOX ITGC).
+#
+# That four-eyes claim is NOT carried by `fides change-gate`'s exit code, which is
+# why this workflow does not stop there. The server's verdict is `no failing
+# controls AND no missing controls AND >= 1 human sign-off`; the
+# segregation-of-duties result rides along in the same JSON without being an input
+# to it. Measured against a live server, a trail whose committer IS its approver
+# exits 0 (Factory#618). scripts/fides_gate_verdict.py asserts the missing
+# post-condition. See docs/compliance/signed-commits-and-sod.md.
 #
 # REVIEW ASSUMPTIONS (verify before enabling as a required check):
 #  - FIDES_SERVER_URL / FIDES_CI_KEY secrets and FIDES_FLOW_ID var are set per repo.
@@ -23,8 +27,11 @@
 #  - The Fides server must be reachable FROM A GITHUB-HOSTED RUNNER. The server
 #    deployed in this cluster is a ClusterIP with no Ingress, so it is not; see
 #    Factory#541. Either publish it or run this job on a self-hosted runner.
-#  - Exit 0 from `fides change-gate` is not yet proof that anything was
-#    evaluated -- see the note on that step.
+#  - The commit author's git email must be the SAME identity a reviewer's `fides
+#    approve` records (the Fides SSO email). If the two live in different
+#    namespaces they can never collide, and "committer != approver" would be
+#    unfalsifiable rather than proven -- so the verdict check rejects a
+#    privacy-masked @users.noreply.github.com committer outright (Factory#618).
 name: fides-change-gate
 
 on:
@@ -48,6 +55,10 @@ jobs:
       TRAIL_ID: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The PR head commit, not the synthetic merge commit: the committer
+          # identity this gate compares has to be the human who wrote the code.
+          ref: ${{ github.event.pull_request.head.sha }}
 
       # Fails closed on a missing/empty setting AND on an install that installs
       # nothing -- see scripts/fides_gate_preflight.sh for why the previous
@@ -58,32 +69,51 @@ jobs:
       - name: Record the change (start trail for this PR)
         run: |
           set -euo pipefail
+          # --committer is what makes the segregation-of-duties attestation
+          # possible at all: the server resolves the committer from this trail
+          # tag, and with no tag it records "committer identity unknown"
+          # (Factory#618). The commit author's email is used because that is the
+          # namespace `fides approve` records an approver in.
+          COMMITTER="$(git log -1 --format=%ae "$TRAIL_ID")"
+          # The committer email comes from a commit an outside contributor wrote,
+          # and the next line writes it into $GITHUB_ENV. Accept only a plain
+          # address, so nothing can smuggle a second variable in with it.
+          case "$COMMITTER" in
+            *[!A-Za-z0-9._%+@-]*) COMMITTER_OK=no ;;   # a character an email cannot have
+            *@*)                  COMMITTER_OK=yes ;;
+            *)                    COMMITTER_OK=no ;;   # no @, so not an address
+          esac
+          if [ "$COMMITTER_OK" != yes ]; then
+            printf 'committer identity is not a plain email address: %q\n' "$COMMITTER" >&2
+            exit 1
+          fi
+          echo "COMMITTER=$COMMITTER" >> "$GITHUB_ENV"
           fides trail start \
             --flow "$FLOW_ID" \
             --trail "$TRAIL_ID" \
             --repository "${{ github.server_url }}/${{ github.repository }}" \
             --commit "$TRAIL_ID" \
+            --committer "$COMMITTER" \
             --branch "${{ github.head_ref }}" \
             --message "PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
 
       - name: Change gate (HOLD until segregation-of-duties approval)
         run: |
-          set -euo pipefail
-          # Exit 2 => HOLD => this required check fails => merge blocked until a
-          # second human records `fides approve --trail $TRAIL_ID --role approver`.
+          set -uo pipefail
+          # `fides change-gate` exits 2 on HOLD and 0 otherwise, but its verdict
+          # is `no failing controls AND no missing controls AND >= 1 human
+          # sign-off` -- the segregation-of-duties result is returned in the same
+          # JSON and is NOT an input to it. Measured against a real server, exit 0
+          # is the identical code for "compared nobody", "compared and FAILED"
+          # (committer IS the approver) and "compared and passed" (Factory#618).
           #
-          # UNVERIFIED, and it must be verified against a live server before this
-          # is made a required check (Factory#541): exit 0 here is only a real
-          # verdict if the Flow has controls enforced and the trail carries a
-          # committer identity. `fides trail start` takes no --committer flag in
-          # the documented surface, yet the segregation-of-duties attestation is
-          # documented as sourcing the committer from the trail. If it resolves
-          # to nothing, committer != approver is trivially true and this gate
-          # goes green having compared nobody -- the exact vacuous-pass shape
-          # this PR is otherwise closing. Confirm with `fides search attestations
-          # --trail <id> --type segregation-of-duties --compliant true` on a real
-          # trail, then assert that post-condition here.
-          fides change-gate --trail "$TRAIL_ID"
+          # So the exit code is captured rather than trusted, and the verdict
+          # script asserts the post-condition the exit code does not carry. Its
+          # own exit status is this step's.
+          fides change-gate --trail "$TRAIL_ID" > gate.json
+          echo "fides change-gate exit: $?"
+          cat gate.json
+          scripts/fides_gate_verdict.py --committer "$COMMITTER" gate.json
 
       - name: ServiceNow write-back (optional)
         if: ${{ vars.SN_CHANGE_NUMBER != '' }}
