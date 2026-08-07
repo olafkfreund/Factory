@@ -47,6 +47,7 @@ import check_chart_vs_gitops as chart_gate
 import check_cli_freshness as cli_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
+import check_merge_attribution as merge_gate
 import check_pin_freshness as pin_gate
 import check_planning_card_conformance as card_gate
 import check_verification_core_drift as vcore_gate
@@ -65,6 +66,7 @@ _COVERED: dict[str, str] = {
     "check_chart_vs_gitops.py": "test_chart_vs_gitops_gate_is_honest",
     "check_cli_freshness.py": "test_cli_freshness_gate_is_honest",
     "check_planning_card_conformance.py": "test_planning_card_conformance_gate_is_honest",
+    "check_merge_attribution.py": "test_merge_attribution_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -478,3 +480,63 @@ def test_cli_freshness_gate_is_honest() -> None:
 
     # And the repo list is enumerated, so losing one is visible rather than quiet.
     assert set(cli_gate.REPOS) == {"AIFactory", "PFactory", "TFactory"}
+
+
+def test_merge_attribution_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> None:
+    """Factory#611's audit command, held to this file's criteria.
+
+    Its subject is a merge trail nobody can re-derive, so the enumeration
+    property matters more here than anywhere else in this file: the only reason
+    to believe a verdict is that the command printed the login it read it from.
+
+    Note the asymmetry in what counts as scope loss. `_REPOS` shrinking is scope
+    loss in the ordinary sense — a repo stops being audited and the remaining
+    ones still report. `_SHARED_IDENTITIES` shrinking is NOT: it empties on the
+    day agents stop authenticating as the operator, which is the fix landing.
+    What has to be proved about it is that it is load-bearing rather than
+    decorative, which is the second mutation below.
+    """
+    merges = [
+        merge_gate.Merge("Factory", 626, "olafkfreund"),
+        merge_gate.Merge("AIFactory", 12, "factory-agent[bot]"),
+    ]
+
+    # Every verdict carries its fragment, and the PASS line carries one too —
+    # a reader that printed the login only for what it flags cannot be caught
+    # reading the wrong field for everything it waves through.
+    merge_gate.report(merges)
+    out = capsys.readouterr().out
+    for merge in merges:
+        assert f"{merge.repo}#{merge.number}" in out, f"never named {merge.repo}#{merge.number}"
+        assert f"mergedBy={merge.merged_by}" in out, f"never cited {merge.repo}'s merge actor"
+    assert merge_gate.ATTRIBUTABLE in out and merge_gate.INDISTINGUISHABLE in out
+
+    # Configuration mutation 1: the fleet list must not shrink unobserved. It is
+    # asserted against the one declared in scripts/apply_branch_protection.sh, so
+    # the two cannot drift apart in silence either.
+    declared = re.search(
+        r"^ALL_REPOS=\(([^)]*)\)",
+        (_SCRIPTS / "apply_branch_protection.sh").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert declared, "apply_branch_protection.sh no longer declares ALL_REPOS"
+    assert set(merge_gate._REPOS) == set(declared.group(1).split()), (
+        "the audited repo list and the fleet's declared repo list have diverged — "
+        "a repo would go unaudited with nothing red"
+    )
+
+    # Configuration mutation 2: empty the declaration. The merges are unchanged,
+    # and the operator's merge must stop reading as indistinguishable — proving
+    # the verdict comes from the declaration and not from something incidental.
+    kept = merge_gate._SHARED_IDENTITIES
+    merge_gate._SHARED_IDENTITIES = frozenset()
+    try:
+        assert merge_gate.assess(merges)[0] == 0, (
+            "with no identity declared shared, every merge is attributable by "
+            "construction — if this still failed, the verdict is not coming from "
+            "the declaration and the gate cannot be reasoned about"
+        )
+    finally:
+        merge_gate._SHARED_IDENTITIES = kept
+
+    assert merge_gate.assess(merges)[0] == 1, "restoring the declaration must restore the red"
