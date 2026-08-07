@@ -78,7 +78,20 @@ jobs:
           # engines as YAML (Factory#504). Stubs rather than a per-import
           # `type: ignore` — suppressing the checker to keep the checker quiet
           # is the shape this repo's ratchet exists to stop.
-          pip install "ruff==${RUFF_VERSION}" "mypy==${MYPY_VERSION}" types-PyYAML
+          #
+          # pydantic + pytest, same reasoning, added for Factory#554. Without
+          # them mypy resolves `BaseModel` and `pytest.mark.parametrize` to Any,
+          # and `strict` then reports every subclass and every parametrised test
+          # as a violation OF ITS OWN BLINDNESS: "Class cannot subclass BaseModel
+          # (has type Any)", "Untyped decorator makes function untyped". The
+          # ratchet was measuring an absent dependency, not the code.
+          #
+          # Measured across scripts/ + tests/ before landing this: 243 errors
+          # with the stubs missing, 196 with them present, and NOT ONE FILE
+          # gained an error. So this only ever lowers the bar's noise floor; it
+          # cannot make a future PR red for something real stubs revealed.
+          pip install "ruff==${RUFF_VERSION}" "mypy==${MYPY_VERSION}" types-PyYAML \
+            "pydantic>=2" pytest
 
       - name: Determine base ref
         id: base
