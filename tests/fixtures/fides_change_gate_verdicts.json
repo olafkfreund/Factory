@@ -1,0 +1,194 @@
+{
+  "committer_differs_only_by_case": {
+    "approvals": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "count": 1,
+      "deployers": [],
+      "four_eyes": false,
+      "human_approvers": 1
+    },
+    "approved": true,
+    "attestations": {
+      "non_compliant": 0,
+      "total": 1
+    },
+    "failed": [],
+    "missing_evidence": [],
+    "passed": [
+      "LAB-TESTS"
+    ],
+    "recommendation": "approve",
+    "risk_level": "low",
+    "risk_score": 0,
+    "segregation_of_duties": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "committer": "Alice@Company.com",
+      "compliant": false,
+      "deployers": null,
+      "violations": [
+        "no deployer recorded"
+      ]
+    },
+    "summary": "All controls satisfied by compliant evidence and a human sign-off is present; safe to approve.",
+    "trail_id": "1aebb0ff-4da2-4181-a27e-bd8ae08b29c1",
+    "waived": []
+  },
+  "committer_is_github_noreply": {
+    "approvals": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "count": 1,
+      "deployers": [],
+      "four_eyes": false,
+      "human_approvers": 1
+    },
+    "approved": true,
+    "attestations": {
+      "non_compliant": 0,
+      "total": 1
+    },
+    "failed": [],
+    "missing_evidence": [],
+    "passed": [
+      "LAB-TESTS"
+    ],
+    "recommendation": "approve",
+    "risk_level": "low",
+    "risk_score": 0,
+    "segregation_of_duties": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "committer": "12345+dev@users.noreply.github.com",
+      "compliant": false,
+      "deployers": null,
+      "violations": [
+        "no deployer recorded"
+      ]
+    },
+    "summary": "All controls satisfied by compliant evidence and a human sign-off is present; safe to approve.",
+    "trail_id": "dbfc4c97-ec86-4c99-91da-6c91efc5ebea",
+    "waived": []
+  },
+  "committer_is_the_approver": {
+    "approvals": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "count": 1,
+      "deployers": [],
+      "four_eyes": false,
+      "human_approvers": 1
+    },
+    "approved": true,
+    "attestations": {
+      "non_compliant": 1,
+      "total": 2
+    },
+    "failed": [],
+    "missing_evidence": [],
+    "passed": [
+      "LAB-TESTS"
+    ],
+    "recommendation": "approve",
+    "risk_level": "low",
+    "risk_score": 10,
+    "segregation_of_duties": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "committer": "alice@company.com",
+      "compliant": false,
+      "deployers": null,
+      "violations": [
+        "no deployer recorded",
+        "committer alice@company.com is also an approver"
+      ]
+    },
+    "summary": "All controls satisfied by compliant evidence and a human sign-off is present; safe to approve.",
+    "trail_id": "3110b9d8-1b72-4d0f-a70a-a402f1aa9d87",
+    "waived": []
+  },
+  "no_committer_supplied": {
+    "approvals": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "count": 1,
+      "deployers": [],
+      "four_eyes": false,
+      "human_approvers": 1
+    },
+    "approved": true,
+    "attestations": {
+      "non_compliant": 0,
+      "total": 1
+    },
+    "failed": [],
+    "missing_evidence": [],
+    "passed": [
+      "LAB-TESTS"
+    ],
+    "recommendation": "approve",
+    "risk_level": "low",
+    "risk_score": 0,
+    "segregation_of_duties": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "committer": "",
+      "compliant": false,
+      "deployers": null,
+      "violations": [
+        "committer identity unknown",
+        "no deployer recorded"
+      ]
+    },
+    "summary": "All controls satisfied by compliant evidence and a human sign-off is present; safe to approve.",
+    "trail_id": "e77b818c-6da3-45b6-ab92-dc23aac01eaf",
+    "waived": []
+  },
+  "pr_time_four_eyes": {
+    "approvals": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "count": 1,
+      "deployers": [],
+      "four_eyes": false,
+      "human_approvers": 1
+    },
+    "approved": true,
+    "attestations": {
+      "non_compliant": 0,
+      "total": 1
+    },
+    "failed": [],
+    "missing_evidence": [],
+    "passed": [
+      "LAB-TESTS"
+    ],
+    "recommendation": "approve",
+    "risk_level": "low",
+    "risk_score": 0,
+    "segregation_of_duties": {
+      "approvers": [
+        "alice@company.com"
+      ],
+      "committer": "dev@company.com",
+      "compliant": false,
+      "deployers": null,
+      "violations": [
+        "no deployer recorded"
+      ]
+    },
+    "summary": "All controls satisfied by compliant evidence and a human sign-off is present; safe to approve.",
+    "trail_id": "a60a78f4-0d0f-4e90-be9b-80257c07a4c8",
+    "waived": []
+  }
+}
