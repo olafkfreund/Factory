@@ -57,6 +57,24 @@ jobs:
 
       # Shallow is fine here, unlike pin-freshness: this reads the CURRENT state
       # of both engines and never resolves a historical commit.
+      #
+      # THE REFS BELOW ARE ASYMMETRIC AND THAT MATTERS TO ANYONE FIXING A FINDING
+      # FROM THIS GATE. The service repos are read at `dev`; factory-gitops at
+      # `main`. So a chart change lands in this comparison only when it reaches
+      # `dev` — merging it to a service repo's `main` leaves the gate reading the
+      # OLD chart against the NEW manifest, and it goes red on the next scheduled
+      # run with a green PR behind it.
+      #
+      # Not hypothetical. Factory#550 fixed all four charts, sent AIFactory and
+      # PFactory to `dev` and TFactory to `main` (following that repo's PR
+      # convention), and this gate was red overnight until TFactory#980
+      # cherry-picked the merged commit onto `dev`. Every check on every PR was
+      # green throughout; nothing but this workflow's own schedule saw it.
+      #
+      # `dev` rather than `main` is deliberate — the charts are a product
+      # artifact and `dev` is where they are integrated, so the gate holds the
+      # branch developers actually work on rather than the release branch. If
+      # that ever changes, change it in one place and say so here.
       - name: Check out the four service repos
         uses: actions/checkout@v4
         with: { repository: olafkfreund/AIFactory, ref: dev, path: AIFactory }
