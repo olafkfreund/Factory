@@ -22,15 +22,27 @@ name: factory-contracts (staleness gate)
 # the committed output is either in sync with the inputs or it is not. So this is
 # a hard gate from day one.
 
+# NO `paths:` FILTER, DELIBERATELY (Factory#489)
+# ----------------------------------------------
+# This used to carry a hand-maintained paths allowlist paired with a
+# hand-maintained list of per-file pytest steps. Both rotted, in the same
+# direction and for the same reason: a test file added to tests/ is not added
+# to either list by anything, and nothing reports the omission. Ten of the
+# hub's sixteen test files had accumulated that way and had never executed in
+# CI once - including the comparators of all three BLOCKING, FLEET-WIDE drift
+# gates, which every consumer repo fetches from hub main (Factory#405).
+#
+# An allowlist that must be edited by hand to stay correct is the same defect
+# class this repo has already been bitten by twice inside the gates themselves
+# (Factory#397: a canonical file absent from CANONICAL_FILES; Factory#401: a
+# canonical module vendored by nobody). The fix there was to make the omission
+# loud; the fix here is to remove the list. The whole suite now runs on every
+# PR, so "wired but never triggered" is not a state this workflow can reach.
+#
+# Cost of running it unconditionally: two short jobs (the generator is
+# dependency-free; the suite is ~1 minute).
 on:
   pull_request:
-    paths:
-      - "apis/completion-events.asyncapi.yaml"
-      - "apis/status-taxonomy.json"
-      - "scripts/gen_contracts.py"
-      - "shared/factory-contracts/**"
-      - "tests/test_gen_contracts.py"
-      - ".github/workflows/contracts.yml"
   push:
     branches: [main]
 
@@ -58,7 +70,7 @@ jobs:
         run: python scripts/gen_contracts.py --check
 
   self-test:
-    name: generated package self-test (pytest)
+    name: hub test suite (pytest tests/)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,10 +80,47 @@ jobs:
           python-version: "3.11"
 
       - name: Install test deps
-        # pydantic is required only by the generated module (the generator and
-        # the staleness check above are dependency-free). The self-test imports
-        # the generated package, so it is installed here.
-        run: pip install pytest "pydantic>=2"
+        # Every entry here is load-bearing for at least one module in tests/,
+        # and a MISSING entry is not a loud failure - two of these suites call
+        # pytest.importorskip() at module scope, so an absent dependency turns
+        # the whole file into a SKIP and the step still reports green. That is
+        # the Factory#489 defect in miniature, so what needs what is spelled out:
+        #
+        #   pydantic  the generated factory-contracts module, which
+        #             tests/test_gen_contracts.py importorskip()s as
+        #             `factory_contracts`.
+        #   pyyaml    importorskip'd by tests/test_validate_catalog.py.
+        #
+        # Nothing else in this branch's tests/ imports a third party: the two
+        # fides tables drive their scripts as subprocesses, the three drift
+        # comparators and deployment_metrics_stub are stdlib, and
+        # test_shared_http_consumption exercises urllib. Deps are added here
+        # when a test needs one, not pre-emptively.
+        run: pip install pytest "pydantic>=2" pyyaml
 
-      - name: Run the contracts self-test
-        run: pytest -v tests/test_gen_contracts.py
+      - name: Run the hub test suite
+        # WHOLE DIRECTORY, NOT A FILE LIST (Factory#632, #489). This step used to
+        # name a single file, and the `on:` block above used to carry a paths
+        # allowlist that did not mention any other one - so eight of this
+        # branch's nine test modules could not run on any PR, and two of them
+        # could not run on any branch anywhere:
+        #
+        #   tests/test_fides_gate_preflight.py  (Factory#541, this stack)
+        #   tests/test_fides_gate_verdict.py    (Factory#618, this stack)
+        #
+        # Those two are MUTATION TABLES. They exist to prove the fides change
+        # gate goes red when the property it checks becomes false - a gate that
+        # installed nothing (#541) and a gate that compared nobody (#618). A
+        # mutation table nobody runs is the same failure mode as the gates it
+        # was written to fix: it reports nothing while appearing to be evidence
+        # (docs/dev/gate-honesty.md, variant 1).
+        #
+        # Both were verified live before this step was written: mutating
+        # `fides_gate_verdict.py`'s _fail() to `raise SystemExit(0)` turns 12 of
+        # its 15 cases red, and mutating `fides_gate_preflight.sh`'s fail() to
+        # `exit 0` turns 8 of its 10 red. They are checks, not decoration.
+        #
+        # hub main already runs the directory this way; this stack is ~100
+        # commits behind it and kept the old per-file step, which is why the
+        # fix has to land here too rather than being inherited at merge.
+        run: pytest -v tests/
