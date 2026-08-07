@@ -39,6 +39,15 @@ opening the workflow. This module is that reading. A gate missing from
 :data:`GATES` is a pin nobody outside its own workflow can find, and the rule's
 exemption stops covering it. See :class:`Gate`.
 
+The planning-card gate (Factory#554) raises the stakes of that reading rather
+than merely joining it. Every other gate here has a vendored copy on the service
+side, so a stale pin still leaves SOMETHING compared. That one has none: CFactory
+checks the hub out at its pin and compares its pydantic models against
+`apis/planning-card.schema.json` in place. A pin left behind means the service is
+gated against a contract nobody is writing to any more, and its build stays
+green while every consumer reads a schema the hub has since changed. This
+watchdog is the only thing positioned to say so.
+
 The layouts are imported from each gate's own checker, never restated: they are
 the fleet's map of who vendors what, and a second copy here would be the
 hand-maintained fork Factory#483 exists to undo. A service added there is checked
@@ -193,6 +202,32 @@ GATES: tuple[Gate, ...] = (
                 "__init__.py": "apps/backend/cfactory/_contracts/factory_contracts/__init__.py"
             }
         },
+        required_check=False,
+    ),
+    Gate(
+        name="planning-card",
+        workflow=".github/workflows/planning-card-conformance.yml",
+        canonical_root="apis",
+        # THE ONLY GATE HERE WHOSE CANONICAL IS NOT VENDORED ANYWHERE
+        # (Factory#554). CFactory holds no copy of the schema: its workflow
+        # checks the hub out at the pin and compares its pydantic models against
+        # the file in place. That makes this watchdog the ONLY thing that can
+        # notice the contract moving — the conformance gate itself is honestly
+        # green against a stale pin forever, which is the Factory#499 shape and
+        # exactly what #519 was opened about.
+        #
+        # The layout value would be the vendored path for every other gate.
+        # There is none, so it says so: nothing here compares it, and
+        # `canonical_paths()` only ever reads the KEY.
+        layouts={
+            "cfactory": {
+                "planning-card.schema.json": "(not vendored — checked out at the pin)",
+            }
+        },
+        # Not a required status check yet. It became blocking in CFactory on the
+        # PR that added it; making it REQUIRED in branch protection is a separate,
+        # deliberate step, and until it is, a `paths:` filter on it would not wedge
+        # a PR. (The workflow carries no filter regardless — see its header.)
         required_check=False,
     ),
 )
@@ -617,7 +652,10 @@ def main(argv: list[str] | None = None) -> int:
         print(  # noqa: T201
             "\nRe-vendor the affected module(s) into that service and bump its "
             "HUB_PIN_SHA. A byte-exact copy of a stale canonical is a green gate "
-            "against the wrong target."
+            "against the wrong target.\n"
+            "For the planning-card gate there is nothing to re-vendor - CFactory "
+            "holds no copy of the schema - so the fix is the pin bump alone, plus "
+            "whatever model change the moved contract now requires (Factory#554)."
         )
         return 1
     print(  # noqa: T201

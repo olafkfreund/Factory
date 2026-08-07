@@ -276,6 +276,35 @@ def test_every_file_granular_gate_is_read_fleet_wide() -> None:
     declared = {g.workflow for g in pf.GATES}
     assert ".github/workflows/verification-core-drift.yml" in declared
     assert ".github/workflows/factory-ui-drift.yml" in declared
+    assert ".github/workflows/planning-card-conformance.yml" in declared
+
+
+def test_the_planning_card_gate_watches_the_contract_it_pins() -> None:
+    """The one gate with no vendored copy on the service side (Factory#554).
+
+    Every other gate here leaves something compared when its pin goes stale: the
+    vendored file is still byte-checked, just against an old canonical. CFactory
+    vendors no copy of the planning-card schema at all — its workflow checks the
+    hub out at the pin and compares its pydantic models against the file in
+    place. So a pin left behind means the service is measured against a contract
+    the hub has moved on from, with a green build the whole time, and this
+    watchdog is the only thing that can notice.
+
+    Which makes the pathspec load-bearing rather than incidental. Pointed at
+    anything but the schema this gate is permanently green by construction — the
+    silent-scope-loss shape one level down, and the same failure
+    `test_a_gate_reads_its_own_canonical_root` guards for factory-ui.
+    """
+    gate = next(g for g in pf.GATES if g.name == "planning-card")
+    assert gate.services() == ["cfactory"], "CFactory is the only consumer of this contract"
+    assert gate.canonical_paths("cfactory") == ["apis/planning-card.schema.json"]
+    assert gate.pin_var == "HUB_PIN_SHA"
+
+    # And the pathspec must actually select the contract's own history: a
+    # commit that touched the schema has to be visible to `commits_since`, or
+    # the gate reports a pin as current no matter how far it has fallen behind.
+    touched = pf._git("log", "-1", "--pretty=format:%h", "--", *gate.canonical_paths("cfactory"))
+    assert touched.strip(), "no hub commit has ever touched the path this gate watches"
 
 
 def test_a_gate_reads_its_own_canonical_root() -> None:
