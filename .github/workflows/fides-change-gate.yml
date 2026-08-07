@@ -20,6 +20,11 @@
 #    distinct humans inside one automated job). This workflow only RECORDS the
 #    change and GATES on it; it does not self-approve.
 #  - ServiceNow write-back is optional and only runs when SN_CHANGE_NUMBER is set.
+#  - The Fides server must be reachable FROM A GITHUB-HOSTED RUNNER. The server
+#    deployed in this cluster is a ClusterIP with no Ingress, so it is not; see
+#    Factory#541. Either publish it or run this job on a self-hosted runner.
+#  - Exit 0 from `fides change-gate` is not yet proof that anything was
+#    evaluated -- see the note on that step.
 name: fides-change-gate
 
 on:
@@ -42,17 +47,17 @@ jobs:
       FLOW_ID: ${{ vars.FIDES_FLOW_ID }}
       TRAIL_ID: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Preflight (fail closed if Fides is not configured)
-        run: |
-          : "${FIDES_SERVER_URL:?FIDES_SERVER_URL secret is required}"
-          : "${FIDES_API_TOKEN:?FIDES_CI_KEY secret is required}"
-          : "${FLOW_ID:?FIDES_FLOW_ID variable is required}"
+      - uses: actions/checkout@v4
 
-      - name: Install Fides CLI
-        run: curl -sSfL "$FIDES_SERVER_URL/cli/install.sh" | sh
+      # Fails closed on a missing/empty setting AND on an install that installs
+      # nothing -- see scripts/fides_gate_preflight.sh for why the previous
+      # `curl ... | sh` reported success against an unreachable server.
+      - name: Preflight (settings + Fides CLI)
+        run: scripts/fides_gate_preflight.sh
 
       - name: Record the change (start trail for this PR)
         run: |
+          set -euo pipefail
           fides trail start \
             --flow "$FLOW_ID" \
             --trail "$TRAIL_ID" \
@@ -63,8 +68,21 @@ jobs:
 
       - name: Change gate (HOLD until segregation-of-duties approval)
         run: |
+          set -euo pipefail
           # Exit 2 => HOLD => this required check fails => merge blocked until a
           # second human records `fides approve --trail $TRAIL_ID --role approver`.
+          #
+          # UNVERIFIED, and it must be verified against a live server before this
+          # is made a required check (Factory#541): exit 0 here is only a real
+          # verdict if the Flow has controls enforced and the trail carries a
+          # committer identity. `fides trail start` takes no --committer flag in
+          # the documented surface, yet the segregation-of-duties attestation is
+          # documented as sourcing the committer from the trail. If it resolves
+          # to nothing, committer != approver is trivially true and this gate
+          # goes green having compared nobody -- the exact vacuous-pass shape
+          # this PR is otherwise closing. Confirm with `fides search attestations
+          # --trail <id> --type segregation-of-duties --compliant true` on a real
+          # trail, then assert that post-condition here.
           fides change-gate --trail "$TRAIL_ID"
 
       - name: ServiceNow write-back (optional)
