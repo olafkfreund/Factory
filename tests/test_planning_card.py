@@ -30,8 +30,11 @@ _SCHEMA_FILE = "planning-card.schema.json"
 _TAXONOMY_FILE = "status-taxonomy.json"
 
 _CARD_STATUSES = ("backlog", "ready", "in_progress", "blocked", "done")
-# Owned by the server, never accepted from a request body (planning-card.md 3).
-_SERVER_OWNED = ("card_key", "tenant_id", "created_at", "updated_at")
+# Owned by the server, never accepted from ANY request body (planning-card.md 3).
+# `card_key` is deliberately not here: it is server-ASSIGNED but caller-SETTABLE
+# on create, to mirror an id from an external tracker (Factory#554). It is
+# immutable thereafter, which is why the patch body still refuses it.
+_SERVER_OWNED = ("tenant_id", "created_at", "updated_at")
 
 
 def _example(name: str) -> dict[str, Any]:
@@ -101,11 +104,20 @@ def test_correlation_key_must_be_present_even_when_null() -> None:
     assert any("correlation_key" in m for m in _errors(doc))
 
 
-def test_correlation_key_may_not_be_an_empty_string() -> None:
-    """Unjoined is `null`; "" would be a third state nothing knows how to read."""
-    doc = _example("card-planned")
-    doc["correlation_key"] = ""
-    assert _errors(doc) != []
+def test_correlation_key_is_bounded_where_the_service_bounds_it() -> None:
+    """Unjoined is `null`; the join, once made, is at most 128 characters.
+
+    This used to assert that "" is rejected on the RESOURCE, via a `minLength: 1`
+    on the shared `$def`. Factory#554 moved every bound to the request bodies,
+    because that is where the service enforces one: `CardCreate.correlation_key`
+    carries `max_length=128` and nothing else, and the response model carries no
+    constraint at all. An empty string is still meaningless - unjoined is `null`
+    and "" is a third state nothing knows how to read - but that is now a rule
+    with no enforcer, and the schema no longer pretends otherwise (CFactory#324).
+    """
+    body = {"correlation_key": "3" * 129}
+    assert _errors(body, "card_patch") != [], "beyond what the service stores"
+    assert _errors({"correlation_key": "302"}, "card_patch") == []
 
 
 # --- vocabularies -------------------------------------------------------
@@ -160,10 +172,19 @@ def test_create_rejects_server_owned_fields(field: str) -> None:
     assert _errors(body, "card_create") != []
 
 
-def test_create_rejects_a_correlation_key() -> None:
-    """A card is created as a plan; the join is made later, over PATCH."""
-    body = {"title": "Plan something", "correlation_key": "302"}
-    assert _errors(body, "card_create") != []
+def test_create_accepts_a_correlation_key_and_a_caller_supplied_key() -> None:
+    """Both used to be rejected here, and the service has always taken them.
+
+    The contract said a card is created as a plan and joined later over PATCH.
+    That describes the board, not the importer: `issue_import.py` creates a card
+    that is ALREADY joined to its GitHub issue, and a caller mirroring an
+    external tracker supplies its own `card_key` so the two ids match. The
+    schema's own `$defs.card_key` prose has said so since Factory#371 while
+    `card_create` rejected it - the contract contradicted itself, and nothing
+    could see that until Factory#554 compared it to the model.
+    """
+    assert _errors({"title": "Plan something", "correlation_key": "302"}, "card_create") == []
+    assert _errors({"title": "Plan something", "card_key": "JIRA-1234"}, "card_create") == []
 
 
 def test_create_needs_a_title_and_nothing_else() -> None:
@@ -185,9 +206,74 @@ def test_empty_patch_is_a_mistake_not_a_no_op() -> None:
     assert _errors({}, "card_patch") != []
 
 
-@pytest.mark.parametrize("field", _SERVER_OWNED)
+@pytest.mark.parametrize("field", (*_SERVER_OWNED, "card_key"))
 def test_patch_rejects_server_owned_fields(field: str) -> None:
+    """`card_key` is settable on create and immutable after: it is the path
+    segment of every single-card route and the id other systems quote."""
     assert _errors({field: "nope"}, "card_patch") != []
+
+
+@pytest.mark.parametrize("field", ("description", "issue_ref", "repository_id"))
+def test_the_request_bodies_carry_every_field_a_caller_can_originate(field: str) -> None:
+    """Three fields the service has always accepted and the schema refused.
+
+    `description` holds an imported issue body, `issue_ref` adopts an issue, and
+    `repository_id` targets one of the tenant's repositories. All three are
+    writable on `CardCreate` and `CardUpdate`; `additionalProperties: false`
+    meant the contract called each one an error. That is the shape of drift
+    Factory#554 makes impossible: a field on the wire nobody was told about.
+    """
+    value: object = 4 if field == "repository_id" else "x"
+    assert _errors({"title": "Plan something", field: value}, "card_create") == []
+    assert _errors({field: value}, "card_patch") == []
+
+
+@pytest.mark.parametrize(
+    "field", ("issue_ref", "issue_state", "labels", "github_sync_error", "stage_runs")
+)
+def test_the_mirrored_fields_are_required_on_the_resource(field: str) -> None:
+    """The service marks all five REQUIRED; the schema had them optional.
+
+    They are the GitHub mirror plus the dispatch record, and the service emits
+    every one of them on every read - `labels` as `[]` and the rest as `null`
+    when there is nothing to mirror. A consumer told they were optional would
+    reasonably branch on absence, which is a state the API never produces.
+    """
+    doc = _example("card-planned")
+    del doc[field]
+    assert any(field in m for m in _errors(doc))
+
+
+def test_the_resource_asserts_no_bound_the_service_does_not_enforce() -> None:
+    """Bounds live on the request bodies now, because that is where they bite.
+
+    `CardCreate`/`CardUpdate` carry the `max_length` constraints; `Card` is the
+    serialisation of a row and carries none. A `maxLength` on the resource would
+    be a rule a consumer could use to REJECT a response the server legitimately
+    sent - the same class of error as `priority: {minimum: 0}`, which the schema
+    asserted and the server never enforced (Factory#371).
+    """
+    card = _schema()["$defs"]["card"]["properties"]
+    defs = _schema()["$defs"]
+    for name, node in card.items():
+        target = defs[node["$ref"].removeprefix("#/$defs/")] if "$ref" in node else node
+        assert not (set(target) & {"minLength", "maxLength", "minimum", "maximum", "pattern"}), name
+    create = _schema()["$defs"]["card_create"]["properties"]
+    assert create["title"]["maxLength"] == 512
+    assert create["assignee"]["maxLength"] == 128
+
+
+def test_a_new_card_lands_at_the_top_of_the_backlog_not_the_bottom() -> None:
+    """`priority` defaults to 0, not 100.
+
+    The schema's prose said 100 and the service has always used 0. Nobody could
+    tell, because the default was described in English and never declared as a
+    JSON Schema `default` - so there was nothing for anything to compare. It is
+    declared now, and the conformance gate reads it.
+    """
+    create = _schema()["$defs"]["card_create"]["properties"]
+    assert create["priority"]["default"] == 0
+    assert create["status"]["default"] == "backlog"
 
 
 # --- scalars ------------------------------------------------------------
@@ -218,25 +304,36 @@ def test_card_key_accepts_a_server_key_or_an_external_one() -> None:
     external tracker, and the service accepts up to 128 characters — so the old
     assertion encoded a rule that would have rejected valid cards.
 
-    What remains enforceable is the shape a key must have to be usable as a path
-    segment at all: non-empty, and bounded.
+    The 128-character bound is now asserted on `card_create`, not on the
+    resource: `CardCreate.card_key` carries `max_length=128` and the response
+    model carries nothing, so that is the one place the rule has an enforcer
+    (Factory#554).
     """
     doc = _example("card-planned")
     for good in ("FCT-42", "JIRA-1234", "gh-9", "42"):
         doc["card_key"] = good
         assert _errors(doc) == [], good
-    doc["card_key"] = ""
-    assert _errors(doc) != [], "an empty key is not addressable"
-    doc["card_key"] = "x" * 129
-    assert _errors(doc) != [], "beyond what the service stores"
+    assert _errors({"title": "x", "card_key": "y" * 129}, "card_create") != [], "beyond the column"
+    assert _errors({"title": "x", "card_key": "y" * 128}, "card_create") == []
 
 
-def test_acceptance_criteria_entries_may_not_be_blank() -> None:
+def test_acceptance_criteria_is_a_list_of_strings_and_may_be_empty() -> None:
+    """An empty LIST is legal while planning; a blank ENTRY is no longer refused.
+
+    The item used to carry `minLength: 1`. The service has never enforced it -
+    `list[str]` on all three models, no per-item constraint - so the rule sat in
+    the schema with no implementation behind it, which is the class of fiction
+    Factory#554 removed. The reasoning survives in the field's prose and the
+    service-side fix is CFactory#324; when it lands, the bound comes back here
+    and the conformance gate keeps the two in step.
+    """
     doc = _example("card-planned")
-    doc["acceptance_criteria"] = [""]
-    assert _errors(doc) != []
     doc["acceptance_criteria"] = []
     assert _errors(doc) == []
+    doc["acceptance_criteria"] = [""]
+    assert _errors(doc) == [], "not enforced by the service, so not asserted here"
+    doc["acceptance_criteria"] = [3]
+    assert _errors(doc) != [], "the element TYPE is still a bar"
 
 
 def test_unknown_field_on_the_resource_is_rejected() -> None:

@@ -99,7 +99,11 @@ jobs:
         # the whole file into a SKIP and the step still reports green. That is
         # the Factory#489 defect in miniature, so what needs what is spelled out:
         #
-        #   pydantic  the generated factory-contracts module (test_gen_contracts)
+        #   pydantic  the generated factory-contracts module (test_gen_contracts),
+        #             and the planning-card conformance self-test, which builds
+        #             real pydantic models to compare the contract against
+        #             (Factory#554). Without it that step raises rather than
+        #             skipping, which is loud, which is the point.
         #   jsonschema  the agent-skills / planning-card schema suites
         #   httpx     imported at module scope by the shared provider modules;
         #             importorskip'd by test_http_github_provider
@@ -173,6 +177,24 @@ jobs:
         # untagged evidence means retention silently never fires). Stdlib-only:
         # the S3 transport is lazy and the round-trip uses an in-module fake.
         run: python3 scripts/artifact_store.py
+
+      - name: Guard the planning-card conformance comparator
+        # Factory#554. scripts/check_planning_card_conformance.py is the gate
+        # CFactory runs on every PR to prove its card models still say what
+        # apis/planning-card.schema.json says. The comparator lives here and the
+        # subject lives there, so the hub cannot run the real comparison - which
+        # is precisely why its own logic has to be exercised somewhere. Its
+        # --self-test builds synthetic pydantic models and PERFORMS the
+        # mutations rather than describing them: a str narrowed to a Literal, an
+        # enum widened, a field added, a field dropped, a bound moved, a default
+        # changed, `count` renamed to `total`, a role deleted from the contract,
+        # and an empty contract. A comparator with a bug reports "no drift"
+        # forever, in the one repo that serves this API, and running the gate
+        # cannot reveal it. Stdlib plus pydantic, no network, no CFactory
+        # checkout. Same job as the steps above for the reason they all cite: a
+        # separate job duplicates the checkout/setup block against the jscpd
+        # clone budget (Factory#161), which only ratchets down.
+        run: python3 scripts/check_planning_card_conformance.py --self-test
 
       - name: Guard the model-availability probe
         # Factory#489. scripts/test_model_probe.py is the hub's SEVENTEENTH test
