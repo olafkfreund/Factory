@@ -41,9 +41,21 @@ Usage:
     python3 scripts/check_cli_freshness.py --open-bump-pr  # needs GH_TOKEN
     python3 scripts/check_cli_freshness.py --self-test     # offline
 
+WHICH REF IT JUDGES: ``main``, because ``main`` is what deploys (Factory#612).
+It read ``HEAD`` — the DEFAULT branch, ``dev`` in all three repos — so a bump
+merged to dev silenced the alarm while the image the fleet runs still baked the
+old CLI. The default branch is still read, and reported on its own line, because
+"has anyone bumped it" and "is the fleet current" are two different facts and
+only one of them is about what is running.
+
 Exit codes:
-    0 - every pin is within the window (or ahead of the registry)
-    1 - a pin has been behind the registry for longer than the window
+    0 - every pin on the deployed ref is within the window
+    1 - a pin has been behind the registry for longer than the window, or is
+        AHEAD of it: a version the registry no longer serves as latest, which is
+        what a yank looks like from here (Factory#615). This used to claim exit 0
+        for the ahead case and exit 1 calling it "behind"; the contract and the
+        behaviour now agree, and they agree on alerting, because "the version we
+        deploy is not the one npm serves" is not a passing state.
     2 - a pin or a registry entry could not be read (never a silent pass:
         a check that cannot see its subject must say so, Factory#500)
 """
@@ -67,13 +79,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from selftest_report import SelfTest, gate_argparser
 
 _OWNER = "olafkfreund"
-# ponytail: HEAD is the DEFAULT branch (`dev` in all three), which is not the ref
-# the fleet deploys — factory-gitops' cli-canary reads `main` for exactly that
-# reason. So a bump merged to dev silences this watchdog before the image reaches
-# the cluster. Pre-existing since #556 and left alone here to keep this change
-# small; tracked and argued in Factory#612, which is where to fix it.
-_RAW = "https://raw.githubusercontent.com/{owner}/{repo}/HEAD/Dockerfile"
+_RAW = "https://raw.githubusercontent.com/{owner}/{repo}/{ref}/Dockerfile"
 _REGISTRY = "https://registry.npmjs.org/{pkg}"
+
+# THE REF THE VERDICT IS ABOUT (Factory#612). `main`, because `main` is what
+# deploys: each service's deploy.yml triggers on push-to-main, and AIFactory
+# ships via release/X.Y.Z -> main. factory-gitops' cli-canary already reads main
+# and says why; this watchdog read HEAD, which raw.githubusercontent resolves to
+# the DEFAULT branch — `dev` in all three repos.
+#
+# That is an alarm that goes quiet on the wrong event. A bump merged to dev
+# silenced it immediately while the image the fleet actually runs still baked the
+# old CLI until a release landed, so "the watchdog is green" and "the deployed
+# pin is current" quietly stopped being the same statement. Measured on
+# 2026-08-07: all three default to dev, and AIFactory's dev was 19 commits ahead
+# of main. The pins happened to agree, which is exactly why the gap was invisible
+# — it is luck, not a guarantee, and #609's bump proposer (which targets the
+# default branch, where the repos take changes) makes it reachable in normal
+# operation.
+_DEPLOYED_REF = "main"
+
+# The ref that answers "has anyone bumped it yet". HEAD is the default branch, so
+# this needs no API call to resolve. Reported, never alerted on: intent is not
+# deployment, and only one of these two facts is about what the fleet runs.
+_PROPOSED_REF = "HEAD"
 
 # Repos that bake the agent CLIs. CFactory is deliberately absent: it is the
 # cockpit and runs no agent, so it pins none of these — an absence with a reason,
@@ -119,8 +148,8 @@ def parse_pins(repo: str, dockerfile: str) -> list[Pin]:
     return [Pin(repo, pkg, found[pkg]) for pkg in TRACKED if pkg in found]
 
 
-def fetch_dockerfile(repo: str, *, timeout: int = 20) -> str:
-    url = _RAW.format(owner=_OWNER, repo=repo)
+def fetch_dockerfile(repo: str, ref: str = _DEPLOYED_REF, *, timeout: int = 20) -> str:
+    url = _RAW.format(owner=_OWNER, repo=repo, ref=ref)
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
             body: str = response.read().decode("utf-8")
@@ -146,6 +175,17 @@ def _published(doc: dict[str, Any], version: str) -> datetime | None:
     return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
 
 
+def _release(version: str) -> tuple[int, ...]:
+    """The numeric release part of *version*, for ordering. ``0.147.0`` -> (0, 147, 0).
+
+    Enough for semver-shaped npm versions and deliberately no more: a pre-release
+    suffix is dropped, so ``1.0.0-rc.1`` and ``1.0.0`` order equal and fall
+    through to the behind branch, which then names the difference truthfully
+    rather than inventing a rule about release candidates nobody here ships.
+    """
+    return tuple(int(part) for part in re.findall(r"\d+", version.split("-", maxsplit=1)[0])[:3])
+
+
 def assess(
     pin: Pin, doc: dict[str, Any], *, now: datetime, max_age_days: float
 ) -> tuple[str, str | None]:
@@ -155,12 +195,35 @@ def assess(
     question is "how long has a newer version been available and ignored", which
     is what a missing bot causes. A pin published long ago but still latest is
     not stale — it is simply a package that has not moved.
+
+    A pin AHEAD of latest gets its own verdict and its own wording (Factory#615).
+    It used to be reported as "behind", with the age of an OLDER release offered
+    as evidence of neglect:
+
+        AIFactory/@openai/codex 0.147.0 — behind 0.146.0, published 218d ago
+
+    Backwards, and backwards about the case that matters most: a pin ahead of
+    latest is what an upstream YANK looks like from here, which is the event
+    factory-gitops' cli-canary exists to catch. It still alerts — the docstring
+    used to promise exit 0 for this and that promise was the wrong half to keep,
+    since "the version we deploy is no longer served by the registry" is not a
+    passing state. It just no longer calls it staleness, and no longer starts a
+    clock on someone else's release.
     """
     latest = (doc.get("dist-tags") or {}).get("latest")
     if not latest:
         raise SourceUnavailableError(f"{pin.package}: registry has no dist-tags.latest")
     if latest == pin.version:
         return f"  {pin.repo}/{pin.package} {pin.version} — current", None
+    if _release(pin.version) > _release(latest):
+        return (
+            f"  {pin.repo}/{pin.package} {pin.version} — AHEAD of the registry, "
+            f"whose latest is {latest}",
+            f"{pin.repo}: {pin.package} is pinned to {pin.version}, which is NEWER than the "
+            f"registry's latest ({latest}). The pinned release is no longer the one npm "
+            "serves and may have been yanked — a fresh image build would install something "
+            "else. This is not staleness: check whether it was unpublished before bumping.",
+        )
     released = _published(doc, latest)
     if released is None:
         # Newer version exists but the registry gave no date. Report it rather
@@ -178,6 +241,31 @@ def assess(
             f"available for {age:.0f} days (window {max_age_days:.0f})"
         )
     return line, None
+
+
+def unshipped(pin: Pin, proposed: str | None) -> str | None:
+    """One report line when the default branch and *pin*'s deployed ref disagree.
+
+    The second of the two facts Factory#612 asks for. *pin* is what ``main`` has,
+    which is what the cluster runs and what the verdict above is about;
+    *proposed* is what the default branch has, which answers "has anyone bumped
+    it". Reported, never alerted on: a bump sitting on ``dev`` is real progress
+    and turning it into its own failure would be the cry-wolf shape this job
+    already refuses. But it is not silence either — while the two disagree, the
+    red above means "the fix is written and has not shipped", which is a
+    different instruction to the reader than "nobody bumped it".
+    """
+    if proposed is None:
+        return (
+            f"      ^ not pinned at all on the default branch; only on {_DEPLOYED_REF}. "
+            "The bake step moved on one ref and not the other."
+        )
+    if proposed == pin.version:
+        return None
+    return (
+        f"      ^ the default branch has {proposed}; {_DEPLOYED_REF} still has "
+        f"{pin.version}, and {_DEPLOYED_REF} is the ref that deploys"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +598,37 @@ def _selftest() -> int:
     )
     t.req("CFactory" not in REPOS, "CFactory bakes no agent CLI and is deliberately absent")
 
+    # A pin AHEAD of the registry (Factory#615). This used to read "behind
+    # 0.146.0, published 218d ago" -- backwards, with an older release's age
+    # offered as evidence of neglect.
+    ahead = Pin("AIFactory", "@openai/codex", "0.147.0")
+    line, fail = assess(ahead, doc("0.146.0", "2026-01-01T00:00:00Z"), now=now, max_age_days=30)
+    t.req(fail is not None, "A PIN AHEAD OF THE REGISTRY ALERTS -- it is what a yank looks like")
+    t.req("AHEAD" in line and "behind" not in line, "and is not described as being behind")
+    t.req(fail is not None and "yanked" in fail, "the failure names the actual suspicion")
+    t.req(
+        fail is not None and "days" not in fail,
+        "no staleness clock: the age of a release we are past means nothing",
+    )
+    _, still_behind = assess(pin, doc("0.146.0", "2026-05-01T00:00:00Z"), now=now, max_age_days=30)
+    t.req(still_behind is not None, "control: genuinely behind is still behind")
+
+    # The deployed ref (Factory#612). main is what deploy.yml ships; HEAD is the
+    # default branch, which is `dev` and is not deployed.
+    t.req(_DEPLOYED_REF == "main", "the verdict is about `main`, the ref that deploys")
+    t.req(
+        unshipped(Pin("AIFactory", "@openai/codex", "0.144.6"), "0.147.0") is not None,
+        "A BUMP ON THE DEFAULT BRANCH THAT HAS NOT REACHED main IS REPORTED, not silence",
+    )
+    t.req(
+        unshipped(Pin("AIFactory", "@openai/codex", "0.144.6"), "0.144.6") is None,
+        "control: refs that agree say nothing, or the report is noise every week",
+    )
+    t.req(
+        unshipped(Pin("AIFactory", "@openai/codex", "0.144.6"), None) is not None,
+        "a pin present on main and absent from the default branch is reported too",
+    )
+
     # The rewriter. Untested, this is the half that can silently propose nothing
     # and look like it worked -- which is the exact shape of the defect the whole
     # issue describes, so it gets the assertions with teeth.
@@ -572,21 +691,28 @@ def main(argv: list[str] | None = None) -> int:
     try:
         registry = {pkg: fetch_registry(pkg) for pkg in TRACKED}
         for repo in REPOS:
-            pins = parse_pins(repo, fetch_dockerfile(repo))
+            pins = parse_pins(repo, fetch_dockerfile(repo, _DEPLOYED_REF))
             if not pins:
                 failures.append(
-                    f"{repo}: no tracked CLI pin found in its Dockerfile. Either the bake "
-                    "step moved again (as TFactory#791 moved it out of the manifests) or "
-                    "this watchdog is now looking in the wrong place — both mean it is "
-                    "checking nothing here."
+                    f"{repo}: no tracked CLI pin found in its Dockerfile on {_DEPLOYED_REF}. "
+                    "Either the bake step moved again (as TFactory#791 moved it out of the "
+                    "manifests) or this watchdog is now looking in the wrong place — both "
+                    "mean it is checking nothing here."
                 )
                 continue
+            proposed = {
+                p.package: p.version
+                for p in parse_pins(repo, fetch_dockerfile(repo, _PROPOSED_REF))
+            }
             report.append(f"{repo}:")
             for pin in pins:
                 line, failure = assess(
                     pin, registry[pin.package], now=now, max_age_days=args.max_age_days
                 )
                 report.append(line)
+                note = unshipped(pin, proposed.get(pin.package))
+                if note:
+                    report.append(note)
                 if failure:
                     failures.append(failure)
     except SourceUnavailableError as exc:
@@ -596,7 +722,8 @@ def main(argv: list[str] | None = None) -> int:
     print("\n".join(report))  # noqa: T201
     print(  # noqa: T201
         f"\nTracked: {', '.join(TRACKED)} across {', '.join(REPOS)}; "
-        f"window {args.max_age_days:.0f} days."
+        f"window {args.max_age_days:.0f} days. Judged on `{_DEPLOYED_REF}`, the ref each "
+        "service's deploy.yml ships; `^` lines are the default branch disagreeing."
     )
     if failures:
         print("\ncli-freshness FAILED:")  # noqa: T201
@@ -604,9 +731,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {line}")  # noqa: T201
         print(  # noqa: T201
             "\nBump the pin in that service's Dockerfile and let its cli-canary run "
-            "before merging. Nothing proposes these automatically: the Renovate App is "
-            "not installed and Dependabot cannot see an `npm install -g` bake step "
-            "(Factory#459)."
+            f"before merging, then ship it to `{_DEPLOYED_REF}` — merging to the default "
+            "branch alone does not reach the cluster, and this job keeps reporting until "
+            "it does (Factory#612). A `^` line above means exactly that: the bump exists "
+            "and has not shipped."
         )
         return 1
     print("\ncli-freshness PASSED: every pinned agent CLI is within the window.")  # noqa: T201

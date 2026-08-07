@@ -256,6 +256,150 @@ def test_a_pr_that_is_not_open_is_not_a_success(monkeypatch: pytest.MonkeyPatch)
         cf.propose_bump("PFactory", registry, "token")
 
 
+# --------------------------------------------------------------------------- #
+# A pin AHEAD of the registry (Factory#615)                                     #
+# --------------------------------------------------------------------------- #
+
+
+_AHEAD = cf.Pin("AIFactory", "@openai/codex", "0.147.0")
+
+
+def test_a_pin_ahead_of_the_registry_alerts() -> None:
+    """THE ASSERTION WITH TEETH for #615, and the case the docstring got wrong.
+
+    `assess` treated any `latest != pin.version` as behind without comparing
+    them, and the exit-code docs promised "0 - every pin is within the window (or
+    ahead of the registry)". Both cannot be right, and neither was: it exited 1
+    describing an ahead pin as behind.
+
+    A pin ahead of latest is not a hypothetical. It is what an upstream YANK
+    looks like from here -- the event factory-gitops' cli-canary exists to catch
+    -- so the contract and the behaviour now agree ON ALERTING. "The version we
+    deploy is no longer the one npm serves" is not a passing state.
+    """
+    _, failure = cf.assess(
+        _AHEAD, _doc("0.146.0", "2026-01-01T00:00:00Z"), now=_NOW, max_age_days=30
+    )
+    assert failure is not None
+
+
+def test_an_ahead_pin_is_not_described_as_behind() -> None:
+    """The old output, verbatim:
+
+        AIFactory/@openai/codex 0.147.0 - behind 0.146.0, published 218d ago
+
+    The pin is ahead, and "218 days" was the age of an OLDER release presented as
+    evidence of neglect. A reader sent looking for a missed bump is looking for
+    the wrong thing entirely.
+    """
+    line, failure = cf.assess(
+        _AHEAD, _doc("0.146.0", "2026-01-01T00:00:00Z"), now=_NOW, max_age_days=30
+    )
+    assert "AHEAD" in line
+    assert "behind" not in line
+    assert failure is not None
+    assert "yanked" in failure, "the failure names the actual suspicion"
+    assert "days" not in failure, "no staleness clock on a release we are already past"
+
+
+def test_ordering_is_numeric_not_lexicographic() -> None:
+    """0.9.0 vs 0.10.0 is where a string compare silently inverts the verdict."""
+    _, failure = cf.assess(
+        cf.Pin("AIFactory", "@openai/codex", "0.9.0"),
+        _doc("0.10.0", "2026-07-29T00:00:00Z"),
+        now=_NOW,
+        max_age_days=30,
+    )
+    assert failure is None, "0.9.0 is BEHIND 0.10.0, and within the window"
+    line, _ = cf.assess(
+        cf.Pin("AIFactory", "@openai/codex", "0.10.0"),
+        _doc("0.9.0", "2026-07-29T00:00:00Z"),
+        now=_NOW,
+        max_age_days=30,
+    )
+    assert "AHEAD" in line
+
+
+# --------------------------------------------------------------------------- #
+# The ref the verdict is about (Factory#612)                                    #
+# --------------------------------------------------------------------------- #
+
+
+def _stub_refs(
+    monkeypatch: pytest.MonkeyPatch, *, on_main: dict[str, str], on_default: dict[str, str]
+) -> None:
+    """Serve a different Dockerfile per ref, and a registry that is current."""
+
+    def fake_dockerfile(_repo: str, ref: str = cf._DEPLOYED_REF, **_kw: object) -> str:
+        pins = on_main if ref == "main" else on_default
+        return "RUN npm install -g " + " ".join(f"{p}@{v}" for p, v in pins.items()) + "\n"
+
+    def fake_registry(package: str, **_kw: object) -> dict[str, object]:
+        # latest is what the default branch has -- i.e. the bump was correct.
+        return _doc(on_default[package], "2020-01-01T00:00:00Z")
+
+    monkeypatch.setattr(cf, "fetch_dockerfile", fake_dockerfile)
+    monkeypatch.setattr(cf, "fetch_registry", fake_registry)
+
+
+_BUMPED_ON_DEV = {**_PINNED, "@openai/codex": "0.146.0"}
+
+
+def test_a_bump_merged_to_dev_does_not_silence_the_alarm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE ASSERTION WITH TEETH for #612.
+
+    The watchdog read `HEAD`, which raw.githubusercontent resolves to the DEFAULT
+    branch -- `dev` in all three repos, and `dev` is not deployed. AIFactory ships
+    via release/X.Y.Z -> main and deploy.yml fires on push-to-main, so a bump
+    merged to dev turned this job green while the image the fleet runs still
+    baked the old CLI.
+
+    An alarm that goes quiet before the fix reaches the cluster is worse than no
+    alarm: "the watchdog is green" and "the deployed pin is current" stop being
+    the same statement and nothing says so.
+    """
+    _stub_refs(monkeypatch, on_main=_PINNED, on_default=_BUMPED_ON_DEV)
+    assert cf.main([]) == 1, "main still bakes 0.144.6, so the fleet is still behind"
+
+
+def test_the_report_names_the_bump_that_has_not_shipped(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The second fact. Red alone would not say the fix is already written."""
+    _stub_refs(monkeypatch, on_main=_PINNED, on_default=_BUMPED_ON_DEV)
+    cf.main([])
+    out = capsys.readouterr().out
+    assert "the default branch has 0.146.0" in out
+    assert "main still has 0.144.6" in out
+
+
+def test_refs_that_agree_produce_no_second_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Control: the extra line must appear only when the refs disagree.
+
+    A note on every pin every week is the noise that gets a report skimmed, and
+    it would make the test above pass for the wrong reason.
+    """
+    _stub_refs(monkeypatch, on_main=_BUMPED_ON_DEV, on_default=_BUMPED_ON_DEV)
+    cf.main([])
+    assert "the default branch has" not in capsys.readouterr().out
+
+
+def test_the_deployed_ref_is_the_one_that_deploys() -> None:
+    """Named, so narrowing it back to the default branch is a visible diff.
+
+    factory-gitops' cli-canary reads `main` with the comment "each one's
+    deploy.yml triggers on push-to-main, so main is the ref whose pins actually
+    reach the cluster". That reasoning was always right; this watchdog now
+    follows it.
+    """
+    assert cf._DEPLOYED_REF == "main"
+    assert cf._PROPOSED_REF == "HEAD", "the default branch, resolved without an API call"
+
+
 def test_one_branch_per_repo_so_a_sitting_pr_is_never_duplicated() -> None:
     """An automation whose PRs pile up unmerged trains people to ignore it.
 
