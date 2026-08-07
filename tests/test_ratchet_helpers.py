@@ -80,6 +80,76 @@ def test_mypy_failure_with_nothing_counted_still_aborts() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Factory#600 — a partial count is not a measurement                           #
+# --------------------------------------------------------------------------- #
+
+# Captured verbatim from mypy 2.1.0 run on a file with FOUR real errors that
+# imports a stub the declared --python-version cannot parse. mypy stops before
+# type-checking, so three of the four are never found; the one line naming the
+# target is left over from module discovery.
+_BROKEN_IMPORT_STDOUT = (
+    "target.py:2: error: Cannot find implementation or library stub for module named "
+    '"nosuchmodule_xyz"  [import-not-found]\n'
+    "target.py:2: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html"
+    "#missing-imports\n"
+    "lib/brokenstub.pyi:1: error: Type statement is only supported in Python 3.12 and "
+    "greater  [syntax]\n"
+)
+
+
+def test_partial_count_from_an_unparseable_import_is_not_a_measurement() -> None:
+    # THE DEFECT (Factory#600). Exit 2, one error attributed to the target, and
+    # the arm meant for a blocking error in the target waves it through — while
+    # mypy stopped at an IMPORT and the file's real count is 4. PFactory gated 5
+    # files this way, TFactory 3, one of them at 1 against a real 28.
+    with pytest.raises(SystemExit) as exc:
+        rh.require_tool_ran("mypy", _res(2, stdout=_BROKEN_IMPORT_STDOUT), measured=1)
+    assert exc.value.code == 2
+
+
+def test_partial_count_failure_names_the_files_it_blamed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        rh.require_tool_ran("mypy", _res(2, stdout=_BROKEN_IMPORT_STDOUT), measured=1)
+    err = capsys.readouterr().err
+    assert "partial count" in err
+    assert "lib/brokenstub.pyi" in err
+
+
+def test_blocking_error_in_the_file_under_test_is_still_measured() -> None:
+    # Control with teeth, the shape the arm exists for: mypy exits 2, but every
+    # error line names ONE file, so nothing was left unchecked elsewhere. A
+    # guard that fired on any exit-2 run would abort the ratchet here instead of
+    # gating the syntax error as the regression it is.
+    out = "target.py:1: error: invalid syntax  [syntax]\n"
+    rh.require_tool_ran("mypy", _res(2, stdout=out), measured=1)
+
+
+def test_clean_file_with_a_broken_import_is_not_newly_hard_failed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The inverse case. A file with NO errors of its own whose import will not
+    # parse counts 0, so it lands in the pre-existing zero-count arm — the same
+    # verdict, with the same message, as before this change. TFactory measured
+    # 21 such files; turning them into a NEW class of block would be worse than
+    # the undercount, so the diagnostic must still read "did not run".
+    out = "lib/brokenstub.pyi:1: error: Type statement is only supported in Python 3.12\n"
+    with pytest.raises(SystemExit) as exc:
+        rh.require_tool_ran("mypy", _res(2, stdout=out), measured=0)
+    assert exc.value.code == 2
+    assert "did not run" in capsys.readouterr().err
+
+
+def test_ruff_own_failure_is_unaffected() -> None:
+    # ruff writes nothing on its own failure, so there is no path to blame and
+    # the default measured=0 keeps the original arm.
+    with pytest.raises(SystemExit) as exc:
+        rh.require_tool_ran("ruff", _res(2, stderr="error: invalid value for '--config'"))
+    assert exc.value.code == 2
+
+
+# --------------------------------------------------------------------------- #
 # is_test_file / ruff_stdin_argv — the two rules that came first (Factory#403)  #
 # --------------------------------------------------------------------------- #
 

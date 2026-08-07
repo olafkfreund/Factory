@@ -122,6 +122,26 @@ def test_mypy_blocking_error_is_counted_not_treated_as_a_crash(
     assert rl.mypy_count("x = 1\n", _FILE, "scripts") == 1
 
 
+def test_mypy_partial_count_from_a_broken_import_aborts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Factory#600, end to end through this ratchet's own counter: mypy exits 2
+    # blaming an IMPORTED file it could not parse, having stopped before type-
+    # checking. The one line it attributed to the file under test during module
+    # discovery used to satisfy the `measured` arm, and the file was gated at 1
+    # while carrying up to 28 (PFactory#467, TFactory#968).
+    out = (
+        'x.py:2: error: Cannot find implementation or library stub for module named "z"'
+        "  [import-not-found]\n"
+        "lib/numpy/__init__.pyi:737: error: Type statement is only supported in Python 3.12"
+        " and greater  [syntax]\n"
+    )
+    _stub(monkeypatch, _Res(2, stdout=out))
+    with pytest.raises(SystemExit) as exc:
+        rl.mypy_count("x = 1\n", _FILE, "scripts")
+    assert exc.value.code == 2
+
+
 def test_mypy_errors_are_still_counted(monkeypatch: pytest.MonkeyPatch) -> None:
     # Control: exit 1 is the ordinary "found something" path.
     out = (
