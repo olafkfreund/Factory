@@ -500,9 +500,7 @@ def _selftest_automount(req, values, manifests, hardened_pod, hardened_ctr) -> N
     )
 
     # The original Factory#550 shape: chart declares, gitops declares nothing.
-    undeclared = compare_service(
-        "svc", chart(False), manifests(hardened_pod, hardened_ctr)
-    )
+    undeclared = compare_service("svc", chart(False), manifests(hardened_pod, hardened_ctr))
     req(
         any(_AUTOMOUNT in f for f in undeclared.failures),
         "a chart automount value gitops never states FAILS",
