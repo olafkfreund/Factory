@@ -48,6 +48,7 @@ import check_cli_freshness as cli_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
 import check_pin_freshness as pin_gate
+import check_planning_card_conformance as card_gate
 import check_verification_core_drift as vcore_gate
 import pytest
 
@@ -63,6 +64,7 @@ _COVERED: dict[str, str] = {
     "check_pin_freshness.py": "test_pin_freshness_gate_is_honest",
     "check_chart_vs_gitops.py": "test_chart_vs_gitops_gate_is_honest",
     "check_cli_freshness.py": "test_cli_freshness_gate_is_honest",
+    "check_planning_card_conformance.py": "test_planning_card_conformance_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -348,6 +350,55 @@ def test_chart_vs_gitops_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> N
     assert all(w.reason and w.tracked_by for w in chart_gate.WAIVERS)
 
     capsys.readouterr()
+
+
+def test_planning_card_conformance_gate_is_honest() -> None:
+    """Factory#554's comparator, held to this file's three criteria.
+
+    The one gate here whose SUBJECT lives in another repo: the contract is in
+    ``apis/`` and the pydantic models are in CFactory, so the real comparison
+    can only run in CFactory's CI. That makes the third criterion the load-
+    bearing one — nothing in this repo will ever observe this gate on live
+    input, so its own scope has to be asserted where the gate is written.
+
+    Its scope is ``_ROLES``, which can shrink independently of everything the
+    gate compares. Dropping a line from it removes a `$def` from the gate's
+    world entirely: the contract still carries the role, consumers still read
+    it, and the only trace is one fewer line in a report nobody re-derives.
+    That is not hypothetical for this contract — ``card_list`` was the role
+    nothing compared, and the ``count``/``total`` defect lived in it for months
+    (Factory#371).
+    """
+    contract = card_gate._SELFTEST_CONTRACT
+    service = card_gate._selftest_service()
+
+    # PASS path: clean, and every role and field it read is named. There is no
+    # "matched N roles" line to be satisfied by, deliberately.
+    assert card_gate.check(contract, service) == []
+    for role, _model in card_gate._ROLES:
+        assert role in contract["$defs"], f"the self-test contract never covers {role}"
+
+    # Observed FAILING on the shape it exists for: a type narrowed, nothing else
+    # moved. A field-name comparison passes this.
+    narrowed = card_gate._mutated("card", "card_key", type="integer")
+    assert any("card_key: types differs" in p for p in card_gate.check(narrowed, service))
+
+    # CONFIGURATION MUTATION. The subject is held constant - the same contract,
+    # the same models - and only _ROLES moves.
+    kept = card_gate._ROLES
+    card_gate._ROLES = tuple(r for r in kept if r[0] != "card_list")
+    try:
+        problems = card_gate.check(contract, {k: v for k, v in service.items() if k != "card_list"})
+        assert any("card_list" in p and "maps it to no model" in p for p in problems), (
+            "a role dropped from _ROLES must flag the now-unmapped `$def` rather "
+            "than quietly stop comparing it"
+        )
+    finally:
+        card_gate._ROLES = kept
+
+    # And the whole self-test, run as the gate's consumers run it: it PERFORMS
+    # each mutation rather than describing one, and prints every case it ran.
+    assert card_gate.main(["--self-test"]) == 0
 
 
 def test_cli_freshness_gate_is_honest() -> None:

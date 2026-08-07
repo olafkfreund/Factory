@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/olafkfreund/Factory/blob/main/apis/planning-card.schema.json",
   "title": "Factory Planning Card (RFC-0019 section 3.1)",
-  "description": "One card on the CFactory planning board: the human-owned, editable unit of PLANNED work, served over `/api/cards`. A card is deliberately NOT a `work_items` row. `work_items` is a correlation store that CFactory reconciles and prunes from upstream completion events; a card carries fields no upstream event knows about (title, acceptance criteria, priority, milestone, assignee) and a reconcile would overwrite or drop them. The two live in separate tables and `correlation_key` is the join: NULL while the card is planned, set once the card enters the factory. This schema describes the card RESOURCE as served; `$defs.card_create` and `$defs.card_patch` describe the request bodies, and `$defs.card_list` the list response. Companion document: apis/planning-card.md.",
-  "version": "1.0.0",
+  "description": "One card on the CFactory planning board: the human-owned, editable unit of PLANNED work, served over `/api/cards`. A card is deliberately NOT a `work_items` row. `work_items` is a correlation store that CFactory reconciles and prunes from upstream completion events; a card carries fields no upstream event knows about (title, acceptance criteria, priority, milestone, assignee) and a reconcile would overwrite or drop them. The two live in separate tables and `correlation_key` is the join: NULL while the card is planned, set once the card enters the factory. This schema describes the card RESOURCE as served; `$defs.card_create` and `$defs.card_patch` describe the request bodies, and `$defs.card_list` the list response. Companion document: apis/planning-card.md. THIS FILE IS THE SOURCE OF TRUTH and it is hand-written, because most of what it carries is reasoning a generator cannot produce. It is not hand-RECONCILED: `scripts/check_planning_card_conformance.py` compares every `$def` below against the pydantic models in `cfactory.cards` on every CFactory pull request, and disagreement in either direction is a red build (Factory#554). Do not edit a field here without landing the matching model change, and do not edit a model without landing the matching change here.",
+  "version": "2.0.0",
   "$ref": "#/$defs/card",
   "$defs": {
     "card": {
       "type": "object",
-      "description": "The card resource as served by GET /api/cards/{card_key}. Every field is always present: the nullable ones carry an explicit null rather than being omitted, so a consumer never has to distinguish `not set` from `not sent by this version of the server`.",
+      "description": "The card resource as served by GET /api/cards/{card_key}. Every field below is emitted on every response - the nullable ones carry an explicit null rather than being omitted, so a consumer never has to distinguish `not set` from `not sent by this version of the server`. `required` lists the subset a VALIDATOR must insist on, which is narrower: the five fields carrying a model default (`description`, `repository_id`, `comment_count`, `comments_synced_at`, `deleted_at`) are always serialised but may be absent from a document being validated against this schema. Bounds are deliberately absent from this object and declared on the request bodies instead: the service enforces length limits when it ACCEPTS a value, not when it returns one, and a bound asserted here would be a rule nothing checks (Factory#554).",
       "required": [
         "card_key",
         "tenant_id",
@@ -20,6 +20,11 @@
         "assignee",
         "milestone",
         "correlation_key",
+        "issue_ref",
+        "issue_state",
+        "labels",
+        "github_sync_error",
+        "stage_runs",
         "created_at",
         "updated_at"
       ],
@@ -56,48 +61,34 @@
           "$ref": "#/$defs/correlation_key"
         },
         "description": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "description": "Free-text body. Carries the imported GitHub issue body when the card came from one (RFC-0020 phase 6), and is otherwise whatever a human typed. Distinct from `acceptance_criteria`, which is the testable list."
+          "$ref": "#/$defs/description"
         },
         "issue_ref": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 256,
-          "description": "The GitHub issue this card mirrors, as `<owner>/<repo>#<number>`, or NULL for a card that has never been adopted. Writable on create and on PATCH: adopting an existing issue, or re-pointing at another, is a supported move (RFC-0020 phase 6)."
+          "$ref": "#/$defs/issue_ref"
         },
         "repository_id": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "description": "Which of the tenant's repositories this card targets, or NULL for the tenant default (RFC-0020 \u00a73.3, phase 8)."
+          "$ref": "#/$defs/repository_id"
         },
         "issue_state": {
           "type": [
             "string",
             "null"
           ],
-          "maxLength": 16,
-          "description": "The MIRRORED GitHub issue state (`open`/`closed`), read-only on the wire. NOT a card `status`: an issue can be closed while the card is still in review, and conflating the two is the mistake `status`'s enum exists to prevent."
+          "description": "The MIRRORED GitHub issue state (`open`/`closed`), read-only on the wire. NOT a card `status`: an issue can be closed while the card is still in review, and conflating the two is the mistake `status`'s enum exists to prevent. Stored in a 16-character column; that limit is not asserted here because no request body accepts this field, so nothing would ever validate against it."
         },
         "labels": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Labels mirrored from the GitHub issue. Read-only on the wire: the issue is the source of truth, and a card that could set them would silently diverge from it."
+          "description": "Labels mirrored from the GitHub issue. Read-only on the wire: the issue is the source of truth, and a card that could set them would silently diverge from it. Always an array - an unmirrored card carries `[]`, never null."
         },
         "github_sync_error": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Why the last sync with GitHub failed, or NULL when the last one succeeded. Present so a stale mirror is legible rather than looking like fresh data \u2014 the absence of an error and the absence of a sync are different states."
+          "description": "Why the last sync with GitHub failed, or NULL when the last one succeeded. Present so a stale mirror is legible rather than looking like fresh data - the absence of an error and the absence of a sync are different states."
         },
         "stage_runs": {
           "type": "object",
@@ -105,8 +96,8 @@
         },
         "comment_count": {
           "type": "integer",
-          "minimum": 0,
-          "description": "How many comments are stored for this card. A scalar rather than the thread itself: a backlog of 46 cards each carrying a full thread is a payload nobody asked for (Factory#375)."
+          "default": 0,
+          "description": "How many comments are stored for this card. A scalar rather than the thread itself: a backlog of 46 cards each carrying a full thread is a payload nobody asked for (Factory#375). Never negative - it is the size of a set - but no `minimum` is asserted, because the value is server-computed (a correlated subquery on `card_comments`) and no request body accepts it, so the assertion would guard nothing."
         },
         "comments_synced_at": {
           "type": [
@@ -114,7 +105,7 @@
             "null"
           ],
           "format": "date-time",
-          "description": "When the thread was last read successfully, or NULL if it never has been. Read WITH `comment_count`: zero plus a timestamp means 'no discussion', zero plus NULL means 'we do not know' \u2014 which is the honest answer for an issue whose comments failed to download."
+          "description": "When the thread was last read successfully, or NULL if it never has been. Read WITH `comment_count`: zero plus a timestamp means 'no discussion', zero plus NULL means 'we do not know' - which is the honest answer for an issue whose comments failed to download."
         },
         "deleted_at": {
           "type": [
@@ -122,7 +113,7 @@
             "null"
           ],
           "format": "date-time",
-          "description": "Soft-delete tombstone. Always NULL on anything a read hands back \u2014 a soft-deleted card is off the board. It is on the model because the import asks for a card BY ISSUE and has to be able to see the tombstone, rather than re-creating a card somebody deleted (RFC-0020 \u00a73.6)."
+          "description": "Soft-delete tombstone. Always NULL on anything a read hands back - a soft-deleted card is off the board. It is on the model because the import asks for a card BY ISSUE and has to be able to see the tombstone, rather than re-creating a card somebody deleted (RFC-0020 section 3.6)."
         },
         "created_at": {
           "type": "string",
@@ -138,30 +129,22 @@
     },
     "card_key": {
       "type": "string",
-      "description": "Stable, human-quotable id. IMMUTABLE once issued - it is the path segment of every single-card route, so a rename would break every link a human or an agent has kept. Two origins, which is why there is no pattern here (Factory#371): the server assigns `FCT-<n>` from a per-tenant sequence when the caller supplies none, and a caller MAY supply its own key to mirror an id from an external tracker. A `^FCT-` pattern described only the first case and rejected the second, which the service accepts. Unique per tenant, not globally: two tenants may each legitimately run an FCT-1. Not the correlation key: see `correlation_key`.",
-      "maxLength": 128,
-      "minLength": 1
+      "description": "Stable, human-quotable id. IMMUTABLE once issued - it is the path segment of every single-card route, so a rename would break every link a human or an agent has kept. Two origins, which is why there is no pattern here (Factory#371): the server assigns `FCT-<n>` from a per-tenant sequence when the caller supplies none, and a caller MAY supply its own key on create to mirror an id from an external tracker. A `^FCT-` pattern described only the first case and rejected the second, which the service accepts. Unique per tenant, not globally: two tenants may each legitimately run an FCT-1. Bounded at 128 characters, asserted on `card_create` where the service enforces it. Not the correlation key: see `correlation_key`."
     },
     "tenant_id": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 64,
-      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
-      "description": "Which tenant owns this card. Present in the resource so a consumer can assert what it is reading, but NEVER accepted from a request body: the server derives it from the calling credential (`CFACTORY_API_KEYS` / `CFACTORY_MULTI_TENANT`). Accepting it from the body would make cross-tenant writes a matter of typing a different string."
+      "description": "Which tenant owns this card. Present in the resource so a consumer can assert what it is reading, but NEVER accepted from a request body: the server derives it from the calling credential (`CFACTORY_API_KEYS` / `CFACTORY_MULTI_TENANT`). Accepting it from the body would make cross-tenant writes a matter of typing a different string. Conventionally a lowercase slug of at most 64 characters (`^[a-z0-9][a-z0-9._-]{0,63}$`); that shape is documented rather than asserted, because the value is configured operationally and no code path validates it - a `pattern` here would have been a rule with no enforcer anywhere (Factory#554)."
     },
     "title": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 512,
-      "description": "One line: what is to be done. Human-owned - no upstream event ever rewrites it."
+      "description": "One line: what is to be done. Human-owned - no upstream event ever rewrites it. Non-empty and at most 512 characters, asserted on the request bodies where the service enforces it."
     },
     "acceptance_criteria": {
       "type": "array",
       "items": {
-        "type": "string",
-        "minLength": 1
+        "type": "string"
       },
-      "description": "What `done` means, one testable statement per entry. Human-owned. When the card dispatches (RFC-0019 section 3.2) these become the acceptance criteria of the RFC-0002 task contract, which is why an empty list is allowed while planning but a card dispatched without any gives the factory nothing to verify against."
+      "description": "What `done` means, one testable statement per entry. Human-owned. When the card dispatches (RFC-0019 section 3.2) these become the acceptance criteria of the RFC-0002 task contract, which is why an empty list is allowed while planning but a card dispatched without any gives the factory nothing to verify against. A blank entry is meaningless and SHOULD NOT be sent; the schema no longer asserts `minLength: 1` on the item, because the service accepts one and an assertion no implementation honours is the fiction Factory#554 removed (tracked for the service side in CFactory#324)."
     },
     "status": {
       "type": "string",
@@ -176,7 +159,7 @@
     },
     "priority": {
       "type": "integer",
-      "description": "Backlog order, LOWER IS HIGHER priority (0 is the top of the board). An integer rather than an enum so a card can be inserted between two others without renumbering the column, and NEGATIVE values are legal for exactly that reason - they are how a card jumps above 0 without rewriting every row beneath it (the board guide documents this; the schema previously said minimum 0 and the server never enforced it, Factory#371). Ties are legal; the server orders by (priority ASC, created_at ASC, card_key ASC) so a list is stable across requests. Defaults to 100 when omitted on create, leaving room to insert above and below."
+      "description": "Backlog order, LOWER IS HIGHER priority (0 is the top of the board). An integer rather than an enum so a card can be inserted between two others without renumbering the column, and NEGATIVE values are legal for exactly that reason - they are how a card jumps above 0 without rewriting every row beneath it (the board guide documents this; the schema previously said minimum 0 and the server never enforced it, Factory#371). Ties are legal; the server orders by (priority ASC, created_at ASC, card_key ASC) so a list is stable across requests. Defaults to 0 when omitted on create - i.e. a new card lands at the TOP of the backlog. The schema previously said 100; the service has always used 0 (Factory#554)."
     },
     "tier": {
       "type": [
@@ -196,65 +179,115 @@
         "string",
         "null"
       ],
-      "maxLength": 128,
-      "description": "Who is on it: a human handle, or a factory runtime (`pfactory` / `aifactory` / `tfactory` / `cfactory`) once the card is in flight. Free-form because the board must be able to name a person who has no account here. NULL is unassigned."
+      "description": "Who is on it: a human handle, or a factory runtime (`pfactory` / `aifactory` / `tfactory` / `cfactory`) once the card is in flight. Free-form because the board must be able to name a person who has no account here. NULL is unassigned. Bounded at 128 characters on the request bodies."
     },
     "milestone": {
       "type": [
         "string",
         "null"
       ],
-      "maxLength": 128,
-      "description": "Milestone name this card belongs to, free-form. Deliberately a string and not a foreign key: the roadmap view groups by it, and RFC-0019 section 3.5 keeps GitHub authoritative, so this holds the GitHub milestone TITLE once card-to-issue mirroring lands (phase 6). NULL is unscheduled."
+      "description": "Milestone name this card belongs to, free-form. Deliberately a string and not a foreign key: the roadmap view groups by it, and RFC-0019 section 3.5 keeps GitHub authoritative, so this holds the GitHub milestone TITLE once card-to-issue mirroring lands (phase 6). NULL is unscheduled. Bounded at 128 characters on the request bodies."
     },
     "correlation_key": {
       "type": [
         "string",
         "null"
       ],
-      "minLength": 1,
-      "description": "RFC-0001 correlation key: the GitHub issue number as a string, or a synthetic <prefix>-<id>. THE JOIN between this card and the `work_items` timeline, and the reason the two are separate tables. NULL for as long as the card is only planned; set when the card enters the factory. NOT write-once. RFC-0019 phase 7 redefined this as the key the card's work is THREADED ON: a card runs through several stages, each an independent factory run, and they share the key deliberately - per-stage idempotency lives in `cards.stage_runs`, not in a one-shot key. The schema previously said a server MUST reject re-pointing, which is a design the fleet moved away from and which PATCH has never enforced (Factory#371).",
-      "maxLength": 128
+      "description": "RFC-0001 correlation key: the GitHub issue number as a string, or a synthetic <prefix>-<id>. THE JOIN between this card and the `work_items` timeline, and the reason the two are separate tables. NULL for as long as the card is only planned; set when the card enters the factory. NOT write-once. RFC-0019 phase 7 redefined this as the key the card's work is THREADED ON: a card runs through several stages, each an independent factory run, and they share the key deliberately - per-stage idempotency lives in `cards.stage_runs`, not in a one-shot key. The schema previously said a server MUST reject re-pointing, which is a design the fleet moved away from and which PATCH has never enforced (Factory#371). Bounded at 128 characters on the request bodies."
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free-text body. Carries the imported GitHub issue body when the card came from one (RFC-0020 phase 6), and is otherwise whatever a human typed. Distinct from `acceptance_criteria`, which is the testable list. Unbounded: an issue body is arbitrarily long and truncating one on import would silently lose what the card is about."
+    },
+    "issue_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The GitHub issue this card mirrors, as `<owner>/<repo>#<number>`, or NULL for a card that has never been adopted. Writable on create and on PATCH: adopting an existing issue, or re-pointing at another, is a supported move (RFC-0020 phase 6). Unique per tenant in the store, so adopting an issue another card already mirrors is a 409. Bounded at 256 characters on the request bodies."
+    },
+    "repository_id": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Which of the tenant's repositories this card targets, or NULL for the tenant default (RFC-0020 section 3.3, phase 8). Writable on create and on PATCH, because re-targeting a planned card at another repository is a planning decision, not a migration."
     },
     "card_create": {
       "type": "object",
-      "description": "POST /api/cards request body. Only human-owned planning fields are settable. `card_key`, `tenant_id`, `created_at` and `updated_at` are server-owned, and `correlation_key` is set later by whatever dispatches the card - so none of them are accepted here and `additionalProperties: false` makes sending one an error rather than a silently ignored field.",
+      "description": "POST /api/cards request body. `tenant_id`, `created_at` and `updated_at` are server-owned and are NOT accepted here - `tenant_id` in particular comes from the calling credential, and accepting it from a body would make a cross-tenant write a matter of typing a different string. Everything else the card carries that a caller can meaningfully originate IS accepted, including `card_key` (mirror an external tracker's id) and `correlation_key` (create a card that is already joined, which the GitHub import does). The mirrored fields - `issue_state`, `labels`, `github_sync_error`, `stage_runs` - are absent because GitHub and the dispatcher own them. Bounds are declared here rather than in the shared `$defs` because here is where the service enforces them. STRICTER THAN THE SERVICE, DELIBERATELY. `additionalProperties: false` says what a client MUST NOT send; the service today sets no pydantic `extra` policy, so it silently DISCARDS an unknown key instead of returning a 400 (measured, CFactory#322). That gap is a service bug and is tracked as one - the contract keeps the rule so a caller validating its own body still catches its own typo. This is the one direction in which this schema is allowed to lead the implementation: it may constrain what a CLIENT sends, and it may not assert anything about what the SERVER returns that the server does not actually guarantee (which is why every bound moved off `$defs.card` - Factory#554). Note that `scripts/check_planning_card_conformance.py` compares per FIELD and does not see object-level keywords, so this divergence is stated here rather than caught there.",
       "required": [
         "title"
       ],
       "additionalProperties": false,
       "properties": {
+        "card_key": {
+          "$ref": "#/$defs/card_key",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
         "title": {
-          "$ref": "#/$defs/title"
+          "$ref": "#/$defs/title",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "description": {
+          "$ref": "#/$defs/description"
         },
         "acceptance_criteria": {
           "$ref": "#/$defs/acceptance_criteria"
         },
         "status": {
-          "$ref": "#/$defs/status"
+          "$ref": "#/$defs/status",
+          "default": "backlog"
         },
         "priority": {
-          "$ref": "#/$defs/priority"
+          "$ref": "#/$defs/priority",
+          "default": 0
         },
         "tier": {
           "$ref": "#/$defs/tier"
         },
         "assignee": {
-          "$ref": "#/$defs/assignee"
+          "$ref": "#/$defs/assignee",
+          "maxLength": 128
         },
         "milestone": {
-          "$ref": "#/$defs/milestone"
+          "$ref": "#/$defs/milestone",
+          "maxLength": 128
+        },
+        "correlation_key": {
+          "$ref": "#/$defs/correlation_key",
+          "maxLength": 128
+        },
+        "issue_ref": {
+          "$ref": "#/$defs/issue_ref",
+          "maxLength": 256
+        },
+        "repository_id": {
+          "$ref": "#/$defs/repository_id"
         }
       }
     },
     "card_patch": {
       "type": "object",
-      "description": "PATCH /api/cards/{card_key} request body: a partial card. Every mutable field may be sent, including `status` (move) and `priority` (reprioritise) - one route covers both, so an agent needs no special-case endpoints to do what a human does by dragging. Sending no field at all is a mistake, not a no-op, hence `minProperties: 1`.",
+      "description": "PATCH /api/cards/{card_key} request body: a partial card. Every mutable field may be sent, including `status` (move) and `priority` (reprioritise) - one route covers both, so an agent needs no special-case endpoints to do what a human does by dragging. Only the fields actually PRESENT in the request are applied, so `{\"status\": \"done\"}` moves a card and touches nothing else. `card_key` is absent: it is the path segment and the id other systems quote, so it is immutable. NOTE ON NULL: `scripts/check_planning_card_conformance.py` does not compare nullability on this object, because the service expresses `not sent` as `null` in the model and the two cannot be told apart from the outside - see that script's docstring. Where null is a real value here it clears the field (`tier`, `assignee`, `milestone`, `correlation_key`, `description`, `issue_ref`, `repository_id`); on `title`, `acceptance_criteria`, `status` and `priority` it is not, and the store rejects it. Sending no field at all is a mistake, not a no-op, hence `minProperties: 1` - and here too the contract leads the service, which accepts an empty body as a no-op (CFactory#322). STRICTER THAN THE SERVICE, DELIBERATELY. `additionalProperties: false` says what a client MUST NOT send; the service today sets no pydantic `extra` policy, so it silently DISCARDS an unknown key instead of returning a 400 (measured, CFactory#322). That gap is a service bug and is tracked as one - the contract keeps the rule so a caller validating its own body still catches its own typo. This is the one direction in which this schema is allowed to lead the implementation: it may constrain what a CLIENT sends, and it may not assert anything about what the SERVER returns that the server does not actually guarantee (which is why every bound moved off `$defs.card` - Factory#554). Note that `scripts/check_planning_card_conformance.py` compares per FIELD and does not see object-level keywords, so this divergence is stated here rather than caught there.",
       "minProperties": 1,
       "additionalProperties": false,
       "properties": {
         "title": {
-          "$ref": "#/$defs/title"
+          "$ref": "#/$defs/title",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "description": {
+          "$ref": "#/$defs/description"
         },
         "acceptance_criteria": {
           "$ref": "#/$defs/acceptance_criteria"
@@ -269,29 +302,37 @@
           "$ref": "#/$defs/tier"
         },
         "assignee": {
-          "$ref": "#/$defs/assignee"
+          "$ref": "#/$defs/assignee",
+          "maxLength": 128
         },
         "milestone": {
-          "$ref": "#/$defs/milestone"
+          "$ref": "#/$defs/milestone",
+          "maxLength": 128
         },
         "correlation_key": {
-          "$ref": "#/$defs/correlation_key"
+          "$ref": "#/$defs/correlation_key",
+          "maxLength": 128
+        },
+        "issue_ref": {
+          "$ref": "#/$defs/issue_ref",
+          "maxLength": 256
+        },
+        "repository_id": {
+          "$ref": "#/$defs/repository_id"
         }
       }
     },
     "card_list": {
       "type": "object",
-      "description": "GET /api/cards response. An envelope rather than a bare array so pagination and echoed filters can be added additively later without breaking every consumer; `total` is the number of cards matching the filter, which equals `len(cards)` while there is no pagination.",
+      "description": "GET /api/cards response. An envelope rather than a bare array so pagination and echoed filters can be added additively later without breaking every consumer.",
       "required": [
         "count",
         "cards"
       ],
-      "additionalProperties": false,
       "properties": {
         "count": {
           "type": "integer",
-          "minimum": 0,
-          "description": "How many cards this response carries. Named `count`, not `total`: it is the length of `cards` in THIS response, not a total across pages, and the schema said `total` while the service has always returned `count` (Factory#371). Previously described as: "
+          "description": "How many cards this response carries. Named `count`, not `total`: it is the length of `cards` in THIS response, not a total across pages. The schema said `total` while the service has always returned `count`, which is the drift Factory#371 found by hand and Factory#554 made impossible to reintroduce."
         },
         "cards": {
           "type": "array",
