@@ -67,7 +67,8 @@ from ratchet_helpers import (
 PACKAGE_DEFAULT = "scripts"
 
 # mypy text output lines look like:  path/to/file.py:12: error: <msg>  [code]
-_MYPY_ERROR_RE = re.compile(r"^.+?:\d+: error:")
+# The path is CAPTURED because it has to be compared: see mypy_count.
+_MYPY_ERROR_RE = re.compile(r"^(?P<path>.+?):\d+: error:")
 
 
 def _emit(message: str) -> None:
@@ -154,6 +155,25 @@ def mypy_command(target: str, original: str | None = None) -> list[str]:
     error count unchanged. The ratchet knows which file it is checking, so the
     decision belongs here.
 
+    ``--no-incremental`` is what makes the path in an error line trustworthy, and
+    :func:`mypy_count` compares it (Factory#601). On a cache HIT mypy replays the
+    stored diagnostics under the path the module was FIRST seen at, and every
+    call here hands it a fresh temp dir — so the second check of identical
+    content is blamed on a directory that no longer exists. Measured: run 1
+    blames ``/tmp/tmpo8g7itfz/thing.py``, run 2 hands over
+    ``/tmp/tmp9pdmz5z2/thing.py`` and is told about ``/tmp/tmpo8g7itfz`` again. A
+    counter keyed on that path would read zero for both sides of the comparison
+    and pass the gate having measured nothing. Costs ~1.1s per call on a warm
+    cache; a gate that is only correct when its cache is cold is not correct.
+
+    AIFactory hit the same cache independently (its #1057: base counts of 9 and
+    then 0 for the same command on the same tree) and keyed a cache dir per tree
+    instead, because ``--no-incremental`` measured ~5x slower there. That trade
+    does not exist here: every call already writes to a FRESH ``mkdtemp``, so a
+    cache keyed to it would be cold every time anyway. CFactory needs neither —
+    its copy carries a random name, so two runs never share an entry (#319).
+    Three forks, three answers, each measured against its own copy strategy.
+
     Production code is untouched: these flags are per-invocation and the ratchet
     checks one file at a time.
     """
@@ -166,6 +186,7 @@ def mypy_command(target: str, original: str | None = None) -> list[str]:
         "mypy.ini",
         "--ignore-missing-imports",
         "--follow-imports=silent",
+        "--no-incremental",
         "--no-error-summary",
         "--no-color-output",
         "--hide-error-context",
@@ -185,14 +206,32 @@ def _mypy_env(package: str) -> dict[str, str]:
 def mypy_count(source: str, filename: str, package: str) -> int:
     """mypy --strict error count for *source* checked as *filename*.
 
-    With ``--follow-imports=silent`` mypy only reports errors in the file it
-    was explicitly given, so every error line belongs to this file. Base and
-    HEAD are both checked from a temp file so the comparison is symmetric.
+    Only lines mypy attributed to the file it was HANDED are counted, and that
+    is the temp copy's path, not the repo-relative one. ``--follow-imports=silent``
+    silences imported modules for ordinary errors but NOT for a blocking one: an
+    import that fails to parse prints its own error line and stops the run before
+    the target is checked at all. Counting that line attributed a foreign file's
+    error to this one — measured, a clean file whose import would not parse came
+    back as 1 (Factory#601, and CFactory#319 for the identical fork). The other
+    three ratchets already compare the path; the hub was an outlier.
+
+    A zero count out of such a run is not "clean" either, and is not treated as
+    one: ``require_tool_ran`` sees exit 2 with nothing attributed to the target
+    and aborts with "could not measure", which is the truthful verdict when mypy
+    never reached the file.
+
+    Base and HEAD are both checked from a temp file so the comparison is
+    symmetric.
     """
     tmpdir, tmp = write_temp(source, filename)
     try:
         res = _run(mypy_command(tmp, filename), env=_mypy_env(package))
-        count = sum(1 for line in res.stdout.splitlines() if _MYPY_ERROR_RE.match(line))
+        target = Path(tmp)
+        count = sum(
+            1
+            for line in res.stdout.splitlines()
+            if (m := _MYPY_ERROR_RE.match(line)) is not None and Path(m.group("path")) == target
+        )
         # Same shared rule as the ruff counter, with `measured` passed: mypy's
         # exit 2 also covers a BLOCKING error, which still emits an error line
         # and so belongs in the count rather than aborting the run.
