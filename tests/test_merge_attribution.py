@@ -16,6 +16,7 @@ import json
 
 # scripts/ is put on sys.path by tests/conftest.py.
 import check_merge_attribution as cma
+import pytest
 
 _AGENT = cma.Merge("Factory", 1, "factory-agent[bot]")
 _SHARED = cma.Merge("Factory", 1, "olafkfreund")
@@ -75,6 +76,19 @@ def test_a_null_merged_by_parses_to_no_actor() -> None:
     account or closed-then-merged out of band. Coercing that to a login string
     would silently classify it, which is the failure this whole issue names."""
     assert cma.parse("Factory", [{"number": 8, "mergedBy": None}])[0].merged_by is None
+
+
+def test_a_payload_shaped_differently_raises_rather_than_being_coerced() -> None:
+    """The trust boundary. Everything downstream of `parse` is an audit verdict,
+    so a response that is not shaped the way this assumes must stop the run --
+    `int("626")` and a login that is not a string would both have produced a
+    plausible-looking merge out of something never checked."""
+    with pytest.raises(TypeError, match="not an integer"):
+        cma.parse("Factory", [{"number": "626", "mergedBy": {"login": "olafkfreund"}}])
+    with pytest.raises(TypeError, match="not an integer"):
+        cma.parse("Factory", [{"mergedBy": {"login": "olafkfreund"}}])
+    with pytest.raises(TypeError, match="not a string"):
+        cma.parse("Factory", [{"number": 1, "mergedBy": {"login": 42}}])
 
 
 def test_the_operator_account_is_declared_shared() -> None:

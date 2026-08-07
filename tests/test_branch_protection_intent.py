@@ -56,15 +56,25 @@ def _emit(repo: str, branch: str) -> dict:
     return json.loads(out.stdout)
 
 
-def _normalise(payload: dict) -> dict:
+def _stdin_hook(mode: str, payload: dict[str, object]) -> str:
+    """Drive one of the script's offline stdin hooks; returns its stdout.
+
+    Shared by the two hooks rather than copy-pasted per hook: a second body
+    identical to the first but for the flag is exactly the paste the clone budget
+    exists to stop (Factory#415).
+    """
     out = subprocess.run(  # noqa: S603
-        ["bash", str(_SCRIPT), "--normalise-stdin"],  # noqa: S607
+        ["bash", str(_SCRIPT), mode],  # noqa: S607
         input=json.dumps(payload),
         capture_output=True,
         text=True,
         check=True,
     )
-    return json.loads(out.stdout)
+    return out.stdout
+
+
+def _normalise(payload: dict) -> dict:
+    return json.loads(_stdin_hook("--normalise-stdin", payload))
 
 
 # The verification-core drift gate's job display name, identical in all four
@@ -525,15 +535,8 @@ def test_the_default_branch_is_always_a_protected_one() -> None:
 # --- Factory#611: a CODEOWNERS file that assigns nothing ----------------------
 
 
-def _codeowners_verdict(payload: dict) -> str:
-    out = subprocess.run(  # noqa: S603
-        ["bash", str(_SCRIPT), "--codeowners-stdin"],  # noqa: S607
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return out.stdout.strip()
+def _codeowners_verdict(payload: dict[str, object]) -> str:
+    return _stdin_hook("--codeowners-stdin", payload).strip()
 
 
 def test_a_codeowners_file_with_no_errors_is_clean() -> None:

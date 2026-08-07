@@ -52,16 +52,14 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from selftest_report import SelfTest, gate_argparser
 
-_OWNER = "olafkfreund"
 _REPOS = ("Factory", "AIFactory", "PFactory", "TFactory", "CFactory", "factory-gitops")
 
 # Logins whose credentials the fleet's agents hold. A merge recorded against one
@@ -126,13 +124,24 @@ def assess(merges: Sequence[Merge]) -> tuple[int, dict[str, int]]:
     return EXIT_OK, counts
 
 
-def parse(repo: str, payload: Sequence[dict[str, Any]]) -> list[Merge]:
-    """Turn one `gh pr list --json number,mergedBy` response into merges."""
+def parse(repo: str, payload: Sequence[Mapping[str, object]]) -> list[Merge]:
+    """Turn one `gh pr list --json number,mergedBy` response into merges.
+
+    Typed against `object` and checked, rather than against `Any` and trusted.
+    This is the trust boundary -- everything downstream is an audit verdict, and
+    a payload shaped differently from what is assumed here should stop the run
+    rather than be coerced into a plausible-looking merge.
+    """
     merges = []
     for pull in payload:
+        number = pull.get("number")
+        if not isinstance(number, int):
+            raise TypeError(f"{repo}: pull request number is not an integer: {number!r}")
         actor = pull.get("mergedBy")
         login = actor.get("login") if isinstance(actor, dict) else None
-        merges.append(Merge(repo, int(pull["number"]), login))
+        if login is not None and not isinstance(login, str):
+            raise TypeError(f"{repo}#{number}: mergedBy.login is not a string: {login!r}")
+        merges.append(Merge(repo, number, login))
     return merges
 
 
@@ -146,7 +155,7 @@ def fetch(repo: str, limit: int) -> list[Merge]:
             "pr",
             "list",
             "--repo",
-            f"{_OWNER}/{repo}",
+            f"olafkfreund/{repo}",
             "--state",
             "merged",
             "--limit",
