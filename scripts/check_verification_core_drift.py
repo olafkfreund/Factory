@@ -126,6 +126,18 @@ CANONICAL_MODULES: tuple[str, ...] = (
     # re-introduced it a fourth time. Registered here only AFTER the two copies
     # were reconciled and AIFactory's pin bumped, per the standing ordering rule.
     "job_dispatch.py",
+    # Added 2026-08-08 (Factory#638). The far half of job_dispatch.trace_env: the
+    # bootstrap a dispatched Job calls to join the run's trace and emit. It lived
+    # in AIFactory until TFactory's verify Job needed the same emitter, and the
+    # cheap move — hand-copying it across — is precisely the fork-with-a-citation
+    # this gate cannot see. Two copies of the bounded-exit reasoning (the 20.54s
+    # -> 4.52s measurement that is the whole reason for the shape) would drift
+    # the first time either was touched.
+    #
+    # Registered only AFTER both consumers vendored the file and bumped their
+    # pins, per the standing ordering rule and because _unmapped_modules below
+    # rejects a canonical module no service maps.
+    "job_tracing.py",
 )
 # Removed 2026-07-28 (Factory#401): verification_profiles.py (397L) and
 # verification_runner.py (120L) were listed here but mapped by NO service, so
@@ -166,6 +178,11 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         # oversight; mapping it to a path that does not exist is what Factory#401
         # removed as dead config.
         "job_dispatch.py": "apps/backend/core/job_dispatch.py",
+        # Factory#638. This file WAS AIFactory's core/tracing_bootstrap.py; it is
+        # now the hub canonical, vendored back here under the canonical name. The
+        # old path is gone rather than left as a shim, because a shim is a second
+        # name for shared code that this gate cannot see.
+        "job_tracing.py": "apps/backend/core/job_tracing.py",
     },
     # CFactory vendors exactly one canonical module and nothing else. It was
     # deliberately left unregistered when ratchet_helpers.py was gated
@@ -190,6 +207,11 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         # pin, per the standing ordering rule: a module registered for a service
         # that does not yet carry it turns every PR in that repo red.
         "job_dispatch.py": "apps/backend/tools/runners/job_dispatch.py",
+        # Factory#638. TFactory's verify Job is the second boundary a trace
+        # stopped at. It needed BOTH halves — trace_env on the manifest and an
+        # emitter inside the Job — and the emitter had to be this shared file
+        # rather than a copy, or the two would have diverged from the first fix.
+        "job_tracing.py": "apps/backend/tools/runners/job_tracing.py",
     },
 }
 
