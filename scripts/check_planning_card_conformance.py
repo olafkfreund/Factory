@@ -66,18 +66,28 @@ field-name comparison misses, so it is the case the self-test leads with:
 narrowing ``str`` to ``Literal["a", "b"]`` adds an ``enum`` facet and moves
 nothing else, and it must be red.
 
-WHAT THIS GATE DOES NOT REACH, said out loud so it is a known limit rather than
-a discovered one. The comparison is per-FIELD, so the object-level keywords
-``additionalProperties`` and ``minProperties`` are outside it. Both express
-BEHAVIOUR — "an unknown field is a 400", "an empty patch is an error" — and
-pydantic's default ``extra="ignore"`` renders neither into the model schema, so
-there is nothing on the service side to compare them against. That is not
-theoretical: the contract asserted both, and the service honours neither (an
-unknown key on POST /api/cards is silently discarded, and an empty PATCH body is
-accepted as a no-op). Rather than leave the assertions standing where nothing
-checks them, the Factory#554 reconciliation removed them from the request
-bodies and filed the service-side fix as CFactory#322. Adding ``extra="forbid"``
-there is what puts them back.
+AND ONE OBJECT-LEVEL KEYWORD: ``additionalProperties``, on the request bodies
+only. This used to be recorded here as unreachable, and CFactory#322 is what made
+it reachable. ``extra="forbid"`` is the one pydantic ``extra`` policy that
+RENDERS into ``model_json_schema()``, as ``additionalProperties: false``, so once
+``CardCreate``/``CardUpdate`` set it there is something on the service side to
+compare the contract's assertion against. Not on the resource: there the keyword
+is a statement about what the server EMITS, which is true and which pydantic
+renders nothing for, so comparing it would be red forever for a promise the
+service keeps.
+
+``minProperties`` is still outside this gate, and this time permanently: pydantic
+renders no such keyword for any ``extra`` policy or validator. CFactory enforces
+it in ``CardUpdate.model_post_init`` and covers it with an over-the-wire test.
+Named here so it is a known limit rather than a discovered one.
+
+FOUR SUBJECTS, NOT ONE (CFactory#323). Everything above is the pydantic models.
+CFactory states the same shape three more times by hand — ``openapi.yaml``, the
+zod ``CardSchema`` in ``api.ts``, and the MCP board tools' input schemas — and
+all three had drifted by the time the models stopped drifting. Those three are
+compared on FIELD NAMES, in both directions, plus ``required`` on ``openapi.yaml``
+where the keyword means the same thing; see the OTHER COPIES section below for why
+names and not facets, and why the copies are measured rather than generated away.
 
 THE ONE CARVE-OUT, STATED RATHER THAN HIDDEN
 ---------------------------------------------
@@ -109,17 +119,21 @@ Usage:
     python3 scripts/check_planning_card_conformance.py --self-test
 
 Exit codes:
-    0 - every role's field set and facets agree
+    0 - every role's field set and facets agree, and all three hand-written
+        copies name the same fields
     1 - the service and the contract disagree (or the self-test failed)
-    2 - bad invocation: the schema, the service tree or the models could not be
-        read. NEVER a silent pass — a check that cannot see its subject has to
-        say so (Factory#500).
+    2 - bad invocation: the schema, the service tree, the models, or any of the
+        three copies could not be read. NEVER a silent pass — a check that cannot
+        see its subject has to say so (Factory#500). In particular, a zod
+        declaration this cannot locate is exit 2, not "no fields found", which
+        would read as catastrophic drift.
 """
 
 from __future__ import annotations
 
 import importlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -149,6 +163,28 @@ _ROLES: tuple[tuple[str, str], ...] = (
 # See "THE ONE CARVE-OUT" above. Exactly one role, named, so that widening this
 # is a visible edit rather than a silent behaviour.
 _UNSET_SENTINEL_ROLE = "card_patch"
+
+# Roles on which the object-level `additionalProperties` IS compared. The request
+# bodies, and only those, for a reason that is about what each object means
+# rather than about convenience.
+#
+# On a REQUEST body `additionalProperties: false` is a server behaviour - an
+# unknown key is refused - and pydantic renders exactly that keyword when the
+# model sets `extra="forbid"`, so both sides can be read and compared. Until
+# CFactory#322 the models set no `extra` policy at all, pydantic rendered
+# nothing, and this comparison was impossible; that is why this gate's docstring
+# recorded it as an unreachable limit rather than a missing feature.
+#
+# On the RESOURCE it is a statement about what the server EMITS, which is true
+# (FastAPI serialises exactly the model's fields) and which pydantic renders
+# nothing for, because `extra` governs input. Comparing it there would be red
+# forever for a promise the service actually keeps.
+#
+# `minProperties` is still not compared anywhere: pydantic renders no such
+# keyword for any `extra` policy or validator. CFactory enforces it in
+# `CardUpdate.model_post_init` and covers it with an over-the-wire test, and the
+# report below says so rather than letting a reader assume this gate has it.
+_OBJECT_LEVEL_ROLES: tuple[str, ...] = ("card_create", "card_patch")
 
 # Facet keys carried straight across from a schema node when present.
 _SCALAR_FACETS: tuple[str, ...] = (
@@ -357,6 +393,253 @@ def unmapped_roles(contract: dict[str, Any]) -> list[str]:
     ]
 
 
+# --- the OTHER copies of the card shape (CFactory#323) ------------------------
+#
+# The comparison above closes the contract-vs-model gap. CFactory states the same
+# shape THREE more times, by hand, and all three had drifted by the time the gate
+# above landed:
+#
+#   openapi.yaml            `components.schemas.Card` declared 15 of the 22
+#                           fields the service serves. Five of the seven missing
+#                           ones the model marks REQUIRED, so the published API
+#                           document described a card the service never returns.
+#                           Its POST and PATCH bodies both `$ref`'d the RESOURCE,
+#                           telling a client to send `tenant_id`, `created_at`
+#                           and `updated_at` - which CFactory#322 now rejects.
+#   api.ts (zod)            `CardSchema` had no `deleted_at` and no
+#                           `github_sync_error`. `.passthrough()` means nothing
+#                           breaks: the fields are parsed and thrown away. But
+#                           `github_sync_error` is what makes a stale GitHub
+#                           mirror legible, and the board cannot show what it
+#                           does not model.
+#   mcp.py `_CARD_FIELDS`   a fourth statement of which fields are WRITABLE,
+#                           maintained beside CardCreate/CardUpdate.
+#
+# WHY EXTEND THIS GATE RATHER THAN ADD ANOTHER. All four subjects are statements
+# of one shape, and the contract is the thing they are all supposed to agree
+# with. Three separate checks would each have to re-derive the contract, and the
+# fourth-copy problem is not solved by adding a fifth mechanism.
+#
+# WHY NOT DELETE THE COPIES INSTEAD, which is what CFactory#323 first proposed:
+#
+#   * openapi.yaml could be GENERATED from the FastAPI app. It is registered as a
+#     Backstage API definition (`catalog-info.yaml`) and `techdocs/api.md` calls
+#     it "curated" - most of its bulk is prose explaining WHY, which
+#     `/openapi.json` does not carry and a generator cannot produce. Replacing it
+#     with a generated file trades an accurate field list for a worse document.
+#   * `_CARD_FIELDS` could be DERIVED from `CardCreate.model_json_schema()`. Its
+#     value is its agent-facing descriptions - "RFC-0011 difficulty tier,
+#     deciding which intake path builds it" - which pydantic does not carry
+#     either. Deriving it would either lose them or need a description map, which
+#     is the same copy under a new name.
+#
+# So they stay hand-written and are MEASURED instead.
+#
+# WHAT IS COMPARED: FIELD NAMES, in both directions, plus `required` on
+# openapi.yaml where the keyword is the same keyword with the same meaning.
+# Deliberately NOT the facets the model comparison reads. The three copies are
+# written in three languages with three different vocabularies for the same idea
+# - OpenAPI 3.0 `nullable: true`, zod `.nullish()`, a JSON Schema fragment for an
+# MCP tool input - and reducing all three to comparable facets means
+# re-implementing three type systems inside a gate. The drift that actually
+# happened in all three is a field that is simply not there, and that is what
+# this catches. Stated as a limit rather than discovered as one.
+
+_OPENAPI = "openapi.yaml"
+_ZOD_FILE = "apps/frontend-web/src/api.ts"
+_MCP_MODULE = "cfactory.mcp"
+
+# `components.schemas.<name>` for each role the document names. `card_list` is
+# not a named schema - it is inline on the list route - so it is read by path.
+_OPENAPI_SCHEMAS: tuple[tuple[str, str], ...] = (
+    ("card", "Card"),
+    ("card_create", "CardCreate"),
+    ("card_patch", "CardUpdate"),
+)
+_OPENAPI_LIST_PATH: tuple[str, ...] = (
+    "paths",
+    "/api/cards",
+    "get",
+    "responses",
+    "200",
+    "content",
+    "application/json",
+    "schema",
+)
+
+# The MCP board tools that WRITE a card, and the role each one's arguments must
+# be admissible against. `card_key` is dropped from the patch tools: it is the
+# selector (the path segment over REST), not a body field, and `$defs.card_patch`
+# rightly does not carry it because the key is immutable.
+_MCP_TOOLS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("cfactory_create_card", "card_create", ()),
+    ("cfactory_update_card", "card_patch", ("card_key",)),
+    ("cfactory_move_card", "card_patch", ("card_key",)),
+    ("cfactory_reprioritise_card", "card_patch", ("card_key",)),
+)
+
+
+def contract_properties(contract: dict[str, Any], role: str) -> set[str]:
+    node = (contract.get("$defs") or {}).get(role) or {}
+    return set(node.get("properties") or {})
+
+
+def compare_names(
+    where: str,
+    role: str,
+    want: set[str],
+    got: set[str],
+    *,
+    subset: bool,
+) -> list[str]:
+    """Field-name disagreement between one copy and the contract.
+
+    *subset* is one-directional on purpose and used only for the MCP tools: a
+    tool that exposes FEWER fields than the model accepts is a deliberate
+    product decision (``cfactory_move_card`` offers ``status`` and nothing else,
+    so an agent's intent is legible in the call), not drift. A tool that offers
+    a field the contract does not have is drift, and since CFactory#322 it is a
+    422 at runtime - the arguments go straight into ``CardCreate``/``CardUpdate``
+    and nothing validates them against the tool's own ``inputSchema`` first.
+    """
+    problems = [
+        f"{where}: {role}.{name} is offered but the contract has no such field — "
+        "under extra=forbid this is a rejected write, not a spare key"
+        for name in sorted(got - want)
+    ]
+    if not subset:
+        problems = [
+            f"{where}: {role}.{name} is in the contract and missing from this copy — "
+            "a consumer reading this file is told about a card the service does not serve"
+            for name in sorted(want - got)
+        ] + problems
+    return problems
+
+
+def openapi_copy(document: dict[str, Any], contract: dict[str, Any]) -> list[str]:
+    """`openapi.yaml` against the contract: names on four roles, plus `required`.
+
+    `required` is compared here and nowhere else in this section because OpenAPI
+    spells it the same way JSON Schema does and means the same thing by it. zod
+    expresses optionality through `.nullish()`/`.default()` and an MCP tool
+    through its own `required` list over a partial field set; neither reduces to
+    the contract's notion cheaply, so neither is compared.
+    """
+    problems: list[str] = []
+    schemas = ((document.get("components") or {}).get("schemas")) or {}
+    roles = [
+        (role, schemas.get(name), f"components.schemas.{name}") for role, name in _OPENAPI_SCHEMAS
+    ]
+    roles.append(("card_list", _walk(document, _OPENAPI_LIST_PATH), "GET /api/cards 200 body"))
+    for role, node, label in roles:
+        if not isinstance(node, dict) or "properties" not in node:
+            problems.append(
+                f"{_OPENAPI}: {label} is missing or declares no properties, so "
+                f"`$defs.{role}` is documented nowhere — add it rather than "
+                "letting the document describe three of the four roles"
+            )
+            continue
+        want = contract_properties(contract, role)
+        problems.extend(compare_names(_OPENAPI, role, want, set(node["properties"]), subset=False))
+        want_required = set((contract.get("$defs") or {}).get(role, {}).get("required") or ())
+        got_required = set(node.get("required") or ())
+        if want_required != got_required:
+            problems.append(
+                f"{_OPENAPI}: {role} required differs — contract "
+                f"{sorted(want_required)}, document {sorted(got_required)}"
+            )
+    return problems
+
+
+def _walk(document: dict[str, Any], path: tuple[str, ...]) -> Any:
+    node: Any = document
+    for step in path:
+        if not isinstance(node, dict):
+            return None
+        # YAML reads an unquoted `200:` as an int; the file quotes it, but a
+        # future edit that does not must not silently take this branch to None.
+        node = node.get(step, node.get(int(step)) if step.isdigit() else None)
+    return node
+
+
+# `export const CardSchema = z\n  .object({ ... \n  })`. A regex over a
+# hand-written literal, which is unlovely and is the honest cost of the zod
+# schema staying hand-written: it is a runtime PARSER, so it genuinely does
+# something a generated type would not, and there is no way to ask TypeScript
+# what it declares without running TypeScript. Failure to match is exit 2, never
+# a pass - see `zod_copy`.
+_ZOD_BLOCK = re.compile(r"export const CardSchema = z\s*\n\s*\.object\(\{\n(.*?)\n  \}\)", re.S)
+_ZOD_KEY = re.compile(r"^    ([A-Za-z_]\w*):", re.M)
+
+
+def zod_field_names(source: str) -> set[str] | None:
+    """Top-level keys of `CardSchema`, or None if the block could not be found."""
+    block = _ZOD_BLOCK.search(source)
+    if block is None:
+        return None
+    return set(_ZOD_KEY.findall(block.group(1)))
+
+
+def zod_copy(names: set[str], contract: dict[str, Any]) -> list[str]:
+    return compare_names(
+        _ZOD_FILE, "card", contract_properties(contract, "card"), names, subset=False
+    )
+
+
+def mcp_copy(tools: list[dict[str, Any]], contract: dict[str, Any]) -> list[str]:
+    """The MCP card-write tools against the contract's write roles."""
+    by_name = {tool.get("name"): tool for tool in tools}
+    problems: list[str] = []
+    for tool_name, role, selectors in _MCP_TOOLS:
+        tool = by_name.get(tool_name)
+        if tool is None:
+            problems.append(
+                f"{_MCP_MODULE}: no tool named {tool_name} — it was renamed or "
+                "removed, and a tool this gate cannot find is a tool it is not "
+                "checking; update _MCP_TOOLS deliberately"
+            )
+            continue
+        offered = set((tool.get("inputSchema") or {}).get("properties") or {}) - set(selectors)
+        problems.extend(
+            compare_names(
+                f"{_MCP_MODULE}.{tool_name}",
+                role,
+                contract_properties(contract, role),
+                offered,
+                subset=True,
+            )
+        )
+    return problems
+
+
+def load_copies(root: Path) -> tuple[dict[str, Any], set[str], list[dict[str, Any]]]:
+    """Read all three copies. Raises rather than returning a partial answer.
+
+    Every failure here is exit 2 at the call site, not a pass: a file that could
+    not be parsed has been compared against nothing, and "I could not look" is
+    not "nothing is wrong" (Factory#500).
+    """
+    import yaml  # noqa: PLC0415 — only this half of the gate needs it
+
+    document = yaml.safe_load((root / _OPENAPI).read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError(f"{_OPENAPI} did not parse to a mapping")
+
+    names = zod_field_names((root / _ZOD_FILE).read_text(encoding="utf-8"))
+    if not names:
+        raise ValueError(
+            f"{_ZOD_FILE}: could not find the `export const CardSchema = z.object({{...}})` "
+            "block, or it parsed to no fields — the declaration moved or was reformatted, "
+            "and this gate will not report agreement it did not measure"
+        )
+
+    module = importlib.import_module(_MCP_MODULE)
+    tools = getattr(module, "BOARD_TOOLS", None)
+    if not isinstance(tools, list) or not tools:
+        raise ValueError(f"{_MCP_MODULE}.BOARD_TOOLS is missing or empty")
+    return document, names, tools
+
+
 def check(contract: dict[str, Any], service: dict[str, dict[str, Any]]) -> list[str]:
     """Every disagreement across every role, contract-side and service-side."""
     problems: list[str] = unmapped_roles(contract)
@@ -377,6 +660,18 @@ def check(contract: dict[str, Any], service: dict[str, dict[str, Any]]) -> list[
                     role_facets(service[role], service[role], role=role),
                 )
             )
+            if role in _OBJECT_LEVEL_ROLES:
+                want = node.get("additionalProperties")
+                got = service[role].get("additionalProperties")
+                if want != got:
+                    problems.append(
+                        f"{role}: additionalProperties differs — contract {want!r}, "
+                        f"service {got!r}. `false` on the service side is pydantic's "
+                        'rendering of `model_config = ConfigDict(extra="forbid")`; its '
+                        "absence means an unknown key is silently DISCARDED, which "
+                        "tells a caller its write landed in full when part of it did "
+                        "not (CFactory#322)"
+                    )
         except ValueError as exc:
             # A dangling `$ref` is drift too, and the loudest kind: deleting a
             # `$def` another role points at used to raise out of the gate
@@ -403,7 +698,15 @@ def run_check(schema_path: Path, root: Path) -> int:
         # look at anything, and "I could not look" is not "nothing is wrong".
         _emit(f"ERROR: could not load {_SERVICE_MODULE} from {root}: {exc}")
         return _EXIT_BAD_INVOCATION
+    try:
+        document, zod_names, tools = load_copies(root)
+    except (OSError, ImportError, AttributeError, ValueError) as exc:
+        _emit(f"ERROR: could not read the hand-written copies under {root}: {exc}")
+        return _EXIT_BAD_INVOCATION
     problems = check(contract, service)
+    problems.extend(openapi_copy(document, contract))
+    problems.extend(zod_copy(zod_names, contract))
+    problems.extend(mcp_copy(tools, contract))
 
     models_file = root / _SERVICE_SYS_PATH / f"{_SERVICE_MODULE.replace('.', '/')}.py"
     _emit(
@@ -429,6 +732,28 @@ def run_check(schema_path: Path, root: Path) -> int:
         f"  NOT compared on $defs.{_UNSET_SENTINEL_ROLE}: null in the type set. "
         "pydantic's partial-update idiom `X | None = None` uses None to mean "
         "'not sent', so the model cannot express whether null is a legal value."
+    )
+    _emit("  and the three OTHER hand-written statements of the same shape (CFactory#323):")
+    _emit(
+        f"    - {_OPENAPI} [{digest(root / _OPENAPI)}]: "
+        + ", ".join(f"{name} <-> $defs.{role}" for role, name in _OPENAPI_SCHEMAS)
+        + ", GET /api/cards 200 body <-> $defs.card_list"
+    )
+    _emit(
+        f"    - {_ZOD_FILE} [{digest(root / _ZOD_FILE)}]: "
+        f"CardSchema <-> $defs.card: {', '.join(sorted(zod_names))}"
+    )
+    _emit(
+        f"    - {_MCP_MODULE}.BOARD_TOOLS: "
+        + ", ".join(f"{tool} <-> $defs.{role}" for tool, role, _sel in _MCP_TOOLS)
+    )
+    _emit(
+        "  on those three, FIELD NAMES only (both directions), plus `required` on "
+        f"{_OPENAPI} where the keyword is the same keyword. Facets are not compared: "
+        "three languages, three vocabularies for nullability, and the drift that "
+        "happened in all three was a field that was simply not there. The MCP tools "
+        "are compared one-directionally - offering FEWER fields than the model "
+        "accepts is a deliberate tool split, offering MORE is a 422."
     )
     if problems:
         _emit(f"planning-card DRIFT - the service and the contract disagree ({len(problems)}):")
@@ -474,10 +799,12 @@ _SELFTEST_CONTRACT: dict[str, Any] = {
         "card_create": {
             "type": "object",
             "required": ["title"],
+            "additionalProperties": False,
             "properties": {"title": {"type": "string", "maxLength": 512}},
         },
         "card_patch": {
             "type": "object",
+            "additionalProperties": False,
             "properties": {"title": {"type": "string"}, "status": {"$ref": "#/$defs/status"}},
         },
         "card_list": {
@@ -496,7 +823,7 @@ def _selftest_service() -> dict[str, dict[str, Any]]:
     """The synthetic service side, rendered by pydantic exactly as CFactory is."""
     from typing import Literal  # noqa: PLC0415 - kept out of the gate's import path
 
-    from pydantic import BaseModel, Field  # noqa: PLC0415
+    from pydantic import BaseModel, ConfigDict, Field  # noqa: PLC0415
 
     class Card(BaseModel):
         card_key: str
@@ -506,9 +833,11 @@ def _selftest_service() -> dict[str, dict[str, Any]]:
         comment_count: int = 0
 
     class CardCreate(BaseModel):
+        model_config = ConfigDict(extra="forbid")
         title: str = Field(max_length=512)
 
     class CardUpdate(BaseModel):
+        model_config = ConfigDict(extra="forbid")
         title: str | None = None
         status: Literal["backlog", "done"] | None = None
 
@@ -666,6 +995,8 @@ def _self_test() -> int:
         "card_patch: a field disappearing is still red under the carve-out",
     )
 
+    _self_test_object_level(t, service)
+
     # A role that vanishes from the contract must be red, not skipped. Dropping
     # `$defs.card` used to be the cheapest way to make a comparison pass.
     missing_role = _mutated("card", "card_key")
@@ -698,7 +1029,226 @@ def _self_test() -> int:
     finally:
         globals()["_ROLES"] = kept
 
+    _self_test_copies(t)
     return t.finish()
+
+
+def _self_test_object_level(t: SelfTest, service: dict[str, dict[str, Any]]) -> None:
+    """`additionalProperties`, which only became comparable with CFactory#322."""
+    import copy as copy_module  # noqa: PLC0415 - kept out of the gate's import path
+
+    def problems(
+        contract: dict[str, Any], svc: dict[str, dict[str, Any]] | None = None
+    ) -> list[str]:
+        return check(contract, svc if svc is not None else service)
+
+    # OBJECT-LEVEL, on the request bodies. Until CFactory#322 the models set no
+    # `extra` policy, pydantic rendered no `additionalProperties`, and this was a
+    # limit this gate documented rather than a check it ran.
+    for role in _OBJECT_LEVEL_ROLES:
+        loosened = copy_module.deepcopy(_SELFTEST_CONTRACT)
+        del loosened["$defs"][role]["additionalProperties"]
+        t.req(
+            any(f"{role}: additionalProperties differs" in p for p in problems(loosened)),
+            f"{role}: a contract that stops forbidding extras while the model forbids them is red",
+        )
+        dropped_policy = dict(service)
+        dropped_policy[role] = {
+            k: v for k, v in service[role].items() if k != "additionalProperties"
+        }
+        t.req(
+            any(
+                f"{role}: additionalProperties differs" in p
+                for p in problems(_SELFTEST_CONTRACT, dropped_policy)
+            ),
+            f'{role}: dropping extra="forbid" from the model is red (the CFactory#322 regression)',
+        )
+    # And it is NOT compared on the resource, where pydantic renders nothing for
+    # a promise the service does keep. Asserted, so narrowing this to the request
+    # bodies is a decision rather than an omission.
+    resource_forbids = copy_module.deepcopy(_SELFTEST_CONTRACT)
+    resource_forbids["$defs"]["card"]["additionalProperties"] = False
+    t.req(
+        problems(resource_forbids) == [],
+        "the resource's additionalProperties is deliberately not compared",
+    )
+
+
+# The three other copies, mutated one at a time (CFactory#323). Synthetic
+# subjects, so no CFactory checkout is needed: an openapi document as a dict, a
+# zod declaration as a string, and a tool list as a list — which is exactly the
+# shape each loader hands the comparison, so what runs here is what runs in CI.
+
+_SELFTEST_OPENAPI: dict[str, Any] = {
+    "components": {
+        "schemas": {
+            "Card": {
+                "type": "object",
+                "required": ["card_key", "status"],
+                "properties": {
+                    "card_key": {"type": "string"},
+                    "status": {"type": "string"},
+                    "tier": {"type": "string", "nullable": True},
+                    "labels": {"type": "array"},
+                    "comment_count": {"type": "integer"},
+                },
+            },
+            "CardCreate": {"type": "object", "required": ["title"], "properties": {"title": {}}},
+            "CardUpdate": {
+                "type": "object",
+                "properties": {"title": {}, "status": {}},
+            },
+        }
+    },
+    "paths": {
+        "/api/cards": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["count", "cards"],
+                                    "properties": {"count": {}, "cards": {}},
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+}
+
+_SELFTEST_ZOD = """
+export const CardSchema = z
+  .object({
+    card_key: z.string(),
+    status: CardStatusSchema,
+    tier: CardTierSchema.nullable(),
+    labels: z.array(z.string()).default([]),
+    // a comment, and a blank line, both of which the real file has
+    comment_count: z.number().default(0),
+  })
+  .passthrough();
+"""
+
+_SELFTEST_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "cfactory_create_card",
+        "inputSchema": {"type": "object", "properties": {"title": {}}},
+    },
+    {
+        "name": "cfactory_update_card",
+        "inputSchema": {"type": "object", "properties": {"card_key": {}, "title": {}}},
+    },
+    {
+        "name": "cfactory_move_card",
+        "inputSchema": {"type": "object", "properties": {"card_key": {}, "status": {}}},
+    },
+    {
+        "name": "cfactory_reprioritise_card",
+        "inputSchema": {"type": "object", "properties": {"card_key": {}}},
+    },
+]
+
+
+def _self_test_copies(t: SelfTest) -> None:
+    import copy  # noqa: PLC0415
+
+    contract = _SELFTEST_CONTRACT
+
+    def all_three(
+        document: dict[str, Any] | None = None,
+        zod: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[str]:
+        names = zod_field_names(_SELFTEST_ZOD if zod is None else zod) or set()
+        return (
+            openapi_copy(_SELFTEST_OPENAPI if document is None else document, contract)
+            + zod_copy(names, contract)
+            + mcp_copy(_SELFTEST_TOOLS if tools is None else tools, contract)
+        )
+
+    t.req(all_three() == [], "baseline: all three copies agree with the contract")
+
+    # 1. openapi.yaml — a field the service serves and the document omits. This
+    #    is the real defect, seven times over.
+    doc = copy.deepcopy(_SELFTEST_OPENAPI)
+    del doc["components"]["schemas"]["Card"]["properties"]["labels"]
+    t.req(
+        any(
+            _OPENAPI in p and "card.labels" in p and "missing from this copy" in p
+            for p in all_three(document=doc)
+        ),
+        "openapi.yaml: a field dropped from components.schemas.Card is red",
+    )
+    doc = copy.deepcopy(_SELFTEST_OPENAPI)
+    doc["components"]["schemas"]["Card"]["required"] = ["card_key"]
+    t.req(
+        any(_OPENAPI in p and "card required differs" in p for p in all_three(document=doc)),
+        "openapi.yaml: a field the service always sends and the document calls optional is red",
+    )
+    doc = copy.deepcopy(_SELFTEST_OPENAPI)
+    doc["paths"]["/api/cards"]["get"]["responses"]["200"]["content"]["application/json"]["schema"][
+        "properties"
+    ] = {"total": {}, "cards": {}}
+    t.req(
+        any("total" in p for p in all_three(document=doc))
+        and any("count" in p for p in all_three(document=doc)),
+        "openapi.yaml: the count-vs-total defect is red on the inline list body too",
+    )
+    doc = copy.deepcopy(_SELFTEST_OPENAPI)
+    del doc["components"]["schemas"]["CardCreate"]
+    t.req(
+        any("documented nowhere" in p for p in all_three(document=doc)),
+        "openapi.yaml: a role the document does not describe at all is red, not skipped",
+    )
+
+    # 2. api.ts (zod) — the two fields it was actually missing.
+    zod = _SELFTEST_ZOD.replace("    labels: z.array(z.string()).default([]),\n", "")
+    t.req(
+        any(
+            _ZOD_FILE in p and "card.labels" in p and "missing from this copy" in p
+            for p in all_three(zod=zod)
+        ),
+        "api.ts: a field the board does not model is red (the deleted_at/github_sync_error case)",
+    )
+    zod = _SELFTEST_ZOD.replace(
+        "    card_key: z.string(),", "    card_key: z.string(),\n    workspace_id: z.string(),"
+    )
+    t.req(
+        any(_ZOD_FILE in p and "workspace_id" in p for p in all_three(zod=zod)),
+        "api.ts: a field the contract does not have is red too (both directions)",
+    )
+    # And the extractor must FAIL rather than report an empty field set, which
+    # would make every contract field "missing" and read as catastrophic drift
+    # when the truth is that the gate lost its subject.
+    t.req(
+        zod_field_names("export const CardSchema = somethingElse();") is None,
+        "api.ts: a moved or reformatted declaration returns None, so the loader can exit 2",
+    )
+
+    # 3. mcp.py — a writable field the models do not have. Since CFactory#322
+    #    that is a 422 at runtime, not a spare key.
+    tools = copy.deepcopy(_SELFTEST_TOOLS)
+    tools[0]["inputSchema"]["properties"]["tenant_id"] = {}
+    t.req(
+        any("cfactory_create_card" in p and "tenant_id" in p for p in all_three(tools=tools)),
+        "mcp.py: a tool argument the contract has no field for is red",
+    )
+    # The other direction, asserted GREEN on purpose: cfactory_move_card offers
+    # `status` and nothing else, and that is the product decision, not drift.
+    t.req(
+        all_three(tools=_SELFTEST_TOOLS) == [],
+        "mcp.py: a tool offering FEWER fields than the model accepts stays green",
+    )
+    tools = [tool for tool in _SELFTEST_TOOLS if tool["name"] != "cfactory_move_card"]
+    t.req(
+        any("no tool named cfactory_move_card" in p for p in all_three(tools=tools)),
+        "mcp.py: a renamed or removed tool is red, not silently unchecked",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
