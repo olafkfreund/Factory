@@ -27,6 +27,7 @@ disagree the tuple is right — run `--list` to settle it.
 | `cost_router_core.py` | RFC-0014 cost router. |
 | `ratchet_helpers.py` | The rules every service's lint ratchet must agree on (Factory#403, Factory#590). |
 | `job_dispatch.py` | Job manifest naming, labelling and hardening rules (Factory#477, Factory#483). |
+| `job_tracing.py` | The far half of `job_dispatch.trace_env`: what a dispatched Job calls to join the run's trace and emit one span for its life (Factory#607, Factory#638). |
 
 `verification_profiles.py` and `verification_runner.py` were **removed** from the
 canonical set in Factory#401: they were listed but vendored by nobody, so the
