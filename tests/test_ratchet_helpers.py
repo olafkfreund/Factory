@@ -150,6 +150,52 @@ def test_ruff_own_failure_is_unaffected() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# ruff_findings — the other half of the same verdict (Factory#648)             #
+# --------------------------------------------------------------------------- #
+
+
+def test_clean_run_is_an_empty_measurement() -> None:
+    # The pinned ruff prints `[]` for a clean run. THAT is zero violations.
+    assert rh.ruff_findings(_res(0, stdout="[]")) == {}
+
+
+def test_findings_are_counted_per_rule_code() -> None:
+    stdout = '[{"code": "S101"}, {"code": "S101"}, {"code": "PLR2004"}]'
+    assert rh.ruff_findings(_res(1, stdout=stdout)) == {"S101": 2, "PLR2004": 1}
+
+
+def test_empty_stdout_is_not_clean(capsys: pytest.CaptureFixture[str]) -> None:
+    # THE DEFECT (Factory#648). All five forks returned Counter() here, i.e.
+    # zero violations, for a run that wrote no report at all. The exit code is
+    # 0, so require_tool_ran cannot see it, and base and head then compare equal
+    # for an environmental reason that hits both sides.
+    for stdout in ("", "   \n"):
+        with pytest.raises(SystemExit) as exc:
+            rh.ruff_findings(_res(0, stdout=stdout))
+        assert exc.value.code == 2
+        assert "no report" in capsys.readouterr().err
+
+
+def test_fixed_source_on_stdout_is_not_read_as_findings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # With `fix = true` reachable in a config, ruff writes the FIXED SOURCE to
+    # stdout and exits 0. Parsing that as JSON is reading Python as findings.
+    with pytest.raises(SystemExit) as exc:
+        rh.ruff_findings(_res(0, stdout="import os\n\nprint(os.getcwd())\n"))
+    assert exc.value.code == 2
+    assert "--no-fix" in capsys.readouterr().err
+
+
+def test_ruff_own_failure_still_aborts_through_this_helper() -> None:
+    # ruff_findings calls require_tool_ran first, so the exit-code verdict is not
+    # lost by routing the parse through here.
+    with pytest.raises(SystemExit) as exc:
+        rh.ruff_findings(_res(2, stderr="error: invalid value for '--config'"))
+    assert exc.value.code == 2
+
+
+# --------------------------------------------------------------------------- #
 # is_test_file / ruff_stdin_argv — the two rules that came first (Factory#403)  #
 # --------------------------------------------------------------------------- #
 
