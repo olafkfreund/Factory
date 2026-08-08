@@ -144,7 +144,7 @@
       "items": {
         "type": "string"
       },
-      "description": "What `done` means, one testable statement per entry. Human-owned. When the card dispatches (RFC-0019 section 3.2) these become the acceptance criteria of the RFC-0002 task contract, which is why an empty list is allowed while planning but a card dispatched without any gives the factory nothing to verify against. A blank entry is meaningless and SHOULD NOT be sent; the schema no longer asserts `minLength: 1` on the item, because the service accepts one and an assertion no implementation honours is the fiction Factory#554 removed (tracked for the service side in CFactory#324)."
+      "description": "What `done` means, one testable statement per entry. Human-owned. When the card dispatches (RFC-0019 section 3.2) these become the acceptance criteria of the RFC-0002 task contract, which is why an empty list is allowed while planning but a card dispatched without any gives the factory nothing to verify against. A blank entry is REFUSED on write: `card_create` and `card_patch` carry `minLength: 1` on the item and the service enforces it (CFactory#324) - an empty criterion is satisfied by anything, so it produces a green verdict against nothing, which reads like a check that ran. The bound sits on those two and NOT here, because it belongs where the service applies it - the request bodies - while this `$def` is also what the RESOURCE refs, and hundreds of cards predate the rule and still hold what they were created with. The service trims an entry before measuring it, so a single space is refused rather than stored."
     },
     "status": {
       "type": "string",
@@ -241,7 +241,11 @@
           "$ref": "#/$defs/description"
         },
         "acceptance_criteria": {
-          "$ref": "#/$defs/acceptance_criteria"
+          "$ref": "#/$defs/acceptance_criteria",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "status": {
           "$ref": "#/$defs/status",
@@ -290,7 +294,11 @@
           "$ref": "#/$defs/description"
         },
         "acceptance_criteria": {
-          "$ref": "#/$defs/acceptance_criteria"
+          "$ref": "#/$defs/acceptance_criteria",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "status": {
           "$ref": "#/$defs/status"

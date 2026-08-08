@@ -318,22 +318,28 @@ def test_card_key_accepts_a_server_key_or_an_external_one() -> None:
 
 
 def test_acceptance_criteria_is_a_list_of_strings_and_may_be_empty() -> None:
-    """An empty LIST is legal while planning; a blank ENTRY is no longer refused.
+    """An empty LIST is legal while planning; a blank ENTRY is refused on WRITE.
 
-    The item used to carry `minLength: 1`. The service has never enforced it -
-    `list[str]` on all three models, no per-item constraint - so the rule sat in
-    the schema with no implementation behind it, which is the class of fiction
-    Factory#554 removed. The reasoning survives in the field's prose and the
-    service-side fix is CFactory#324; when it lands, the bound comes back here
-    and the conformance gate keeps the two in step.
+    The bound is on the two request bodies and not on the resource, and that
+    asymmetry is the point rather than an oversight. `minLength: 1` describes
+    what a caller may SEND, and CFactory enforces it there (CFactory#324). The
+    resource describes what the service RETURNS, and hundreds of cards were
+    created before the rule existed and still hold whatever went in - asserting
+    the bound there would make the contract describe responses the service can
+    still legitimately emit, which is the fiction Factory#554 removed running the
+    other way.
     """
     doc = _example("card-planned")
     doc["acceptance_criteria"] = []
     assert _errors(doc) == []
-    doc["acceptance_criteria"] = [""]
-    assert _errors(doc) == [], "not enforced by the service, so not asserted here"
     doc["acceptance_criteria"] = [3]
     assert _errors(doc) != [], "the element TYPE is still a bar"
+
+    doc["acceptance_criteria"] = [""]
+    assert _errors(doc) == [], "on the RESOURCE a legacy blank entry still validates"
+    for role in ("card_create", "card_patch"):
+        assert _errors({"title": "x", "acceptance_criteria": [""]}, role) != [], role
+        assert _errors({"title": "x", "acceptance_criteria": ["real"]}, role) == [], role
 
 
 def test_unknown_field_on_the_resource_is_rejected() -> None:
