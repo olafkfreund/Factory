@@ -256,7 +256,12 @@ HUB_PORTED_RATCHET = "scripts/ratchet_lint.py"
 # Names a ported ratchet must import from ratchet_helpers rather than restate.
 # Growing this tuple is how a future shared rule gets enforced across the forks:
 # extract it into the canonical, re-vendor, rewire the forks, THEN add it here.
-_REQUIRED_RATCHET_RULES: tuple[str, ...] = ("require_tool_ran",)
+# `ruff_findings` added 2026-08-08 (Factory#648), and it lands LAST for the
+# reason the header above states: this checker floats at hub main while each
+# consumer's CANONICAL stays at its own HUB_PIN_SHA, so a rule registered before
+# the forks rewire turns every PR in four repos red. Order was: hub canonical,
+# four consumer re-vendor+pin PRs, then this.
+_REQUIRED_RATCHET_RULES: tuple[str, ...] = ("require_tool_ran", "ruff_findings")
 
 # ponytail: a verbatim-substring check, not a semantic one. It catches the idiom
 # being COPIED BACK, which is the observed failure mode (the nine restatements
