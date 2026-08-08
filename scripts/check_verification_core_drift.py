@@ -662,12 +662,12 @@ def _scope_self_test(canonical: Path, root: Path, layout: dict[str, str]) -> lis
 
 _PORTED_OK = '''\
 """Ported from the hub's scripts/ratchet_lint.py."""
-from ratchet_helpers import is_test_file, require_tool_ran
+from ratchet_helpers import is_test_file, require_tool_ran, ruff_findings
 
 
 def ruff_counts(res):
     require_tool_ran("ruff", res)
-    return len(res.stdout)
+    return len(ruff_findings(res))
 '''
 
 _PORTED_INLINE_RESTATEMENT = '''\
