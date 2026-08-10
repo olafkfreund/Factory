@@ -39,10 +39,21 @@ half does, and it is **not** in this change:
 
 `.github/workflows/fides-change-gate.yml` would record each PR as a Fides change
 (trail) and run `fides change-gate`, which HOLDs until a second human records the
-SoD approval. It is held back because it cannot run: the gate needs
-`FIDES_SERVER_URL`, `FIDES_CI_KEY` and `FIDES_FLOW_ID`, and the Fides server
-deployed in the cluster is a ClusterIP with no Ingress, so a GitHub-hosted runner
-cannot reach it (Factory#541).
+SoD approval. Two things stop it running today (Factory#541):
+
+1. **The three settings do not exist on this repo.** `gh secret list` returns only
+   `FACTORY_TOKEN`; `gh variable list` only `JOB_WATCHDOG_HEARTBEAT`. The gate needs
+   `FIDES_SERVER_URL`, `FIDES_CI_KEY` and `FIDES_FLOW_ID`.
+2. **The workflow's CLI install path 404s.** It fetches
+   `$FIDES_SERVER_URL/cli/install.sh`; the server does not serve that path.
+
+Reachability is **not** among them, contrary to how #541 was originally written.
+`svc/fides-server` is a ClusterIP, but the cluster publishes it through the
+existing cloudflared tunnel at `https://fides.freundcloud.org.uk`, which
+Cloudflare terminates TLS for. Measured 2026-08-10 from outside the cluster:
+`/` 200, `/healthz` 200, `/api/v1/health` 401 (live and auth-gated),
+`/cli/install.sh` 404. No Ingress and no cert-manager are needed — the fleet has
+neither, and exposes every portal this same way.
 
 It is recorded as absent rather than merged-and-red on purpose. A required check
 that can never pass blocks every PR; a non-required check that is permanently red
@@ -106,11 +117,12 @@ Signing and SoD are independent; do signing first (it is the lower-risk half).
 
 ### Phase C — turn on the Fides change gate (SoD)
 
-**Blocked, and on infrastructure rather than on code.** `svc/fides-server` in the
-`fides` namespace is a ClusterIP with no Ingress, and this repo has no self-hosted
-runner, so a GitHub-hosted runner has no route to it. Phase C cannot begin until
-one of the two exists — publish the server with TLS and public DNS, or register a
-self-hosted runner on the cluster network. Factory#541 carries that decision.
+**Not blocked on reachability.** The server is already published through the
+cloudflared tunnel at `https://fides.freundcloud.org.uk` (see above). What is
+missing is the three repo settings and a working CLI install; Factory#541 tracks
+both. Set `FIDES_SERVER_URL` to that public hostname, not to the in-cluster
+service DNS — a GitHub-hosted runner cannot resolve
+`fides-server.fides.svc.cluster.local`.
 
 5. Per repo, create a Fides Flow and set the repo secrets/vars the workflow reads:
    `FIDES_SERVER_URL`, `FIDES_CI_KEY` (a Writer service-account key), and the
