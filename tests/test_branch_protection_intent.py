@@ -19,6 +19,7 @@ compares equal, and a live response differing in ONE field compares unequal.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -576,3 +577,103 @@ def test_codeowners_is_checked_exactly_where_the_intent_declares_an_owner() -> N
     table = _repo_table()
     declared = {repo for repo, fields in table.items() if fields.get("CODE_OWNER") == "1"}
     assert declared == {"PFactory", "TFactory", "AIFactory"}
+
+
+# --------------------------------------------------------------------------
+# --signatures (Factory#316). The flag is orthogonal to MODE: it selects WHICH
+# object is acted on (required_signatures, never the protection object), while
+# --apply still selects whether anything is written.
+# --------------------------------------------------------------------------
+
+
+def _signatures(*args: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    """Run the script's --signatures path with a `gh` that records its argv.
+
+    The shim is the point, not a convenience: it is the only way to assert that
+    a dry-run performs NO write. Asserting on stdout alone would pass just as
+    happily against a version that printed "(dry-run)" and then called gh.
+    """
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    calls = tmp_path / "gh-calls"
+    # Quote the path: pytest's tmp_path is space-free today, but an unquoted
+    # redirect target silently truncates the recording if that ever changes,
+    # which would turn "no request was issued" into a false pass.
+    (bindir / "gh").write_text(f'#!/usr/bin/env bash\necho "$@" >> "{calls}"\n')
+    (bindir / "gh").chmod(0o755)
+    env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}"}
+    proc = subprocess.run(  # noqa: S603
+        ["bash", str(_SCRIPT), "--signatures", *args],  # noqa: S607
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    proc.gh_calls = calls.read_text() if calls.exists() else ""  # type: ignore[attr-defined]
+    return proc
+
+
+def test_signatures_dry_run_writes_nothing(tmp_path: Path) -> None:
+    proc = _signatures("--repo", "factory-gitops", tmp_path=tmp_path)
+    assert proc.returncode == 0
+    assert proc.gh_calls == "", f"dry-run called gh: {proc.gh_calls!r}"  # type: ignore[attr-defined]
+    assert "DRY-RUN complete" in proc.stdout
+
+
+def test_signatures_apply_posts_required_signatures(tmp_path: Path) -> None:
+    """The other direction (rule 4.9): a test that only proves the dry-run is
+    silent would pass against a --signatures that never writes at all."""
+    proc = _signatures("--apply", "--repo", "factory-gitops", tmp_path=tmp_path)
+    assert proc.returncode == 0
+    assert (
+        "repos/olafkfreund/factory-gitops/branches/main/protection/required_signatures"
+        in proc.gh_calls  # type: ignore[attr-defined]
+    )
+    assert "-X POST" in proc.gh_calls  # type: ignore[attr-defined]
+
+
+def test_signatures_never_reports_on_a_protection_check_it_did_not_run(
+    tmp_path: Path,
+) -> None:
+    """The false-green guard (Factory#642). --signatures reads no live
+    protection, so falling through to the check summary would report on a
+    comparison this path never performed.
+
+    Asserting only that the OK line is absent would be vacuous: under a stub
+    `gh` the fall-through prints DRIFT, not OK, so that assertion holds even
+    with the guard deleted. The property that actually separates the two is
+    that the path never reaches the live-protection read at all -- so assert
+    the summary is absent AND that no request was issued. Deleting the
+    `exit 0` on the --signatures path fails this test.
+    """
+    proc = _signatures("--repo", "Factory", tmp_path=tmp_path)
+    assert "live branch protection matches" not in proc.stdout
+    assert "DRIFT:" not in proc.stdout
+    assert proc.gh_calls == "", f"reached the live read: {proc.gh_calls!r}"  # type: ignore[attr-defined]
+
+
+def test_every_declared_repo_has_a_signer_preflight(tmp_path: Path) -> None:
+    """Enabling required_signatures rejects the next unsigned push from any
+    identity. A repo with no pre-flight line is one whose automation breaks
+    without warning."""
+    proc = _signatures(tmp_path=tmp_path)
+    for repo in {r for r, _ in _DECLARED}:
+        assert f"olafkfreund/{repo} : main : required_signatures" in proc.stdout
+        assert proc.gh_calls == ""  # type: ignore[attr-defined]
+    # factory-gitops is the one that freezes deploys; its warning must be loud.
+    assert "FREEZES all deploys" in proc.stdout
+
+
+def test_signatures_refuses_a_repo_with_no_signer_preflight(tmp_path: Path) -> None:
+    """An unknown repo must be a hard error, not a printed string.
+
+    `signer pre-flight: $(signers_note "$repo")` sent the unknown-repo message to
+    stdout, so an unrecognised repo rendered as
+    `signer pre-flight: unknown repo: X` and the run carried on — the absence of a
+    checklist looking exactly like a checklist (Factory#642). Nothing may be
+    written for a repo whose automation impact was never declared.
+    """
+    proc = _signatures("--apply", "--repo", "NotARepo", tmp_path=tmp_path)
+    assert proc.returncode != 0
+    assert proc.gh_calls == ""  # type: ignore[attr-defined]
+    assert "signer pre-flight:" not in proc.stdout

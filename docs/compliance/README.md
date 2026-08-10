@@ -36,6 +36,10 @@ evidence. Certification is a separate engagement.
   advisory rather than a control: agents authenticate as the operator, so no
   merge in the fleet is attributable to a human or an agent. Measured, with the
   operator-only fix stated. Factory#611, domain 6.
+- [`signed-commits-and-sod.md`](signed-commits-and-sod.md) — the rollout runbook
+  for commit signing and the Fides SoD change gate: the per-repo signer pre-flight,
+  the order that does not freeze deploys, and what is designed versus operating.
+  Factory#316, domain 6.
 
 ### ISMS policy set
 
