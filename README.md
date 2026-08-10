@@ -70,6 +70,14 @@ integration story: **[factory.freundcloud.com/why](https://factory.freundcloud.c
 ## Repository layout
 
 - `docs/` — the Jekyll site published at [factory.freundcloud.com](https://factory.freundcloud.com/)
+- `standards/` — the shared code and CI baseline every service vendors:
+  [`coding-standards.md`](standards/coding-standards.md) (the rules CI comments
+  cite by number, e.g. "rule 4.7"), plus the canonical `ruff.toml`, `mypy.ini`
+  and `tsconfig.base.json`. Consume it per
+  [`standards/README.md`](standards/README.md); services may only tighten.
+- `scripts/` — hub canonicals (branch-protection-as-code, the lint ratchet, gate
+  preflights). Several are vendored into the service repos, so fix them here
+  rather than in a copy.
 - Program planning & cross-cutting epics — see [Issues](https://github.com/olafkfreund/Factory/issues)
   and the [Factory Program board](https://github.com/users/olafkfreund/projects/1)
 

@@ -186,6 +186,61 @@ made a gate permissive would have passed that half. Each gate leaves behind a
 test for both directions: a change carrying pre-existing debt is accepted, and
 one new violation is rejected.
 
+4.10 **Assert on the artefact, not on the process.** A control that reports
+whether it *ran* cannot distinguish a clean system from one where nothing
+happened. Ask of every gate:
+
+> **If this had done nothing at all, would the output look different?**
+> If no, the control is not evidence.
+
+Factory#642 catalogues **seven** instances, found on 2026-08-07 by three agents
+working separately on unrelated issues. An **eighth** turned up on 2026-08-10
+while wiring the Fides change gate (Factory#619, Factory#541) — also by
+accident, also by someone working on something else, which is the point.
+Different subsystems, one mechanism: **the status channel reported on the
+process rather than on what it produced.** Seven were quiet and sat; the one
+that failed loudly was fixed the same day. The severity ordering was set by
+visibility, not by risk.
+
+The question above is cheap to quote and expensive to apply, so it does not
+travel alone. **What makes it executable is knowing which artefact to read** —
+that knowledge, not the question, is the deliverable:
+
+| Control | Do NOT trust | Read this instead |
+|---|---|---|
+| Signature verify | `unverified image` | the message text: `ghcr.io/token` + `UNAUTHORIZED` is a read failure, not a verdict |
+| Admission webhook | the admit | the `kyverno.io/verify-images` annotation, and that it **names the image** |
+| PolicyReport board | absence of `fail` | the result **count**, and whether the rule produced any row at all |
+| `kyverno test` | the pass | that the case actually **evaluated** — a case with no result scores as a pass |
+| Merged PR | `merged: true` + green CI | `commits:` vs what you pushed, **and** the file bytes on `main` |
+| Patch / script | the success message | the patch's **exit code**, checked before the message prints |
+| ArgoCD selfHeal test | `Synced` | that the field you changed is **git-managed** — an added annotation is never reverted |
+| Installer / fetch step | the step's green | that the thing is **runnable afterwards** (`command -v`), and the download's own exit status |
+
+Three traps carried from the instances, each of which cost an hour or more:
+
+- **`curl … | sh` in CI hides the DOWNLOAD's failure.** The step can still fail —
+  if `sh` exits non-zero it does. What it cannot report is curl failing, and that
+  is the direction that matters, because it fails *open*. A default `run:` on
+  Linux is `bash -e {0}`, with no `pipefail`, so only the last element's status
+  survives; `sh` reading empty stdin exits 0. A 404 installer therefore leaves
+  the step green having installed nothing, and the real failure surfaces later as
+  `command not found`. Setting `shell: bash` explicitly is not cosmetic — it
+  selects `bash --noprofile --norc -eo pipefail {0}`, which would surface this
+  one. Better still: fetch to a file, check the status, then assert the binary
+  runs.
+- **`git merge-base --is-ancestor` is useless in a squash-merge repo.** It
+  returns non-zero for every correctly merged PR. Compare `headRefOid` to the
+  SHA you pushed.
+- **`commits:` and a content read are a pair, not alternatives.** `commits:`
+  catches a commit that never arrived; only a content read catches a commit that
+  arrived having eaten someone else's line during a rebase. **Counts survive a
+  rebase; content does not.**
+
+A corollary for acceptance criteria: **do not phrase one as "X is quiet".**
+Silence is exactly what a control that never ran produces. State what artefact
+must exist and what it must say.
+
 ## 5. How to consume the shared baseline
 
 Each service extends the hub baseline and may only tighten:
