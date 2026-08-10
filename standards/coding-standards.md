@@ -194,7 +194,7 @@ happened. Ask of every gate:
 > If no, the control is not evidence.
 
 Eight instances were found across the fleet between 2026-08-07 and 2026-08-10,
-by five people working on unrelated things (Factory#642). Different subsystems,
+by four agents each working on something else (Factory#642). Different subsystems,
 one mechanism: **the status channel reported on the process rather than on what
 it produced.** Seven were quiet and sat; the one that failed loudly was fixed
 the same day. The severity ordering was set by visibility, not by risk.
