@@ -18,7 +18,13 @@ spec:
               set -euo pipefail
               export MC_CONFIG_DIR=/scratch/.mc
               mc alias set fac http://minio.factory.svc.cluster.local:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
-              latest=$(mc find fac/factory-backups/postgres --name "*.sql.gz" | tail -1)
+              # `mc find` does not guarantee ordering, so sort explicitly. The object
+              # names embed an ISO-8601 UTC stamp
+              # (factory-cluster-YYYYMMDDThhmmssZ.sql.gz), which sorts
+              # lexicographically in time order. Without the sort this can restore
+              # an ARBITRARY dump and still report success — the exact shape this
+              # drill exists to catch.
+              latest=$(mc find fac/factory-backups/postgres --name "*.sql.gz" | sort | tail -1)
               echo "restoring from: $latest"
               mc cp "$latest" /scratch/dump.sql.gz
               ls -l /scratch/dump.sql.gz

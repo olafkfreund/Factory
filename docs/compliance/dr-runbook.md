@@ -62,6 +62,15 @@ and the entire audit-evidence store **in one event**. There is no in-cluster
 target that fixes this; an off-box destination is required and is a decision
 about infrastructure, not code. Tracked on #321.
 
+The `nfs`-is-not-durable half was already recorded in
+[`policies/business-continuity-dr.md`](policies/business-continuity-dr.md)
+("its backing store is itself a single `local-path` RWO 20Gi PVC"). It is
+repeated here because it was measured independently on 2026-08-10 while
+evaluating `nfs` as a backup target — and because the recommendation to use it
+was made anyway. A finding written down in one document does not stop the next
+person reaching the opposite conclusion; that is the argument for the runbook
+carrying it too.
+
 ## Restore procedure
 
 ### The gotcha that will cost you an hour at 3am
@@ -123,8 +132,13 @@ reads like a misconfiguration rather than a restore that stopped halfway.
      `set -euo pipefail` aborts immediately with
      `set: Illegal option -o pipefail`. This is the same trap that once made
      `postgres-backup` silently never run.
-   - the object is located with `mc find`, not `mc ls | awk` — the `mc` image
-     ships no `awk`, and the failure is a silently empty variable.
+   - the object is located with `mc find ... | sort | tail -1`, not
+     `mc ls | awk`. The `mc` image ships no `awk` (the failure mode there is a
+     silently empty variable), and **`mc find` does not guarantee ordering** —
+     without the explicit `sort` this can restore an *arbitrary* dump and still
+     report success. The names embed an ISO-8601 UTC stamp
+     (`factory-cluster-YYYYMMDDThhmmssZ.sql.gz`), so they sort lexicographically
+     in time order.
 
 3. **Verify against the artefact, never the exit code.** The Job runs psql with
    `ON_ERROR_STOP=0` so a partial restore still exits 0. Compare row counts:

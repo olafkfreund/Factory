@@ -15,10 +15,34 @@
 This document defines the business-continuity and disaster-recovery posture for the
 Factory fleet's stateful control plane: the PostgreSQL database that holds durable
 job-state for PFactory, AIFactory, TFactory, and CFactory, and the MinIO object store
-that holds PARR artifacts and verification evidence. It states the honest current
-reality (no backups exist today), the resulting gaps against the frameworks above, and a
-phased, concrete remediation plan ending in an automated, tested restore that meets a
-defined RTO and RPO.
+that holds PARR artifacts and verification evidence. It states the current reality, the
+resulting gaps against the frameworks above, and a phased, concrete remediation plan
+ending in an automated, tested restore that meets a defined RTO and RPO.
+
+> **Superseded in part, 2026-08-10 (Factory#321).** This document was written when
+> no backups existed. Two of its central findings are no longer true, and are
+> corrected inline below:
+>
+> - **Postgres backups exist and run daily** (`pg_dumpall --clean | gzip -9`,
+>   `15 2 * * *`), and a restore has now been **tested end to end** — 52 of 52
+>   tables across all five databases. See [`../dr-runbook.md`](../dr-runbook.md)
+>   for the measured RTO/RPO and the drill evidence.
+> - **MinIO bucket versioning is enabled** on `factory-backups`,
+>   `factory-artifacts` and `factory-evidence`, verified live.
+>
+> **Why this document was wrong, which matters more than that it was.** It
+> concluded "no backups" from *"the only `kind: CronJob` in the repo is
+> `apps/cred-broker`"* — but it searched **this** repo, while every CronJob in
+> the fleet lives in **`factory-gitops`**. Absence was proved in the wrong place.
+> When re-grounding a control claim, name the repo or cluster the evidence came
+> from; `factory-gitops` and `--context factory` are the sources of truth for
+> anything that runs, and this repo holds only the policy about it.
+>
+> The finding that has NOT changed, and got worse on inspection: the backups are
+> uploaded into MinIO, which sits on the same node and the same `local-path`
+> storage class as the database. There is no second failure domain anywhere in
+> the cluster — the `nfs` class is served by an in-cluster provisioner whose own
+> export is a `local-path` PVC. See the runbook.
 
 This is the epic's **top-priority gap (Factory#310 gap #1)**. Loss of the Postgres
 volume today is unrecoverable loss of all in-flight and historical job-state; loss of the
@@ -39,7 +63,16 @@ Source: `factory-gitops/apps/postgres/manifests/manifests.yaml`.
 - Hosts one database per service (`pfactory`, `tfactory`, `aifactory`, `cfactory`), each auto-migrated on startup via `alembic upgrade head`.
 - The manifest header states plainly: *"Single replica on an RWO local-path PVC (single writer). HA Postgres (streaming replication / Patroni) is out of scope."* No read replica, no standby, no failover.
 - The superuser password lives in `factory-secrets/POSTGRES_PASSWORD`, created **out-of-band and not committed** (no sealed-secrets / ESO). A cluster rebuild depends on an operator manually recreating it (tribal knowledge).
-- **No backup of any kind:** no `pg_dump`/`pg_dumpall` CronJob, no `pg_basebackup`, no WAL archiving / PITR (no pgBackRest, wal-g, or Barman), no Velero, no restic. Confirmed by absence: the only `kind: CronJob` in the repo is `apps/cred-broker` (credential rotation), and there are zero matches for `velero|pgbackrest|pg_dump|wal-g|barman|restic`.
+- ~~**No backup of any kind**~~ — **CORRECTED 2026-08-10 (Factory#321).** A
+  `postgres-backup` CronJob runs daily at `15 2 * * *` in the `factory` namespace
+  (`factory-gitops/apps/postgres-backup/`), taking `pg_dumpall --clean | gzip -9`
+  of all five databases and uploading it to `factory-backups/postgres/` in MinIO.
+  A restore has been tested end to end (see [`../dr-runbook.md`](../dr-runbook.md)).
+  The original claim searched THIS repo for `kind: CronJob`; the fleet's CronJobs
+  live in `factory-gitops`, so absence was proved in the wrong place.
+  Still absent, and still true: no `pg_basebackup`, no WAL archiving / PITR
+  (no pgBackRest, wal-g, Barman), no Velero, no restic — so recovery is to the
+  last nightly dump, not to a point in time.
 
 ### MinIO — artifact and evidence store
 
@@ -48,7 +81,15 @@ Source: `factory-gitops/apps/minio/manifests/manifests.yaml`.
 - `Deployment minio`, **`replicas: 1`**, `strategy: Recreate`, image `RELEASE.2025-04-08T15-41-24Z`, standalone (non-distributed) mode.
 - Storage: PVC `minio-data`, **`accessModes: ["ReadWriteOnce"]`, `storageClassName: local-path`, 20Gi** — again a single node-local disk.
 - Single bucket `factory-artifacts`; layout `<service>/<correlation_key>/<job_id>/<role>/...`.
-- **Object lifecycle is expiry-only and no backup exists.** The `minio-create-bucket` Job installs ILM rules that *delete* `role=log` objects after 30 days. There is **no bucket versioning**, **no object-lock / WORM**, and **no replication** (no `mc replicate`, no site/bucket replication to any off-cluster target).
+- **Partly corrected 2026-08-10 (Factory#321).** The `minio-create-bucket` Job
+  installs ILM rules that *delete* `role=log` objects after 30 days, and it also
+  now enables **bucket versioning** — verified live on `factory-backups`,
+  `factory-artifacts` and `factory-evidence` (`mc version info` reports
+  `versioning is enabled` on all three). So an overwrite or delete is
+  recoverable. Still absent: **object-lock / WORM**, and **replication** (no
+  `mc replicate`, no site/bucket replication to any off-cluster target) — and
+  versioning protects against accidental deletion, NOT against loss of the
+  underlying disk, which is the live risk here.
 - Note a latent data-integrity risk: the manifest comment claims evidence is retained 90 days, but no 90-day evidence rule is actually installed — only the three 30-day `role=log` expiry rules exist. Retention intent and retention implementation diverge.
 
 ### Cluster storage reality
