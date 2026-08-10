@@ -37,17 +37,34 @@ the deploy automation**.
 The signing half above is self-contained and needs no external service. The SoD
 half does, and it is **not** in this change:
 
-`.github/workflows/fides-change-gate.yml` would record each PR as a Fides change
-(trail) and run `fides change-gate`, which HOLDs until a second human records the
-SoD approval. Two things stop it running today (Factory#541):
+`.github/workflows/fides-change-gate.yml` records a run as a Fides change (trail)
+and evaluates `fides change-gate`. It **exists and works** — it is simply not
+wired to `pull_request`.
 
-1. **The three settings do not exist on this repo.** `gh secret list` returns only
-   `FACTORY_TOKEN`; `gh variable list` only `JOB_WATCHDOG_HEARTBEAT`. The gate needs
-   `FIDES_SERVER_URL`, `FIDES_CI_KEY` and `FIDES_FLOW_ID`.
-2. **The workflow's CLI install path 404s.** It fetches
-   `$FIDES_SERVER_URL/cli/install.sh`; the server does not serve that path.
+Both original blockers are cleared (Factory#541):
 
-Reachability is **not** among them, contrary to how #541 was originally written.
+1. ~~The three settings do not exist~~ — provisioned. Flow `Factory`
+   (`41184b3e-97ec-4e0d-8461-0a8832530c1f`), service account `factory-ci` with
+   role **Writer**, one active key on a 365-day expiry, and the repo carries
+   secrets `FIDES_SERVER_URL` / `FIDES_API_TOKEN` and variable `FIDES_FLOW_ID`.
+2. ~~The CLI install path 404s~~ — `scripts/fides_gate_preflight.sh` installs a
+   pinned, digest-verified release from GitHub instead of piping an installer
+   from the server, and asserts the binary is runnable.
+
+Proven end to end on a real runner: preflight passed, a trail was recorded, and
+the gate returned its verdict.
+
+**What keeps it off `pull_request` is different and is not a bug.** The gate
+HOLDs until `four_eyes` is satisfied, and that needs two *distinct* humans.
+Factory is a single-maintainer repo, so no action by one person clears it. On a
+PR trigger the check would be red forever — the Factory#484 shape, where an
+unsatisfiable review requirement turned every merge into an `--admin` bypass and
+produced *less* enforcement. A permanently-red non-required check is worse than
+an absent one: it trains people to ignore red. Tracked in **Factory#660**, which
+is the real gate to making this a PR check.
+
+Reachability was never among the blockers, contrary to how #541 was originally
+written.
 `svc/fides-server` is a ClusterIP, but the cluster publishes it through the
 existing cloudflared tunnel at `https://fides.freundcloud.org.uk`, which
 Cloudflare terminates TLS for. Measured 2026-08-10 from outside the cluster:
@@ -117,12 +134,17 @@ Signing and SoD are independent; do signing first (it is the lower-risk half).
 
 ### Phase C — turn on the Fides change gate (SoD)
 
-**Not blocked on reachability.** The server is already published through the
-cloudflared tunnel at `https://fides.freundcloud.org.uk` (see above). What is
-missing is the three repo settings and a working CLI install; Factory#541 tracks
-both. Set `FIDES_SERVER_URL` to that public hostname, not to the in-cluster
-service DNS — a GitHub-hosted runner cannot resolve
-`fides-server.fides.svc.cluster.local`.
+**Steps 5 and 6 are done.** The settings exist and the workflow runs; what
+remains is step 7, and it is blocked on Factory#660 (four-eyes needs a second
+human), not on plumbing.
+
+Two things worth keeping when you return to this:
+
+- `FIDES_SERVER_URL` must be the **public hostname**. A GitHub-hosted runner
+  cannot resolve `fides-server.fides.svc.cluster.local`.
+- `fides change-gate --trail` wants the **trail UUID that `trail start`
+  returns**, not the `--trail` name you passed it. The name gets
+  `400 invalid trail id`, and a 400 is not a verdict.
 
 5. Per repo, create a Fides Flow and set the repo secrets/vars the workflow reads:
    `FIDES_SERVER_URL`, `FIDES_CI_KEY` (a Writer service-account key), and the
