@@ -108,10 +108,17 @@ workflow files, and the ArgoCD application manifests in `factory-gitops`.
 
 ### Commit signing
 
-- `required_signatures.enabled = false` on all three protected repos and unset on the
-  unprotected three. No workflow signs commits or verifies signatures. The automated
-  gitops bump is an unsigned bot commit. Commit provenance is therefore unverifiable — an
-  auditor cannot cryptographically attribute a change to an authorized author.
+- `required_signatures.enabled = false` on **all six** repos, measured 2026-08-10 via
+  `GET /repos/{owner}/{repo}/branches/main/protection/required_signatures`. (The
+  earlier "unset on the unprotected three" reading came from the protection object,
+  which omits the field entirely rather than reporting it — absent there does not mean
+  unset, and the dedicated endpoint is the one that answers.) No workflow signs commits
+  or verifies signatures. The automated gitops bump is an unsigned bot commit. Commit
+  provenance is therefore unverifiable — an auditor cannot cryptographically attribute a
+  change to an authorized author.
+- The rollout runbook for turning this on, including the per-repo signer pre-flight and
+  the order that avoids freezing deploys, is
+  [`signed-commits-and-sod.md`](../signed-commits-and-sod.md).
 
 ### What is credited
 

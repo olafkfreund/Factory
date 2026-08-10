@@ -30,6 +30,22 @@
 #   scripts/apply_branch_protection.sh --apply         # APPLY all repos
 #   WITH_VERIFY=1 scripts/apply_branch_protection.sh --repo AIFactory
 #                                                      # include TFactory verify check
+#   scripts/apply_branch_protection.sh --signatures --repo CFactory
+#                                                      # dry-run: what require-signed-commits WOULD do
+#   scripts/apply_branch_protection.sh --signatures --apply --repo CFactory
+#                                                      # ENABLE required_signatures on one repo
+#
+# SIGNED COMMITS (--signatures): OPT-IN and separate from the baseline protection
+# above, because turning it on breaks any identity that pushes UNSIGNED commits to
+# the protected branch. Every pusher (humans AND automation) must have commit
+# signing configured FIRST or their next push is rejected. See the per-repo signer
+# checklist printed in dry-run and docs/compliance/signed-commits-and-sod.md for the
+# rollout order (humans first, bots signing configured, gitops LAST).
+#
+# --signatures is ORTHOGONAL to MODE, not a mode of its own: it selects WHICH
+# object is acted on (required_signatures, never the protection object), while
+# --apply still selects whether anything is written. So --signatures alone is a
+# dry-run and --signatures --apply enforces.
 #
 # Exit codes (check mode): 0 = live matches intent, 1 = divergence found,
 # 2 = could not determine (missing tool, missing branch, token without admin).
@@ -44,6 +60,7 @@ OWNER="olafkfreund"
 MODE="check"                      # check | apply | plan | emit | normalise-stdin
 ONLY_REPO=""
 EMIT_BRANCH=""
+SIGNATURES=0                      # 1 = act on required_signatures (opt-in; see --signatures)
 WITH_VERIFY="${WITH_VERIFY:-0}"   # 1 = also require the TFactory verification status (see docs, phase 3)
 
 while [ $# -gt 0 ]; do
@@ -51,6 +68,7 @@ while [ $# -gt 0 ]; do
     --apply) MODE="apply" ;;
     --check) MODE="check" ;;
     --plan|--dry-run) MODE="plan" ;;
+    --signatures) SIGNATURES=1 ;;
     --repo) ONLY_REPO="${2:-}"; shift ;;
     # Introspection hooks, no network. --emit prints the NORMALISED intent for one
     # repo/branch; --normalise-stdin prints the normal form of a protection JSON
@@ -63,7 +81,7 @@ while [ $# -gt 0 ]; do
     # /codeowners/errors payload read from stdin, so both directions are testable
     # without a token (tests/test_branch_protection_intent.py, rule 4.9).
     --codeowners-stdin) MODE="codeowners-stdin" ;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,56p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -131,6 +149,42 @@ repo_config() {
 }
 
 ALL_REPOS=(CFactory Factory PFactory TFactory AIFactory factory-gitops)
+
+# Identities that must have commit signing configured BEFORE required_signatures is
+# enabled on each repo's main. Enabling it rejects the next UNSIGNED push from any of
+# these, so this is the pre-flight checklist. Human committers are assumed to have set
+# up their own signing (see the doc); listed here are the AUTOMATION identities that
+# push to (or merge into) main and would otherwise break.
+signers_note() {
+  case "$1" in
+    CFactory|PFactory|TFactory|AIFactory)
+      echo "PARR auto-merge bot (admin token running 'gh pr merge' - merge commits must be signed; enable branch 'Require signed commits' AND ensure the merge is a GitHub-signed merge/squash, which GitHub signs server-side)" ;;
+    Factory)
+      echo "Human committers only (no direct-to-main automation). Confirm every maintainer has verified signing before enabling." ;;
+    factory-gitops)
+      echo "CRITICAL: github-actions[bot] CD bump (GITOPS_PAT) pushes UNSIGNED commits. Enable ONLY after the CD job signs its commits (import a bot GPG/SSH signing key into the workflow and set git user.signingkey + commit.gpgsign=true, OR switch the bump to the GitHub Contents API which server-signs). Enabling before that FREEZES all deploys." ;;
+    *) echo "unknown repo: $1"; return 1 ;;
+  esac
+}
+
+signatures_one() {
+  local repo="$1"
+  echo "-------------------- ${OWNER}/${repo} : main : required_signatures --------------------"
+  echo "signer pre-flight: $(signers_note "$repo")"
+  echo "endpoint: POST repos/${OWNER}/${repo}/branches/main/protection/required_signatures"
+  echo "prereq: branch protection must already exist on main (run this script without --signatures first)."
+  if [ "$MODE" = "apply" ]; then
+    echo ">> enabling required signed commits..."
+    gh api -X POST \
+      -H "Accept: application/vnd.github+json" \
+      "repos/${OWNER}/${repo}/branches/main/protection/required_signatures" >/dev/null
+    echo ">> enabled. Unsigned pushes to main are now rejected."
+  else
+    echo "(dry-run: nothing written. Re-run with --signatures --apply to enforce. Disable later with:"
+    echo "  gh api -X DELETE repos/${OWNER}/${repo}/branches/main/protection/required_signatures )"
+  fi
+  echo
+}
 
 # Per-branch intent. `main` is the release branch: up-to-date-required, reviewed,
 # conversations resolved. `dev` is the integration branch and is deliberately
@@ -433,6 +487,23 @@ run_repo() {
     fi
   done
 }
+
+# --signatures acts ONLY on required_signatures and never touches the protection
+# object, so it must not fall through to the check summary below: that summary
+# reports on a comparison this path never performed, and printing "OK: live
+# branch protection matches the declared intent" after reading no live
+# protection is the false-green shape rule 4.7 exists to prevent (Factory#642).
+if [ "$SIGNATURES" = "1" ]; then
+  if [ -n "$ONLY_REPO" ]; then
+    signatures_one "$ONLY_REPO"
+  else
+    for r in "${ALL_REPOS[@]}"; do signatures_one "$r"; done
+  fi
+  if [ "$MODE" != "apply" ]; then
+    echo "DRY-RUN complete. No signing requirement was changed. This is a plan only."
+  fi
+  exit 0
+fi
 
 if [ -n "$ONLY_REPO" ]; then
   run_repo "$ONLY_REPO"
