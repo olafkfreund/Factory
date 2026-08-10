@@ -163,14 +163,23 @@ signers_note() {
       echo "Human committers only (no direct-to-main automation). Confirm every maintainer has verified signing before enabling." ;;
     factory-gitops)
       echo "CRITICAL: github-actions[bot] CD bump (GITOPS_PAT) pushes UNSIGNED commits. Enable ONLY after the CD job signs its commits (import a bot GPG/SSH signing key into the workflow and set git user.signingkey + commit.gpgsign=true, OR switch the bump to the GitHub Contents API which server-signs). Enabling before that FREEZES all deploys." ;;
-    *) echo "unknown repo: $1"; return 1 ;;
+    *) echo "no signer pre-flight declared for repo: $1" >&2; return 1 ;;
   esac
 }
 
 signatures_one() {
-  local repo="$1"
+  local repo="$1" note
   echo "-------------------- ${OWNER}/${repo} : main : required_signatures --------------------"
-  echo "signer pre-flight: $(signers_note "$repo")"
+  # Capture rather than interpolate. `signer pre-flight: $(signers_note ...)` sent
+  # the unknown-repo message to STDOUT, so an unrecognised repo printed
+  # "signer pre-flight: unknown repo: X" and carried on as though a pre-flight
+  # existed - the absence of a checklist rendered as a checklist. An unknown repo
+  # is now a hard error: nothing is written and the caller exits non-zero.
+  if ! note="$(signers_note "$repo")"; then
+    echo "  ERROR: refusing to act on a repo with no declared signer pre-flight." >&2
+    return 2
+  fi
+  echo "signer pre-flight: $note"
   echo "endpoint: POST repos/${OWNER}/${repo}/branches/main/protection/required_signatures"
   echo "prereq: branch protection must already exist on main (run this script without --signatures first)."
   if [ "$MODE" = "apply" ]; then

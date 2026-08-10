@@ -596,9 +596,12 @@ def _signatures(*args: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     bindir = tmp_path / "bin"
     bindir.mkdir()
     calls = tmp_path / "gh-calls"
-    (bindir / "gh").write_text(f'#!/usr/bin/env bash\necho "$@" >> {calls}\n')
+    # Quote the path: pytest's tmp_path is space-free today, but an unquoted
+    # redirect target silently truncates the recording if that ever changes,
+    # which would turn "no request was issued" into a false pass.
+    (bindir / "gh").write_text(f'#!/usr/bin/env bash\necho "$@" >> "{calls}"\n')
     (bindir / "gh").chmod(0o755)
-    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"}
+    env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}"}
     proc = subprocess.run(  # noqa: S603
         ["bash", str(_SCRIPT), "--signatures", *args],  # noqa: S607
         capture_output=True,
@@ -659,3 +662,18 @@ def test_every_declared_repo_has_a_signer_preflight(tmp_path: Path) -> None:
         assert proc.gh_calls == ""  # type: ignore[attr-defined]
     # factory-gitops is the one that freezes deploys; its warning must be loud.
     assert "FREEZES all deploys" in proc.stdout
+
+
+def test_signatures_refuses_a_repo_with_no_signer_preflight(tmp_path: Path) -> None:
+    """An unknown repo must be a hard error, not a printed string.
+
+    `signer pre-flight: $(signers_note "$repo")` sent the unknown-repo message to
+    stdout, so an unrecognised repo rendered as
+    `signer pre-flight: unknown repo: X` and the run carried on — the absence of a
+    checklist looking exactly like a checklist (Factory#642). Nothing may be
+    written for a repo whose automation impact was never declared.
+    """
+    proc = _signatures("--apply", "--repo", "NotARepo", tmp_path=tmp_path)
+    assert proc.returncode != 0
+    assert proc.gh_calls == ""  # type: ignore[attr-defined]
+    assert "signer pre-flight:" not in proc.stdout
