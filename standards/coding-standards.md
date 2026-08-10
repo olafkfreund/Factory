@@ -193,11 +193,14 @@ happened. Ask of every gate:
 > **If this had done nothing at all, would the output look different?**
 > If no, the control is not evidence.
 
-Eight instances were found across the fleet between 2026-08-07 and 2026-08-10,
-by four agents each working on something else (Factory#642). Different subsystems,
-one mechanism: **the status channel reported on the process rather than on what
-it produced.** Seven were quiet and sat; the one that failed loudly was fixed
-the same day. The severity ordering was set by visibility, not by risk.
+Factory#642 catalogues **seven** instances, found on 2026-08-07 by three agents
+working separately on unrelated issues. An **eighth** turned up on 2026-08-10
+while wiring the Fides change gate (Factory#619, Factory#541) — also by
+accident, also by someone working on something else, which is the point.
+Different subsystems, one mechanism: **the status channel reported on the
+process rather than on what it produced.** Seven were quiet and sat; the one
+that failed loudly was fixed the same day. The severity ordering was set by
+visibility, not by risk.
 
 The question above is cheap to quote and expensive to apply, so it does not
 travel alone. **What makes it executable is knowing which artefact to read** —
@@ -216,11 +219,15 @@ that knowledge, not the question, is the deliverable:
 
 Three traps carried from the instances, each of which cost an hour or more:
 
-- **`curl … | sh` in CI cannot fail.** GitHub Actions runs `run:` under
-  `bash -e {0}` with no `pipefail`, so curl's status is discarded and `sh`'s
-  survives — and `sh` on empty stdin exits 0. A 404 installer leaves the step
-  green having installed nothing, and the real failure surfaces later as
-  `command not found`. Fetch to a file, check the status, then assert the binary
+- **`curl … | sh` in CI hides the DOWNLOAD's failure.** The step can still fail —
+  if `sh` exits non-zero it does. What it cannot report is curl failing, and that
+  is the direction that matters, because it fails *open*. A default `run:` on
+  Linux is `bash -e {0}`, with no `pipefail`, so only the last element's status
+  survives; `sh` reading empty stdin exits 0. A 404 installer therefore leaves
+  the step green having installed nothing, and the real failure surfaces later as
+  `command not found`. Setting `shell: bash` explicitly is not cosmetic — it
+  selects `bash --noprofile --norc -eo pipefail {0}`, which would surface this
+  one. Better still: fetch to a file, check the status, then assert the binary
   runs.
 - **`git merge-base --is-ancestor` is useless in a squash-merge repo.** It
   returns non-zero for every correctly merged PR. Compare `headRefOid` to the
