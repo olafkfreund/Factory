@@ -1,0 +1,96 @@
+# Fides change gate — records a trail per run and evaluates the SoD verdict.
+#
+# Factory#541 / Factory#316.
+#
+# WHY workflow_dispatch AND NOT pull_request
+# ------------------------------------------
+# The gate works. Measured against the live server on 2026-08-10, a trail with
+# no approvals returns:
+#
+#   {"recommendation":"hold","risk_score":20,
+#    "segregation_of_duties":{"compliant":false,
+#      "violations":["committer identity unknown","no approver recorded",
+#                    "no deployer recorded"]}}   -> exit 2
+#
+# That is correct: it fails closed. It is also UNSATISFIABLE on this fleet
+# today. `four_eyes` requires two DISTINCT humans, and Factory is a
+# single-maintainer repo — so on a `pull_request` trigger this check would be
+# red on every PR forever, with no action any one person could take to clear it.
+#
+# That is the Factory#484 shape: a review requirement that could not be met made
+# every merge an `--admin` bypass, and the effect was LESS enforcement, not
+# more. A permanently-red non-required check is worse than an absent one,
+# because it trains everyone to ignore a red check.
+#
+# So this runs on demand until a second approver identity exists. It is
+# deliberately NOT wired to pull_request and deliberately NOT a required check.
+# Absent and documented beats green-and-vacuous (Factory#642). Making it a PR
+# gate is tracked separately — see docs/compliance/signed-commits-and-sod.md.
+#
+# Fork PRs would not be gateable in any case: Actions does not expose secrets to
+# a fork, so the preflight would fail closed there for a second reason.
+name: fides-change-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to record a trail for (default: the default branch)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  change-gate:
+    name: Fides change gate (SoD verdict)
+    runs-on: ubuntu-latest
+    env:
+      FIDES_SERVER_URL: ${{ secrets.FIDES_SERVER_URL }}
+      FIDES_API_TOKEN: ${{ secrets.FIDES_API_TOKEN }}
+      FIDES_FLOW_ID: ${{ vars.FIDES_FLOW_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      # Verifies the three settings (unset and empty alike), installs the CLI
+      # from a pinned, digest-checked release, and ASSERTS `fides` is runnable.
+      # Replaces `curl -sSfL $FIDES_SERVER_URL/cli/install.sh | sh`, which
+      # reported success having installed nothing: that path is 404 on this
+      # server, and under `bash -e` without pipefail only `sh`'s exit status
+      # survives.
+      - name: Preflight (settings + CLI install)
+        run: scripts/fides_gate_preflight.sh
+
+      # The trail UUID is NOT the --trail name you pass in. `trail start`
+      # accepts a human name and returns its own id; `change-gate --trail`
+      # wants that id. Passing the name back gets `400 invalid trail id`
+      # (exit 1) — measured, not assumed.
+      - name: Start trail
+        id: trail
+        run: |
+          set -euo pipefail
+          out="$(fides trail start \
+            --flow "$FIDES_FLOW_ID" \
+            --trail "${GITHUB_REPOSITORY#*/}-${GITHUB_SHA::12}" \
+            --repository "$GITHUB_REPOSITORY" \
+            --commit "$GITHUB_SHA" \
+            --branch "${GITHUB_REF_NAME}")"
+          echo "$out"
+          id="$(printf '%s' "$out" | sed -n 's/.*"id":"\([0-9a-f-]\{36\}\)".*/\1/p' | head -1)"
+          if [ -z "$id" ]; then
+            echo "ERROR: could not read the trail id from 'trail start' output." >&2
+            echo "       Refusing to continue: without it the gate would be run" >&2
+            echo "       against the wrong identifier, and a 400 there is not a verdict." >&2
+            exit 1
+          fi
+          echo "trail_id=$id" >> "$GITHUB_OUTPUT"
+
+      # Exit 2 = HOLD. That is a real verdict and it fails the step, which is
+      # the point. Do not add `|| true` here: the whole reason this file exists
+      # is that a gate reporting success without evaluating anything is the
+      # defect, not the inconvenience.
+      - name: Change gate
+        run: fides change-gate --trail "${{ steps.trail.outputs.trail_id }}"
