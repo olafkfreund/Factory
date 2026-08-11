@@ -50,6 +50,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from functools import cache
 from pathlib import Path
 
 # Canonical shared ratchet rules, vendored byte-exact from the hub and
@@ -97,8 +98,18 @@ def packages(package: str) -> list[str]:
 
 
 def changed_python_files(base: str, package: str) -> list[str]:
-    """Python files under any of *package*'s dirs, changed (added/modified) vs *base*."""
-    res = _run(["git", "diff", "--name-only", "--diff-filter=AM", f"{base}...HEAD"])
+    """Python files under any of *package*'s dirs, changed vs *base*.
+
+    ``ACMR``, not ``AM``. ``diff.renames`` has defaulted to true since git 2.9,
+    so a moved file has status **R** — and ``AM`` excluded it, meaning a rename
+    was not gated AT ALL, in either the pre-commit lane or CI (TFactory#1005,
+    found on a 1561-line ``git mv``). A move that carried new violations in
+    would have passed exactly the same way.
+
+    Seeing renames is only half of it: see :func:`rename_sources` for why the
+    baseline has to follow the file to its old path.
+    """
+    res = _run(["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"])
     if res.returncode != 0:
         sys.stderr.write(res.stderr)
         sys.exit(2)
@@ -238,8 +249,47 @@ def mypy_count(source: str, filename: str, package: str) -> int:
         Path(tmpdir).rmdir()
 
 
+@cache
+def rename_sources(base: str) -> tuple[tuple[str, str], ...]:
+    """``(head_path, base_path)`` pairs for files this diff MOVED.
+
+    The other half of the ``ACMR`` change above. Once renames are visible,
+    looking the file up on base by its HEAD path finds nothing and reads the
+    baseline as **0** — so every pre-existing violation in a moved file reports
+    as net-new. AIFactory's fork had exactly that and made a pure ``git mv`` of
+    a legacy file report ``0 -> 167``: a gate punishing the cleanup it exists to
+    encourage (AIFactory#1218).
+
+    Renames are what ``-M`` reports; ask git rather than guessing from content
+    similarity here. Cached per base — this is one subprocess, not one per file.
+
+    Returns a tuple of pairs (not a dict) so the result stays hashable and
+    immutable behind ``lru_cache``.
+    """
+    res = _run(["git", "diff", "--name-status", "-M", "--diff-filter=R", f"{base}...HEAD"])
+    if res.returncode != 0:
+        # No rename information available: fall back to identity mapping rather
+        # than failing. Worst case is the pre-#1005 behaviour for moved files.
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for line in res.stdout.splitlines():
+        # `R<similarity>\told\tnew`
+        status, _, paths = line.partition("\t")
+        old, _, new = paths.partition("\t")
+        if status.startswith("R") and old and new:
+            pairs.append((new, old))
+    return tuple(pairs)
+
+
 def file_at_base(base: str, path: str) -> str | None:
-    res = _run(["git", "show", f"{base}:{path}"])
+    """The file's content on *base*, following a rename to its old path.
+
+    Identity (the ``path`` the counter judges by) deliberately stays the HEAD
+    path in :func:`regressions` — only the CONTENT comes from the old location.
+    Judging the two sides under different per-file-ignores is Factory#510.
+    """
+    src = dict(rename_sources(base)).get(path, path)
+    res = _run(["git", "show", f"{base}:{src}"])
     return res.stdout if res.returncode == 0 else None
 
 
