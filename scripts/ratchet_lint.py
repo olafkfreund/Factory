@@ -50,8 +50,10 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from functools import cache
 from pathlib import Path
+from types import MappingProxyType
 
 # Canonical shared ratchet rules, vendored byte-exact from the hub and
 # drift-gated (Factory#403). scripts/ is sys.path[0] when this runs as a
@@ -100,16 +102,20 @@ def packages(package: str) -> list[str]:
 def changed_python_files(base: str, package: str) -> list[str]:
     """Python files under any of *package*'s dirs, changed vs *base*.
 
-    ``ACMR``, not ``AM``. ``diff.renames`` has defaulted to true since git 2.9,
-    so a moved file has status **R** — and ``AM`` excluded it, meaning a rename
-    was not gated AT ALL, in either the pre-commit lane or CI (TFactory#1005,
-    found on a 1561-line ``git mv``). A move that carried new violations in
-    would have passed exactly the same way.
+    ``ACMR``, not ``AM``: a moved file has status **R**, and ``AM`` excluded it,
+    meaning a rename was not gated AT ALL, in either the pre-commit lane or CI
+    (TFactory#1005, found on a 1561-line ``git mv``). A move that carried new
+    violations in would have passed exactly the same way.
+
+    ``-M`` is passed EXPLICITLY rather than relying on ``diff.renames``
+    defaulting to true since git 2.9. Selecting the R status does not make git
+    DETECT renames — a gate whose verdict depends on a developer's local git
+    config is not a gate.
 
     Seeing renames is only half of it: see :func:`rename_sources` for why the
     baseline has to follow the file to its old path.
     """
-    res = _run(["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"])
+    res = _run(["git", "diff", "-M", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"])
     if res.returncode != 0:
         sys.stderr.write(res.stderr)
         sys.exit(2)
@@ -250,7 +256,7 @@ def mypy_count(source: str, filename: str, package: str) -> int:
 
 
 @cache
-def rename_sources(base: str) -> tuple[tuple[str, str], ...]:
+def rename_sources(base: str) -> Mapping[str, str]:
     """``(head_path, base_path)`` pairs for files this diff MOVED.
 
     The other half of the ``ACMR`` change above. Once renames are visible,
@@ -263,24 +269,31 @@ def rename_sources(base: str) -> tuple[tuple[str, str], ...]:
     Renames are what ``-M`` reports; ask git rather than guessing from content
     similarity here. Cached per base — this is one subprocess, not one per file.
 
-    Returns a tuple of pairs rather than a dict because the value is CACHED and
-    therefore shared: every caller gets the same object back, so a mutable one
-    could be modified by one caller and silently observed by the next. (Nothing
-    here needs it hashable — ``@cache`` only requires that of the arguments.)
+    Returns a read-only ``MappingProxyType``: the value is CACHED and therefore
+    shared, so a plain dict could be mutated by one caller and silently observed
+    by the next — while a tuple of pairs would make every caller rebuild a dict
+    per file, for the ruff leg and again for the mypy leg. The proxy is
+    immutable AND directly subscriptable.
     """
     res = _run(["git", "diff", "--name-status", "-M", "--diff-filter=R", f"{base}...HEAD"])
     if res.returncode != 0:
-        # No rename information available: fall back to identity mapping rather
-        # than failing. Worst case is the pre-#1005 behaviour for moved files.
-        return ()
-    pairs: list[tuple[str, str]] = []
+        # Fall back to identity mapping rather than failing — worst case is the
+        # pre-#1005 behaviour for moved files — but SAY SO. A gate that quietly
+        # gets less accurate is the failure mode this whole change is about.
+        sys.stderr.write(
+            "ratchet: could not read rename information; moved files will be "
+            "measured against an empty baseline\n"
+        )
+        sys.stderr.write(res.stderr)
+        return MappingProxyType({})
+    pairs: dict[str, str] = {}
     for line in res.stdout.splitlines():
         # `R<similarity>\told\tnew`
         status, _, paths = line.partition("\t")
         old, _, new = paths.partition("\t")
         if status.startswith("R") and old and new:
-            pairs.append((new, old))
-    return tuple(pairs)
+            pairs[new] = old
+    return MappingProxyType(pairs)
 
 
 def file_at_base(base: str, path: str) -> str | None:
@@ -290,7 +303,7 @@ def file_at_base(base: str, path: str) -> str | None:
     path in :func:`regressions` — only the CONTENT comes from the old location.
     Judging the two sides under different per-file-ignores is Factory#510.
     """
-    src = dict(rename_sources(base)).get(path, path)
+    src = rename_sources(base).get(path, path)
     res = _run(["git", "show", f"{base}:{src}"])
     return res.stdout if res.returncode == 0 else None
 
