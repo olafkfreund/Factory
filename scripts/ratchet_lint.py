@@ -263,8 +263,10 @@ def rename_sources(base: str) -> tuple[tuple[str, str], ...]:
     Renames are what ``-M`` reports; ask git rather than guessing from content
     similarity here. Cached per base — this is one subprocess, not one per file.
 
-    Returns a tuple of pairs (not a dict) so the result stays hashable and
-    immutable behind ``lru_cache``.
+    Returns a tuple of pairs rather than a dict because the value is CACHED and
+    therefore shared: every caller gets the same object back, so a mutable one
+    could be modified by one caller and silently observed by the next. (Nothing
+    here needs it hashable — ``@cache`` only requires that of the arguments.)
     """
     res = _run(["git", "diff", "--name-status", "-M", "--diff-filter=R", f"{base}...HEAD"])
     if res.returncode != 0:
