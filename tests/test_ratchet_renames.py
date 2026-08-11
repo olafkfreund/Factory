@@ -183,7 +183,13 @@ def test_an_unreadable_rename_lookup_says_so_instead_of_degrading_quietly(
         with _inside(repo):
             pairs = ratchet_lint.rename_sources("no-such-ref-anywhere")
         assert dict(pairs) == {}
-        assert "rename information" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "rename information" in err
+        # git's OWN message must be forwarded too. Without this the
+        # `sys.stderr.write(res.stderr)` line can be deleted and the test still
+        # passes — asserting on the ref name rather than git's phrasing keeps it
+        # stable across git versions and locales.
+        assert "no-such-ref-anywhere" in err
     finally:
         tmp.cleanup()
 
