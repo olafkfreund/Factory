@@ -25,6 +25,8 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -59,6 +61,24 @@ def _new_repo() -> tuple[Path, tempfile.TemporaryDirectory[str]]:
     return repo, tmp
 
 
+@contextmanager
+def _inside(repo: Path) -> Iterator[None]:
+    """Run a block with *repo* as cwd and the rename cache cleared.
+
+    Extracted because every test needs the same three-step dance — chdir, clear
+    the per-base cache, chdir back on the way out — and repeating it tripped the
+    clone budget. The cache_clear matters: `rename_sources` is `@cache`d per
+    base, and "HEAD~1" means something different in each temp repo.
+    """
+    cwd = Path.cwd()
+    os.chdir(repo)
+    ratchet_lint.rename_sources.cache_clear()
+    try:
+        yield
+    finally:
+        os.chdir(cwd)
+
+
 def _repo_with_a_move() -> tuple[Path, tempfile.TemporaryDirectory[str]]:
     """A repo whose HEAD renamed scripts/old.py -> scripts/new.py, unchanged."""
     repo, tmp = _new_repo()
@@ -74,13 +94,8 @@ def test_a_renamed_file_is_gated_at_all() -> None:
     """The TFactory#1005 half: ACMR sees the move that AM dropped."""
     repo, tmp = _repo_with_a_move()
     try:
-        cwd = Path.cwd()
-        os.chdir(repo)
-        try:
-            ratchet_lint.rename_sources.cache_clear()
+        with _inside(repo):
             changed = ratchet_lint.changed_python_files("HEAD~1", "scripts")
-        finally:
-            os.chdir(cwd)
         assert changed == ["scripts/new.py"], changed
     finally:
         tmp.cleanup()
@@ -94,13 +109,8 @@ def test_the_baseline_follows_the_file_to_its_old_path() -> None:
     """
     repo, tmp = _repo_with_a_move()
     try:
-        cwd = Path.cwd()
-        os.chdir(repo)
-        try:
-            ratchet_lint.rename_sources.cache_clear()
+        with _inside(repo):
             base_src = ratchet_lint.file_at_base("HEAD~1", "scripts/new.py")
-        finally:
-            os.chdir(cwd)
         assert base_src == LEGACY, (
             f"the moved file's baseline must come from its pre-rename path; got {base_src!r}"
         )
@@ -120,14 +130,9 @@ def test_a_genuinely_new_file_still_reads_an_empty_baseline() -> None:
         _git(repo, "add", "-A")
         _git(repo, "commit", "-qm", "add a new file")
 
-        cwd = Path.cwd()
-        os.chdir(repo)
-        try:
-            ratchet_lint.rename_sources.cache_clear()
+        with _inside(repo):
             base_src = ratchet_lint.file_at_base("HEAD~1", "scripts/brand_new.py")
             changed = ratchet_lint.changed_python_files("HEAD~1", "scripts")
-        finally:
-            os.chdir(cwd)
         assert base_src is None, base_src
         assert changed == ["scripts/brand_new.py"], changed
     finally:
@@ -144,13 +149,62 @@ def test_rename_sources_is_empty_when_nothing_moved() -> None:
         _git(repo, "add", "-A")
         _git(repo, "commit", "-qm", "edit")
 
-        cwd = Path.cwd()
-        os.chdir(repo)
-        try:
-            ratchet_lint.rename_sources.cache_clear()
+        with _inside(repo):
             pairs = ratchet_lint.rename_sources("HEAD~1")
-        finally:
-            os.chdir(cwd)
-        assert pairs == (), pairs
+        assert dict(pairs) == {}, pairs
+    finally:
+        tmp.cleanup()
+
+
+def test_renames_are_detected_even_when_diff_renames_is_disabled() -> None:
+    """``-M`` is passed explicitly, so the verdict does not depend on git config."""
+    repo, tmp = _repo_with_a_move()
+    try:
+        _git(repo, "config", "diff.renames", "false")
+        with _inside(repo):
+            base_src = ratchet_lint.file_at_base("HEAD~1", "scripts/new.py")
+        assert base_src == LEGACY, (
+            f"with diff.renames=false the rename must still be found via -M; got {base_src!r}"
+        )
+    finally:
+        tmp.cleanup()
+
+
+def test_an_unreadable_rename_lookup_says_so_instead_of_degrading_quietly(
+    capsys,
+) -> None:
+    """A gate that gets quietly less accurate is the failure mode being fixed.
+
+    On a git error the map falls back to empty — which silently measures a moved
+    file against no baseline. It must at least SAY so on stderr.
+    """
+    repo, tmp = _repo_with_a_move()
+    try:
+        with _inside(repo):
+            pairs = ratchet_lint.rename_sources("no-such-ref-anywhere")
+        assert dict(pairs) == {}
+        assert "rename information" in capsys.readouterr().err
+    finally:
+        tmp.cleanup()
+
+
+def test_the_cached_rename_map_cannot_be_mutated_by_a_caller() -> None:
+    """The map is cached, so every caller gets the SAME object back.
+
+    A plain dict there could be modified by one caller and silently observed by
+    the next — a cache poisoned in-process. MappingProxyType makes that a
+    TypeError instead of a subtle wrong baseline.
+    """
+    repo, tmp = _repo_with_a_move()
+    try:
+        with _inside(repo):
+            pairs = ratchet_lint.rename_sources("HEAD~1")
+        assert pairs["scripts/new.py"] == "scripts/old.py"
+        try:
+            pairs["scripts/new.py"] = "hijacked"  # type: ignore[index]
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("the cached rename map is mutable")
     finally:
         tmp.cleanup()
