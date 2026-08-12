@@ -97,6 +97,20 @@ jobs:
           TFACTORY_API: ${{ inputs.tfactory_api != '' && inputs.tfactory_api || vars.TFACTORY_API }}
           CFACTORY_API: ${{ inputs.cfactory_api != '' && inputs.cfactory_api || vars.CFACTORY_API }}
         run: |
+          # pipefail, or the pipe below eats the verdict. A shell pipeline
+          # reports the status of its LAST command and `tee` always succeeds, so
+          # `parr_regression.py ... | tee` exits 0 no matter what the script
+          # returned. This gate ran green for at least five consecutive nights
+          # while printing "N seam(s) FAILED" and "A boundary regressed" into its
+          # own log — 2 seams on 08-08..08-11 (401 Invalid token on both ingest
+          # seams) and 7 on 08-12. The failure-issue step never fired either,
+          # because `if: failure()` was never true.
+          #
+          # This is Phase 1 of Factory#41 — the gate that exists to prove the
+          # deployed fleet works. A readiness proof that cannot go red proves
+          # nothing, which is the exact defect class it was written to catch,
+          # turned on itself.
+          set -o pipefail
           ARGS="--smoke"
           if [ "${{ inputs.mode }}" = "full" ]; then ARGS="--full"; fi
           python3 scripts/parr_regression.py $ARGS | tee regression.out
