@@ -104,7 +104,9 @@ jobs:
       - name: What to do when this job is red
         if: failure()
         run: |
-          echo "Each line names a branch whose tip is AHEAD of the head its PR merged at."
+          echo "Each line names a branch whose tip DIFFERS from the head its PR merged with."
+          echo "(Inequality is what is measured -- usually that means commits were added"
+          echo " after the merge, but a force-push backwards looks the same and is not.)"
           echo "Those commits are in no pull request and are not on the default branch."
           echo
           echo "Confirm what is actually missing, content-first rather than by ancestry:"

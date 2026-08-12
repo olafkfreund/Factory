@@ -35,7 +35,13 @@ recent pull request opened from that branch. GitHub freezes ``headRefOid`` on a
 merged, closed PR and it never advances again -- factory-gitops#187 v2 read that
 as the bug ("PR 180 head STILL stale after 10min") when it is exactly the
 property that makes this work. Equal means everything on the branch went into
-the merge. Ahead means the extra commits were in no pull request at all.
+the merge. DIFFERENT means the branch holds something no pull request carried.
+
+"Different", not "ahead": inequality is what is measured. In practice that is
+almost always commits added after the merge, but a force-push backwards to an
+earlier sha looks identical from here and is not the same thing -- which is why
+the report asks the reader to diff the two shas rather than asserting a
+direction it has not established.
 
 This is the one test that distinguishes the two real cases, and it does not care
 how the merge was performed.
@@ -207,9 +213,18 @@ def branches_of(repo: str) -> list[tuple[str, str]]:
     page = 1
     while True:
         rows = gh_json(f"repos/{OWNER}/{repo}/branches?per_page={_PAGE_SIZE}&page={page}")
-        if not isinstance(rows, list) or not rows:
+        # A payload that is not a list is a schema or permission surprise, NOT
+        # the end of pagination. Treating it as "no more branches" would end the
+        # scan early and report ok on whatever it happened to have read -- the
+        # false green this gate's own exit-2 contract forbids (rule 4.7).
+        if not isinstance(rows, list):
+            die(
+                f"branches for {repo} page {page} came back as {type(rows).__name__}, "
+                "not a list -- refusing to report on a partial scan"
+            )
+        if not rows:
             break
-        out.extend((b["name"], b["commit"]["sha"]) for b in rows)
+        out.extend((as_str(b["name"]), as_str(b["commit"]["sha"])) for b in rows)
         if len(rows) < _PAGE_SIZE:
             break
         page += 1
@@ -220,8 +235,14 @@ def prs_for(repo: str, branch: str) -> list[PR]:
     rows = gh_json(
         f"repos/{OWNER}/{repo}/pulls?state=all&head={OWNER}:{branch}&per_page={_PAGE_SIZE}"
     )
+    # Returning [] here would be worse than a partial scan: no PRs reads as
+    # "this branch never had one", which classify() treats as ordinary work in
+    # progress. An unreadable answer would clear the branch instead of failing.
     if not isinstance(rows, list):
-        return []
+        die(
+            f"pull requests for {repo}:{branch} came back as {type(rows).__name__}, "
+            "not a list -- an unreadable answer must not clear a branch"
+        )
     return [
         {
             "number": p.get("number"),
@@ -370,8 +391,8 @@ def report(findings: list[Finding], repos: tuple[str, ...]) -> int:
         hours = f["hours_since_merge"]
         say(
             f"::error::{as_str(f['repo'])} `{as_str(f['branch'])}` is at "
-            f"{as_str(f['tip'])[:8]} but PR #{as_int(f['pr'])} merged at "
-            f"{as_str(f['pr_head'])[:8]} "
+            f"{as_str(f['tip'])[:8]} but PR #{as_int(f['pr'])} merged with branch "
+            f"head {as_str(f['pr_head'])[:8]} "
             f"({hours if isinstance(hours, float) else 0:.0f}h ago). Those commits "
             f"are in no pull request and are not on the default branch. Open a PR "
             f"for them, or delete the branch if they were superseded."
