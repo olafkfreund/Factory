@@ -34,6 +34,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -46,7 +47,9 @@ _FIXTURES = json.loads(
 )
 
 
-def _run(gate: dict, tmp_path: Path, committer: str = "") -> subprocess.CompletedProcess[str]:
+def _run(
+    gate: dict[str, Any], tmp_path: Path, committer: str = ""
+) -> subprocess.CompletedProcess[str]:
     path = tmp_path / "gate.json"
     path.write_text(json.dumps(gate), encoding="utf-8")
     argv = [sys.executable, str(_SCRIPT), str(path)]
