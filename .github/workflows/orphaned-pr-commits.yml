@@ -1,0 +1,119 @@
+name: orphaned PR commits
+
+# "Did anyone push a commit to a branch after its PR merged?", asked out of band
+# (factory-gitops#187).
+#
+# An agent opens a PR, the PR merges quickly -- factory-gitops#180 merged 96
+# seconds after opening -- and the agent, still mid-task, pushes one more commit
+# to the same branch. That branch has no open PR, so the commit stays there
+# forever. Every signal says success: PR merged, CI green, `git push` succeeded,
+# branch contains the commit. Only the default branch does not, and nothing the
+# author looks at reports it.
+#
+# WHAT THIS IS NOT. branch-divergence.yml asks whether `dev` and `main` hold the
+# same code; deploy-drift asks whether main is deployed. Both answer happily
+# while a commit sits on a branch that neither of them looks at. This is the
+# third question and nothing else in the fleet asks it.
+#
+# WHY SCHEDULED, NOT ON PULL_REQUEST. The window opens AFTER a merge, so there is
+# no pull request in flight to hang the check on. The comparator itself IS
+# covered on every hub PR, offline, by --self-test.
+#
+# WHY IT IS NOT `git merge-base --is-ancestor`. That is the obvious check and it
+# is wrong for every repo here, because they all squash-merge: a squash folds a
+# PR into ONE new commit with a NEW sha, so the branch head is never an ancestor
+# of the base even on a perfect merge. factory-gitops#187 measured it on three
+# PRs and recorded that it returns non-zero for EVERY correctly merged PR in the
+# repo -- a control that fires on the happy path, which is the fastest way to get
+# a control ignored (same defect class as factory-gitops#148 and #181).
+#
+# WHY IT DOES NOT FILE AN ISSUE: the same call already written up in
+# job-watchdog-heartbeat.yml (Factory#450), branch-divergence.yml and
+# pin-freshness.yml. A failing scheduled workflow on a repo you own already
+# emails you and shows red in the Actions tab; an auto-filed issue needs
+# auto-closing logic, which is a second small state machine that rots. If the
+# email proves too easy to miss, the upgrade is to add issue filing here -- not
+# to make the check quieter.
+#
+# FOUND ON ITS FIRST REAL RUN, which is why the grace window is a window and not
+# a shrug: factory-gitops PR #167 was merged into `factory-521-harden-thirdparty`
+# SEVENTEEN SECONDS after that branch's own PR (#165) had merged to main. #167
+# reads MERGED -- truthfully, into its stated base -- and its 101 lines of CI,
+# the Factory#550 automountServiceAccountToken ratchet, never reached main and
+# were missing for five days. A stacked PR makes this failure silent twice over.
+
+on:
+  schedule:
+    # Daily at :53, offset from branch-divergence (:47), branch-protection-drift
+    # (06:17) and the watchdog heartbeat (:23) so the API budgets do not collide.
+    # Daily rather than six-hourly because the grace window below is 12h, so a
+    # faster cadence cannot report anything sooner. Note BST != UTC.
+    - cron: "53 5 * * *"
+  workflow_dispatch:
+    inputs:
+      grace_hours:
+        description: "How long a commit may sit on a merged branch before it counts as orphaned"
+        type: string
+        required: false
+        default: "12"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: orphaned-pr-commits
+  cancel-in-progress: false
+
+jobs:
+  orphans:
+    name: no commit was pushed to a branch after its PR merged
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Self-test the comparator before trusting it
+        # First, not last, for the same reason deploy-drift.yml and
+        # branch-divergence.yml do it: a broken comparator cannot be trusted to
+        # say "nothing orphaned", so it must fail AS a broken comparator rather
+        # than quietly passing everything (rule 4.7). The self-test asserts both
+        # directions -- it fires on the two real factory-gitops cases and stays
+        # silent on a correctly merged branch, on work in flight, and on a branch
+        # whose author already opened the follow-up PR.
+        run: python3 scripts/check_orphaned_pr_commits.py --self-test
+
+      - name: Look for commits that are in no pull request
+        # Exit 1 = orphaned commits. Exit 2 = could not determine (gh missing, an
+        # API read failed) and is also a failure, deliberately: there is no
+        # soft-skip path. A watchdog that reports success while reading nothing is
+        # the exact defect this one exists to catch.
+        #
+        # Uses the default GITHUB_TOKEN. Every repo scanned is public, so this
+        # needs no PAT; it reads branches and pull requests and nothing else. The
+        # scan costs roughly one API call per existing branch (~400 across the
+        # fleet), which is why it runs once a day rather than hourly.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GRACE: ${{ inputs.grace_hours || '12' }}
+        run: |
+          set -o pipefail
+          python3 scripts/check_orphaned_pr_commits.py \
+            --grace-hours "${GRACE}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: What to do when this job is red
+        if: failure()
+        run: |
+          echo "Each line names a branch whose tip is AHEAD of the head its PR merged at."
+          echo "Those commits are in no pull request and are not on the default branch."
+          echo
+          echo "Confirm what is actually missing, content-first rather than by ancestry:"
+          echo "  git diff <tip> origin/<default> -- <the files it touched>   # empty means it landed"
+          echo
+          echo "Then either open a PR for the commits, or delete the branch if they were"
+          echo "superseded. Deleting the branch is a real answer -- it is what makes the"
+          echo "difference between 'lost' and 'decided against' visible to the next reader."
+          echo
+          echo "Check stacked PRs especially: a PR whose BASE is another feature branch"
+          echo "reads MERGED once that base branch is gone, and its content never reaches"
+          echo "the default branch (factory-gitops#167 lost 101 lines of CI this way)."
