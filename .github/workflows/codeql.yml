@@ -36,6 +36,17 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
+          # security-and-quality, not CodeQL's default suite (#711). This repo
+          # reported ZERO open alerts while AIFactory reported ~1470 -- and the
+          # survey found the gap was mostly which questions were asked. The
+          # rules behind most of that volume (py/log-injection,
+          # py/stack-trace-exposure, py/empty-except) are in this suite only.
+          # A zero produced by asking less is the same defect as a gate that
+          # cannot go red (#697). Passed as an input rather than a config file
+          # because this repo has no custom query pack to compose with; if one
+          # is ever added, this MUST move into the config, since a config-file
+          # replaces this input.
+          queries: security-and-quality
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
