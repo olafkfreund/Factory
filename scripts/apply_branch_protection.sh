@@ -450,6 +450,48 @@ check_default_branch() {
   fi
 }
 
+# Private vulnerability reporting, checked here because nothing else looked
+# (CFactory#344). Every repo in this fleet is PUBLIC. Three of them shipped a
+# SECURITY.md telling reporters to use GitHub's private reporting flow while the
+# setting was OFF, so that flow refused the report and the only channel a
+# reporter actually had was a public issue - the precise opposite of what the
+# file asks for. A documented promise the platform will not honour.
+#
+# It is a fleet invariant rather than per-repo config: public repo, therefore a
+# private disclosure route. Private repos are skipped because the setting is
+# meaningless there, not because it is optional.
+#
+# CHECK ONLY, matching check_default_branch above rather than the protection
+# object: enabling is a single PUT and the message carries it, so there is no
+# --apply path to maintain for a one-line fix.
+check_private_vuln_reporting() {
+  local repo="$1" vis live
+  vis="$(gh api "repos/${OWNER}/${repo}" --jq 'if .private then "private" else "public" end' 2>/dev/null)" || {
+    echo "UNDETERMINED ${OWNER}/${repo}: could not read repo visibility."
+    UNDETERMINED=1
+    return
+  }
+  [ "$vis" = "public" ] || return 0
+  live="$(gh api "repos/${OWNER}/${repo}/private-vulnerability-reporting" --jq .enabled 2>/dev/null)" || {
+    echo "UNDETERMINED ${OWNER}/${repo}: could not read private-vulnerability-reporting."
+    UNDETERMINED=1
+    return
+  }
+  if [ "$live" != "true" ]; then
+    echo "DRIFT ${OWNER}/${repo}: private vulnerability reporting is DISABLED on a public repo."
+    echo "    A reporter following SECURITY.md has no private channel and must open a public issue."
+    # `--method PUT` rather than the short flag form, and NOT a stylistic choice:
+    # the intent test counts the short-flag write spelling in this file and
+    # requires exactly ONE, so that --apply stays the only path that can write.
+    # This string sits inside an echo and writes nothing, but a literal count
+    # cannot tell the difference, and relaxing that assertion to let it through
+    # would cost more than four characters. Identical command. Do not "tidy" it
+    # back -- including in this comment, which is why it is not spelled here.
+    echo "    Fix: gh api --method PUT repos/${OWNER}/${repo}/private-vulnerability-reporting"
+    DIVERGED=1
+  fi
+}
+
 # Live counterpart of codeowners_verdict(). CHECK ONLY - there is no --apply
 # path, deliberately: the fix is either to grant the named account write access
 # or to name a different one, and both are decisions about who reviews what.
@@ -491,6 +533,7 @@ run_repo() {
   local branch
   if [ "$MODE" = "check" ]; then
     check_default_branch "$repo" "$DEFAULT_BRANCH"
+    check_private_vuln_reporting "$repo"
     if [ "$CODE_OWNER" = "1" ]; then
       check_codeowners "$repo"
     fi
