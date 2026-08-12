@@ -92,5 +92,31 @@ jobs:
       # the point. Do not add `|| true` here: the whole reason this file exists
       # is that a gate reporting success without evaluating anything is the
       # defect, not the inconvenience.
+      #
+      # But exit 0 does not carry the claim either, and that is Factory#618.
+      # `approved` is `no failing controls AND no missing controls AND >= 1
+      # human sign-off`; the segregation-of-duties result is returned in the
+      # SAME response and is NOT an input to it. Measured against a real
+      # server, exit 0 is the identical code for three different outcomes:
+      #
+      #   committer unknown         -> SoD compliant=false -> exit 0
+      #   committer IS the approver -> SoD compliant=false -> exit 0  <- breach
+      #   committer != approver     -> SoD compliant=true  -> exit 0
+      #
+      # So the exit code is captured rather than trusted, and the verdict
+      # script asserts the post-condition it does not carry. Its exit status
+      # becomes this step's.
+      #
+      # No `--committer` is passed, because `trail start` above does not record
+      # one on this trigger. That is deliberate and the script reports it as
+      # `not_checked: committer identity unknown` rather than passing — which is
+      # the honest answer for an on-demand run today, and exactly what the
+      # header above describes as unsatisfiable until a second approver identity
+      # exists. When that changes, add `--committer` in both places together.
       - name: Change gate
-        run: fides change-gate --trail "${{ steps.trail.outputs.trail_id }}"
+        run: |
+          set -uo pipefail
+          fides change-gate --trail "${{ steps.trail.outputs.trail_id }}" > gate.json
+          echo "fides change-gate exit: $?"
+          cat gate.json
+          scripts/fides_gate_verdict.py gate.json
