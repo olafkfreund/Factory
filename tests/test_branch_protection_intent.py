@@ -214,12 +214,22 @@ def test_gitops_gates_the_branch_that_reaches_the_cluster() -> None:
     cluster with nothing in the way. `kustomize build + schema` now runs on
     every PR and is required here.
 
+    The secret scan joined it as required in factory-gitops#209. It had been
+    running -- and failing -- on every PR for two months while two live API keys
+    sat readable in a PUBLIC repo, because it was optional and a permanently-red
+    optional check is one everybody scrolls past. Both are jobs of
+    manifest-validate.yml, which deliberately carries no `paths:` filter, so
+    requiring the second one cannot strand a manifest-free PR.
+
     Still no review requirement: bot-driven CD, and one would rest entirely on
     the admin bypass -- the same reason it was removed everywhere else (#484).
     """
     intent = _emit("factory-gitops", "main")
     assert intent["required_pull_request_reviews"] is None
-    assert intent["required_status_checks"]["contexts"] == ["kustomize build + schema"]
+    assert intent["required_status_checks"]["contexts"] == [
+        "kustomize build + schema",
+        "no literal secrets in manifests",
+    ]
     assert intent["allow_force_pushes"] is False
     assert intent["allow_deletions"] is False
 
@@ -263,8 +273,16 @@ def test_matching_live_response_compares_equal() -> None:
             True,
         ),
         ("AIFactory", "dev", ["backend (ruff + pytest)", _VCORE], False, None, False),
-        # The branch ArgoCD syncs to the cluster, gated at last (gitops#95).
-        ("factory-gitops", "main", ["kustomize build + schema"], True, None, True),
+        # The branch ArgoCD syncs to the cluster, gated at last (gitops#95),
+        # with the secret scan able to block since gitops#209.
+        (
+            "factory-gitops",
+            "main",
+            ["kustomize build + schema", "no literal secrets in manifests"],
+            True,
+            None,
+            True,
+        ),
     ]:
         code_owner = repo in {"PFactory", "TFactory", "AIFactory"} and reviews is not None
         live = _live_shaped(
