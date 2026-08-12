@@ -37,6 +37,19 @@ def digest(path: Path) -> str:
     return f"sha256:{sha256(data).hexdigest()[:12]} {len(data)}B"
 
 
+def expect(failures: list[str], condition: bool, label: str) -> None:
+    """Record a self-test failure instead of raising on the first one.
+
+    The other half of ``report_self_test``: collecting lets one run report every
+    broken case, and it survives ``python -O``, which strips bare asserts and
+    would silently turn a gate's self-test into a no-op. It lived twice before
+    the clone budget caught the second copy going in -- which is what the budget
+    is for, and the same reason the reporting tail below was extracted.
+    """
+    if not condition:
+        failures.append(label)
+
+
 def report_self_test(failures: list[str]) -> int:
     """Print a gate's own self-test outcome and return its exit code.
 

@@ -77,17 +77,23 @@ import json
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
+from typing import NoReturn
 
 # Sibling import: this runs out of a full hub checkout, exactly as
 # check_branch_divergence.py imports the same helper. No sys.path juggling --
 # `python3 scripts/x.py` already puts scripts/ first on the path.
-from gate_evidence import report_self_test
+from gate_evidence import expect, report_self_test
 
 OWNER = "olafkfreund"
 REPOS = ("Factory", "PFactory", "TFactory", "AIFactory", "CFactory", "factory-gitops")
 
 # GitHub's list endpoints cap at 100 per page, so a short page is the last page.
 _PAGE_SIZE = 100
+
+# The two shapes that move through here. Values are whatever the API returned,
+# so they stay `object` and are narrowed at each use rather than trusted.
+PR = dict[str, object]
+Finding = dict[str, object]
 
 # How long a commit must sit on a merged branch before it is reported. Pushing
 # right after a merge and opening the follow-up PR a minute later is the CORRECT
@@ -103,7 +109,7 @@ def say(msg: str) -> None:
     print(msg)  # noqa: T201
 
 
-def die(msg: str) -> None:
+def die(msg: str) -> NoReturn:
     eprint(f"FATAL: {msg}")
     sys.exit(2)
 
@@ -124,6 +130,15 @@ def gh_json(path: str) -> object:
     return json.loads(res.stdout)
 
 
+def as_str(v: object) -> str:
+    """API values arrive as ``object``; narrow rather than trust."""
+    return v if isinstance(v, str) else ""
+
+
+def as_int(v: object) -> int:
+    return v if isinstance(v, int) else 0
+
+
 def parse_ts(raw: str | None) -> datetime | None:
     if not raw:
         return None
@@ -134,8 +149,12 @@ def parse_ts(raw: str | None) -> datetime | None:
 
 
 def classify(
-    branch: str, tip: str, prs: list[dict], now: datetime, grace_hours: float
-) -> dict | None:
+    branch: str,
+    tip: str,
+    prs: list[PR],
+    now: datetime,
+    grace_hours: float,
+) -> Finding | None:
     """Pure. Return a finding for an orphaned branch, else None.
 
     ``prs`` is every PR opened from this branch, in any state. Only the most
@@ -146,21 +165,25 @@ def classify(
     if not prs:
         return None
 
-    newest = max(prs, key=lambda p: p.get("number", 0))
-    merged = parse_ts(newest.get("merged_at"))
+    newest = max(prs, key=lambda p: as_int(p.get("number")))
     quiet = (
         # In flight: whatever is pushed now still has a way in.
-        (newest.get("state") or "").upper() == "OPEN"
+        as_str(newest.get("state")).upper() == "OPEN"
         # Closed without merging. Abandoned, not orphaned -- those commits were
         # never expected to land, and saying otherwise is noise.
         or not newest.get("merged_at")
         # Everything on the branch is exactly what merged. The common case, so a
         # false positive here would bury every true one.
         or newest.get("head_sha") == tip
-        # An unparseable timestamp means we cannot age it: never alarm on doubt.
-        or merged is None
     )
     if quiet:
+        return None
+
+    # An unparseable timestamp means we cannot age it: never alarm on doubt.
+    # Kept as its own step rather than folded into `quiet` above so the None is
+    # narrowed for the subtraction below, instead of only being true at runtime.
+    merged = parse_ts(as_str(newest.get("merged_at")))
+    if merged is None:
         return None
 
     # Still inside the window where pushing and then opening a follow-up PR is
@@ -193,7 +216,7 @@ def branches_of(repo: str) -> list[tuple[str, str]]:
     return out
 
 
-def prs_for(repo: str, branch: str) -> list[dict]:
+def prs_for(repo: str, branch: str) -> list[PR]:
     rows = gh_json(
         f"repos/{OWNER}/{repo}/pulls?state=all&head={OWNER}:{branch}&per_page={_PAGE_SIZE}"
     )
@@ -210,7 +233,7 @@ def prs_for(repo: str, branch: str) -> list[dict]:
     ]
 
 
-def scan(repo: str, now: datetime, grace_hours: float) -> list[dict]:
+def scan(repo: str, now: datetime, grace_hours: float) -> list[Finding]:
     meta = gh_json(f"repos/{OWNER}/{repo}")
     if not isinstance(meta, dict):
         die(f"repos/{OWNER}/{repo} did not return an object")
@@ -219,7 +242,7 @@ def scan(repo: str, now: datetime, grace_hours: float) -> list[dict]:
     # head of a PR whose merge could strand a commit. branch-divergence.yml is
     # what watches the gap between those two.
     long_lived = {meta.get("default_branch"), "main", "dev"}
-    findings: list[dict] = []
+    findings: list[Finding] = []
     branches = branches_of(repo)
     for name, tip in branches:
         if name in long_lived:
@@ -230,11 +253,6 @@ def scan(repo: str, now: datetime, grace_hours: float) -> list[dict]:
             findings.append(f)
     eprint(f"  {repo}: {len(branches)} branch(es) examined, {len(findings)} orphaned")
     return findings
-
-
-def _expect(failures: list[str], condition: bool, label: str) -> None:
-    if not condition:
-        failures.append(label)
 
 
 def self_test() -> int:
@@ -250,14 +268,19 @@ def self_test() -> int:
     grace = DEFAULT_GRACE_HOURS
     failures: list[str] = []
 
-    def pr(n, state="closed", merged=old, head="aaa"):
+    def pr(
+        n: int,
+        state: str = "closed",
+        merged: str | None = old,
+        head: str = "aaa",
+    ) -> PR:
         return {"number": n, "state": state, "merged_at": merged, "head_sha": head}
 
     # THE REAL CASE: factory-gitops#180. Merged, then pushed to 2m32s later.
     f = classify("fix/563-odin-now-public", "3fd8ca1a", [pr(180, head="50b70a32")], now, grace)
-    _expect(failures, f is not None, "the real factory-gitops#180 orphan must fire")
+    expect(failures, f is not None, "the real factory-gitops#180 orphan must fire")
     if f is not None:
-        _expect(
+        expect(
             failures,
             f["tip"] == "3fd8ca1a" and f["pr_head"] == "50b70a32",
             "the finding must carry both shas, so the reader can diff them",
@@ -265,14 +288,14 @@ def self_test() -> int:
 
     # A correctly merged branch: tip IS the merged head. The commonest case by
     # far, so a false positive here would bury every true one.
-    _expect(
+    expect(
         failures,
         classify("b", "50b70a32", [pr(180, head="50b70a32")], now, grace) is None,
         "a correctly merged branch must stay silent",
     )
 
     # Work in flight must never be called orphaned.
-    _expect(
+    expect(
         failures,
         classify("b", "zzz", [pr(1, state="open", merged=None)], now, grace) is None,
         "an open PR is work in flight, not an orphan",
@@ -281,27 +304,27 @@ def self_test() -> int:
     # RECOVERY: the author noticed and opened a second PR from the same branch.
     # The newest PR's head is the new tip, so this goes quiet -- a check that
     # keeps shouting after the fix is one people learn to close unread.
-    _expect(
+    expect(
         failures,
         classify("b", "ccc", [pr(1, head="aaa"), pr(2, head="ccc")], now, grace) is None,
         "a follow-up PR that lands the commits must silence the finding",
     )
     # ...and it is the NEWEST PR that decides, not merely "some PR matches".
-    _expect(
+    expect(
         failures,
         classify("b", "ddd", [pr(1, head="ddd"), pr(2, head="ccc")], now, grace) is not None,
         "an OLD PR matching the tip must not excuse a newer merge that did not",
     )
 
     # Closed unmerged is abandoned, not orphaned.
-    _expect(
+    expect(
         failures,
         classify("b", "zzz", [pr(1, merged=None)], now, grace) is None,
         "a PR closed without merging leaves an abandoned branch, not an orphan",
     )
 
     # A branch that never had a PR is ordinary work in progress.
-    _expect(
+    expect(
         failures,
         classify("b", "zzz", [], now, grace) is None,
         "a branch with no PR at all is ordinary WIP",
@@ -309,25 +332,52 @@ def self_test() -> int:
 
     # GRACE: inside the window, pushing and then opening a follow-up PR is the
     # correct recovery and must stay silent; outside it, the same shape reports.
-    _expect(
+    expect(
         failures,
         classify("b", "zzz", [pr(1, merged=recent)], now, grace) is None,
         "a just-merged branch is inside the grace window",
     )
-    _expect(
+    expect(
         failures,
         classify("b", "zzz", [pr(1, merged=recent)], now, 0.0) is not None,
         "with no grace, the same branch must fire -- proving grace is what muted it",
     )
 
     # An unparseable merge timestamp must not be reported: never alarm on doubt.
-    _expect(
+    expect(
         failures,
         classify("b", "zzz", [pr(1, merged="not-a-date")], now, grace) is None,
         "an unreadable merged_at must not produce a finding",
     )
 
     return report_self_test(failures)
+
+
+def report(findings: list[Finding], repos: tuple[str, ...]) -> int:
+    """Print the verdict and return the exit code.
+
+    The clean path states how many repos it covered, deliberately: an "ok" with
+    no scope attached is indistinguishable from a run that scanned nothing.
+    """
+    if not findings:
+        say(
+            f"ok  no branch carries commits pushed after its PR merged "
+            f"({len(repos)} repo(s) scanned)"
+        )
+        return 0
+
+    for f in sorted(findings, key=lambda x: (as_str(x["repo"]), as_str(x["branch"]))):
+        hours = f["hours_since_merge"]
+        say(
+            f"::error::{as_str(f['repo'])} `{as_str(f['branch'])}` is at "
+            f"{as_str(f['tip'])[:8]} but PR #{as_int(f['pr'])} merged at "
+            f"{as_str(f['pr_head'])[:8]} "
+            f"({hours if isinstance(hours, float) else 0:.0f}h ago). Those commits "
+            f"are in no pull request and are not on the default branch. Open a PR "
+            f"for them, or delete the branch if they were superseded."
+        )
+    say(f"{len(findings)} orphaned branch(es)")
+    return 1
 
 
 def main() -> int:
@@ -343,27 +393,11 @@ def main() -> int:
     repos = tuple(args.repo) if args.repo else REPOS
     now = datetime.now(UTC)
     eprint(f"scanning {len(repos)} repo(s), grace={args.grace_hours:g}h")
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for r in repos:
         findings.extend(scan(r, now, args.grace_hours))
 
-    if not findings:
-        say(
-            f"ok  no branch carries commits pushed after its PR merged "
-            f"({len(repos)} repo(s) scanned)"
-        )
-        return 0
-
-    for f in sorted(findings, key=lambda x: (x["repo"], x["branch"])):
-        say(
-            f"::error::{f['repo']} `{f['branch']}` is at {f['tip'][:8]} but PR "
-            f"#{f['pr']} merged at {f['pr_head'][:8]} ({f['hours_since_merge']:.0f}h "
-            f"ago). Those commits are in no pull request and are not on the "
-            f"default branch. Open a PR for them, or delete the branch if they "
-            f"were superseded."
-        )
-    say(f"{len(findings)} orphaned branch(es)")
-    return 1
+    return report(findings, repos)
 
 
 if __name__ == "__main__":
