@@ -48,6 +48,7 @@ import check_cli_freshness as cli_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
 import check_merge_attribution as merge_gate
+import check_orphaned_pr_commits as orphan_gate
 import check_pin_freshness as pin_gate
 import check_planning_card_conformance as card_gate
 import check_verification_core_drift as vcore_gate
@@ -67,6 +68,7 @@ _COVERED: dict[str, str] = {
     "check_cli_freshness.py": "test_cli_freshness_gate_is_honest",
     "check_planning_card_conformance.py": "test_planning_card_conformance_gate_is_honest",
     "check_merge_attribution.py": "test_merge_attribution_gate_is_honest",
+    "check_orphaned_pr_commits.py": "test_orphaned_pr_commits_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -540,3 +542,71 @@ def test_merge_attribution_gate_is_honest(capsys: pytest.CaptureFixture[str]) ->
         merge_gate._SHARED_IDENTITIES = kept
 
     assert merge_gate.assess(merges)[0] == 1, "restoring the declaration must restore the red"
+
+
+def test_orphaned_pr_commits_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> None:
+    """factory-gitops#187's watchdog, held to this file's criteria.
+
+    Its subject is a commit that exists on a branch and nowhere else, so the
+    enumeration property is the whole value: the only reason to believe "nothing
+    orphaned" is that the run said how many branches it looked at, per repo.
+
+    The scope hazard here is the fleet list. This gate reads branches over the
+    API rather than deriving its subject from a file, so a repo silently leaving
+    ``REPOS`` removes it from the scan with nothing red -- which is why it is
+    asserted against the same ``ALL_REPOS`` declaration merge-attribution uses.
+    """
+    now = datetime.datetime(2026, 8, 12, 12, 0, tzinfo=datetime.UTC)
+    old = "2026-08-07T15:20:26Z"
+
+    def pr(number: int, head: str, merged: str | None = old) -> dict[str, object]:
+        return {
+            "number": number,
+            "state": "closed",
+            "merged_at": merged,
+            "head_sha": head,
+        }
+
+    # The real factory-gitops#180 orphan. The finding must carry BOTH shas: a
+    # reader cannot confirm the loss without the pair to diff.
+    finding = orphan_gate.classify(
+        "fix/563-odin-now-public", "3fd8ca1a", [pr(180, "50b70a32")], now, 12.0
+    )
+    assert finding is not None, "the real #180 orphan must be reported"
+    assert finding["tip"] == "3fd8ca1a", "the finding must carry the branch tip"
+    assert finding["pr_head"] == "50b70a32", "the finding must carry the merged head"
+
+    # Configuration mutation 1: the fleet list must not shrink unobserved. A repo
+    # dropped from REPOS is simply never scanned, and every remaining repo still
+    # reports "ok" -- the exact shape of a gate that narrows into green.
+    declared = re.search(
+        r"^ALL_REPOS=\(([^)]*)\)",
+        (_SCRIPTS / "apply_branch_protection.sh").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert declared, "apply_branch_protection.sh no longer declares ALL_REPOS"
+    assert set(orphan_gate.REPOS) == set(declared.group(1).split()), (
+        "the scanned repo list and the fleet's declared repo list have diverged — "
+        "a repo would go unscanned with nothing red"
+    )
+
+    # Configuration mutation 2: the grace window must be load-bearing rather than
+    # decorative. The SAME branch that is silent inside the window must fire
+    # outside it -- if it stayed silent, the quiet would be coming from something
+    # else and a real orphan could hide behind it.
+    recent = "2026-08-12T11:30:00Z"
+    assert orphan_gate.classify("b", "zzz", [pr(1, "aaa", recent)], now, 12.0) is None, (
+        "a just-merged branch must be inside the grace window"
+    )
+    assert orphan_gate.classify("b", "zzz", [pr(1, "aaa", recent)], now, 0.0) is not None, (
+        "with the window closed the same branch must fire — proving grace muted it"
+    )
+
+    # The PASS path must state its scope too. A run that printed nothing on a
+    # clean fleet would be indistinguishable from a run that scanned nothing.
+    assert orphan_gate.report([], ("Factory", "factory-gitops")) == 0
+    out = capsys.readouterr().out
+    assert "2 repo(s) scanned" in out, (
+        "the clean verdict must say how many repos it covered, or 'ok' is a claim "
+        "with no scope attached"
+    )

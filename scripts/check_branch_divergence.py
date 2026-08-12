@@ -75,7 +75,7 @@ from pathlib import Path
 
 # Sibling import: this runs out of a full hub checkout, exactly as the three
 # byte-comparison gates import `digest` from the same module.
-from gate_evidence import report_self_test
+from gate_evidence import expect, report_self_test
 
 DEFAULT_MAX_UNPROMOTED_HOURS = 24.0
 DEFAULT_CLONE_BASE = "https://github.com/olafkfreund"
@@ -366,51 +366,42 @@ def _build_backflow(root: Path, now: int) -> Path:
     return repo
 
 
-def _expect(failures: list[str], condition: bool, label: str) -> None:
-    if not condition:
-        failures.append(label)
-
-
 def _self_test_cases(root: Path, now: int, failures: list[str]) -> None:
     budget = 24.0
 
     code, block = check_repo(_build_benign(root, now), ("dev", "main"), now, budget)
-    _expect(
+    expect(
         failures,
         code == 0,
         "the real fleet shape (promotion merges + fresh dev work) must be quiet",
     )
-    _expect(
+    expect(
         failures,
         "backflow" in block and "none" in block,
         "the benign report must show zero backflow",
     )
 
     code, _ = check_repo(_build_dependabot(root, now), ("dev", "main"), now, budget)
-    _expect(failures, code == 0, "the same patch applied to both branches is not divergence")
+    expect(failures, code == 0, "the same patch applied to both branches is not divergence")
 
     code, block = check_repo(_build_stranded(root, now), ("dev", "main"), now, budget)
-    _expect(failures, code == 1, "a 3-day-old unpromoted fix must fire")
-    _expect(
-        failures, "#266" in block, "the report must name the stranded commit, not just count it"
-    )
+    expect(failures, code == 1, "a 3-day-old unpromoted fix must fire")
+    expect(failures, "#266" in block, "the report must name the stranded commit, not just count it")
 
     # Same repo, same commit, generous budget: the detector must be quiet again,
     # or "it fires" would only mean "it always fires".
     code, _ = check_repo(_build_stranded(root / "wide", now), ("dev", "main"), now, 24.0 * 30)
-    _expect(failures, code == 0, "an unpromoted commit inside the budget must stay quiet")
+    expect(failures, code == 0, "an unpromoted commit inside the budget must stay quiet")
 
     code, block = check_repo(_build_backflow(root, now), ("dev", "main"), now, budget)
-    _expect(
-        failures, code == 1, "a real commit on main with no equivalent on dev must fire at once"
-    )
-    _expect(failures, "#77" in block, "the backflow report must name the commit")
+    expect(failures, code == 1, "a real commit on main with no equivalent on dev must fire at once")
+    expect(failures, "#77" in block, "the backflow report must name the commit")
 
     missing = _new_repo(root, "NoDev", now)
     _run(["git", "-C", str(missing), "branch", "-D", "dev"])
     try:
         check_repo(missing, ("dev", "main"), now, budget)
-        _expect(failures, False, "a missing dev branch must raise, never return clean")
+        expect(failures, False, "a missing dev branch must raise, never return clean")
     except CannotDetermineError:
         pass
 
