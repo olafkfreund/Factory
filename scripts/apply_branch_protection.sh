@@ -143,7 +143,14 @@ repo_config() {
     # fleet with the highest blast radius; `kustomize build + schema` now runs
     # on every PR. Force-push and deletion stay blocked so ArgoCD's committed
     # history cannot be rewritten or dropped.
-    factory-gitops) CHECKS='["kustomize build + schema"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
+    #
+    # The secret scan is required as of factory-gitops#209. It had been running
+    # and failing on every PR for two months while two live API keys sat in a
+    # PUBLIC repo, because it was not required and a permanently-red optional
+    # check is one everybody learns to scroll past. Both jobs live in
+    # manifest-validate.yml, which carries no `paths:` filter, so requiring this
+    # cannot leave a manifest-free PR waiting on a check that never runs.
+    factory-gitops) CHECKS='["kustomize build + schema","no literal secrets in manifests"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     *) echo "no config for repo: $1" >&2; return 1 ;;
   esac
 }
