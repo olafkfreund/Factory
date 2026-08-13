@@ -95,11 +95,30 @@ jobs:
         # to guard against here (that risk is a dev-machine problem — see
         # the script's default REPO_REFS and Factory#729 for why the default
         # reads a named remote ref instead of trusting a working tree).
+        #
+        # `2>&1 | tee ... ; exit ${PIPESTATUS[0]}` rather than a bare `run:`,
+        # so the SAME output that decides pass/fail also lands in the job
+        # summary in the next step, on EITHER outcome — a run that produced
+        # no measurement must not look identical to a clean pass (g2-seclint,
+        # 2026-08-13: two prior Factory gates sat at zero successful runs
+        # ever, invisible for exactly this reason).
         run: |
+          set -o pipefail
           python3 Factory/scripts/check_security_fork_drift.py \
             --fleet-root "${GITHUB_WORKSPACE}" \
             --ref Factory=HEAD --ref PFactory=HEAD --ref AIFactory=HEAD \
-            --ref TFactory=HEAD --ref CFactory=HEAD
+            --ref TFactory=HEAD --ref CFactory=HEAD 2>&1 | tee compare-output.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: Publish the verdict to the run summary (always, not just on failure)
+        if: always()
+        run: |
+          {
+            echo "## security-fork-drift"
+            echo '```'
+            cat compare-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: File/update a tracking issue on failure
         if: failure()
