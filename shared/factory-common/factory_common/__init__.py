@@ -5,6 +5,7 @@ re-implements:
 
 * :mod:`factory_common.http` - Cloudflare-friendly typed urllib JSON client.
 * :mod:`factory_common.secrets` - canonical secret-pattern table + redact/scan.
+* :mod:`factory_common.logsafe` - CWE-117 log-value sanitizer (sanitize_log).
 
 Established by the Phase-1 deduplication work in the code-quality program
 (epic Factory#154, issue Factory#161).
@@ -22,6 +23,7 @@ from factory_common.http import (
     no_auth,
     private_token_auth,
 )
+from factory_common.logsafe import DEFAULT_MAX_LENGTH, sanitize_log
 from factory_common.secrets import (
     PLACEHOLDER,
     SECRET_PATTERNS,
@@ -32,6 +34,7 @@ from factory_common.secrets import (
 )
 
 __all__ = [
+    "DEFAULT_MAX_LENGTH",
     "DEFAULT_USER_AGENT",
     "PLACEHOLDER",
     "SECRET_PATTERNS",
@@ -45,5 +48,6 @@ __all__ = [
     "no_auth",
     "private_token_auth",
     "redact",
+    "sanitize_log",
     "scan",
 ]
