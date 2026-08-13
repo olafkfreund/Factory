@@ -74,9 +74,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Module-level state — single attach token. Subsequent init calls are idempotent.
+# Module-level state. Subsequent init calls are idempotent.
 _initialized: bool = False
-_attach_token = None
 _job_span = None
 _provider = None
 
@@ -112,7 +111,7 @@ def init_agent_tracing() -> None:
     No-op when ``TRACEPARENT`` is not set — standalone CLI runs and dev sessions
     keep working untouched.
     """
-    global _initialized, _attach_token, _job_span, _provider  # noqa: PLW0603
+    global _initialized, _job_span, _provider  # noqa: PLW0603
     if _initialized:
         return
 
@@ -164,7 +163,10 @@ def init_agent_tracing() -> None:
         _job_span = trace.get_tracer(__name__).start_span(
             _span_name(), context=parent_ctx, attributes=_span_attributes()
         )
-        _attach_token = attach(trace.set_span_in_context(_job_span, parent_ctx))
+        # Token discarded: never detached, on purpose — the process exits shortly
+        # after (see _flush_at_exit's shutdown() note above), so there is no later
+        # context to restore.
+        attach(trace.set_span_in_context(_job_span, parent_ctx))
         atexit.register(_flush_at_exit)
 
         logger.info(
