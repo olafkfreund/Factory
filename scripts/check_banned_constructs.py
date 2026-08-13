@@ -25,7 +25,7 @@ YAML list of ``{path, rule, reason, issue}``; an entry with no ``issue`` is
 itself a gate failure (an unreviewed grandfather is not a grandfather).
 
 Usage:
-    python scripts/check_banned_constructs.py --root . --allowlist standards/banned-constructs-allowlist.yaml
+    python scripts/check_banned_constructs.py --root . --allowlist banned-constructs-allowlist.yaml
     python scripts/check_banned_constructs.py --self-test
 
 Exit codes:
@@ -36,12 +36,12 @@ Exit codes:
 
 from __future__ import annotations
 
-import argparse
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
+
+from gate_evidence import expect, gate_argparser, gate_fixture, parse_or_self_test, report_self_test
 
 try:
     import yaml
@@ -49,7 +49,12 @@ except ImportError:  # pragma: no cover - CI always has pyyaml; self-test doesn'
     yaml = None  # type: ignore[assignment]
 
 _SKIP_DIRS = {
-    "node_modules", "venv", "__pycache__", "dist", "build", "vendor",
+    "node_modules",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+    "vendor",
     "site-packages",
 }
 
@@ -66,12 +71,8 @@ def _is_skippable(path: Path) -> bool:
     return any(part in _SKIP_DIRS or part.startswith(".") for part in path.parts)
 
 
-_EXISTS_THEN_READ = re.compile(
-    r"(existsSync|\.exists\(\)|os\.path\.exists)\s*\("
-)
-_RAW_EXCEPTION = re.compile(
-    r"\b(str\(e\)|str\(exc\)|repr\(e\)|repr\(exc\))"
-)
+_EXISTS_THEN_READ = re.compile(r"(existsSync|\.exists\(\)|os\.path\.exists)\s*\(")
+_RAW_EXCEPTION = re.compile(r"\b(str\(e\)|str\(exc\)|repr\(e\)|repr\(exc\))")
 _HTTP_RESPONSE_HINT = re.compile(
     r"(HTTPException|JSONResponse|Response|jsonify|res\.json|res\.send|reply)",
     re.IGNORECASE,
@@ -169,17 +170,25 @@ def _scanned_commit(root: Path) -> str:
     try:
         commit = subprocess.run(  # noqa: S603
             ["git", "-C", str(root), "rev-parse", "HEAD"],  # noqa: S607
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
         branch = subprocess.run(  # noqa: S603
             ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],  # noqa: S607
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
         dirty = subprocess.run(  # noqa: S603
             ["git", "-C", str(root), "status", "--porcelain"],  # noqa: S607
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
-        dirty_note = " (dirty working tree — uncommitted changes were also scanned)" if dirty else ""
+        dirty_note = (
+            " (dirty working tree — uncommitted changes were also scanned)" if dirty else ""
+        )
         return f"{branch}@{commit[:12]}{dirty_note}"
     except (OSError, subprocess.CalledProcessError):
         return "UNKNOWN — not a git repo, or git is unavailable"
@@ -207,20 +216,10 @@ def run_check(root: Path, allowlist_path: Path | None) -> int:
 
 
 def _self_test() -> int:
-    failures: list[str] = []
-
-    def expect(condition: bool, label: str) -> None:
-        if not condition:
-            failures.append(label)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-
+    with gate_fixture() as (root, failures):
         # Case 1: clean file -> no violations.
-        (root / "clean.py").write_text(
-            "def read(path):\n    return path.read_text()\n"
-        )
-        expect(check(root, None) == [], "a clean file must produce no violations")
+        (root / "clean.py").write_text("def read(path):\n    return path.read_text()\n")
+        expect(failures, check(root, None) == [], "a clean file must produce no violations")
 
         # Case 2 (mutation): exists-then-read TOCTOU, JS shape.
         (root / "toctou.js").write_text(
@@ -228,6 +227,7 @@ def _self_test() -> int:
         )
         problems = check(root, None)
         expect(
+            failures,
             any("exists-then-read" in p and "toctou.js" in p for p in problems),
             "existsSync-then-read must be caught",
         )
@@ -243,10 +243,15 @@ def _self_test() -> int:
         )
         problems = check(root, None)
         expect(
+            failures,
             any("raw-exception-in-response" in p and "handler.py" in p for p in problems),
             "str(e) returned via HTTPException must be caught",
         )
-        expect(run_check(root, None) == 1, "run_check must fail with an uncaught violation present")
+        expect(
+            failures,
+            run_check(root, None) == 1,
+            "run_check must fail with an uncaught violation present",
+        )
 
         # Case 4: allowlisting the handler.py finding silences exactly that one.
         allowlist = root / "allowlist.yaml"
@@ -258,10 +263,12 @@ def _self_test() -> int:
         )
         remaining = check(root, allowlist)
         expect(
+            failures,
             not any("handler.py" in p for p in remaining),
             "an allowlisted (path, rule) pair must be silenced",
         )
         expect(
+            failures,
             any("toctou.js" not in p for p in remaining) or not remaining,
             "allowlisting one finding must not silence unrelated files",
         )
@@ -272,30 +279,26 @@ def _self_test() -> int:
             "- path: handler.py\n  rule: raw-exception-in-response\n  reason: no issue ref\n"
         )
         expect(
+            failures,
             run_check(root, bad_allowlist) == 1,
             "an allowlist entry without an issue ref must itself fail the gate",
         )
 
         # Case 6: healed -> back to green (with the reviewed allowlist).
-        (root / "handler.py").write_text(
-            "def handler(request):\n    return safe_message()\n"
+        (root / "handler.py").write_text("def handler(request):\n    return safe_message()\n")
+        expect(
+            failures, run_check(root, allowlist) == 0, "gate must pass once the violation is fixed"
         )
-        expect(run_check(root, allowlist) == 0, "gate must pass once the violation is fixed")
 
         # Case 7: the scanned commit is stated, and a non-git directory says so
         # honestly rather than omitting the line (rule 4.10 — reproducibility).
         expect(
+            failures,
             _scanned_commit(root) == "UNKNOWN — not a git repo, or git is unavailable",
             "a non-git directory must honestly report it cannot cite a commit",
         )
 
-    if failures:
-        print("SELF-TEST FAILED:")  # noqa: T201
-        for failure in failures:
-            print(f"  - {failure}")  # noqa: T201
-        return 1
-    print("SELF-TEST OK: banned-constructs gate behaves as specified.")  # noqa: T201
-    return 0
+    return report_self_test(failures)
 
 
 def _emit_allowlist(root: Path, issue: str) -> str:
@@ -318,24 +321,31 @@ def _emit_allowlist(root: Path, issue: str) -> str:
         if key in seen:
             continue
         seen.add(key)
-        lines.append(f"- path: {e['path']}\n  rule: {e['rule']}\n  reason: grandfathered at gate rollout\n  issue: {issue}\n")
+        lines.append(
+            f"- path: {e['path']}\n"
+            f"  rule: {e['rule']}\n"
+            "  reason: grandfathered at gate rollout\n"
+            f"  issue: {issue}\n"
+        )
     return "".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = gate_argparser(__doc__)
     parser.add_argument("--root", help="repo root to scan")
     parser.add_argument("--allowlist", help="path to the YAML allowlist file")
-    parser.add_argument("--self-test", action="store_true")
     parser.add_argument(
         "--emit-allowlist",
         metavar="ISSUE",
         help="print a grandfather allowlist covering today's findings, tagged with ISSUE, and exit",
     )
-    args = parser.parse_args(argv)
-
-    if args.self_test:
-        return _self_test()
+    early, args = parse_or_self_test(parser, argv, _self_test)
+    if early is not None:
+        return early
+    # --emit-allowlist is checked below, not added as a mutually-exclusive
+    # group with --root: an operator wants BOTH set (scan --root, tag the
+    # findings with --emit-allowlist's issue ref).
+    assert args is not None  # noqa: S101 - parse_or_self_test guarantees this when early is None
     if not args.root:
         parser.error("--root is required (or pass --self-test)")
     if args.emit_allowlist:

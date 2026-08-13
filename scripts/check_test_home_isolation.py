@@ -39,6 +39,8 @@ import tempfile
 from hashlib import sha256
 from pathlib import Path
 
+from gate_evidence import expect, gate_argparser, parse_or_self_test, report_self_test
+
 
 def _snapshot(home: Path) -> dict[str, tuple[int, float, str]]:
     """Map of relative path -> (size, mtime_ns, content sha256) for every file under home."""
@@ -98,10 +100,6 @@ def run_isolated(home: Path, command: list[str]) -> int:
 def _self_test() -> int:
     failures: list[str] = []
 
-    def expect(condition: bool, label: str) -> None:
-        if not condition:
-            failures.append(label)
-
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "home"
         home.mkdir()
@@ -109,7 +107,7 @@ def _self_test() -> int:
 
         # Case 1: command that touches nothing under home -> clean.
         rc = run_isolated(home, [sys.executable, "-c", "pass"])
-        expect(rc == 0, "a no-op command must not report contamination")
+        expect(failures, rc == 0, "a no-op command must not report contamination")
 
         # Case 2 (the mutation): command writes a new file under home, exactly
         # the shape of a test suite warming ~/.aifactory/skills-cache.pkl.
@@ -119,7 +117,7 @@ def _self_test() -> int:
             f"open(r'{home / 'skills-cache.pkl'}', 'wb').write(b'poisoned')",
         ]
         rc = run_isolated(home, write_cmd)
-        expect(rc == 1, "a command that creates a file under $HOME must fail the gate")
+        expect(failures, rc == 1, "a command that creates a file under $HOME must fail the gate")
         (home / "skills-cache.pkl").unlink()
 
         # Case 3: command that modifies an existing home file.
@@ -129,31 +127,24 @@ def _self_test() -> int:
             f"open(r'{home / 'existing.txt'}', 'w').write('mutated\\n')",
         ]
         rc = run_isolated(home, modify_cmd)
-        expect(rc == 1, "a command that modifies a $HOME file must fail the gate")
+        expect(failures, rc == 1, "a command that modifies a $HOME file must fail the gate")
         (home / "existing.txt").write_text("unchanged\n")
 
         # Case 4: healed again -> back to green.
         rc = run_isolated(home, [sys.executable, "-c", "pass"])
-        expect(rc == 0, "gate must pass again once the run stops touching $HOME")
+        expect(failures, rc == 0, "gate must pass again once the run stops touching $HOME")
 
-    if failures:
-        print("SELF-TEST FAILED:")  # noqa: T201
-        for failure in failures:
-            print(f"  - {failure}")  # noqa: T201
-        return 1
-    print("SELF-TEST OK: test-home-isolation gate behaves as specified.")  # noqa: T201
-    return 0
+    return report_self_test(failures)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = gate_argparser(__doc__)
     parser.add_argument("--home", help="the $HOME directory to watch")
-    parser.add_argument("--self-test", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="-- the test command to run")
-    args = parser.parse_args(argv)
-
-    if args.self_test:
-        return _self_test()
+    early, args = parse_or_self_test(parser, argv, _self_test)
+    if early is not None:
+        return early
+    assert args is not None  # noqa: S101 - parse_or_self_test guarantees this when early is None
     if not args.home or not args.command:
         parser.error("--home and a -- command are required (or pass --self-test)")
     command = args.command[1:] if args.command and args.command[0] == "--" else args.command

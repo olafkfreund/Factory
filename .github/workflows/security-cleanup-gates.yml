@@ -6,7 +6,10 @@ name: security-cleanup gates
 # since both currently pass and there is no legacy backlog to grandfather
 # (they read config files, not source code). Gate 5 (banned constructs) is
 # BLOCKING on new occurrences only, via the grandfather allowlist at
-# standards/banned-constructs-allowlist.yaml (Factory#718 tracks the flip to
+# banned-constructs-allowlist.yaml (repo root — NOT standards/, which is the
+# vendored-into-siblings contract; this file is per-repo grandfather data,
+# never shared byte-exact, so it lives next to root mypy.ini/ruff.toml
+# instead). Factory#718 tracks the flip to
 # fully blocking).
 #
 # Gate 3 (fork-drift) is NOT here: it needs five repos checked out and is
@@ -48,4 +51,4 @@ jobs:
         run: python3 scripts/check_codeql_exclude_pairing.py --repo .
 
       - name: Gate 5 — banned constructs (blocking on new occurrences; allowlist ratchets down)
-        run: python3 scripts/check_banned_constructs.py --root . --allowlist standards/banned-constructs-allowlist.yaml
+        run: python3 scripts/check_banned_constructs.py --root . --allowlist banned-constructs-allowlist.yaml

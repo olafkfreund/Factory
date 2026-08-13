@@ -20,8 +20,83 @@ resolves on ``sys.path`` with no workflow change and no pin bump.
 
 from __future__ import annotations
 
+import argparse
+import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from hashlib import sha256
 from pathlib import Path
+
+
+def gate_argparser(description: str | None) -> argparse.ArgumentParser:
+    """An ``ArgumentParser`` with the ``--self-test`` flag every gate's CLI carries.
+
+    Factory#720. Six new gates landed the same day and jscpd caught the
+    argparse-plus-dispatch boilerplate as net-new duplication within the
+    hour — the same clone-budget mechanism this module's docstring already
+    describes catching three copies of the reporting tail. Extracted here
+    rather than left as a sixth (seventh, ...) copy.
+    """
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--self-test", action="store_true", help="run the built-in self-test and exit"
+    )
+    return parser
+
+
+def dispatch_self_test(argv_self_test: bool, self_test_fn: Callable[[], int]) -> int | None:
+    """Return the self-test's exit code if ``--self-test`` was passed, else None.
+
+    The other half of :func:`gate_argparser`. Most callers want
+    :func:`parse_or_self_test` instead, which folds this in with
+    ``parser.parse_args``; exposed separately for a gate that needs the two
+    steps apart.
+    """
+    if argv_self_test:
+        return self_test_fn()
+    return None
+
+
+def parse_or_self_test(
+    parser: argparse.ArgumentParser, argv: list[str] | None, self_test_fn: Callable[[], int]
+) -> tuple[int | None, argparse.Namespace | None]:
+    """Parse *argv*; if ``--self-test`` was passed, run it instead.
+
+    Returns ``(exit_code, None)`` when the self-test ran (the caller returns
+    immediately), or ``(None, args)`` to continue with the parsed arguments —
+    the standard shape every gate's ``main()`` needs, once, in one place.
+    """
+    args = parser.parse_args(argv)
+    result = dispatch_self_test(args.self_test, self_test_fn)
+    if result is not None:
+        return result, None
+    return None, args
+
+
+@contextmanager
+def temp_repo() -> Iterator[Path]:
+    """A throwaway directory for a gate's self-test fixtures.
+
+    Every hub gate's self-test builds a synthetic repo tree in a tmp dir so
+    its logic is verified without touching any real repo; this was the same
+    two lines (``with tempfile.TemporaryDirectory() as tmp: root = Path(tmp)``)
+    in enough gates to trip the clone budget.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        yield Path(tmp)
+
+
+@contextmanager
+def gate_fixture() -> Iterator[tuple[Path, list[str]]]:
+    """``temp_repo`` plus the ``failures`` list every ``_self_test`` collects into.
+
+    ``with gate_fixture() as (repo, failures): ...`` replaces the
+    standard four-line ``_self_test`` header — one more piece of the same
+    argparse/self-test boilerplate jscpd caught duplicated across the six
+    gates that landed in one PR (Factory#720).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        yield Path(tmp), []
 
 
 def digest(path: Path) -> str:

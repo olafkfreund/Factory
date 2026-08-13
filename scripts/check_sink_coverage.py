@@ -49,16 +49,23 @@ Exit codes:
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from gate_evidence import expect, gate_argparser, parse_or_self_test, report_self_test, temp_repo
+
 _SKIP_DIRS = {
-    "node_modules", "venv", "__pycache__", "dist", "build", "vendor",
-    "tests", "test", "site-packages",
+    "node_modules",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+    "vendor",
+    "tests",
+    "test",
+    "site-packages",
 }
 
 
@@ -68,6 +75,7 @@ def _is_skippable(path: Path) -> bool:
     .claude/worktrees/<agent>/ checkout — see that script for the full story.
     """
     return any(part in _SKIP_DIRS or part.startswith(".") for part in path.parts)
+
 
 _OPT_OUT = re.compile(r"sink-guard-exempt:\s*\S")
 
@@ -82,7 +90,9 @@ class SinkClass:
 SINK_CLASSES: tuple[SinkClass, ...] = (
     SinkClass(
         "outbound-http",
-        re.compile(r"\b(httpx\.(get|post|put|delete|patch|request)|requests\.(get|post|put|delete|patch|request)|urlopen)\s*\("),
+        re.compile(
+            r"\b(httpx\.(get|post|put|delete|patch|request)|requests\.(get|post|put|delete|patch|request)|urlopen)\s*\("
+        ),
         "http_guard",
     ),
     SinkClass(
@@ -167,22 +177,15 @@ def run_check(root: Path, guards: dict[str, re.Pattern[str] | None], window: int
 def _self_test() -> int:
     failures: list[str] = []
 
-    def expect(condition: bool, label: str) -> None:
-        if not condition:
-            failures.append(label)
-
     http_guard = re.compile(r"url_safety\.check")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-
+    with temp_repo() as root:
         # Case 1: guarded call site -> clean.
         (root / "guarded.py").write_text(
-            "def fetch(url):\n"
-            "    url_safety.check(url)\n"
-            "    return httpx.get(url)\n"
+            "def fetch(url):\n    url_safety.check(url)\n    return httpx.get(url)\n"
         )
         expect(
+            failures,
             find_unguarded(root, {"http_guard": http_guard}) == [],
             "a sink within window of its guard must not be flagged",
         )
@@ -197,12 +200,18 @@ def _self_test() -> int:
         body += "def fetch_14(url):\n    return httpx.get(url)  # forgot the guard\n"
         (root / "routes.py").write_text(body)
         problems = find_unguarded(root, {"http_guard": http_guard})
-        expect(len(problems) == 1, f"exactly the unguarded 14th call site must be flagged, got {problems}")
         expect(
+            failures,
+            len(problems) == 1,
+            f"exactly the unguarded 14th call site must be flagged, got {problems}",
+        )
+        expect(
+            failures,
             bool(problems) and "fetch_14" not in problems[0] and "routes.py:" in problems[0],
             "flagged line must point at the unguarded call",
         )
         expect(
+            failures,
             run_check(root, {"http_guard": http_guard}, window=8) == 1,
             "run_check must fail when one sink of 14 is unguarded",
         )
@@ -217,6 +226,7 @@ def _self_test() -> int:
             p for p in find_unguarded(root, {"http_guard": http_guard}) if "trusted.py" in p
         ]
         expect(
+            failures,
             trusted_problems == [],
             "an opt-out comment must silence that call site only",
         )
@@ -226,38 +236,42 @@ def _self_test() -> int:
         # report a vacuous OK (rule 4.10 — an unset guard is the process
         # succeeding while checking nothing, same shape as the original defect).
         expect(
-            run_check(root, {"http_guard": None, "argv_guard": None, "path_guard": None}, window=8) == 1,
+            failures,
+            run_check(root, {"http_guard": None, "argv_guard": None, "path_guard": None}, window=8)
+            == 1,
             "run_check with zero configured guards must fail loud, not report a vacuous pass",
         )
 
         # Case 4: healed (guard added to the 14th site) -> back to green.
-        (root / "routes.py").write_text(body.replace("return httpx.get(url)  # forgot the guard", "url_safety.check(url)\n    return httpx.get(url)"))
+        (root / "routes.py").write_text(
+            body.replace(
+                "return httpx.get(url)  # forgot the guard",
+                "url_safety.check(url)\n    return httpx.get(url)",
+            )
+        )
         expect(
+            failures,
             run_check(root, {"http_guard": http_guard}, window=8) == 0,
             "run_check must pass once every sink is guarded again",
         )
 
-    if failures:
-        print("SELF-TEST FAILED:")  # noqa: T201
-        for failure in failures:
-            print(f"  - {failure}")  # noqa: T201
-        return 1
-    print("SELF-TEST OK: sink-coverage gate behaves as specified.")  # noqa: T201
-    return 0
+    return report_self_test(failures)
 
 
+# Three separate --*-guard flags, not one: each sink class (Gate 4's whole
+# point) needs its own guard pattern, and a repo may only have wired one or
+# two of the three so far.
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = gate_argparser(__doc__)
     parser.add_argument("--root", help="repo root to scan")
     parser.add_argument("--http-guard", help="regex matching a call to the outbound-HTTP guard")
     parser.add_argument("--argv-guard", help="regex matching a call to the subprocess-argv guard")
     parser.add_argument("--path-guard", help="regex matching a call to the path-containment guard")
     parser.add_argument("--window", type=int, default=8)
-    parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args(argv)
-
-    if args.self_test:
-        return _self_test()
+    early, args = parse_or_self_test(parser, argv, _self_test)
+    if early is not None:
+        return early
+    assert args is not None  # noqa: S101 - parse_or_self_test guarantees this when early is None
     if not args.root:
         parser.error("--root is required (or pass --self-test)")
     guards = {

@@ -39,12 +39,12 @@ Exit codes:
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import sys
-import tempfile
 from pathlib import Path
+
+from gate_evidence import expect, gate_argparser, gate_fixture, parse_or_self_test, report_self_test
 
 try:
     import yaml
@@ -62,7 +62,11 @@ def _find_init_step_queries(workflow_text: str) -> tuple[str | None, str | None]
     routinely breaks strict YAML loaders. This mirrors how the value is
     actually consumed (a `with:` block under one `uses: .../init` step).
     """
-    m = re.search(r"uses:\s*github/codeql-action/init@.*?(?=\n\s*-\s*(?:uses|name|run):|\Z)", workflow_text, re.S)
+    m = re.search(
+        r"uses:\s*github/codeql-action/init@.*?(?=\n\s*-\s*(?:uses|name|run):|\Z)",
+        workflow_text,
+        re.S,
+    )
     if not m:
         return None, None
     block = m.group(0)
@@ -93,7 +97,11 @@ def effective_suite(repo: Path) -> tuple[bool, str]:
     workflow_text = candidates[0].read_text(encoding="utf-8")
     queries_input, config_file_input = _find_init_step_queries(workflow_text)
     if queries_input is None and config_file_input is None:
-        return False, f"{candidates[0].name}: codeql-action/init has neither `queries:` nor `config-file:` — defaults to CodeQL's narrow default suite"
+        return (
+            False,
+            f"{candidates[0].name}: codeql-action/init has neither `queries:` nor "
+            "`config-file:` — defaults to CodeQL's narrow default suite",
+        )
 
     if config_file_input:
         # THE MECHANIC: config-file REPLACES queries:, regardless of what
@@ -127,11 +135,14 @@ def check_sarif_floor(sarif_path: Path, min_rules: int) -> tuple[bool, str]:
     data = json.loads(sarif_path.read_text(encoding="utf-8"))
     rule_ids: set[str] = set()
     for run in data.get("runs", []):
-        for rule in (run.get("tool", {}).get("driver", {}).get("rules") or []):
+        for rule in run.get("tool", {}).get("driver", {}).get("rules") or []:
             if rule.get("id"):
                 rule_ids.add(rule["id"])
     if len(rule_ids) < min_rules:
-        return False, f"SARIF carries only {len(rule_ids)} distinct rule id(s), expected >= {min_rules}"
+        return (
+            False,
+            f"SARIF carries only {len(rule_ids)} distinct rule id(s), expected >= {min_rules}",
+        )
     return True, f"SARIF carries {len(rule_ids)} distinct rule id(s)"
 
 
@@ -153,14 +164,7 @@ def run_check(repo: Path, sarif: Path | None, min_rules: int) -> int:
 
 
 def _self_test() -> int:
-    failures: list[str] = []
-
-    def expect(condition: bool, label: str) -> None:
-        if not condition:
-            failures.append(label)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp)
+    with gate_fixture() as (repo, failures):
         (repo / ".github" / "workflows").mkdir(parents=True)
         (repo / ".github" / "codeql").mkdir(parents=True)
 
@@ -170,7 +174,7 @@ def _self_test() -> int:
             "        with:\n          queries: security-and-quality\n"
         )
         ok, _ = effective_suite(repo)
-        expect(ok, "queries: security-and-quality with no config-file must resolve true")
+        expect(failures, ok, "queries: security-and-quality with no config-file must resolve true")
 
         # Case 2 (the mutation, exact shape of today's failure): a config file
         # is introduced for a barrier query, WITHOUT re-listing
@@ -185,9 +189,16 @@ def _self_test() -> int:
             "query-filters:\n  - exclude:\n      id: py/path-injection\n"
         )
         ok, explanation = effective_suite(repo)
-        expect(not ok, "a config-file that drops security-and-quality must be caught even though queries: still says it")
-        expect("REPLACES" in explanation, "explanation must name the replace mechanic")
-        expect(run_check(repo, None, 0) == 1, "run_check must fail on the silent downgrade")
+        expect(
+            failures,
+            not ok,
+            "a config-file that drops security-and-quality must be caught even "
+            "though queries: still says it",
+        )
+        expect(failures, "REPLACES" in explanation, "explanation must name the replace mechanic")
+        expect(
+            failures, run_check(repo, None, 0) == 1, "run_check must fail on the silent downgrade"
+        )
 
         # Case 3: config file correctly re-lists security-and-quality -> fixed.
         (repo / ".github" / "codeql" / "codeql-config.yml").write_text(
@@ -195,49 +206,54 @@ def _self_test() -> int:
             "  - uses: ./.github/codeql/custom-queries\n"
             "query-filters:\n  - exclude:\n      id: py/path-injection\n"
         )
-        expect(run_check(repo, None, 0) == 0, "run_check must pass once the config re-lists the suite")
+        expect(
+            failures,
+            run_check(repo, None, 0) == 0,
+            "run_check must pass once the config re-lists the suite",
+        )
 
         # Case 4: neither queries: nor config-file present -> narrow default, caught.
         (repo / ".github" / "workflows" / "codeql.yml").write_text(
             "jobs:\n  analyze:\n    steps:\n      - uses: github/codeql-action/init@v3\n"
         )
         ok, _ = effective_suite(repo)
-        expect(not ok, "no queries: and no config-file must resolve to the narrow default and fail")
+        expect(
+            failures,
+            not ok,
+            "no queries: and no config-file must resolve to the narrow default and fail",
+        )
 
         # Case 5: SARIF floor — a green-but-empty analysis is caught.
         sarif_empty = repo / "empty.sarif"
         sarif_empty.write_text(json.dumps({"runs": [{"tool": {"driver": {"rules": []}}}]}))
         ok, explanation = check_sarif_floor(sarif_empty, min_rules=50)
-        expect(not ok, "an empty SARIF must fail the rule-count floor")
+        expect(failures, not ok, "an empty SARIF must fail the rule-count floor")
 
         sarif_real = repo / "real.sarif"
         sarif_real.write_text(
             json.dumps(
-                {"runs": [{"tool": {"driver": {"rules": [{"id": f"py/rule-{i}"} for i in range(60)]}}}]}
+                {
+                    "runs": [
+                        {"tool": {"driver": {"rules": [{"id": f"py/rule-{i}"} for i in range(60)]}}}
+                    ]
+                }
             )
         )
         ok, explanation = check_sarif_floor(sarif_real, min_rules=50)
-        expect(ok, "a SARIF with 60 distinct rules must pass a floor of 50")
+        expect(failures, ok, "a SARIF with 60 distinct rules must pass a floor of 50")
 
-    if failures:
-        print("SELF-TEST FAILED:")  # noqa: T201
-        for failure in failures:
-            print(f"  - {failure}")  # noqa: T201
-        return 1
-    print("SELF-TEST OK: codeql-query-suite gate behaves as specified.")  # noqa: T201
-    return 0
+    return report_self_test(failures)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = gate_argparser(__doc__)
     parser.add_argument("--repo", help="repo root containing .github/")
     parser.add_argument("--sarif", help="path to a downloaded SARIF file to floor-check")
     parser.add_argument("--min-rules", type=int, default=50)
-    parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args(argv)
-
-    if args.self_test:
-        return _self_test()
+    early, args = parse_or_self_test(parser, argv, _self_test)
+    if early is not None:
+        return early
+    assert args is not None  # noqa: S101 - parse_or_self_test guarantees this when early is None
     if not args.repo:
         parser.error("--repo is required (or pass --self-test)")
     sarif = Path(args.sarif) if args.sarif else None

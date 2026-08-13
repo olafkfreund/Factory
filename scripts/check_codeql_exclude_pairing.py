@@ -28,11 +28,12 @@ Exit codes:
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
 import tempfile
 from pathlib import Path
+
+from gate_evidence import expect, gate_argparser, gate_fixture, parse_or_self_test, report_self_test
 
 
 def _excluded_rule_ids(config_path: Path) -> list[str]:
@@ -97,14 +98,7 @@ def run_check(repo: Path) -> int:
 
 
 def _self_test() -> int:
-    failures: list[str] = []
-
-    def expect(condition: bool, label: str) -> None:
-        if not condition:
-            failures.append(label)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp)
+    with gate_fixture() as (repo, failures):
         (repo / ".github" / "codeql" / "custom-queries").mkdir(parents=True)
         config = repo / ".github" / "codeql" / "codeql-config.yml"
         query_dir = repo / ".github" / "codeql" / "custom-queries"
@@ -118,27 +112,38 @@ def _self_test() -> int:
             " */\n"
             "class Sanitizer extends DataFlow::Node { }\n"
         )
-        expect(check(repo) == [], "a properly paired, documented exclude must not be flagged")
+        expect(
+            failures, check(repo) == [], "a properly paired, documented exclude must not be flagged"
+        )
 
         # Case 2 (the mutation): the custom query file is deleted (or its @id
         # renamed) while the exclude stays — the exact failure PFactory#517
         # exists to catch.
         (query_dir / "PathInjectionSanitized.ql").unlink()
         problems = check(repo)
-        expect(len(problems) == 1, f"a deleted replacement query must be caught, got {problems}")
         expect(
+            failures,
+            len(problems) == 1,
+            f"a deleted replacement query must be caught, got {problems}",
+        )
+        expect(
+            failures,
             bool(problems) and "py/path-injection" in problems[0],
             "the flagged rule id must be the orphaned exclude",
         )
-        expect(run_check(repo) == 1, "run_check must fail when an exclude loses its replacement")
+        expect(
+            failures,
+            run_check(repo) == 1,
+            "run_check must fail when an exclude loses its replacement",
+        )
 
         # Case 3: replacement restored but with no doc comment -> still flagged.
         (query_dir / "PathInjectionSanitized.ql").write_text(
-            " * @id py/path-injection-sanitized\n"
-            "class Sanitizer extends DataFlow::Node { }\n"
+            " * @id py/path-injection-sanitized\nclass Sanitizer extends DataFlow::Node { }\n"
         )
         problems = check(repo)
         expect(
+            failures,
             len(problems) == 1 and "does not document" in problems[0],
             f"a replacement with no @id doc comment must be flagged as unpaired, got {problems}",
         )
@@ -151,29 +156,30 @@ def _self_test() -> int:
             " */\n"
             "class Sanitizer extends DataFlow::Node { }\n"
         )
-        expect(run_check(repo) == 0, "run_check must pass once the replacement is restored and documented")
+        expect(
+            failures,
+            run_check(repo) == 0,
+            "run_check must pass once the replacement is restored and documented",
+        )
 
         # Case 5: no config file at all -> not a violation (nothing to pair).
         no_config_repo = Path(tempfile.mkdtemp())
-        expect(run_check(no_config_repo) == 0, "a repo with no codeql-config.yml must pass trivially")
+        expect(
+            failures,
+            run_check(no_config_repo) == 0,
+            "a repo with no codeql-config.yml must pass trivially",
+        )
 
-    if failures:
-        print("SELF-TEST FAILED:")  # noqa: T201
-        for failure in failures:
-            print(f"  - {failure}")  # noqa: T201
-        return 1
-    print("SELF-TEST OK: codeql-exclude-pairing gate behaves as specified.")  # noqa: T201
-    return 0
+    return report_self_test(failures)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = gate_argparser(__doc__)
     parser.add_argument("--repo", help="repo root containing .github/codeql/")
-    parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args(argv)
-
-    if args.self_test:
-        return _self_test()
+    early, args = parse_or_self_test(parser, argv, _self_test)
+    if early is not None:
+        return early
+    assert args is not None  # noqa: S101 - parse_or_self_test guarantees this when early is None
     if not args.repo:
         parser.error("--repo is required (or pass --self-test)")
     return run_check(Path(args.repo))

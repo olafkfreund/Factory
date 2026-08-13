@@ -69,12 +69,12 @@ Exit codes:
 
 from __future__ import annotations
 
-import argparse
 import subprocess
 import sys
-import tempfile
 from hashlib import sha256
 from pathlib import Path
+
+from gate_evidence import expect, gate_argparser, parse_or_self_test, report_self_test, temp_repo
 
 # The ref each repo is compared AT. The hub releases from `main`; the four
 # service repos are gated on `dev` (same convention chart-vs-gitops.yml
@@ -188,6 +188,9 @@ def _matching_divergence(name: str, digests: dict[str, str]) -> dict[str, object
     return None
 
 
+_MIN_COPIES_TO_COMPARE = 2  # 0 or 1 present copies means nothing to compare
+
+
 def check_drift(fleet_root: Path, repo_refs: dict[str, str] | None = None) -> list[str]:
     """Return one problem string per registry entry that fails its truth condition."""
     repo_refs = REPO_REFS if repo_refs is None else repo_refs
@@ -195,8 +198,8 @@ def check_drift(fleet_root: Path, repo_refs: dict[str, str] | None = None) -> li
     for name, copies in REGISTRY.items():
         kind = copies.get("_kind", "vendored")
         present = _present_ref_copies(fleet_root, copies, repo_refs)
-        if len(present) < 2:
-            continue  # nothing to compare — 0 or 1 present copies
+        if len(present) < _MIN_COPIES_TO_COMPARE:
+            continue
         file_digests = {repo: sha256(data).hexdigest() for repo, data in present.items()}
         reference_repo, reference_digest = next(iter(file_digests.items()))
         diverged = any(d != reference_digest for d in file_digests.values())
@@ -267,9 +270,14 @@ def _init_git_repo(root: Path, files: dict[str, str]) -> None:
     exercised against real git plumbing rather than a stub.
     """
     root.mkdir(parents=True, exist_ok=True)
-    run = lambda *args: subprocess.run(  # noqa: E731
-        ["git", "-C", str(root), *args], check=True, capture_output=True
-    )
+
+    def run(*args: str) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), *args],  # noqa: S607
+            check=True,
+            capture_output=True,
+        )
+
     run("init", "-q")
     run("config", "user.email", "test@example.com")
     run("config", "user.name", "test")
@@ -297,21 +305,148 @@ def _commit(root: Path, rel: str, content: str) -> None:
     )
 
 
+def _self_test_vendored(root: Path, refs: dict[str, str], failures: list[str]) -> None:
+    """Vendored-kind cases: byte-exact at the ref, always. Split out of
+    ``_self_test`` (PLR0915 — one function covering both kinds ran past the
+    fleet's 50-statement cap, the same structural discipline this batch's
+    gates enforce on everything else)."""
+    REGISTRY["vendored-thing.py"] = {
+        "_kind": "vendored",
+        "RepoA": "sub/thing.py",
+        "RepoB": "sub/thing.py",
+        "RepoC": "sub/thing.py",
+    }
+    expect(failures, check_drift(root, refs) == [], "identical vendored copies must not drift")
+
+    # A DIRTY WORKING TREE must not affect the verdict — this is the exact
+    # bug (Factory#729) this rewrite exists to close. Edit the file on disk
+    # WITHOUT committing; the gate must still read the last commit via git
+    # show and see no drift.
+    (root / "RepoB" / "sub" / "thing.py").write_text("SAFE = 0  # uncommitted, not a real change\n")
+    expect(
+        failures,
+        check_drift(root, refs) == [],
+        "an uncommitted working-tree edit must NOT be seen as drift (Factory#729)",
+    )
+    # Restore the working tree so later commits are made against a matching base.
+    (root / "RepoB" / "sub" / "thing.py").write_text("SAFE = 1\n")
+
+    # A repo with no copy of the path at its ref is skipped, not a failure.
+    _init_git_repo(root / "RepoD_no_copy", {})
+    REGISTRY["vendored-thing-optional.py"] = {
+        "_kind": "vendored",
+        "RepoA": "sub/thing.py",
+        "RepoD": "sub/thing.py",
+    }
+    refs["RepoD"] = "main"
+    expect(
+        failures,
+        check_drift(root, refs) == [],
+        "a repo with no copy of the path at its ref must be skipped, not flagged",
+    )
+    del REGISTRY["vendored-thing-optional.py"]
+    del refs["RepoD"]
+
+    # Mutation: RepoB gets a REAL commit reverting the fix.
+    _commit(root / "RepoB", "sub/thing.py", "SAFE = 0  # bug reintroduced\n")
+    problems = check_drift(root, refs)
+    expect(failures, len(problems) == 1, f"exactly one vendored entry must drift, got {problems}")
+    expect(
+        failures, run_check(root, refs) == 1, "run_check must fail when a vendored fork diverges"
+    )
+    _commit(root / "RepoB", "sub/thing.py", "SAFE = 1\n")
+    expect(
+        failures, run_check(root, refs) == 0, "run_check must pass once vendored copies match again"
+    )
+
+    REGISTRY.clear()
+
+
+def _self_test_forked(root: Path, failures: list[str]) -> None:
+    """Forked-kind cases: registered-divergence model, same ref-reading."""
+    _init_git_repo(root / "ForkA", {"sub/forked.py": "BASE = 1\n"})
+    _init_git_repo(root / "ForkB", {"sub/forked.py": "BASE = 1\n"})
+    fork_refs = {"ForkA": "main", "ForkB": "main"}
+    REGISTRY["forked-thing.py"] = {
+        "_kind": "forked",
+        "ForkA": "sub/forked.py",
+        "ForkB": "sub/forked.py",
+    }
+    expect(
+        failures,
+        check_drift(root, fork_refs) == [],
+        "identical forked copies must not drift (nothing to register)",
+    )
+
+    # Case: a NEW, unregistered divergence, committed for real -> fails.
+    _commit(root / "ForkB", "sub/forked.py", "BASE = 1\nEXTRA_FEATURE = True\n")
+    problems = check_drift(root, fork_refs)
+    expect(
+        failures,
+        len(problems) == 1 and "NO registered divergence" in problems[0],
+        f"an unregistered forked divergence must be flagged, got {problems}",
+    )
+    expect(
+        failures,
+        run_check(root, fork_refs) == 1,
+        "run_check must fail on an unregistered forked divergence",
+    )
+
+    # Register it with the exact current (committed) digests -> passes.
+    a_digest = sha256((root / "ForkA" / "sub" / "forked.py").read_bytes()).hexdigest()
+    b_digest = sha256((root / "ForkB" / "sub" / "forked.py").read_bytes()).hexdigest()
+    FORK_DIVERGENCES.append(
+        {
+            "name": "forked-thing.py",
+            "digests": {"ForkA": a_digest, "ForkB": b_digest},
+            "reason": "ForkB carries an extra feature, deliberately not ported",
+            "issue": "FAKE-1",
+        }
+    )
+    expect(
+        failures,
+        run_check(root, fork_refs) == 0,
+        "run_check must pass once the divergence is registered with an issue ref",
+    )
+
+    # Case: the registered divergence then drifts FURTHER (a new commit) ->
+    # must fail again, not stay silently green.
+    _commit(root / "ForkB", "sub/forked.py", "BASE = 1\nEXTRA_FEATURE = True\nEVEN_MORE = 2\n")
+    problems = check_drift(root, fork_refs)
+    expect(
+        failures,
+        len(problems) == 1 and "do NOT match the registered snapshot" in problems[0],
+        f"a divergence that moves past its registration must be re-flagged, got {problems}",
+    )
+
+    # Case: a registration with NO issue ref fails outright, same as Gate 5.
+    FORK_DIVERGENCES.clear()
+    new_b_digest = sha256((root / "ForkB" / "sub" / "forked.py").read_bytes()).hexdigest()
+    FORK_DIVERGENCES.append(
+        {
+            "name": "forked-thing.py",
+            "digests": {"ForkA": a_digest, "ForkB": new_b_digest},
+            "reason": "no issue ref on purpose",
+            "issue": "",
+        }
+    )
+    expect(
+        failures,
+        run_check(root, fork_refs) == 1,
+        "a registered divergence with no issue ref must fail, not pass",
+    )
+
+
 def _self_test() -> int:
     failures: list[str] = []
 
-    def expect(condition: bool, label: str) -> None:
-        if not condition:
-            failures.append(label)
-
     try:
-        subprocess.run(["git", "--version"], check=True, capture_output=True)  # noqa: S603, S607
+        subprocess.run(["git", "--version"], check=True, capture_output=True)  # noqa: S607
     except (OSError, subprocess.CalledProcessError):
         print("SELF-TEST SKIPPED: git binary not available")  # noqa: T201
         return 0
 
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
+    with temp_repo() as root:
         for repo in ("RepoA", "RepoB", "RepoC"):
             _init_git_repo(root / repo, {"sub/thing.py": "SAFE = 1\n"})
         # `local` refs, not `origin/`: this self-test has no remote, so it
@@ -324,134 +459,28 @@ def _self_test() -> int:
         try:
             REGISTRY.clear()
             FORK_DIVERGENCES.clear()
-
-            # --- vendored kind: byte-exact at the ref, always ---
-            REGISTRY["vendored-thing.py"] = {
-                "_kind": "vendored",
-                "RepoA": "sub/thing.py",
-                "RepoB": "sub/thing.py",
-                "RepoC": "sub/thing.py",
-            }
-            expect(check_drift(root, refs) == [], "identical vendored copies must not drift")
-
-            # A DIRTY WORKING TREE must not affect the verdict — this is the
-            # exact bug (Factory#729) this rewrite exists to close. Edit the
-            # file on disk WITHOUT committing; the gate must still read the
-            # last commit via git show and see no drift.
-            (root / "RepoB" / "sub" / "thing.py").write_text("SAFE = 0  # uncommitted, not a real change\n")
-            expect(
-                check_drift(root, refs) == [],
-                "an uncommitted working-tree edit must NOT be seen as drift (Factory#729)",
-            )
-            # Restore the working tree so later commits are made against a
-            # matching base.
-            (root / "RepoB" / "sub" / "thing.py").write_text("SAFE = 1\n")
-
-            # A repo with no copy of the path at its ref is skipped, not a failure.
-            _init_git_repo(root / "RepoD_no_copy", {})
-            REGISTRY["vendored-thing-optional.py"] = {
-                "_kind": "vendored",
-                "RepoA": "sub/thing.py",
-                "RepoD": "sub/thing.py",
-            }
-            refs["RepoD"] = "main"
-            expect(
-                check_drift(root, refs) == [],
-                "a repo with no copy of the path at its ref must be skipped, not flagged",
-            )
-            del REGISTRY["vendored-thing-optional.py"]
-            del refs["RepoD"]
-
-            # Mutation: RepoB gets a REAL commit reverting the fix.
-            _commit(root / "RepoB", "sub/thing.py", "SAFE = 0  # bug reintroduced\n")
-            problems = check_drift(root, refs)
-            expect(len(problems) == 1, f"exactly one vendored entry must drift, got {problems}")
-            expect(run_check(root, refs) == 1, "run_check must fail when a vendored fork diverges")
-            _commit(root / "RepoB", "sub/thing.py", "SAFE = 1\n")
-            expect(run_check(root, refs) == 0, "run_check must pass once vendored copies match again")
-
-            REGISTRY.clear()
-
-            # --- forked kind: registered-divergence model, same ref-reading ---
-            _init_git_repo(root / "ForkA", {"sub/forked.py": "BASE = 1\n"})
-            _init_git_repo(root / "ForkB", {"sub/forked.py": "BASE = 1\n"})
-            fork_refs = {"ForkA": "main", "ForkB": "main"}
-            REGISTRY["forked-thing.py"] = {
-                "_kind": "forked",
-                "ForkA": "sub/forked.py",
-                "ForkB": "sub/forked.py",
-            }
-            expect(
-                check_drift(root, fork_refs) == [],
-                "identical forked copies must not drift (nothing to register)",
-            )
-
-            # Case: a NEW, unregistered divergence, committed for real -> fails.
-            _commit(root / "ForkB", "sub/forked.py", "BASE = 1\nEXTRA_FEATURE = True\n")
-            problems = check_drift(root, fork_refs)
-            expect(
-                len(problems) == 1 and "NO registered divergence" in problems[0],
-                f"an unregistered forked divergence must be flagged, got {problems}",
-            )
-            expect(run_check(root, fork_refs) == 1, "run_check must fail on an unregistered forked divergence")
-
-            # Register it with the exact current (committed) digests -> passes.
-            a_digest = sha256((root / "ForkA" / "sub" / "forked.py").read_bytes()).hexdigest()
-            b_digest = sha256((root / "ForkB" / "sub" / "forked.py").read_bytes()).hexdigest()
-            FORK_DIVERGENCES.append(
-                {
-                    "name": "forked-thing.py",
-                    "digests": {"ForkA": a_digest, "ForkB": b_digest},
-                    "reason": "ForkB carries an extra feature, deliberately not ported",
-                    "issue": "FAKE-1",
-                }
-            )
-            expect(run_check(root, fork_refs) == 0, "run_check must pass once the divergence is registered with an issue ref")
-
-            # Case: the registered divergence then drifts FURTHER (a new
-            # commit) -> must fail again, not stay silently green.
-            _commit(root / "ForkB", "sub/forked.py", "BASE = 1\nEXTRA_FEATURE = True\nEVEN_MORE = 2\n")
-            problems = check_drift(root, fork_refs)
-            expect(
-                len(problems) == 1 and "do NOT match the registered snapshot" in problems[0],
-                f"a divergence that moves past its registration must be re-flagged, got {problems}",
-            )
-
-            # Case: a registration with NO issue ref fails outright, same as Gate 5.
-            FORK_DIVERGENCES.clear()
-            new_b_digest = sha256((root / "ForkB" / "sub" / "forked.py").read_bytes()).hexdigest()
-            FORK_DIVERGENCES.append(
-                {
-                    "name": "forked-thing.py",
-                    "digests": {"ForkA": a_digest, "ForkB": new_b_digest},
-                    "reason": "no issue ref on purpose",
-                    "issue": "",
-                }
-            )
-            expect(
-                run_check(root, fork_refs) == 1,
-                "a registered divergence with no issue ref must fail, not pass",
-            )
+            _self_test_vendored(root, refs, failures)
+            _self_test_forked(root, failures)
         finally:
             REGISTRY.clear()
             REGISTRY.update(registry_backup)
             FORK_DIVERGENCES.clear()
             FORK_DIVERGENCES.extend(divergences_backup)
 
-    if failures:
-        print("SELF-TEST FAILED:")  # noqa: T201
-        for failure in failures:
-            print(f"  - {failure}")  # noqa: T201
-        return 1
-    print("SELF-TEST OK: security-fork-drift gate behaves as specified.")  # noqa: T201
-    return 0
+    return report_self_test(failures)
 
 
+# --fleet-root plus a per-repo --ref: the CLI takes both a directory AND a ref
+# per repo, unlike the single-repo gates above it, because this comparator's
+# whole point is reading several repos at once (see REPO_REFS's docstring).
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = gate_argparser(__doc__)
     parser.add_argument(
         "--fleet-root",
-        help="directory containing Factory/, PFactory/, AIFactory/, TFactory/, CFactory/ git checkouts",
+        help=(
+            "directory containing Factory/, PFactory/, AIFactory/, TFactory/, "
+            "CFactory/ git checkouts"
+        ),
     )
     parser.add_argument(
         "--ref",
@@ -470,11 +499,10 @@ def main(argv: list[str] | None = None) -> int:
             "remote-tracking ref to exist at all."
         ),
     )
-    parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args(argv)
-
-    if args.self_test:
-        return _self_test()
+    early, args = parse_or_self_test(parser, argv, _self_test)
+    if early is not None:
+        return early
+    assert args is not None  # noqa: S101 - parse_or_self_test guarantees this when early is None
     if not args.fleet_root:
         parser.error("--fleet-root is required (or pass --self-test)")
     repo_refs = dict(REPO_REFS)
