@@ -3,11 +3,6 @@
 The load-bearing test is :func:`test_forged_log_line_does_not_appear`: it runs a
 real ``logging`` pipeline and asserts the attacker's second record is not there.
 Break :func:`sanitize_log` (let a raw newline through) and that test goes red.
-
-Lives in the hub's ``tests/`` rather than next to the module in
-``shared/factory-common/tests/`` because CI runs ``pytest tests/`` and nothing
-runs the latter directory (Factory#716) - a canonical whose guard never executes
-is the always-green gate this repo keeps re-learning about.
 """
 
 from __future__ import annotations
@@ -17,7 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
-_PKG_ROOT = Path(__file__).resolve().parents[1] / "shared" / "factory-common"
+_PKG_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PKG_ROOT))
 
 from factory_common.logsafe import DEFAULT_MAX_LENGTH, sanitize_log  # noqa: E402
