@@ -24,7 +24,6 @@ from typing import Any
 
 import contract_schema as cs
 import pytest
-from contract_schema import jsonschema
 
 _SCHEMA_FILE = "planning-card.schema.json"
 _TAXONOMY_FILE = "status-taxonomy.json"
@@ -57,12 +56,12 @@ def _subschema(ref: str | None = None) -> dict[str, Any]:
 
 
 def _errors(doc: Any, ref: str | None = None) -> list[str]:
-    validator = jsonschema.Draft202012Validator(_subschema(ref))
+    validator = cs.jsonschema.Draft202012Validator(_subschema(ref))
     return [e.message for e in validator.iter_errors(doc)]
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
-    jsonschema.Draft202012Validator.check_schema(_schema())
+    cs.jsonschema.Draft202012Validator.check_schema(_schema())
 
 
 @pytest.mark.parametrize("name", ["card-planned", "card-in-factory"])

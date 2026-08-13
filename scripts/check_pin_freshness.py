@@ -230,6 +230,36 @@ GATES: tuple[Gate, ...] = (
         # a PR. (The workflow carries no filter regardless — see its header.)
         required_check=False,
     ),
+    Gate(
+        name="security-lint",
+        workflow=".github/workflows/security-lint.yml",
+        canonical_root="shared/factory-seclint",
+        # The whole-repo security-sink gate (Factory#726). Registered only NOW,
+        # after all four services merged their copies — a gate declared here
+        # before its consumers hold the file makes this watchdog red on a
+        # missing path rather than on a stale pin, which is the failure
+        # standards/README.md warns about in as many words ("never register a
+        # file in a service's gate before that service has the file").
+        #
+        # ALL FOUR SERVICES, unlike every gate below it. This canonical is not
+        # vendored subset-by-subset: each service carries the identical pair,
+        # because the rule set is the fleet's security bar and a service running
+        # a narrower one would be the exact drift the gate exists to prevent.
+        layouts={
+            service: {
+                "ruff-security.toml": "security-lint/ruff-security.toml",
+                "security_lint.py": "security-lint/security_lint.py",
+            }
+            for service in ("pfactory", "aifactory", "tfactory", "cfactory")
+        },
+        # Not a REQUIRED status check yet. It is blocking on every PR in all
+        # four repos from the day it landed; promoting it in branch protection
+        # is a separate, deliberate step. Until then a `paths:` filter on it
+        # would not wedge a PR — and it carries none regardless, deliberately:
+        # a whole-repo gate that only wakes for .py changes cannot see a finding
+        # introduced by a config change.
+        required_check=False,
+    ),
 )
 
 _OWNER = "olafkfreund"

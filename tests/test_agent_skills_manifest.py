@@ -23,7 +23,6 @@ from typing import Any
 
 import contract_schema as cs
 import pytest
-from contract_schema import jsonschema
 
 _SCHEMA_FILE = "agent-skills-manifest.schema.json"
 _SERVICES = ("pfactory", "aifactory", "tfactory", "cfactory")
@@ -46,7 +45,7 @@ def _errors(doc: dict[str, Any]) -> list[str]:
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
-    jsonschema.Draft202012Validator.check_schema(cs.schema(_SCHEMA_FILE))
+    cs.jsonschema.Draft202012Validator.check_schema(cs.schema(_SCHEMA_FILE))
 
 
 @pytest.mark.parametrize("name", _SERVICES)
