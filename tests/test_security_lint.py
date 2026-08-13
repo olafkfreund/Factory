@@ -218,9 +218,16 @@ def test_a_broken_ruff_invocation_fails_closed(tmp_path: Path) -> None:
 def test_the_self_test_passes_against_the_real_config() -> None:
     """The proof that ships to every service. It must work with what ships."""
     proc = subprocess.run(  # noqa: S603
-        [sys.executable, str(Path(security_lint.__file__)), "--config", str(_CONFIG),
-         "--self-test"],
-        capture_output=True, text=True, check=False,
+        [
+            sys.executable,
+            str(Path(security_lint.__file__)),
+            "--config",
+            str(_CONFIG),
+            "--self-test",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
@@ -235,9 +242,16 @@ def test_the_self_test_fails_when_the_config_stops_selecting_s301(tmp_path: Path
     weakened = tmp_path / "weak.toml"
     weakened.write_text('target-version = "py311"\n[lint]\nselect = ["S102"]\n', encoding="utf-8")
     proc = subprocess.run(  # noqa: S603
-        [sys.executable, str(Path(security_lint.__file__)), "--config", str(weakened),
-         "--self-test"],
-        capture_output=True, text=True, check=False,
+        [
+            sys.executable,
+            str(Path(security_lint.__file__)),
+            "--config",
+            str(weakened),
+            "--self-test",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert proc.returncode == 1, proc.stdout
     assert "did NOT produce S301" in proc.stdout
