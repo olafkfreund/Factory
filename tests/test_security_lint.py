@@ -14,6 +14,7 @@ that a mock would skip.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -200,6 +201,19 @@ issue = "Factory#721"
     assert f"NEW SECURITY-SINK FINDINGS ({declared})" in out, (
         f"removing an entry declaring count={declared} must surface exactly "
         f"{declared} finding(s); got:\n{out}"
+    )
+
+    # And the headline number must equal the findings actually LISTED beneath it.
+    # Rule 4.10 turned on this gate's own report: a summary count sourced from a
+    # different list than the detail lines is a status channel reporting on
+    # something other than what it produced. The count above would still pass
+    # while the operator reads a shorter list and fixes fewer sinks.
+    #
+    # Derived from the output rather than hardcoded, so it cannot drift out of
+    # sync with the `declared` fixture the way a second literal would.
+    listed = re.findall(r"^\s+\S+\.py:\d+: S\d+ ", out, re.M)
+    assert len(listed) == declared, (
+        f"the report claims {declared} finding(s) but lists {len(listed)}:\n{out}"
     )
 
 
