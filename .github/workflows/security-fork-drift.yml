@@ -98,7 +98,13 @@ jobs:
           set -euo pipefail
           title="security-fork-drift: scheduled run failed or found drift"
           body="The scheduled security-fork-drift workflow failed or found unregistered drift. See the run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          existing=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "in:title \"${title}\"" --state open --json number --jq '.[0].number' || true)
+          # Verified live against the real repo (not assumed): a bare
+          # `in:title "exact phrase"` search with a colon in the phrase
+          # silently matched nothing, which would have created a fresh
+          # duplicate issue on every single failed run. `security-fork-drift
+          # in:title` (no quoted phrase, no colon) plus an exact-title jq
+          # filter is the form that actually found the issue on retest.
+          existing=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "security-fork-drift in:title" --state open --json number,title --jq ".[] | select(.title == \"${title}\") | .number" || true)
           if [ -n "${existing}" ]; then
             gh issue comment "${existing}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
           else

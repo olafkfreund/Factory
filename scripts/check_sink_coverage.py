@@ -57,9 +57,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _SKIP_DIRS = {
-    ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", "vendor", "tests", "test",
+    "node_modules", "venv", "__pycache__", "dist", "build", "vendor",
+    "tests", "test", "site-packages",
 }
+
+
+def _is_skippable(path: Path) -> bool:
+    """Same dot-directory rule as check_banned_constructs.py: a bare named
+    skip-set let a scan walk into .venv-ci/, .techdocs-venv/ and a nested
+    .claude/worktrees/<agent>/ checkout — see that script for the full story.
+    """
+    return any(part in _SKIP_DIRS or part.startswith(".") for part in path.parts)
 
 _OPT_OUT = re.compile(r"sink-guard-exempt:\s*\S")
 
@@ -93,7 +101,7 @@ SINK_CLASSES: tuple[SinkClass, ...] = (
 def _iter_source_files(root: Path) -> list[Path]:
     out: list[Path] = []
     for path in root.rglob("*.py"):
-        if any(part in _SKIP_DIRS for part in path.parts):
+        if _is_skippable(path.relative_to(root)):
             continue
         out.append(path)
     return out

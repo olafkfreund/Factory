@@ -48,9 +48,22 @@ except ImportError:  # pragma: no cover - CI always has pyyaml; self-test doesn'
     yaml = None  # type: ignore[assignment]
 
 _SKIP_DIRS = {
-    ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", "vendor",
+    "node_modules", "venv", "__pycache__", "dist", "build", "vendor",
+    "site-packages",
 }
+
+
+def _is_skippable(path: Path) -> bool:
+    """True if any path component is noise: third-party deps, caches, or a
+    dot-directory. The dot-directory rule is broad on purpose — it caught a
+    real bug: without it this scan walked into .venv-ci/, .techdocs-venv/ and
+    even a nested `.claude/worktrees/<other-agent>/` checkout (a full second
+    copy of the repo an unrelated agent had checked out), which inflated a
+    baseline allowlist with hundreds of third-party-library and duplicate-repo
+    findings that have nothing to do with this repo's own code.
+    """
+    return any(part in _SKIP_DIRS or part.startswith(".") for part in path.parts)
+
 
 _EXISTS_THEN_READ = re.compile(
     r"(existsSync|\.exists\(\)|os\.path\.exists)\s*\("
@@ -69,7 +82,7 @@ def _iter_source_files(root: Path) -> list[Path]:
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in _SKIP_DIRS for part in path.parts):
+        if _is_skippable(path.relative_to(root)):
             continue
         if path.suffix in (".py", ".js", ".ts", ".tsx", ".jsx"):
             out.append(path)

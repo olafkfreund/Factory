@@ -96,11 +96,14 @@ FORK_DIVERGENCES: list[dict[str, object]] = [
         "reason": (
             "AIFactory carries suggest_selected_skills/suggestion_to_selected "
             "(a feature PFactory has no caller for, deliberately not ported) "
-            "plus an Optional[X] vs X | None typing-style difference. The RCE "
-            "(pickle cache) fix that originally flagged this pair is closed on "
-            "both sides — see Factory#(this PR)."
+            "plus an Optional[X] vs X | None typing-style difference (tracked "
+            "separately, Factory#725). The pickle-cache RCE that originally "
+            "flagged this pair is closed on both sides. Factory#727 tracks the "
+            "actual hub-canonical decision (port suggest_selected_skills to "
+            "PFactory, or keep it AIFactory-only permanently) — NOT Factory#718, "
+            "which is Gate 5's unrelated ratchet-flip-date issue."
         ),
-        "issue": "Factory#718",
+        "issue": "Factory#727",
     },
 ]
 
