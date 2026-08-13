@@ -27,7 +27,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, javascript-typescript]
+        # `actions` added 2026-08-13. AIFactory, TFactory and factory-gitops
+        # scanned it; the hub did not, so its own workflows were unexamined and
+        # reported ZERO Actions alerts by not looking. TFactory reports 48
+        # unpinned-tag and 1 untrusted-checkout from the same shape of file.
+        # This is the #711 defect one level down: there it was a narrow query
+        # SUITE, here it is an omitted LANGUAGE. Expect the count to rise on the
+        # first scan; that is the change working, not a regression.
+        language: [python, javascript-typescript, actions]
 
     steps:
       - uses: actions/checkout@v4

@@ -10,6 +10,13 @@ work in the code-quality program (epic Factory#154, issue Factory#161).
 | --- | --- |
 | `factory_common/http.py` | Cloudflare-friendly typed urllib JSON client: Mozilla User-Agent, pluggable auth (bearer / basic / GitLab private-token), timeout, and a bounded retry on 5xx / network error. |
 | `factory_common/secrets.py` | Canonical secret-pattern table plus `scan()` (leak detection) and `redact()` (safe logging). |
+| `factory_common/logsafe.py` | `sanitize_log()` - CWE-117 / `py/log-injection` fix: escapes CR/LF and control characters in a value before it reaches a log message, so untrusted input cannot forge a log record. |
+| `factory_common/url_safety.py` | `assert_safe_outbound_url()` - SSRF guard for any URL a service fetches on a caller's behalf, in a strict and a permissive posture, plus a redirect-following fetch that re-validates every hop. |
+
+`url_safety.assert_safe_outbound_url` is registered as a sanitizer BY NAME in
+each consumer's `.github/codeql/custom-queries/SsrfBarriers.qll`. Moving the
+module is safe; **renaming the function un-registers the barrier silently** and
+reopens every alert it clears. `tests/test_url_safety.py` pins the name.
 
 Both are **stdlib-only** so they import anywhere (CI, a coder pod, a one-off
 script) with no third-party dependency, matching the rest of the deduped hub
@@ -45,13 +52,22 @@ Both refactors are **behaviour-preserving** and locked by
 
 ```python
 from factory_common.http import HttpClient, bearer_auth
+from factory_common.logsafe import sanitize_log
 from factory_common.secrets import redact
 
 client = HttpClient(base_url="https://api.example", auth=bearer_auth(token))
 resp = client.get("/health")            # -> HttpResponse(status, json)
 
 log.info(redact(f"calling with {token}"))   # -> "calling with ***REDACTED***"
+
+log.info("starting task %s", sanitize_log(task_id))
+# task_id = "abc\nERROR: fake entry"  ->  "starting task abc\\nERROR: fake entry"
+# one record, not two; the payload stays readable and greppable.
 ```
+
+`redact` and `sanitize_log` are complementary and compose: `redact` removes
+*secrets we are about to leak outward*, `sanitize_log` neutralises *untrusted
+input coming inward*. A log line carrying both concerns wants both.
 
 ## Consumption model
 
