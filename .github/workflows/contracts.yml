@@ -147,7 +147,20 @@ jobs:
         # One step rather than a job per file for the reason the old steps all
         # cited: a second job duplicates the checkout/setup block against the
         # jscpd clone budget (Factory#161), which only ratchets down.
-        run: pytest -v tests/
+        #
+        # shared/factory-common/tests/ joined this scope in Factory#716. The
+        # note above replaced a hand-maintained file list precisely because it
+        # "made an unrun test possible" -- and then scoped the replacement to
+        # tests/ only, so the 35 cases in test_http.py and test_secrets.py were
+        # left outside it and had never executed. They cover the canonical that
+        # FOUR repos vendor byte-exact, which makes them the highest-leverage
+        # tests in the repo and the ones least affordable to leave unrun: the
+        # drift gates prove each copy matches the canonical, and nothing proved
+        # the canonical works.
+        #
+        # No new dependencies. Both files insert their own package root on
+        # sys.path and are stdlib-only apart from pytest itself.
+        run: pytest -v tests/ shared/factory-common/tests/
 
       - name: Guard the shared job-dispatch policy surface
         # Factory#483. scripts/job_dispatch.py carries a self-test with the rules
