@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -154,13 +155,43 @@ def check(root: Path, allowlist_path: Path | None) -> list[str]:
     return problems
 
 
+def _scanned_commit(root: Path) -> str:
+    """The commit (and branch, if resolvable) the scan actually ran against.
+
+    Rule 4.10, applied to this gate: "23 findings" with no statement of what
+    was scanned is not reproducible — a future run against a different
+    branch or a dirty tree would print the same shape of line and look like
+    a regression or an improvement when nothing about the code changed.
+    Honest about the failure case too: a directory that is not a git repo
+    (or a git binary that is not on PATH) says so rather than silently
+    omitting the line.
+    """
+    try:
+        commit = subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), "rev-parse", "HEAD"],  # noqa: S607
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        branch = subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],  # noqa: S607
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        dirty = subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), "status", "--porcelain"],  # noqa: S607
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        dirty_note = " (dirty working tree — uncommitted changes were also scanned)" if dirty else ""
+        return f"{branch}@{commit[:12]}{dirty_note}"
+    except (OSError, subprocess.CalledProcessError):
+        return "UNKNOWN — not a git repo, or git is unavailable"
+
+
 def run_check(root: Path, allowlist_path: Path | None) -> int:
     try:
         problems = check(root, allowlist_path)
     except (RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}")  # noqa: T201
         return 1
-    print(f"banned-constructs: scanned {root}")  # noqa: T201
+    print(f"banned-constructs: scanned {root} at {_scanned_commit(root)}")  # noqa: T201
     if problems:
         print("BANNED CONSTRUCT — new (non-allowlisted) occurrence(s):")  # noqa: T201
         for problem in problems:
@@ -250,6 +281,13 @@ def _self_test() -> int:
             "def handler(request):\n    return safe_message()\n"
         )
         expect(run_check(root, allowlist) == 0, "gate must pass once the violation is fixed")
+
+        # Case 7: the scanned commit is stated, and a non-git directory says so
+        # honestly rather than omitting the line (rule 4.10 — reproducibility).
+        expect(
+            _scanned_commit(root) == "UNKNOWN — not a git repo, or git is unavailable",
+            "a non-git directory must honestly report it cannot cite a commit",
+        )
 
     if failures:
         print("SELF-TEST FAILED:")  # noqa: T201
