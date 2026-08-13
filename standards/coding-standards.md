@@ -165,6 +165,16 @@ short-circuited it), and a mutated run POISONED that cache so a later run of
 correct code failed. A suite that can go green from a file outside the repo
 invalidates every other gate that trusts it.
 
+3.13 **A test fixture must not match a real credential pattern.** Secret
+scanners match on SHAPE, so a fabricated `sk-proj-...` in a test file raises a
+real alert and can hard-block a push. On 2026-08-13 a fixture for a
+token-at-rest test paged the operator for a value with 8 distinct characters
+over 48. Build fixtures that cannot match: a clearly-fake prefix, or assemble
+the realistic prefix at runtime (`"sk-" + "ant-"`) when the code branches on it,
+with a comment saying why - or someone will helpfully make it realistic again.
+The cost of getting this wrong is not the alert; it is that the next real one
+gets ignored, and that bypassing push protection becomes a habit.
+
 ## 4. CI / pre-commit enforcement
 
 4.1 `pre-commit` is the single local+CI entrypoint (same config both places).
