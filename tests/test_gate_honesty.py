@@ -774,8 +774,15 @@ def test_banned_constructs_gate_is_honest(tmp_path: Path) -> None:
     assert banned_gate._self_test() == 0
 
     (tmp_path / "routes").mkdir()
+    # Assembled, never written as one literal: this gate scans the whole repo,
+    # so a fixture demonstrating a banned construct IS a banned construct as
+    # far as it is concerned, and the gate flagged its own test. Same shape as
+    # standards rule 3.13 for credential-shaped fixtures. Splitting the token
+    # keeps the fixture byte-identical for the gate under test while the
+    # pattern never appears in this file.
+    _detail = "detail=" + "str(" + "e)"
     (tmp_path / "routes" / "handler.py").write_text(
-        "def h(e):\n    return HTTPException(status_code=500, detail=str(e))\n"
+        f"def h(e):\n    return HTTPException(status_code=500, {_detail})\n"
     )
     before = banned_gate.check(tmp_path, None)
     assert before, "sanity: the finding must be caught before any mutation"
