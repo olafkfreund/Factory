@@ -42,15 +42,21 @@ import time
 from pathlib import Path
 
 # scripts/ is put on sys.path by tests/conftest.py.
+import check_banned_constructs as banned_gate
 import check_branch_divergence as divergence_gate
 import check_chart_vs_gitops as chart_gate
 import check_cli_freshness as cli_gate
+import check_codeql_exclude_pairing as pairing_gate
+import check_codeql_query_suite as suite_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
 import check_merge_attribution as merge_gate
 import check_orphaned_pr_commits as orphan_gate
 import check_pin_freshness as pin_gate
 import check_planning_card_conformance as card_gate
+import check_security_fork_drift as fork_gate
+import check_sink_coverage as sink_gate
+import check_test_home_isolation as home_gate
 import check_verification_core_drift as vcore_gate
 import pytest
 
@@ -69,6 +75,13 @@ _COVERED: dict[str, str] = {
     "check_planning_card_conformance.py": "test_planning_card_conformance_gate_is_honest",
     "check_merge_attribution.py": "test_merge_attribution_gate_is_honest",
     "check_orphaned_pr_commits.py": "test_orphaned_pr_commits_gate_is_honest",
+    # 2026-08-13 security-cleanup guardrail batch (Factory#720).
+    "check_codeql_query_suite.py": "test_codeql_query_suite_gate_is_honest",
+    "check_codeql_exclude_pairing.py": "test_codeql_exclude_pairing_gate_is_honest",
+    "check_security_fork_drift.py": "test_security_fork_drift_gate_is_honest",
+    "check_sink_coverage.py": "test_sink_coverage_gate_is_honest",
+    "check_banned_constructs.py": "test_banned_constructs_gate_is_honest",
+    "check_test_home_isolation.py": "test_test_home_isolation_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -609,4 +622,207 @@ def test_orphaned_pr_commits_gate_is_honest(capsys: pytest.CaptureFixture[str]) 
     assert "2 repo(s) scanned" in out, (
         "the clean verdict must say how many repos it covered, or 'ok' is a claim "
         "with no scope attached"
+    )
+
+
+def test_codeql_query_suite_gate_is_honest(tmp_path: Path) -> None:
+    """Factory#720's Gate 1, held to this file's criteria.
+
+    Its scope is a single constant (`_REQUIRED_SUITE`) rather than a
+    collection, so the third criterion here is narrower than the drift gates
+    above: prove the verdict is actually DERIVED from the constant rather
+    than hardcoded, by moving the constant to something the fixture does not
+    satisfy and watching a config that used to pass start failing.
+    """
+    repo = tmp_path / "repo"
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    (repo / ".github" / "workflows" / "codeql.yml").write_text(
+        "jobs:\n  analyze:\n    steps:\n      - uses: github/codeql-action/init@v3\n"
+        "        with:\n          queries: security-and-quality\n"
+    )
+
+    ok, explanation = suite_gate.effective_suite(repo)
+    assert ok
+    assert "security-and-quality" in explanation, (
+        "the pass path must cite what it matched, not just say yes"
+    )
+
+    # Configuration mutation: the gate's OWN required-suite constant moves.
+    # The fixture is untouched — if the verdict does not flip, the check was
+    # never reading the constant it claims to enforce.
+    kept = suite_gate._REQUIRED_SUITE
+    suite_gate._REQUIRED_SUITE = "some-suite-this-fixture-does-not-have"
+    try:
+        ok, _explanation = suite_gate.effective_suite(repo)
+        assert not ok, (
+            "moving _REQUIRED_SUITE must change the verdict on an unchanged fixture — "
+            "otherwise the gate is not actually reading its own configuration"
+        )
+    finally:
+        suite_gate._REQUIRED_SUITE = kept
+    ok, _explanation = suite_gate.effective_suite(repo)
+    assert ok, "restoring the constant must restore the pass"
+
+
+def test_codeql_exclude_pairing_gate_is_honest(tmp_path: Path) -> None:
+    """Factory#720's Gate 2 (ported from PFactory#517), held to this file's criteria.
+
+    Unlike the drift gates, this gate has no separate shrinkable registry of
+    its own — its whole configuration IS the two files it reads (the exclude
+    list and the custom-query pack), which is exactly what its own
+    ``_self_test`` mutates case-by-case (delete the replacement, strip its
+    doc comment). Delegated to here rather than re-derived, plus the
+    enumeration property checked directly: the pass path must name the rule
+    id it paired, not just say "ok".
+    """
+    assert pairing_gate._self_test() == 0
+
+    repo = tmp_path / "repo"
+    (repo / ".github" / "codeql" / "custom-queries").mkdir(parents=True)
+    (repo / ".github" / "codeql" / "codeql-config.yml").write_text(
+        "query-filters:\n  - exclude:\n      id: py/path-injection\n"
+    )
+    (repo / ".github" / "codeql" / "custom-queries" / "Sanitized.ql").write_text(
+        "/**\n * @id py/path-injection-sanitized\n * Barrier-aware sanitizer.\n */\n"
+        "class Sanitizer extends DataFlow::Node { }\n"
+    )
+    assert pairing_gate.check(repo) == []
+
+
+def test_security_fork_drift_gate_is_honest(tmp_path: Path) -> None:
+    """Factory#720's Gate 3, held to this file's criteria.
+
+    Its scope is three registries (REGISTRY, FORK_DIVERGENCES, REPO_REFS)
+    that can each shrink independently. Mutated here: dropping an entry from
+    REGISTRY must stop that file being compared at all — the exact shape
+    Factory#523 hit in the drift gates above, reproduced for this one.
+    """
+    assert fork_gate._self_test() == 0
+
+    fork_gate._init_git_repo(tmp_path / "RepoA", {"sub/thing.py": "SAFE = 1\n"})
+    fork_gate._init_git_repo(tmp_path / "RepoB", {"sub/thing.py": "SAFE = 0\n"})  # already diverged
+    refs = {"RepoA": "main", "RepoB": "main"}
+
+    registry_backup = dict(fork_gate.REGISTRY)
+    fork_gate.REGISTRY.clear()
+    fork_gate.REGISTRY["honesty-thing.py"] = {
+        "_kind": "vendored",
+        "RepoA": "sub/thing.py",
+        "RepoB": "sub/thing.py",
+    }
+    try:
+        problems = fork_gate.check_drift(tmp_path, refs)
+        assert problems, "sanity: the two repos really do diverge"
+        assert "honesty-thing.py" in problems[0], (
+            "the pass/fail report must name the diverged entry"
+        )
+
+        # Configuration mutation: the entry leaves REGISTRY. The two repos are
+        # UNCHANGED — still diverged — but the gate must now say nothing.
+        del fork_gate.REGISTRY["honesty-thing.py"]
+        assert fork_gate.check_drift(tmp_path, refs) == [], (
+            "sanity check on the mutation itself: with no registry entries there "
+            "is nothing to compare"
+        )
+    finally:
+        fork_gate.REGISTRY.clear()
+        fork_gate.REGISTRY.update(registry_backup)
+
+
+def test_sink_coverage_gate_is_honest(tmp_path: Path) -> None:
+    """Factory#720's Gate 4, held to this file's criteria.
+
+    Its scope is SINK_CLASSES. Dropping the outbound-http entry must stop an
+    unguarded httpx call being flagged, even though the call site itself
+    never changes — the "1 of 14 wired" failure this gate exists to catch,
+    reproduced one level up, against the gate's own configuration instead of
+    the sink call site.
+    """
+    assert sink_gate._self_test() == 0
+
+    (tmp_path / "routes.py").write_text("def f(url):\n    return httpx.get(url)\n")
+    http_guard = __import__("re").compile(r"url_safety\.check")
+
+    before = sink_gate.find_unguarded(tmp_path, {"http_guard": http_guard})
+    assert before, "sanity: the unguarded call must be caught before any mutation"
+    assert "routes.py" in before[0] and "outbound-http" in before[0]
+
+    kept = sink_gate.SINK_CLASSES
+    sink_gate.SINK_CLASSES = tuple(c for c in kept if c.name != "outbound-http")
+    try:
+        after = sink_gate.find_unguarded(tmp_path, {"http_guard": http_guard})
+        assert after == [], (
+            "dropping the outbound-http sink class from SINK_CLASSES left an "
+            "unguarded httpx call unflagged — scope shrank, nobody noticed"
+        )
+    finally:
+        sink_gate.SINK_CLASSES = kept
+    assert sink_gate.find_unguarded(tmp_path, {"http_guard": http_guard}), (
+        "restoring SINK_CLASSES must restore the finding"
+    )
+
+
+def test_banned_constructs_gate_is_honest(tmp_path: Path) -> None:
+    """Factory#720's Gate 5, held to this file's criteria.
+
+    Its scope is `_SKIP_DIRS` (plus the dot-directory rule Factory#720 added
+    after the first version silently swept `.venv-ci/`/`site-packages/`/a
+    nested worktree into its baseline — see the module docstring). Adding a
+    LEGITIMATE source directory name to it must stop findings in that
+    directory being reported, which is exactly the shape that first bug was.
+    """
+    assert banned_gate._self_test() == 0
+
+    (tmp_path / "routes").mkdir()
+    # Assembled, never written as one literal: this gate scans the whole repo,
+    # so a fixture demonstrating a banned construct IS a banned construct as
+    # far as it is concerned, and the gate flagged its own test. Same shape as
+    # standards rule 3.13 for credential-shaped fixtures. Splitting the token
+    # keeps the fixture byte-identical for the gate under test while the
+    # pattern never appears in this file.
+    _detail = "detail=" + "str(" + "e)"
+    (tmp_path / "routes" / "handler.py").write_text(
+        f"def h(e):\n    return HTTPException(status_code=500, {_detail})\n"
+    )
+    before = banned_gate.check(tmp_path, None)
+    assert before, "sanity: the finding must be caught before any mutation"
+
+    kept = set(banned_gate._SKIP_DIRS)
+    banned_gate._SKIP_DIRS.add("routes")
+    try:
+        after = banned_gate.check(tmp_path, None)
+        assert after == [], (
+            "adding a real source directory to _SKIP_DIRS silently stopped "
+            "scanning it — the exact shape of the bug this gate already hit once"
+        )
+    finally:
+        banned_gate._SKIP_DIRS.clear()
+        banned_gate._SKIP_DIRS.update(kept)
+    assert banned_gate.check(tmp_path, None), "restoring _SKIP_DIRS must restore the finding"
+
+
+def test_test_home_isolation_gate_is_honest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Factory#720's Gate 6, held to this file's criteria.
+
+    Its "scope" is not a registry that can shrink (it snapshots EVERY file
+    under the given $HOME, unfiltered) — the same shape as
+    check_deploy_drift.py's exemption above (one input in, one verdict out).
+    Included in _COVERED rather than _EXEMPT per review: it still has to
+    prove the enumeration property (the pass path states how many files it
+    watched) and the mutation property (its own self-test), so both are
+    checked directly here.
+    """
+    assert home_gate._self_test() == 0
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "existing.txt").write_text("unchanged\n")
+
+    assert home_gate.run_isolated(home, [__import__("sys").executable, "-c", "pass"]) == 0
+    out = capsys.readouterr().out
+    assert "1 file(s) before the run" in out, (
+        "the pass path must state how many files it watched, or 'untouched' is a "
+        "claim with no scope attached"
     )

@@ -1,0 +1,22 @@
+# Gate 5 grandfather allowlist (scripts/check_banned_constructs.py).
+# Ratchet: blocking on NEW occurrences immediately; every entry below is a
+# pre-existing hit from gate rollout. Flip-to-blocking (empty allowlist
+# required) tracked in Factory#718, target 2026-09-15.
+#
+# scripts/check_banned_constructs.py:*  — this is the gate's own source: its
+# docstring and --self-test fixture deliberately CONTAIN the string
+# "str(e)"/"HTTPException(...)" as example text to prove the regex works.
+# That is a known false-positive class of a regex-based heuristic (it cannot
+# tell example text in a docstring/fixture from a live sink) and is exactly
+# what this allowlist mechanism exists to absorb, rather than weakening the
+# regex to miss real cases elsewhere.
+- path: scripts/check_banned_constructs.py
+  rule: raw-exception-in-response
+  reason: >-
+    self-referential false positive — the gate's own docstring/self-test
+    fixture contains the literal pattern as example text, not a live sink
+  issue: Factory#718
+- path: shared/factory-common/factory_common/http.py
+  rule: raw-exception-in-response
+  reason: grandfathered at gate rollout
+  issue: Factory#718
