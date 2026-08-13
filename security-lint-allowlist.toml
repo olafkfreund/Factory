@@ -1,0 +1,29 @@
+# Grandfathered security-sink findings for THIS repo.
+#
+# Read by `shared/factory-seclint/security_lint.py` (the hub's own copy of the
+# canonical engine; services read `security-lint/security_lint.py`).
+#
+# THIS FILE IS NOT AN IGNORE LIST. Four rules make that stick, all enforced by
+# the gate itself, not by convention:
+#
+#   * `issue` is REQUIRED and must look like `Repo#123`. An entry without one
+#     fails the gate. A grandfathered security finding with nobody's name on it
+#     is a permanent exception wearing a temporary hat.
+#   * An entry that matches NOTHING fails the gate. Fix the finding and you must
+#     delete the entry — so this list can only ratchet down.
+#   * `count` (default 1) is a ceiling, not a per-file waiver. A SECOND
+#     `pickle.load` in an already-listed file is a new finding and turns the
+#     gate red.
+#   * `expires` is optional and enforced when present. Optional deliberately: a
+#     mandatory hard expiry reddens `main` at midnight with no code change and
+#     blocks every unrelated PR, which is how expiries get bumped by a year
+#     instead of honoured.
+#
+# Adding an entry is a reviewable diff. That is the point.
+
+[[allow]]
+path = "shared/factory-github/providers/azure_devops_provider.py"
+rule = "S608"
+count = 1
+reason = "WIQL query interpolates the tenant-configured Azure DevOps project name. Real, low-severity injection; the fix must land here in the canonical and then re-vendor to four siblings behind their drift gates, which is a coordinated wave and not this PR."
+issue = "Factory#721"
