@@ -1,0 +1,106 @@
+name: security fork drift
+
+# "Did a security fix land in one repo and not its siblings?", asked out of
+# band (Factory security-cleanup review, 2026-08-13).
+#
+# CodeQL reports per-repo, so a file pasted independently into 2-4 repos (not
+# formally vendored — see scripts/check_security_fork_drift.py's docstring
+# for the vendored-vs-forked distinction) can carry a fix in one copy and the
+# original bug in another, and nothing before this gate compared them.
+#
+# WHY SCHEDULED, NOT ON PULL_REQUEST. Same reasoning as chart-vs-gitops.yml:
+# it needs five checkouts, and the drift it watches is created by a merge in
+# ONE of five repos — a PR trigger in the hub cannot see the others, and
+# adding this workflow to four service repos would be the four-hand-
+# maintained-copies shape Factory#483 exists to undo. The comparator itself
+# IS covered on every hub PR, offline, by tests/test_g1_gates_security_cleanup.py.
+#
+# DETECTION LAG, STATED EXPLICITLY (this is a chosen trade, not an accident):
+# a fork that diverges right after this job runs sits undetected until the
+# next scheduled run (daily). That is acceptable for a cross-repo check that
+# structurally cannot run per-PR in a single repo's context; it would not be
+# acceptable for something that COULD run per-PR (Gates 1/2/5 do, and are
+# wired into pull_request below in each sibling instead).
+#
+# WHY NO PAT: all five repos are public, same as chart-vs-gitops.yml. If one
+# is ever made private this job fails on the checkout step itself — loudly,
+# which is correct (standards/coding-standards.md rule 4.7; no soft-skip
+# path). See that workflow's comment for the same call already made once.
+#
+# WHY IT FILES/UPDATES AN ISSUE ON FAILURE, UNLIKE chart-vs-gitops.yml: two
+# Factory gates were found to have NEVER passed, once, silently, because they
+# were scheduled jobs failing into an Actions tab nobody was watching for a
+# missing cross-repo PAT — "no findings" and "the gate errored before it
+# could look" are indistinguishable from an Actions-tab glance, which is
+# exactly the artefact-vs-process failure rule 4.10 names. This job has no
+# PAT to go missing, but it still gets the same belt-and-braces: an
+# `if: failure()` step opens/updates one pinned tracking issue so a human
+# learns even if nobody opens the Actions tab, on top of GitHub's own
+# email-on-scheduled-failure (which already fires today for the other
+# scheduled gates and needs no extra plumbing).
+
+on:
+  schedule:
+    # Daily, offset from the fleet's existing scheduled gates (05:41
+    # chart-vs-gitops, 05:11 pin-freshness, 06:17 branch-protection-drift,
+    # :47 branch-divergence). BST != UTC.
+    - cron: "53 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: security-fork-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: forked security-relevant files agree (or their divergence is registered)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the hub (comparator)
+        uses: actions/checkout@v4
+        with:
+          path: Factory
+
+      - name: Self-test the comparator before trusting it
+        # First, not last (rule 4.7 again): a broken comparator that always
+        # reports "no drift" is a false green in four repos at once, and
+        # running it for real cannot reveal that bug — only its own
+        # mutation-proof self-test can.
+        run: python3 Factory/scripts/check_security_fork_drift.py --self-test
+
+      - name: Check out the sibling repos (all public, no PAT needed)
+        uses: actions/checkout@v4
+        with: { repository: olafkfreund/PFactory, ref: dev, path: PFactory }
+      - uses: actions/checkout@v4
+        with: { repository: olafkfreund/AIFactory, ref: dev, path: AIFactory }
+      - uses: actions/checkout@v4
+        with: { repository: olafkfreund/TFactory, ref: dev, path: TFactory }
+      - uses: actions/checkout@v4
+        with: { repository: olafkfreund/CFactory, ref: dev, path: CFactory }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compare (blocking)
+        id: compare
+        run: python3 Factory/scripts/check_security_fork_drift.py --fleet-root "${GITHUB_WORKSPACE}"
+
+      - name: File/update a tracking issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="security-fork-drift: scheduled run failed or found drift"
+          body="The scheduled security-fork-drift workflow failed or found unregistered drift. See the run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          existing=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "in:title \"${title}\"" --state open --json number --jq '.[0].number' || true)
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" --body "${body}"
+          fi
