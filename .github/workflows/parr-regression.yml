@@ -76,7 +76,17 @@ jobs:
             echo ""
             echo "Callers must pass the secret through:"
             echo "    secrets:"
-            echo "      FACTORY_TOKEN: \${{ secrets.FACTORY_TOKEN }}"
+            # This line is HELP TEXT and must print the literal expression. A
+            # backslash does NOT escape it: Actions resolves an expression by
+            # scanning the raw text before bash exists and does not honour shell
+            # escapes, so the previous form echoed the REAL token (log-masked to
+            # ***, so useless as guidance) and spliced a secret into a command
+            # line where a quote in the value would have broken the script.
+            # Splitting the shell quoting means the raw text never contains the
+            # opening sequence, so there is nothing for Actions to resolve.
+            # NB: this applies to COMMENTS inside a run: block as well - they are
+            # part of the same scanned text and are not inert.
+            echo "      FACTORY_TOKEN: \$"'{{ secrets.FACTORY_TOKEN }}'
             echo ""
             echo "NO FORK CARVE-OUT IS NEEDED HERE. A fork PR cannot see repo secrets"
             echo "and that is by design, but this workflow is workflow_call-only and"
@@ -90,6 +100,9 @@ jobs:
         id: regression
         env:
           FACTORY_TOKEN: ${{ secrets.FACTORY_TOKEN }}
+          # MODE via env, not spliced into the script body. It is a
+          # workflow_call input, so its value is chosen by the caller.
+          MODE: ${{ inputs.mode }}
           # Endpoints come from the caller's inputs when set, else from repo vars,
           # else the script's defaults (the deployed *.freundcloud.org.uk fleet).
           PFACTORY_API: ${{ inputs.pfactory_api != '' && inputs.pfactory_api || vars.PFACTORY_API }}
@@ -112,7 +125,7 @@ jobs:
           # turned on itself.
           set -o pipefail
           ARGS="--smoke"
-          if [ "${{ inputs.mode }}" = "full" ]; then ARGS="--full"; fi
+          if [ "$MODE" = "full" ]; then ARGS="--full"; fi
           python3 scripts/parr_regression.py $ARGS | tee regression.out
 
       - name: Open / refresh a tracking issue on failure
