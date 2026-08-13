@@ -453,6 +453,23 @@ def main(argv: list[str] | None = None) -> int:
         "--fleet-root",
         help="directory containing Factory/, PFactory/, AIFactory/, TFactory/, CFactory/ git checkouts",
     )
+    parser.add_argument(
+        "--ref",
+        action="append",
+        default=[],
+        metavar="REPO=REF",
+        help=(
+            "override the ref a repo is read at, e.g. --ref PFactory=HEAD. "
+            "Default is REPO_REFS (origin/main for the hub, origin/dev for "
+            "the services) — the right default for an ad-hoc run against a "
+            "real fleet checkout on a dev machine, where a LOCAL branch may "
+            "have drifted from what actually shipped (Factory#729). In CI, "
+            "where actions/checkout guarantees the working tree already IS "
+            "the intended ref, pass --ref <repo>=HEAD for each freshly "
+            "checked-out repo instead, which sidesteps needing a "
+            "remote-tracking ref to exist at all."
+        ),
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
 
@@ -460,7 +477,13 @@ def main(argv: list[str] | None = None) -> int:
         return _self_test()
     if not args.fleet_root:
         parser.error("--fleet-root is required (or pass --self-test)")
-    return run_check(Path(args.fleet_root))
+    repo_refs = dict(REPO_REFS)
+    for override in args.ref:
+        repo, _, ref = override.partition("=")
+        if not repo or not ref:
+            parser.error(f"--ref must be REPO=REF, got: {override!r}")
+        repo_refs[repo] = ref
+    return run_check(Path(args.fleet_root), repo_refs)
 
 
 if __name__ == "__main__":
