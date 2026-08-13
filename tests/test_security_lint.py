@@ -161,6 +161,48 @@ issue = "Factory#721"
     assert "OVERRUN" in out
 
 
+@pytest.mark.parametrize("declared", [1, 2, 3])
+def test_removing_an_entry_returns_exactly_its_declared_count(
+    tmp_path: Path, ruff: str, declared: int
+) -> None:
+    """Deleting an allowlist entry must surface EXACTLY `count` findings.
+
+    Every other red-path test here asserts a boolean: exit 1, or a keyword in
+    the output. A boolean cannot be wrong in an informative way — "it went red"
+    is satisfied by the gate breaking for any reason at all, including reasons
+    that have nothing to do with what the test claims to prove.
+
+    This one compares against a number the ALLOWLIST ITSELF declares, so the
+    check has something to be wrong against. That is not hypothetical: running
+    this by hand against the four service repos, a buggy probe reported 2 for an
+    entry declaring `count = 1`, and the contradiction is the only reason the
+    probe's bug was found rather than published as a result. The expected value
+    living in the artefact under test is what made it self-naming.
+
+    Parametrised over several counts because a check that only ever sees 1
+    cannot distinguish "reports the declared count" from "reports one finding".
+    """
+    sinks = "".join(_PICKLE_RCE.replace("def load", f"def load{i}") for i in range(declared))
+    (tmp_path / "cache.py").write_text(sinks, encoding="utf-8")
+
+    covered = f"""
+[[allow]]
+path = "cache.py"
+rule = "S301"
+count = {declared}
+reason = "fixture"
+issue = "Factory#721"
+"""
+    assert _run(tmp_path, ruff, allowlist=covered)[0] == 0, "the entry should cover them all"
+
+    code, out = _run(tmp_path, ruff, allowlist="")
+    assert code == 1, out
+    assert f"NEW SECURITY-SINK FINDINGS ({declared})" in out, (
+        f"removing an entry declaring count={declared} must surface exactly "
+        f"{declared} finding(s); got:\n{out}"
+    )
+
+
 def test_a_stale_entry_fails_so_the_list_can_only_shrink(tmp_path: Path, ruff: str) -> None:
     (tmp_path / "cache.py").write_text(_CLEAN, encoding="utf-8")
     stale = """
