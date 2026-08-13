@@ -1,0 +1,91 @@
+name: security lint (whole-repo, blocking)
+
+# The security-sink half of the code-quality bar. See
+# shared/factory-seclint/ruff-security.toml for the curated rule set and the
+# argument for every include AND every exclude.
+#
+# WHY THIS IS NOT THE RATCHET, AND MUST NOT BECOME IT
+# ---------------------------------------------------
+# The fleet's strict lint bar is enforced DIFF-SCOPED (cq-ratchet / code-quality):
+# only the files a PR touches are held to it, because a whole-repo blocking run
+# on the full select set has ~6,500 legacy violations and would be permanently
+# red. That decision is correct for style debt and is untouched here.
+#
+# It is wrong for security sinks, for one reason: "legacy is fixed on touch"
+# resolves to "never" for code nobody touches, and untouched code is exactly
+# where old vulnerabilities live. A `pickle.load` on a cache file survived
+# months of green CI in this fleet on precisely that mechanism, and the fix that
+# landed in one service never propagated to its sibling.
+#
+# So this gate is whole-repo and blocking, over a rule set small enough that
+# every pre-existing finding is written down individually in
+# security-lint-allowlist.toml rather than waved through by a category ignore.
+#
+# NO `paths:` FILTER, DELIBERATELY. A whole-repo gate that only runs when a .py
+# changes cannot see a finding introduced by a config change (an exclude, a
+# vendored file, a submodule bump). And per Factory#543, a path-filtered
+# workflow reports "no run" rather than "skipped", which wedges a PR the moment
+# this becomes a required check.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Must match the repo's other lint jobs. A security gate running a different
+  # ruff than the ratchet is a gate whose findings nobody can reproduce locally.
+  RUFF_VERSION: "0.15.17"
+
+jobs:
+  security-sinks:
+    name: security sinks (whole repo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        # Explicit shell so a failed download cannot pass through a pipeline
+        # (rule 4.10, the `curl | sh` trap), and `command -v` because a green
+        # install step is not the same as an installed tool.
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install "ruff==${RUFF_VERSION}"
+          command -v ruff
+          ruff --version
+
+      - name: Prove the gate can fail
+        # Runs BEFORE the verdict, in the same job. A green security gate whose
+        # ability to go red was never demonstrated is Factory#694 / #697 all
+        # over again: this plants a `pickle.load` in a tempdir, requires red,
+        # removes it, requires green.
+        run: python3 shared/factory-seclint/security_lint.py --self-test
+
+      - name: Enforce (whole repo, blocking)
+        run: python3 shared/factory-seclint/security_lint.py .
+
+      - name: Allowlist size to the run summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(grep -c '^\[\[allow\]\]' security-lint-allowlist.toml || echo 0)
+          {
+            echo "## Security-sink gate"
+            echo ""
+            echo "- Grandfathered findings: **${count}**"
+            echo "- Every entry carries an issue reference; the gate fails without one."
+            echo "- An entry that matches nothing also fails, so this number can only go down."
+          } >> "$GITHUB_STEP_SUMMARY"

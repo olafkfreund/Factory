@@ -130,6 +130,51 @@ root ([`standards/.editorconfig`](./.editorconfig)).
 
 3.7 One source of truth for thresholds in this hub; tighten-only overrides.
 
+3.8 **Before fixing anything security-shaped, find every copy.** Search all six
+repos for the file BEFORE editing it, fix the hub canonical where one exists,
+and re-vendor. On 2026-08-13 a single sweep found **seven** fixes that existed
+in one repo while siblings carried the bug: `artifact_store.py` tarslip, the
+SSRF guard, workspace lock `0o644`, `skills_service` pickle-vs-JSON,
+`bump-version.js` fs-race, `mask_secret`, and rule 4.10 of THIS FILE. Scanners
+report per-repo, so an unpropagated fix reads as a clean count next door.
+
+3.9 **A guard is finished when every sink calls it, not when it passes its
+tests.** Count the sinks, not the tests. Twice on 2026-08-13 a correct,
+mutation-checked SSRF guard shipped wired into ONE of fourteen call sites, in
+two repos, by different authors. Every signal was green and the product was
+open. After adding a guard, grep the sink (`httpx`/`requests`/`urlopen`,
+`subprocess`, path joins) and diff that list against the guard's callers.
+
+3.10 **Never validate a URL and then hand the fetch to someone else.** A guard
+on the initial URL is void if the fetcher follows redirects: the dangerous URL
+is the one you never see. Own the fetch with redirects disabled, or re-validate
+every hop against the same guard. Applies equally to an SDK, a subprocess, or a
+library that retries.
+
+3.11 **Test a redaction against windows of the secret, not the whole value.**
+`assert SECRET not in output` passes while the first twelve characters ship.
+Assert no 4- or 6-character window of the credential appears in the RENDERED
+sink (the log record, the response body, the file bytes). On 2026-08-13 a suite
+was green for months with `mask_secret` returning short secrets verbatim -
+because two of its own assertions had pinned the leak as correct behaviour.
+
+3.12 **A test may not read or write outside the repo.** Point every cache, home
+and config path at a tmp fixture. A `SkillsService` suite read the developer's
+real `~/.aifactory/` cache, so a broken parser tested GREEN (the cache
+short-circuited it), and a mutated run POISONED that cache so a later run of
+correct code failed. A suite that can go green from a file outside the repo
+invalidates every other gate that trusts it.
+
+3.13 **A test fixture must not match a real credential pattern.** Secret
+scanners match on SHAPE, so a fabricated `sk-proj-...` in a test file raises a
+real alert and can hard-block a push. On 2026-08-13 a fixture for a
+token-at-rest test paged the operator for a value with 8 distinct characters
+over 48. Build fixtures that cannot match: a clearly-fake prefix, or assemble
+the realistic prefix at runtime (`"sk-" + "ant-"`) when the code branches on it,
+with a comment saying why - or someone will helpfully make it realistic again.
+The cost of getting this wrong is not the alert; it is that the next real one
+gets ignored, and that bypassing push protection becomes a habit.
+
 ## 4. CI / pre-commit enforcement
 
 4.1 `pre-commit` is the single local+CI entrypoint (same config both places).
@@ -240,6 +285,29 @@ Three traps carried from the instances, each of which cost an hour or more:
 A corollary for acceptance criteria: **do not phrase one as "X is quiet".**
 Silence is exactly what a control that never ran produces. State what artefact
 must exist and what it must say.
+
+4.11 **Security rules are enforced WHOLE-REPO; only style may be diff-scoped.**
+Diff-scoped enforcement ("legacy is fixed on touch") is correct for style debt
+and wrong for security sinks, because *untouched code is where old
+vulnerabilities live* - "fixed on touch" means never for a file nobody opens.
+On 2026-08-13 a `pickle.load` on a user-writable cache - a live RCE primitive,
+already fixed in a sibling - survived for months although rule 1.4 banned it
+and ruff `S` was enabled: the gate only ever looked at changed files. The
+numbers make the split cheap: 6,436 strict violations repo-wide is unlandable,
+but the high-signal security subset was **103 fleet-wide**. Security rules get a
+blocking whole-repo gate with a per-finding allowlist (path, rule, reason, issue
+ref) that can only ratchet down.
+
+4.12 **An exclusion needs a replacement asking the same question.** Suppressing
+a scanner rule is permitted ONLY when paired with a barrier-aware query covering
+the same sinks; an `exclude:` with no twin is silencing. Prove the replacement
+still reports: build the analysis over the UNFIXED tree and confirm it flags the
+same sites the stock rule does. Never barrier a check that does not establish
+the property - an "the file exists" test says nothing about WHICH file.
+Corollary from 2026-08-12: a scan's breadth is part of its result. Four repos
+reported near-zero because they ran the default suite; levelling to
+`security-and-quality` took the fleet 1,526 to 3,876 with no code change. Never
+compare alert counts across repos without checking the suite.
 
 ## 5. How to consume the shared baseline
 
