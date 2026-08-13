@@ -403,7 +403,7 @@ def _self_test_cases(root: Path, now: int, failures: list[str]) -> None:
         check_repo(missing, ("dev", "main"), now, budget)
         expect(failures, False, "a missing dev branch must raise, never return clean")
     except CannotDetermineError:
-        pass
+        pass  # expected: this is the raise under test, not a swallowed error
 
 
 def _self_test() -> int:
@@ -422,7 +422,7 @@ def _self_test() -> int:
             parse_intent("nothing here")
             failures.append("an unparseable intent table must raise, never return an empty scope")
         except CannotDetermineError:
-            pass
+            pass  # expected: this is the raise under test, not a swallowed error
 
     return report_self_test(failures)
 
