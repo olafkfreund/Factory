@@ -1,0 +1,51 @@
+name: security-cleanup gates
+
+# Gates 1, 2 and 5 from the security-cleanup CI guardrail batch (Factory#720),
+# run against THIS repo on every PR/push — the two that can (Gate 1: CodeQL
+# scan-breadth; Gate 2: CodeQL exclude-pairing) run unconditionally BLOCKING,
+# since both currently pass and there is no legacy backlog to grandfather
+# (they read config files, not source code). Gate 5 (banned constructs) is
+# BLOCKING on new occurrences only, via the grandfather allowlist at
+# standards/banned-constructs-allowlist.yaml (Factory#718 tracks the flip to
+# fully blocking).
+#
+# Gate 3 (fork-drift) is NOT here: it needs five repos checked out and is
+# structurally a scheduled, hub-side job — see security-fork-drift.yml.
+# Gate 4 (sink-coverage) is NOT here: it needs a repo-specific guard-function
+# regex this repo does not have a sink class for yet. Gate 6 (test-HOME-
+# isolation) is NOT here: wiring it means wrapping this repo's own pytest
+# invocation, held as a separate, more invasive change.
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-cleanup-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: Gates 1/2/5 (CodeQL breadth, exclude-pairing, banned constructs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pyyaml
+
+      - name: Gate 1 — CodeQL query suite resolves to security-and-quality
+        run: python3 scripts/check_codeql_query_suite.py --repo .
+
+      - name: Gate 2 — every CodeQL exclude has a paired, documented replacement
+        run: python3 scripts/check_codeql_exclude_pairing.py --repo .
+
+      - name: Gate 5 — banned constructs (blocking on new occurrences; allowlist ratchets down)
+        run: python3 scripts/check_banned_constructs.py --root . --allowlist standards/banned-constructs-allowlist.yaml
