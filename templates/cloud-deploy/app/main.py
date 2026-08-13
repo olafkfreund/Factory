@@ -7,6 +7,7 @@ on GCP Memorystore (no auth) and Azure Cache for Redis (TLS + access key).
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -16,6 +17,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
 
 PG_DSN = os.environ["DATABASE_URL"]
 _LEADERBOARD = "leaderboard"
@@ -68,7 +71,7 @@ def record_win(win: Win) -> dict:
     try:
         _r.zadd(_LEADERBOARD, {name: wins})
     except redis.RedisError:
-        pass
+        log.warning("leaderboard cache update failed, Postgres write is durable", exc_info=True)
     return {"player": name, "wins": wins}
 
 
@@ -79,7 +82,7 @@ def leaderboard() -> dict:
         if top:
             return {"top": [{"player": n, "wins": int(s)} for n, s in top]}
     except redis.RedisError:
-        pass
+        log.warning("leaderboard cache read failed, falling back to Postgres", exc_info=True)
     with psycopg.connect(PG_DSN, connect_timeout=15) as conn:
         rows = conn.execute(
             "SELECT name, wins FROM players ORDER BY wins DESC, name LIMIT 10"
