@@ -95,9 +95,14 @@ jobs:
 
       - name: Determine base ref
         id: base
+        # GITHUB_EVENT_NAME / GITHUB_BASE_REF are the runner's own env vars and
+        # carry the same values, so nothing here is spliced into the script text
+        # by `${{ }}` before bash parses it. A branch name may legally contain
+        # `;` `$` and backticks, and `origin/${{ github.base_ref }}` would have
+        # pasted those in as source.
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "ref=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "ref=origin/${GITHUB_BASE_REF}" >> "$GITHUB_OUTPUT"
           else
             echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
           fi
@@ -106,14 +111,18 @@ jobs:
         # No-regression gate: a changed file may not GAIN ruff violations vs base.
         # Pure cleanup/formatting can never increase the count, so this stays green
         # for the adoption PR while catching genuinely new violations.
-        run: python scripts/ratchet_lint.py --base "${{ steps.base.outputs.ref }}" --package "${PACKAGE_DIR}"
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        run: python scripts/ratchet_lint.py --base "$BASE_REF" --package "${PACKAGE_DIR}"
 
       - name: Ratchet (mypy --strict on changed files; blocks net-new type errors)
         # No-regression gate mirroring the ruff ratchet (Factory#254 / CFactory#169):
         # a touched legacy script keeps its existing mypy debt, but a PR may not add
         # net-new mypy --strict errors. The whole-repo strict backlog stays out of
         # scope until each file is individually cleaned.
-        run: python scripts/ratchet_lint.py --tool mypy --base "${{ steps.base.outputs.ref }}" --package "${PACKAGE_DIR}"
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        run: python scripts/ratchet_lint.py --tool mypy --base "$BASE_REF" --package "${PACKAGE_DIR}"
 
   format-check:
     name: ruff format --check (scripts + tests, blocking)

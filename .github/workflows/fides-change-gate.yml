@@ -114,9 +114,16 @@ jobs:
       # header above describes as unsatisfiable until a second approver identity
       # exists. When that changes, add `--committer` in both places together.
       - name: Change gate
+        # TRAIL_ID via env, not `${{ }}`. This one is already constrained - the
+        # sed above captures `[0-9a-f-]{36}` and nothing else, so it cannot
+        # carry a shell metacharacter today - but that guarantee lives in a
+        # different step and would evaporate the moment the extraction changes.
+        # Env costs one line and does not depend on a remote invariant.
+        env:
+          TRAIL_ID: ${{ steps.trail.outputs.trail_id }}
         run: |
           set -uo pipefail
-          fides change-gate --trail "${{ steps.trail.outputs.trail_id }}" > gate.json
+          fides change-gate --trail "$TRAIL_ID" > gate.json
           echo "fides change-gate exit: $?"
           cat gate.json
           scripts/fides_gate_verdict.py gate.json
