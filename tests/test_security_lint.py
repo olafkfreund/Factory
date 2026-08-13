@@ -231,6 +231,69 @@ issue = "Factory#721"
     assert "STALE" in out
 
 
+def test_the_guards_apply_to_every_entry_not_just_the_first(tmp_path: Path, ruff: str) -> None:
+    """A multi-entry allowlist, with both violations on NON-first entries.
+
+    Every other allowlist test in this file uses exactly ONE entry, and with one
+    entry "checks the first" and "checks every one" are the same observation.
+    The shipped allowlists carry four to six. That gap was measured, not
+    imagined: restricting the over-count guard to `list(allowed.items())[:1]`
+    left all twenty-three other tests green.
+
+    It matters because of the DIRECTION it fails. A parser that read only the
+    first entry would fail closed — every later entry stops covering its
+    finding, the gate reddens, someone looks. The over-count guard fails OPEN:
+    it is the check that stops a NEW sink hiding inside a file that already has
+    an entry, so if it only ran for entry one, a fresh `pickle.load` added
+    beside any of entries 2..N would ship silently. That is the gate's whole
+    purpose failing in the one shape no test covered.
+
+    Credit where due: this is g3-tokens' n=1 blind spot, found in its own token
+    suite (every fixture held one profile, so "seals the first" and "seals every
+    one" were indistinguishable — and the pool exists to hand out several).
+    Same mechanism, different subject, same day.
+    """
+    # first.py: one sink, correctly covered. second.py: TWO, entry allows one.
+    (tmp_path / "first.py").write_text(_PICKLE_RCE, encoding="utf-8")
+    (tmp_path / "second.py").write_text(
+        _PICKLE_RCE + _PICKLE_RCE.replace("def load", "def load2"), encoding="utf-8"
+    )
+    (tmp_path / "third.py").write_text(_CLEAN, encoding="utf-8")
+
+    listing = """
+[[allow]]
+path = "first.py"
+rule = "S301"
+count = 1
+reason = "genuinely covered, and deliberately first"
+issue = "Factory#721"
+
+[[allow]]
+path = "second.py"
+rule = "S301"
+count = 1
+reason = "covers one; the file now has two"
+issue = "Factory#721"
+
+[[allow]]
+path = "third.py"
+rule = "S301"
+reason = "the finding is gone - this entry is stale"
+issue = "Factory#721"
+"""
+    code, out = _run(tmp_path, ruff, allowlist=listing)
+    assert code == 1, out
+    # The overrun is on entry TWO and the stale entry is THREE. A guard that
+    # stops after the first entry reports neither.
+    assert "OVERRUN" in out, f"the second entry's extra sink was not caught:\n{out}"
+    assert "second.py" in out
+    assert "STALE" in out, f"the third entry matched nothing and was not reported:\n{out}"
+    assert "third.py" in out
+    # And entry one must NOT be implicated - a guard that reports everything is
+    # as useless as one that reports nothing.
+    assert "first.py" not in out.split("STALE")[0].split("OVERRUN")[-1]
+
+
 def test_an_expired_entry_fails(tmp_path: Path, ruff: str) -> None:
     (tmp_path / "cache.py").write_text(_PICKLE_RCE, encoding="utf-8")
     expired = """
