@@ -173,8 +173,15 @@ def test_dev_is_deliberately_looser_than_main(repo: str) -> None:
     assert dev["required_status_checks"]["strict"] is False
     assert dev["required_conversation_resolution"] is False
 
-    # Same gate set on both: dev is looser about review, never about CI.
-    assert dev["required_status_checks"]["contexts"] == main["required_status_checks"]["contexts"]
+    # dev is looser about PROCESS, never about CI. It may be gated MORE:
+    # AIFactory's dev is its default branch and carries three checks main
+    # does not (#691). The invariant is therefore a superset, not equality --
+    # equality would have to be relaxed the first time any repo gates its
+    # default branch properly, and relaxing it to "no constraint" is how the
+    # stripping in #691 would have gone unnoticed.
+    assert set(main["required_status_checks"]["contexts"]) <= set(
+        dev["required_status_checks"]["contexts"]
+    ), "dev must gate at least everything main gates"
 
 
 def test_check_contexts_are_per_repo() -> None:
@@ -272,7 +279,23 @@ def test_matching_live_response_compares_equal() -> None:
             None,
             True,
         ),
-        ("AIFactory", "dev", ["backend (ruff + pytest)", _VCORE], False, None, False),
+        # AIFactory@dev is gated MORE than main: it is the default branch and
+        # carries the ratchet, the format check and the shared-baseline gate
+        # (#691). A single per-repo CHECKS could not express that.
+        (
+            "AIFactory",
+            "dev",
+            [
+                "backend (ruff + pytest)",
+                _VCORE,
+                "ratchet (ruff + mypy on changed Python)",
+                "ruff format --check (every Python directory)",
+                "shared-baseline drift gate (blocking)",
+            ],
+            False,
+            None,
+            False,
+        ),
         # The branch ArgoCD syncs to the cluster, gated at last (gitops#95),
         # with the secret scan able to block since gitops#209.
         (
@@ -299,7 +322,13 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
     # Newer responses may carry only .checks[].context; both spellings must work,
     # or the gate reports a phantom "all checks removed" drift.
     live = _live_shaped(
-        contexts=["backend (ruff + pytest)", _VCORE],
+        contexts=[
+            "backend (ruff + pytest)",
+            _VCORE,
+            "ratchet (ruff + mypy on changed Python)",
+            "ruff format --check (every Python directory)",
+            "shared-baseline drift gate (blocking)",
+        ],
         strict=False,
         reviews=None,
         conversation_resolution=False,
@@ -695,3 +724,70 @@ def test_signatures_refuses_a_repo_with_no_signer_preflight(tmp_path: Path) -> N
     assert proc.returncode != 0
     assert proc.gh_calls == ""  # type: ignore[attr-defined]
     assert "signer pre-flight:" not in proc.stdout
+
+
+# --------------------------------------------------------------------------
+# The strip guard (#691)
+# --------------------------------------------------------------------------
+
+
+def _assert_no_strip(live_contexts: list[str], payload: dict[str, object]) -> int:
+    """Run the script's ``assert_no_strip`` with a stubbed ``gh``.
+
+    Extracted and evaluated rather than invoked through ``--apply``: exercising
+    it for real would rewrite live branch protection, which is precisely the
+    operation under test.
+    """
+    script = _SCRIPT.read_text()
+    start = script.index("assert_no_strip() {")
+    end = script.index("\n}\n", start) + 3
+    harness = (
+        "set -uo pipefail\n"
+        "OWNER=olafkfreund\n"
+        f"LIVE={json.dumps(json.dumps(live_contexts))}\n"
+        'gh() { jq -r ".[]" <<<"$LIVE"; }\n'
+        + script[start:end]
+        + f"\nassert_no_strip Repo dev {json.dumps(json.dumps(payload))}\n"
+    )
+    # S603/S607: same justification as _emit above -- fixed argv, no
+    # shell=True, and the only interpolated values are json.dumps of literals
+    # defined in this file. The subject under test is a shell function, so
+    # running bash is the point.
+    return subprocess.run(  # noqa: S603
+        ["bash", "-c", harness],  # noqa: S607
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        check=False,  # the non-zero exit IS the assertion
+    ).returncode
+
+
+@pytest.mark.parametrize(
+    ("case", "live", "wanted", "expected_rc"),
+    [
+        # Unchanged: the ordinary re-apply, must not be obstructed.
+        ("unchanged", ["a", "b"], ["a", "b"], 0),
+        # Tightening must never be blocked, or the guard becomes the obstacle
+        # it was added to prevent.
+        ("adds a check", ["a", "b"], ["a", "b", "c"], 0),
+        # The #691 direction: a stale table silently weakening a branch.
+        ("drops one check", ["a", "b", "c"], ["a"], 1),
+        # required_status_checks: null is how "no checks at all" is expressed.
+        ("drops every check", ["a"], None, 1),
+        # Nothing live means nothing to strip -- first-time setup must work.
+        ("branch not protected yet", [], ["a"], 0),
+    ],
+)
+def test_the_guard_blocks_only_removal(
+    case: str, live: list[str], wanted: list[str] | None, expected_rc: int
+) -> None:
+    """One parametrised body rather than five near-identical ones.
+
+    The five cases differ only in their data, and pasting the body per case is
+    exactly what the clone budget exists to stop (Factory#415) -- the first
+    version of this file did paste it, and the gate caught it.
+    """
+    payload: dict[str, object] = {
+        "required_status_checks": None if wanted is None else {"contexts": wanted}
+    }
+    assert _assert_no_strip(live, payload) == expected_rc, case
