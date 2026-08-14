@@ -132,12 +132,22 @@ VERIFY_CTX="tfactory/suite"
 VCORE_CTX="vendored copies match the hub canonical (byte-exact)"
 
 repo_config() {
+  # Reset the per-branch override FIRST. These are globals set by a case arm,
+  # and only one repo sets CHECKS_DEV -- without this it would leak from
+  # AIFactory to whichever repo the loop visits next and apply AIFactory's job
+  # names to it, which is the same class of bug as #691 pointing the other way.
+  CHECKS_DEV=""
   case "$1" in
     CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    # AIFactory's dev is its DEFAULT branch and carries three gates main does
+    # not: the ratchet, the format check and the shared-baseline drift gate.
+    # A single per-repo CHECKS could not express that, so `--apply` would have
+    # PUT the two-check main set over dev and stripped all three (#691).
+    # CHECKS_DEV is the per-branch override; unset means "same as CHECKS".
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs
@@ -217,7 +227,10 @@ build_payload() {
   local checks="$CHECKS" strict reviews convres
   case "$branch" in
     main) strict=true;  reviews="$REVIEWS"; convres=true ;;
-    dev)  strict=false; reviews=0;          convres=false ;;
+    dev)  strict=false; reviews=0;          convres=false
+          # Per-branch checks (#691): dev may be gated MORE than main, and is
+          # for AIFactory, where dev is the default branch.
+          [ -n "${CHECKS_DEV:-}" ] && checks="$CHECKS_DEV" ;;
     *) echo "no branch intent for ${repo}@${branch}" >&2; return 1 ;;
   esac
 
@@ -401,12 +414,46 @@ check_one() {
   DIVERGED=1
 }
 
+# Refuse to weaken a branch (#691).
+#
+# The PUT below REPLACES required_status_checks wholesale, so any check that is
+# live but missing from the table is silently dropped. That is how AIFactory@dev
+# came to be one `--apply` away from losing its ratchet, its format gate and its
+# shared-baseline drift gate: the table carried one CHECKS per repo and could
+# not express that dev is gated more than main.
+#
+# The table being wrong is recoverable; applying it without noticing is not, and
+# it fails OPEN - protection disappears and CI still goes green, so nothing
+# announces it. This makes that specific direction loud. Adding checks, changing
+# reviews, or any other divergence is unaffected: only REMOVAL is blocked.
+assert_no_strip() {
+  local repo="$1" branch="$2" payload="$3" live wanted lost
+  live="$(gh api "repos/${OWNER}/${repo}/branches/${branch}/protection" \
+            --jq '.required_status_checks.contexts // [] | .[]' 2>/dev/null || true)"
+  [ -z "$live" ] && return 0
+  wanted="$(jq -r '.required_status_checks.contexts // [] | .[]' <<<"$payload")"
+  lost="$(comm -23 <(sort <<<"$live") <(sort <<<"$wanted"))"
+  [ -z "$lost" ] && return 0
+
+  echo "REFUSING to apply ${OWNER}/${repo}@${branch}: it would REMOVE required checks:" >&2
+  while IFS= read -r c; do [ -n "$c" ] && echo "    - ${c}" >&2; done <<<"$lost"
+  echo >&2
+  echo "  These are live now and absent from the intent table. Either the table is" >&2
+  echo "  stale (add them, as #691 did for AIFactory@dev), or the removal is" >&2
+  echo "  deliberate - in which case re-run with ALLOW_STRIP=1 and say why in the" >&2
+  echo "  commit that changes the table." >&2
+  return 1
+}
+
 apply_one() {
   local repo="$1" branch="$2" payload
   payload="$(build_payload "$repo" "$branch")"
   echo "==================== ${OWNER}/${repo} : ${branch} ===================="
   echo "$payload" | jq .
   if [ "$MODE" = "apply" ]; then
+    if [ "${ALLOW_STRIP:-0}" != "1" ]; then
+      assert_no_strip "$repo" "$branch" "$payload" || return 1
+    fi
     echo ">> PUT repos/${OWNER}/${repo}/branches/${branch}/protection"
     echo "$payload" | gh api -X PUT \
       -H "Accept: application/vnd.github+json" \
