@@ -51,7 +51,7 @@ jobs:
       FIDES_API_TOKEN: ${{ secrets.FIDES_API_TOKEN }}
       FIDES_FLOW_ID: ${{ vars.FIDES_FLOW_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.ref }}
 

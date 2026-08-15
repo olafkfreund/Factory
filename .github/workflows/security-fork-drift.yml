@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the hub (comparator)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: Factory
 
@@ -73,16 +73,16 @@ jobs:
         run: python3 Factory/scripts/check_security_fork_drift.py --self-test
 
       - name: Check out the sibling repos (all public, no PAT needed)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with: { repository: olafkfreund/PFactory, ref: dev, path: PFactory }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: olafkfreund/AIFactory, ref: dev, path: AIFactory }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: olafkfreund/TFactory, ref: dev, path: TFactory }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: olafkfreund/CFactory, ref: dev, path: CFactory }
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 

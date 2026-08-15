@@ -50,7 +50,7 @@ jobs:
     name: live protection matches declared intent
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Require the admin-read token (fail closed, rule 4.7)
         env:
