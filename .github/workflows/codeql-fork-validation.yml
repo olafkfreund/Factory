@@ -28,12 +28,18 @@ name: codeql fork validation
 # If it is ever made private this fails on the checkout step itself, loudly
 # (standards rule 4.7, no soft-skip path).
 #
-# THE CLI VERSION IS PINNED AND THAT IS LOAD-BEARING. Alert counts are only
-# comparable at the same CodeQL version, the same query suite and the same
-# language set — a lower number obtained by asking a narrower question is not an
-# improvement. 2.25.6 is the version AIFactory's .github/codeql/VALIDATION.md
-# pins and the version the baseline in this workflow's comparator docstring was
-# measured with.
+# THE CLI VERSION IS PINNED AND THAT IS LOAD-BEARING, AND IT MUST BE THE ONE
+# PRODUCTION RUNS. Alert counts are only comparable at the same CodeQL version,
+# the same query suite and the same language set.
+#
+# Factory#778 is what happens when the pin is merely stable rather than
+# correct. Pinned at 2.25.6 while PFactory's code scanning ran 2.26.3, this gate
+# reported py/command-line-injection as stock 32 / fork 30 and read as a barrier
+# covering almost nothing. Measured on the same tree with production's own
+# 2.26.3 bundle: stock 2, fork 0. Upstream narrowed the rule's source model
+# between the two releases; the barrier clears the same two sources in both. A
+# gate whose numbers describe an analyser nobody runs is not measuring
+# production.
 #
 # READING THE OUTPUT: `cleared` is the direction that has ever fired. `NEW`
 # has NOT -- all four forks are their stock query plus one ::Sanitizer
@@ -66,6 +72,9 @@ on:
 
 permissions:
   contents: read
+  # Reading PFactory's code-scanning analyses, to compare the pinned bundle
+  # against the analyser production actually runs (Factory#778).
+  security-events: read
 
 concurrency:
   group: codeql-fork-validation
@@ -74,7 +83,15 @@ concurrency:
 env:
   # Pinned deliberately — see the header. Bumping this invalidates every
   # baseline number recorded against it.
-  CODEQL_BUNDLE: codeql-bundle-v2.25.6
+  #
+  # It MUST track the bundle PFactory's own code scanning runs, and that is not
+  # a style preference (Factory#778): pinned at 2.25.6 while production ran
+  # 2.26.3, this gate reported py/command-line-injection as stock 32 / fork 30,
+  # while production's own analyser finds 2 / 0 on the same tree. Neither number
+  # is wrong; they describe different analysers, and only one of them ships.
+  # The step below prints production's version next to this one so a divergence
+  # is visible rather than silently reframing every count.
+  CODEQL_BUNDLE: codeql-bundle-v2.26.3
 
 jobs:
   validate:
@@ -193,6 +210,27 @@ jobs:
           }
           pathlib.Path("/tmp/manifest.json").write_text(json.dumps(manifest, indent=2))
           PY
+
+      - name: Compare the pinned bundle against what production actually runs
+        # Reported, not enforced. GitHub moves code scanning to a new bundle on
+        # its own schedule, so a hard failure here would go red for a reason
+        # nobody can act on that morning -- and a gate that cries wolf gets
+        # switched off, which is the failure this whole family is about. What
+        # matters is that the divergence is VISIBLE next to the counts, because
+        # it silently reframes every one of them (Factory#778).
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          prod="$(gh api repos/olafkfreund/PFactory/code-scanning/analyses?per_page=1 \
+            --jq '.[0].tool.version' 2>/dev/null || echo unknown)"
+          pinned="${CODEQL_BUNDLE#codeql-bundle-v}"
+          echo "pinned $pinned | PFactory code scanning runs $prod"
+          if [ "$prod" != "unknown" ] && [ "$prod" != "$pinned" ]; then
+            echo "::warning::This gate measures CodeQL $pinned but PFactory's code scanning runs $prod. The counts below describe $pinned. See Factory#778."
+            echo "TOOLCHAIN DIVERGENCE: measuring $pinned, production runs $prod" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Measure, and publish the verdict either way
         # `if: always()` so a run that produced no measurement is visible in the
