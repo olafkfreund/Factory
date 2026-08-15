@@ -1,0 +1,2 @@
+logger.warning("failed: " + str(e));
+res.json({ error: str(e) });
