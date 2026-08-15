@@ -20,6 +20,23 @@ does not need to be perfect, it needs to fail when someone adds occurrence
 number N+1 without going through the allowlist. False positives are handled
 by the allowlist file, not by making the heuristic cleverer.
 
+With one exception, added deliberately: matches inside PROSE -- a ``#``
+comment or a docstring -- are skipped for python files. Not because prose FPs
+are more annoying than other FPs, but because the allowlist cannot express
+them. It is keyed ``(path, rule)``, so grandfathering a file because its
+docstring says ``detail=str(exc)`` also grandfathers every REAL occurrence
+anyone adds to that file afterwards. ``tests/test_probe_error_leak.py`` is the
+case that forced this: its module docstring lists the four leaks it exists to
+prevent, and allowlisting it would have switched the gate off over the one
+file whose job is proving the leak stays fixed. A rule that documents itself
+into an exemption is worse than a slightly cleverer heuristic.
+
+f-strings are NOT treated as prose. ``f"failed: {exc}"`` in a response body is
+a real violation, and it lives inside a string token, so the filter keeps any
+line carrying an f-string prefix rather than trusting the tokenizer to agree
+across python versions (3.12 tokenizes f-string internals, earlier versions
+emit one STRING).
+
 Allowlist format matches the sibling ruff-S gate's shape for a future merge:
 YAML list of ``{path, rule, reason, issue}``; an entry with no ``issue`` is
 itself a gate failure (an unreviewed grandfather is not a grandfather).
@@ -36,9 +53,12 @@ Exit codes:
 
 from __future__ import annotations
 
+import ast
+import io
 import re
 import subprocess
 import sys
+import tokenize
 from pathlib import Path
 
 from gate_evidence import expect, gate_argparser, gate_fixture, parse_or_self_test, report_self_test
@@ -91,13 +111,69 @@ def _iter_source_files(root: Path) -> list[Path]:
     return out
 
 
+def _prose_lines(path: Path, text: str) -> frozenset[int]:
+    """1-based line numbers that are comment or docstring, for a python file.
+
+    Everything else -- including any line carrying an f-string -- is treated as
+    code. Non-python files return an empty set: stripping ``//`` and block
+    comments from JS/TS is a second parser's worth of work for a FP class that
+    has not actually shown up there, and guessing wrong would HIDE violations.
+
+    A file that does not parse is also treated as all-code. That is the safe
+    direction: a syntax error must not be a way to make the gate stop looking.
+    """
+    if path.suffix != ".py":
+        return frozenset()
+
+    prose: set[int] = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT:
+                prose.update(range(tok.start[0], tok.end[0] + 1))
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        return frozenset()
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return frozenset()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, "body", None)
+        if not body:
+            continue
+        first = body[0]
+        # A docstring is an expression statement whose whole value is a plain
+        # string constant. ast.JoinedStr (an f-string) is a different node type
+        # and never lands here, so an interpolating "docstring" stays code.
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            prose.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+
+    lines = text.splitlines()
+    # Belt and braces: never call a line prose if it carries an f-string
+    # prefix. f"...{exc}" in a response body is the violation, not a comment
+    # about one, and it is a string token either way.
+    fstring = re.compile(r"""\b(?:rf|fr|f)["']""", re.IGNORECASE)
+    return frozenset(n for n in prose if not (n <= len(lines) and fstring.search(lines[n - 1])))
+
+
 def _find_exists_then_read(path: Path, window: int = 5) -> list[tuple[int, str]]:
     """Lines where an existsSync/exists() check is followed within `window`
     lines by what looks like a read of the same kind of path."""
-    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    lines = text.splitlines()
+    prose = _prose_lines(path, text)
     hits: list[tuple[int, str]] = []
     read_pat = re.compile(r"(readFileSync|readFile\(|open\(|read_text|read_bytes)")
     for i, line in enumerate(lines):
+        if i + 1 in prose:
+            continue
         if _EXISTS_THEN_READ.search(line):
             for j in range(i + 1, min(i + 1 + window, len(lines))):
                 if read_pat.search(lines[j]):
@@ -108,9 +184,13 @@ def _find_exists_then_read(path: Path, window: int = 5) -> list[tuple[int, str]]
 
 def _find_raw_exception_in_response(path: Path, window: int = 6) -> list[tuple[int, str]]:
     """Lines with str(e)/repr(e) near something that looks like an HTTP response."""
-    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    lines = text.splitlines()
+    prose = _prose_lines(path, text)
     hits: list[tuple[int, str]] = []
     for i, line in enumerate(lines):
+        if i + 1 in prose:
+            continue
         if _RAW_EXCEPTION.search(line):
             lo, hi = max(0, i - window), min(len(lines), i + window)
             context = "\n".join(lines[lo:hi])
@@ -252,6 +332,61 @@ def _self_test() -> int:
             run_check(root, None) == 1,
             "run_check must fail with an uncaught violation present",
         )
+
+        # Case 3b: the same text in PROSE is not a violation. Both halves are
+        # asserted together on purpose -- a filter that skips prose is only
+        # correct if it still catches the real call on the line below it, and
+        # "no findings" would pass a test that only checked the docstring.
+        (root / "prose.py").write_text(
+            '"""Guards the leak where a handler did:\n\n'
+            "    raise HTTPException(status_code=500, detail=str(exc))\n\n"
+            'so it cannot come back.\n"""\n\n'
+            "# Historically this returned detail=str(exc) to the client.\n"
+            "def handler(request):\n"
+            "    try:\n"
+            "        do_thing()\n"
+            "    except Exception as exc:\n"
+            "        raise HTTPException(status_code=500, detail=safe(exc)) from exc\n"
+        )
+        problems = check(root, None)
+        expect(
+            failures,
+            not any("prose.py" in p for p in problems),
+            "str(exc) inside a docstring or a comment must not be a violation",
+        )
+        (root / "prose.py").unlink()
+
+        # Case 3c: an f-string in a response body IS a violation even though it
+        # lives inside a string token. This is the way the prose filter could
+        # silently swallow real findings, so it is pinned.
+        (root / "fstring.py").write_text(
+            "def handler(request):\n"
+            "    try:\n"
+            "        do_thing()\n"
+            "    except Exception as e:\n"
+            '        return HTTPException(status_code=500, detail=f"failed: {str(e)}")\n'
+        )
+        problems = check(root, None)
+        expect(
+            failures,
+            any("raw-exception-in-response" in p and "fstring.py" in p for p in problems),
+            "an f-string interpolating the exception must still be caught",
+        )
+        (root / "fstring.py").unlink()
+
+        # Case 3d: a file that does not parse must be scanned as all-code, not
+        # skipped. Otherwise a syntax error is a way to switch the gate off.
+        (root / "broken.py").write_text(
+            "def handler(  # unclosed paren\n"
+            "    return HTTPException(status_code=500, detail=str(e))\n"
+        )
+        problems = check(root, None)
+        expect(
+            failures,
+            any("broken.py" in p for p in problems),
+            "an unparseable file must still be scanned, not silently skipped",
+        )
+        (root / "broken.py").unlink()
 
         # Case 4: allowlisting the handler.py finding silences exactly that one.
         allowlist = root / "allowlist.yaml"
