@@ -45,21 +45,48 @@ Counts are per distinct SOURCE, not per flow. One unguarded source fans out to
 many sinks, so flow counts overstate the work: on PFactory 988 stock flows are
 76 distinct sources. Flow counts are reported alongside, never compared.
 
-Baseline measured 2026-08-15, PFactory ``dev`` @ 306d0f7, CodeQL 2.25.6,
-database over the whole repo (1192 Python files):
+Baseline measured 2026-08-15 by the first CI run (31883490034), PFactory
+``dev``, CodeQL 2.25.6, ``codeql/python-queries`` **1.8.4** (the version the
+pinned bundle ships), 1191 Python files:
 
 ===========================  ======  ======  =======  ===
 rule                         stock   fork    cleared  NEW
 ===========================  ======  ======  =======  ===
 py/path-injection            76      6       70       0
-py/command-line-injection    2       0       2        0
+py/command-line-injection    32      30      2        0
 py/full-ssrf                 1       0       1        0
 py/partial-ssrf              10      0       10       0
 ===========================  ======  ======  =======  ===
 
-All four forks are alive. ``py/partial-ssrf``'s stock column reproduces the
-"11 alerts" recorded in PFactory's own ``codeql-config.yml`` comment, which is
-the cross-check that this method measures the same thing that comment did.
+All four forks are alive.
+
+**Pinning the CLI does not pin the numbers, and this is why the pack version is
+printed next to them.** An earlier version of this table was measured locally
+with ``python-queries`` 1.8.7 and recorded ``py/command-line-injection`` as
+stock 2 / cleared 2. The first CI run said 32 / 2 instead, which was traced
+rather than waved away: same database, same CodeQL 2.25.6, only the query
+library differing.
+
+===================  =============  ==============
+python-queries       cmd-injection  distinct sources
+===================  =============  ==============
+1.8.4 (the bundle)   33 flows       32
+1.8.6                2 flows        2
+1.8.7                2 flows        2
+===================  =============  ==============
+
+A 16x swing in a security rule's source count with no code change. The bundle
+pins the CLI and the packs together, so CI is internally consistent and
+reproducible -- but a bundle bump will move these numbers, and without the pack
+version on the report nobody could tell that from a code regression. That is
+the same "counts are comparable only at the same suite and language set"
+principle, one level deeper than it is usually applied.
+
+``py/command-line-injection`` is the row to watch: under 1.8.4 the fork clears
+2 of 32 and leaves 30. It passes -- ``cleared > 0`` means the barrier still
+matches -- but it is nothing like the near-total clearance the other three
+show, and a reader given only the 1.8.7 numbers would have had the wrong
+picture of it.
 
 **The rule-4.13 discriminating check was run, and the forks pass it.** Numbers
 alone cannot tell a real barrier from a silencer, so the path-injection
@@ -174,13 +201,25 @@ def compare(rule: str, stock_csv: str, fork_csv: str) -> Comparison:
     )
 
 
-def report(comparisons: list[Comparison], source_files: int | None = None) -> int:
+def report(
+    comparisons: list[Comparison],
+    source_files: int | None = None,
+    query_pack: str | None = None,
+) -> int:
     """Print every comparison and return the exit code.
 
     Prints on the PASS path too. A gate that speaks only when it fails is
     indistinguishable from one that never ran (Factory#738), and this one runs
     on a schedule where that is the likely failure.
     """
+    if query_pack is not None:
+        # Factory#737, found by the first CI run disagreeing with the local
+        # baseline. Pinning the CLI does NOT pin the numbers: same database and
+        # same CodeQL 2.25.6, py/command-line-injection reports 32 distinct
+        # sources under codeql/python-queries 1.8.4 and 2 under 1.8.6. A 16x
+        # swing with no code change. The pack version is part of the question
+        # being asked, so it is printed next to the answer.
+        say(f"codeql/python-queries {query_pack}")
     if source_files is not None:
         # Factory#737: alert counts are comparable only at the same scan
         # breadth. A count that fell because the database covered less code is
@@ -227,7 +266,7 @@ def report(comparisons: list[Comparison], source_files: int | None = None) -> in
     return 1 if failures else 0
 
 
-def _load_manifest(path: Path) -> tuple[list[Comparison], int | None]:
+def _load_manifest(path: Path) -> tuple[list[Comparison], int | None, str | None]:
     """Read a manifest the workflow writes: rule -> stock/fork CSV paths.
 
     A missing manifest returns no comparisons rather than raising. The workflow
@@ -238,7 +277,7 @@ def _load_manifest(path: Path) -> tuple[list[Comparison], int | None]:
     """
     if not path.is_file():
         say(f"no manifest at {path}: the measurement step did not produce one")
-        return [], None
+        return [], None, None
     data = json.loads(path.read_text(encoding="utf-8"))
     root = path.parent
     comparisons = [
@@ -249,7 +288,7 @@ def _load_manifest(path: Path) -> tuple[list[Comparison], int | None]:
         )
         for entry in data["forks"]
     ]
-    return comparisons, data.get("source_files")
+    return comparisons, data.get("source_files"), data.get("query_pack")
 
 
 def _self_test() -> int:
@@ -309,6 +348,7 @@ def _self_test() -> int:
             json.dumps(
                 {
                     "source_files": breadth,
+                    "query_pack": "1.8.4",
                     "forks": [
                         {"rule": "py/path-injection", "stock": "stock.csv", "fork": "fork.csv"}
                     ],
@@ -316,14 +356,15 @@ def _self_test() -> int:
             ),
             encoding="utf-8",
         )
-        loaded, files = _load_manifest(root / "m.json")
+        loaded, files, pack = _load_manifest(root / "m.json")
         expect(failures, len(loaded) == 1 and loaded[0].cleared == 1, f"manifest load: {loaded}")
         expect(failures, files == breadth, f"scan breadth must survive the manifest, got {files}")
+        expect(failures, pack == "1.8.4", f"the query-pack version must survive too, got {pack}")
 
         # A manifest that was never written -- an earlier workflow step died.
         # It must reach the "measured nothing" verdict, not raise: the workflow
         # calls this from an `if: always()` step precisely to catch that case.
-        absent, _ = _load_manifest(root / "does-not-exist.json")
+        absent, _, _ = _load_manifest(root / "does-not-exist.json")
         expect(failures, absent == [], "a missing manifest must yield no comparisons, not raise")
         expect(failures, report(absent) == 1, "a missing manifest must fail, not pass quietly")
 
@@ -341,8 +382,8 @@ def main(argv: list[str] | None = None) -> int:
         return early
     assert args is not None  # noqa: S101 - guaranteed when early is None
     if args.manifest:
-        comparisons, source_files = _load_manifest(Path(args.manifest))
-        return report(comparisons, source_files)
+        comparisons, source_files, query_pack = _load_manifest(Path(args.manifest))
+        return report(comparisons, source_files, query_pack)
     if not (args.rule and args.stock and args.fork):
         parser.error("pass --manifest, or all of --rule/--stock/--fork (or --self-test)")
     single = compare(

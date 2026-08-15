@@ -79,7 +79,7 @@ _API = "https://api.github.com"
 _NOT_FOUND = 404
 # The registry is allowed to grow, never to quietly shrink: a gate removed
 # from it stops being watched, which looks exactly like a gate that is fine.
-_MIN_REGISTERED_GATES = 10
+_MIN_REGISTERED_GATES = 11
 
 
 @dataclass(frozen=True)
@@ -135,6 +135,15 @@ GATES: tuple[Gate, ...] = (
     ),
     Gate("parr-nightly.yml", 72, "0 3 * * *", "The end-to-end pipeline run."),
     Gate("model-probe.yml", 240, "0 7 * * 1", "Weekly model availability probe."),
+    Gate(
+        "codeql-fork-validation.yml",
+        72,
+        "29 4 * * *",
+        "Factory#737. Measures PFactory's four barrier forks against their stock "
+        "rules. Registered only after its first confirmed run (2026-08-15, run "
+        "31883490034) produced a real cleared/NEW pair -- registering a workflow "
+        "with zero runs makes this gate report NEVER RAN on the next push to main.",
+    ),
 )
 
 Fetcher = Callable[[str], object]
