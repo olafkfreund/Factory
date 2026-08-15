@@ -62,48 +62,47 @@ Counts are per distinct SOURCE, not per flow. One unguarded source fans out to
 many sinks, so flow counts overstate the work: on PFactory 988 stock flows are
 76 distinct sources. Flow counts are reported alongside, never compared.
 
-Baseline measured 2026-08-15 by the first CI run (31883490034), PFactory
-``dev``, CodeQL 2.25.6, ``codeql/python-queries`` **1.8.4** (the version the
-pinned bundle ships), 1191 Python files:
+Baseline measured 2026-08-15 against PFactory ``dev``, with the bundle
+PFactory's own code scanning runs (CodeQL **2.26.3**, ``python-all`` 7.2.3):
 
 ===========================  ======  ======  =======  ===
 rule                         stock   fork    cleared  NEW
 ===========================  ======  ======  =======  ===
 py/path-injection            76      6       70       0
-py/command-line-injection    32      30      2        0
+py/command-line-injection    2       0       2        0
 py/full-ssrf                 1       0       1        0
 py/partial-ssrf              10      0       10       0
 ===========================  ======  ======  =======  ===
 
-All four forks are alive.
+**The pin must be the analyser production runs, not merely a stable one.**
+Factory#778: this gate was pinned at 2.25.6 while PFactory's code scanning ran
+2.26.3, and reported ``py/command-line-injection`` as stock 32 / fork 30 -- a
+barrier apparently covering 2 of 32. Measured on the same tree with each
+coherent bundle:
 
-**Pinning the CLI does not pin the numbers, and this is why the pack version is
-printed next to them.** An earlier version of this table was measured locally
-with ``python-queries`` 1.8.7 and recorded ``py/command-line-injection`` as
-stock 2 / cleared 2. The first CI run said 32 / 2 instead, which was traced
-rather than waved away: same database, same CodeQL 2.25.6, only the query
-library differing.
+=========================  ======  ======  =======
+toolchain                  stock   fork    cleared
+=========================  ======  ======  =======
+2.25.6 (python-all 7.1.2)  32      30      2
+2.26.3 (python-all 7.2.3)  2       0       2
+=========================  ======  ======  =======
 
-===================  =============  ==============
-python-queries       cmd-injection  distinct sources
-===================  =============  ==============
-1.8.4 (the bundle)   33 flows       32
-1.8.6                2 flows        2
-1.8.7                2 flows        2
-===================  =============  ==============
+Neither number is wrong. Upstream narrowed the rule's source model between the
+releases, and **the barrier clears the same two sources in both** --
+``changelog.py:629`` via ``assert_safe_git_ref`` and ``terminal.py:384`` via
+``safe_spec_component``. Under 2.26.3 those two are the only sources stock
+reports at all, which is why the fork reports zero, and why PFactory has no
+alert of this rule in any state.
 
-A 16x swing in a security rule's source count with no code change. The bundle
-pins the CLI and the packs together, so CI is internally consistent and
-reproducible -- but a bundle bump will move these numbers, and without the pack
-version on the report nobody could tell that from a code regression. That is
-the same "counts are comparable only at the same suite and language set"
-principle, one level deeper than it is usually applied.
+The fork is faithful under both. Vacuous-barrier control -- the sanitizer
+rewritten to match nothing -- reproduces stock exactly: 32 of 32 at 2.25.6,
+2 of 2 at 2.26.3. So it is neither under-matching nor over-broad.
 
-``py/command-line-injection`` is the row to watch: under 1.8.4 the fork clears
-2 of 32 and leaves 30. It passes -- ``cleared > 0`` means the barrier still
-matches -- but it is nothing like the near-total clearance the other three
-show, and a reader given only the 1.8.7 numbers would have had the wrong
-picture of it. Tracked in Factory#778 rather than left inside a green row.
+One trap worth recording, because it cost an hour and looked exactly like a
+real finding: **mixing pack versions across families is not a configuration
+that ships.** ``python-queries`` 1.8.4 with ``python-all`` 7.2.2 reports stock
+32 and fork 2, which reads unmistakably as "the fork went blind". Only running
+whole coherent bundles resolved it. Compare bundles, never individual packs.
 
 **The rule-4.13 discriminating check was run, and the forks pass it.** Numbers
 alone cannot tell a real barrier from a silencer, so the path-injection
