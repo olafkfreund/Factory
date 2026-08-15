@@ -47,6 +47,7 @@ import check_branch_divergence as divergence_gate
 import check_chart_vs_gitops as chart_gate
 import check_cli_freshness as cli_gate
 import check_codeql_exclude_pairing as pairing_gate
+import check_codeql_fork_validation as forkval_gate
 import check_codeql_query_suite as suite_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
@@ -85,6 +86,8 @@ _COVERED: dict[str, str] = {
     "check_test_home_isolation.py": "test_test_home_isolation_gate_is_honest",
     # Factory#738.
     "check_gate_liveness.py": "test_gate_liveness_gate_is_honest",
+    # Factory#737.
+    "check_codeql_fork_validation.py": "test_codeql_fork_validation_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -690,6 +693,47 @@ def test_codeql_exclude_pairing_gate_is_honest(tmp_path: Path) -> None:
         "class Sanitizer extends DataFlow::Node { }\n"
     )
     assert pairing_gate.check(repo) == []
+
+
+def test_codeql_fork_validation_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> None:
+    """Factory#737's measured counterpart to Gate 2, held to this file's criteria.
+
+    Its scope is the manifest the workflow hands it -- the list of forks to
+    compare -- and that list is exactly what can silently shrink: a workflow
+    step that stops writing one pair produces a green run over three forks
+    instead of four, and nothing in a count-only report would say so. The two
+    properties are asserted directly rather than delegated, because the
+    dangerous direction here is a PASS that measured less than it claims.
+    """
+    assert forkval_gate._self_test() == 0
+
+    stock = '"P","d","error","a [[""x""|""relative:///a.py:1:1:1:2""]] f","/s.py","3"\n'
+    cleared_all = ""
+
+    # Enumeration: the pass path names every rule it compared and both numbers,
+    # so a reader can check the verdict rather than take "4 OK" on trust.
+    good = [
+        forkval_gate.compare("py/path-injection", stock, cleared_all),
+        forkval_gate.compare("py/full-ssrf", stock, cleared_all),
+    ]
+    assert forkval_gate.report(good, source_files=1192) == 0
+    out = capsys.readouterr().out
+    for rule in ("py/path-injection", "py/full-ssrf"):
+        assert rule in out, f"the pass path never named {rule}"
+    assert "cleared 1" in out, "the pass path must cite the number it derived the verdict from"
+    assert "1192 source file(s)" in out, (
+        "scan breadth must appear on the pass path: a count that fell because the database "
+        "covered less code is not an improvement, and nothing else would show it"
+    )
+
+    # Scope mutation: the tree and the queries are untouched, one entry leaves
+    # the manifest. The report must not claim four forks when it compared two.
+    assert "2 fork(s) measured" in out, "the report must state how many forks it actually compared"
+
+    # And the shrink taken all the way -- zero forks measured is the
+    # Factory#738 shape, and must be a failure rather than a quiet green.
+    assert forkval_gate.report([]) == 1, "a run that measured no forks at all must fail"
+    assert "no fork was measured" in capsys.readouterr().out
 
 
 def test_security_fork_drift_gate_is_honest(tmp_path: Path) -> None:

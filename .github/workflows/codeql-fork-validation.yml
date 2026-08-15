@@ -1,0 +1,174 @@
+name: codeql fork validation
+
+# "Are PFactory's four barrier-aware CodeQL forks still measurably correct?"
+# (Factory#737).
+#
+# Gate 2 (scripts/check_codeql_exclude_pairing.py) already asks the STRUCTURAL
+# question on every commit, in milliseconds: does every excluded stock rule have
+# a `-sanitized` query with a doc comment. Its own docstring disclaims the rest —
+# "a real fixture run would be stronger, but it needs a CodeQL database and
+# several minutes". This is that run, and the reason it is a separate scheduled
+# workflow rather than an addition to Gate 2.
+#
+# WHY THESE FOUR. PFactory excludes py/path-injection, py/command-line-injection,
+# py/full-ssrf and py/partial-ssrf in favour of local forks. For those four the
+# fork is the ONLY coverage: if one rots, the sink is checked by neither the
+# stock rule nor the fork, and nothing before this said so.
+#
+# WHY SCHEDULED, NOT ON PULL_REQUEST. A database build plus eight query runs is
+# minutes, not milliseconds — measured at ~20s for the build and ~15-60s per
+# query on a 1192-file tree. It also watches a SIBLING repo, so a hub PR trigger
+# could not see the change that matters (same reasoning as
+# security-fork-drift.yml and chart-vs-gitops.yml).
+#
+# DETECTION LAG, STATED: a fork that rots right after a run sits undetected
+# until the next daily run. Accepted, for the same reason those two accept it.
+#
+# WHY NO PAT: PFactory is public, like the repos security-fork-drift.yml reads.
+# If it is ever made private this fails on the checkout step itself, loudly
+# (standards rule 4.7, no soft-skip path).
+#
+# THE CLI VERSION IS PINNED AND THAT IS LOAD-BEARING. Alert counts are only
+# comparable at the same CodeQL version, the same query suite and the same
+# language set — a lower number obtained by asking a narrower question is not an
+# improvement. 2.25.6 is the version AIFactory's .github/codeql/VALIDATION.md
+# pins and the version the baseline in this workflow's comparator docstring was
+# measured with.
+#
+# LIVENESS: the measure step tees its verdict to the job summary on EVERY
+# outcome (`if: always()`), so a run that happened but measured nothing is
+# visible rather than silently green — and the comparator itself exits 1 when it
+# measured zero forks, because "no findings" and "the gate never looked" are the
+# failure this whole family is about (Factory#738). The complementary external
+# check is scripts/check_gate_liveness.py; this workflow is registered there in
+# a FOLLOW-UP change, deliberately after its first confirmed run, because
+# registering a workflow that has never run makes that gate report NEVER RAN.
+
+on:
+  schedule:
+    # Daily. Offset from the fleet's other scheduled gates (05:11 pin-freshness,
+    # 05:41 chart-vs-gitops, 05:53 security-fork-drift and orphaned-pr-commits,
+    # 06:17 branch-protection-drift, 06:41 cli-freshness). BST != UTC.
+    - cron: "29 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-fork-validation
+  cancel-in-progress: false
+
+env:
+  # Pinned deliberately — see the header. Bumping this invalidates every
+  # baseline number recorded against it.
+  CODEQL_BUNDLE: codeql-bundle-v2.25.6
+
+jobs:
+  validate:
+    name: PFactory's barrier forks still clear something and introduce nothing
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the hub (the comparator)
+        uses: actions/checkout@v4
+
+      - name: Check out PFactory (the tree under analysis)
+        uses: actions/checkout@v4
+        with:
+          repository: olafkfreund/PFactory
+          path: pfactory
+          ref: dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the pinned CodeQL bundle
+        run: |
+          set -euo pipefail
+          url="https://github.com/github/codeql-action/releases/download/${CODEQL_BUNDLE}/codeql-bundle-linux64.tar.gz"
+          curl -fsSL "$url" -o /tmp/codeql-bundle.tar.gz
+          mkdir -p /opt/codeql && tar -xzf /tmp/codeql-bundle.tar.gz -C /opt/codeql
+          echo "/opt/codeql/codeql" >> "$GITHUB_PATH"
+
+      - name: Confirm the CLI is the pinned version
+        # The counts are only comparable at a fixed version, so a silent bundle
+        # substitution has to fail here rather than produce numbers that look
+        # like the baseline and are not.
+        run: |
+          set -euo pipefail
+          got="$(codeql version --format=terse)"
+          want="${CODEQL_BUNDLE#codeql-bundle-v}"
+          echo "codeql $got (pinned $want)"
+          [ "$got" = "$want" ] || { echo "::error::CodeQL $got != pinned $want"; exit 1; }
+
+      - name: Prove the comparator before trusting its output
+        run: python scripts/check_codeql_fork_validation.py --self-test
+
+      - name: Build the database
+        run: |
+          set -euo pipefail
+          codeql database create /tmp/cqdb --language=python \
+            --source-root=pfactory --overwrite
+          # Scan breadth, carried into the report. A count that fell because the
+          # database covered less code is not an improvement (Factory#737).
+          find pfactory -name '*.py' -type f | wc -l > /tmp/source_files
+
+      - name: Run each fork against its stock counterpart
+        run: |
+          set -euo pipefail
+          cd pfactory/.github/codeql/custom-queries
+          codeql pack install
+          cd "$GITHUB_WORKSPACE"
+
+          run_pair() {
+            local key="$1" stock="$2" fork="$3"
+            codeql database analyze /tmp/cqdb --rerun --format=csv \
+              --output="/tmp/stock_${key}.csv" "codeql/python-queries:${stock}"
+            codeql database analyze /tmp/cqdb --rerun --format=csv \
+              --output="/tmp/fork_${key}.csv" \
+              "pfactory/.github/codeql/custom-queries/${fork}"
+          }
+
+          run_pair path    Security/CWE-022/PathInjection.ql                    PathInjectionSanitized.ql
+          run_pair cmd     Security/CWE-078/CommandInjection.ql                 CommandInjectionSanitized.ql
+          run_pair full    Security/CWE-918/FullServerSideRequestForgery.ql     FullSsrfSanitized.ql
+          run_pair partial Security/CWE-918/PartialServerSideRequestForgery.ql  PartialSsrfSanitized.ql
+
+          python - <<'PY'
+          import json, pathlib
+          pairs = [
+              ("py/path-injection", "path"),
+              ("py/command-line-injection", "cmd"),
+              ("py/full-ssrf", "full"),
+              ("py/partial-ssrf", "partial"),
+          ]
+          manifest = {
+              "source_files": int(pathlib.Path("/tmp/source_files").read_text().strip()),
+              "forks": [
+                  {"rule": rule, "stock": f"stock_{key}.csv", "fork": f"fork_{key}.csv"}
+                  for rule, key in pairs
+              ],
+          }
+          pathlib.Path("/tmp/manifest.json").write_text(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Measure, and publish the verdict either way
+        # `if: always()` so a run that produced no measurement is visible in the
+        # summary rather than reading as a quiet pass. It cannot detect the
+        # workflow never running at all -- that is check_gate_liveness.py's job.
+        if: always()
+        run: |
+          set -o pipefail
+          {
+            echo "## CodeQL fork validation (PFactory, ${CODEQL_BUNDLE})"
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          python scripts/check_codeql_fork_validation.py --manifest /tmp/manifest.json \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=$?
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $status
