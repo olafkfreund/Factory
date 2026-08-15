@@ -1,0 +1,13 @@
+title = "gitleaks config for Factory"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Factory-specific false positives"
+# Not a secret: table cell text "public API schemas, aggregated/anonymised metrics"
+# in the data-classification table of the compliance policy doc
+# (docs/compliance/policies/data-governance.md, line 123). Flagged by the
+# generic-api-key rule on entropy alone; it is prose, not a credential.
+regexes = ['''API schemas, .*aggregated/anonymised metrics''']
+paths = ['''docs/compliance/policies/data-governance\.md''']
