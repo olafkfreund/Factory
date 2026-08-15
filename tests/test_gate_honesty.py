@@ -50,6 +50,7 @@ import check_codeql_exclude_pairing as pairing_gate
 import check_codeql_query_suite as suite_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
+import check_gate_liveness as liveness_gate
 import check_merge_attribution as merge_gate
 import check_orphaned_pr_commits as orphan_gate
 import check_pin_freshness as pin_gate
@@ -82,6 +83,8 @@ _COVERED: dict[str, str] = {
     "check_sink_coverage.py": "test_sink_coverage_gate_is_honest",
     "check_banned_constructs.py": "test_banned_constructs_gate_is_honest",
     "check_test_home_isolation.py": "test_test_home_isolation_gate_is_honest",
+    # Factory#738.
+    "check_gate_liveness.py": "test_gate_liveness_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -826,3 +829,82 @@ def test_test_home_isolation_gate_is_honest(
         "the pass path must state how many files it watched, or 'untouched' is a "
         "claim with no scope attached"
     )
+
+
+def test_gate_liveness_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> None:
+    """Factory#738's external liveness check, held to this file's criteria.
+
+    Its subject is the ABSENCE of runs, which makes the enumeration property
+    load-bearing in an unusually direct way: the only reason to believe "every
+    gate is alive" is that the run said which gates it looked at. A registry
+    someone shortened reports fewer gates, all green, and says nothing at all
+    about the one it stopped watching -- Factory#523's shape exactly, and the
+    reason the scope mutation below deletes a ``GATES`` entry rather than
+    breaking a workflow.
+    """
+    now = datetime.datetime(2026, 8, 15, 12, 0, tzinfo=datetime.UTC)
+
+    def api(state: str, runs: list[dict[str, object]]):
+        def fetch(url: str) -> object:
+            if url.endswith("/runs?per_page=100"):
+                return {"workflow_runs": runs}
+            return {"state": state}
+
+        return fetch
+
+    fresh = (now - datetime.timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+    alive = api("active", [{"conclusion": "success", "created_at": fresh}])
+
+    # Enumeration, on the PASS path. A reader must be able to falsify the
+    # verdict against the Actions tab, which needs the workflow name and the
+    # age -- not a count.
+    line = liveness_gate.evidence(liveness_gate.GATES[0], "o/r", alive, now)
+    assert liveness_gate.GATES[0].workflow in line, "the pass line must name the workflow"
+    assert "3h ago" in line, "the pass line must cite the age it compared"
+    assert "budget" in line, "the pass line must cite the threshold it compared against"
+
+    # Every verdict carries its fragment: the FAILING path must also say what
+    # it measured and against what, or a reader cannot tell a real staleness
+    # from a mis-set budget.
+    stale_at = (now - datetime.timedelta(hours=500)).isoformat().replace("+00:00", "Z")
+    stale = api("active", [{"conclusion": "failure", "created_at": stale_at}])
+    problem = liveness_gate.verdict(liveness_gate.GATES[0], "o/r", stale, now)
+    assert problem is not None
+    assert "500h" in problem and "budget" in problem, "a stale verdict must cite both numbers"
+
+    # Scope mutation: hold the subject constant and delete one entry from the
+    # gate's own configuration. The gate must not simply report a smaller,
+    # greener fleet.
+    full = liveness_gate.check("o/r", alive, now)
+    assert full == [], "the unmutated fleet is the control and must be clean"
+
+    original = liveness_gate.GATES
+    try:
+        liveness_gate.GATES = original[:-1]
+        shortened = liveness_gate.check("o/r", alive, now)
+        assert shortened == [], "sanity: the shortened registry is still all-green"
+        # The gate cannot detect its own shortening at runtime -- nothing can,
+        # from inside. What it CAN do is refuse to ship shortened, which is
+        # what the floor in its self-test enforces.
+        assert len(original) >= liveness_gate._MIN_REGISTERED_GATES, (
+            "the shipped registry must meet its own floor"
+        )
+        assert len(liveness_gate.GATES) < liveness_gate._MIN_REGISTERED_GATES, (
+            "the mutation must breach the floor, or this case proves nothing"
+        )
+    finally:
+        liveness_gate.GATES = original
+
+    # And the floor is enforced by the gate's own self-test, not just asserted
+    # here: run it against the shortened registry and require a failure.
+    try:
+        liveness_gate.GATES = original[:-1]
+        assert liveness_gate._self_test() != 0, (
+            "the self-test must go red on a shortened registry -- otherwise the "
+            "floor is a comment, and a gate can be quietly narrowed"
+        )
+    finally:
+        liveness_gate.GATES = original
+
+    assert liveness_gate._self_test() == 0, "the self-test must pass on the shipped registry"
+    capsys.readouterr()
