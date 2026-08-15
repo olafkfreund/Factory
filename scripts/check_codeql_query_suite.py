@@ -88,18 +88,69 @@ def _config_file_queries(config_path: Path) -> list[str]:
     return [q.get("uses", "") for q in queries if isinstance(q, dict)]
 
 
-def effective_suite(repo: Path) -> tuple[bool, str]:
-    """Return (resolves_to_security_and_quality, explanation)."""
+def analysis_workflows(repo: Path) -> list[Path]:
+    """Every workflow that actually runs a CodeQL analysis, not merely named for one.
+
+    Factory#737. This used to be ``candidates[0]`` -- the alphabetically first
+    file matching ``*codeql*.y*ml`` -- which had two failure modes, and the
+    dangerous one is not the noisy one:
+
+    - a repo with more than one analysis workflow had all but the first
+      unchecked
+    - **a file sorting before ``codeql.yml`` silently became the thing this
+      gate measured.** ``codeql-fork-validation.yml`` (Factory#737) is such a
+      file, and it does not run an analysis at all. Had it carried an init
+      step with ``queries: security-and-quality``, this gate would have
+      reported PASS while the real ``codeql.yml`` sat downgraded -- a green
+      verdict on a file nobody meant it to read.
+
+    Selection is now by CONTENT: a workflow qualifies if it contains a
+    ``codeql-action/init`` step, because that step is what creates the alert
+    surface this gate exists to keep broad. A workflow that drives the CodeQL
+    CLI directly to run specific queries for a differential measurement is not
+    a repo's analysis configuration and has no suite to widen.
+    """
     workflow_dir = repo / ".github" / "workflows"
-    candidates = sorted(workflow_dir.glob("*codeql*.y*ml")) if workflow_dir.is_dir() else []
+    if not workflow_dir.is_dir():
+        return []
+    return [
+        path
+        for path in sorted(workflow_dir.glob("*codeql*.y*ml"))
+        if "codeql-action/init" in path.read_text(encoding="utf-8")
+    ]
+
+
+def effective_suite(repo: Path) -> tuple[bool, str]:
+    """Return (resolves_to_security_and_quality, explanation).
+
+    EVERY analysis workflow must resolve broadly, not just one of them: a
+    second workflow analysing the same code with the default suite produces
+    exactly the "0 open alerts because we asked a narrower question" result
+    this gate was written for.
+    """
+    candidates = analysis_workflows(repo)
     if not candidates:
-        return False, "no *codeql*.yml workflow found under .github/workflows/"
-    workflow_text = candidates[0].read_text(encoding="utf-8")
+        return False, "no *codeql*.yml workflow with a codeql-action/init step found"
+    reasons: list[str] = []
+    for candidate in candidates:
+        ok, why = _suite_of(repo, candidate)
+        if not ok:
+            return False, why
+        reasons.append(why)
+    # Each workflow's own reason is carried through, not summarised into a
+    # count: "2 workflows resolve broadly" is unfalsifiable by a reader, while
+    # "codeql.yml: queries: input is 'security-and-quality'" can be checked.
+    return True, "; ".join(reasons)
+
+
+def _suite_of(repo: Path, workflow: Path) -> tuple[bool, str]:
+    """Resolve one analysis workflow's effective query suite."""
+    workflow_text = workflow.read_text(encoding="utf-8")
     queries_input, config_file_input = _find_init_step_queries(workflow_text)
     if queries_input is None and config_file_input is None:
         return (
             False,
-            f"{candidates[0].name}: codeql-action/init has neither `queries:` nor "
+            f"{workflow.name}: codeql-action/init has neither `queries:` nor "
             "`config-file:` — defaults to CodeQL's narrow default suite",
         )
 
@@ -109,16 +160,22 @@ def effective_suite(repo: Path) -> tuple[bool, str]:
         config_path = repo / config_file_input.strip("'\"")
         resolved = _config_file_queries(config_path)
         if _REQUIRED_SUITE in resolved:
-            return True, f"config-file {config_file_input} lists `- uses: {_REQUIRED_SUITE}`"
+            return True, (
+                f"{workflow.name}: config-file {config_file_input} lists "
+                f"`- uses: {_REQUIRED_SUITE}`"
+            )
         return False, (
-            f"config-file {config_file_input} REPLACES the workflow's `queries:` input "
+            f"{workflow.name}: config-file {config_file_input} REPLACES the workflow's "
+            f"`queries:` input "
             f"({queries_input!r}) and does not itself list `- uses: {_REQUIRED_SUITE}` "
             f"(found: {resolved or 'nothing'}) — effective suite is CodeQL's narrow default"
         )
 
     if queries_input and _REQUIRED_SUITE in queries_input:
-        return True, f"workflow queries: input is {queries_input!r}"
-    return False, f"workflow queries: input is {queries_input!r}, missing {_REQUIRED_SUITE}"
+        return True, f"{workflow.name}: queries: input is {queries_input!r}"
+    return False, (
+        f"{workflow.name}: queries: input is {queries_input!r}, missing {_REQUIRED_SUITE}"
+    )
 
 
 def check_sarif_floor(sarif_path: Path, min_rules: int) -> tuple[bool, str]:
@@ -241,6 +298,50 @@ def _self_test() -> int:
         )
         ok, explanation = check_sarif_floor(sarif_real, min_rules=50)
         expect(failures, ok, "a SARIF with 60 distinct rules must pass a floor of 50")
+
+        # Case 6 (Factory#737): a NON-analysis workflow sorting before
+        # codeql.yml must not become the file this gate reads. This is the
+        # dangerous direction, so it is asserted as a false GREEN, not just as
+        # noise: the decoy is given a passing queries: input while the real
+        # analysis workflow is left downgraded. Under the old candidates[0]
+        # selection this returned True.
+        (repo / ".github" / "workflows" / "codeql.yml").write_text(
+            "jobs:\n  analyze:\n    steps:\n      - uses: github/codeql-action/init@v3\n"
+        )
+        (repo / ".github" / "workflows" / "codeql-aaa-decoy.yml").write_text(
+            "jobs:\n  measure:\n    steps:\n      - uses: github/codeql-action/init@v3\n"
+            "        with:\n          queries: security-and-quality\n"
+        )
+        ok, why = effective_suite(repo)
+        expect(
+            failures,
+            not ok and "codeql.yml" in why,
+            f"a passing decoy must not mask a downgraded codeql.yml, got {ok} / {why!r}",
+        )
+
+        # Case 7: a workflow that drives the CodeQL CLI directly (no init step)
+        # is not an analysis config and has no suite to widen -- it must be
+        # ignored rather than failed. codeql-fork-validation.yml is exactly this.
+        (repo / ".github" / "workflows" / "codeql-aaa-decoy.yml").unlink()
+        (repo / ".github" / "workflows" / "codeql.yml").write_text(
+            "jobs:\n  analyze:\n    steps:\n      - uses: github/codeql-action/init@v3\n"
+            "        with:\n          queries: security-and-quality\n"
+        )
+        (repo / ".github" / "workflows" / "codeql-fork-validation.yml").write_text(
+            "jobs:\n  validate:\n    steps:\n      - run: codeql database analyze /tmp/db\n"
+        )
+        ok, why = effective_suite(repo)
+        expect(
+            failures,
+            ok,
+            f"a CLI-driven measurement workflow must not be read as an analysis config: {why!r}",
+        )
+        expect(
+            failures,
+            "codeql-fork-validation.yml" not in why,
+            f"the non-analysis workflow must not appear in the verdict, got {why!r}",
+        )
+        (repo / ".github" / "workflows" / "codeql-fork-validation.yml").unlink()
 
     return report_self_test(failures)
 
