@@ -25,5 +25,5 @@
 path = "shared/factory-github/providers/azure_devops_provider.py"
 rule = "S608"
 count = 1
-reason = "WIQL query interpolates the tenant-configured Azure DevOps project name. Real, low-severity injection; the fix must land here in the canonical and then re-vendor to four siblings behind their drift gates, which is a coordinated wave and not this PR."
-issue = "Factory#721"
+reason = "The injection is FIXED (Factory#721): the project name goes through `_wiql_literal`, which doubles every single quote, so a tenant-supplied name can only ever be compared as data. The finding remains because WIQL has no parameter binding at all -- the endpoint takes one opaque query string -- so ruff still sees interpolation and cannot see the escaping. That leaves it in the Factory#723 class: unavoidable interpolation, checked at the interpolation point. Guarded by tests/test_azure_devops_wiql.py."
+issue = "Factory#723"
