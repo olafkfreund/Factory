@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the hub (comparator)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: Factory
 
@@ -76,20 +76,20 @@ jobs:
       # branch developers actually work on rather than the release branch. If
       # that ever changes, change it in one place and say so here.
       - name: Check out the four service repos
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with: { repository: olafkfreund/AIFactory, ref: dev, path: AIFactory }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: olafkfreund/PFactory, ref: dev, path: PFactory }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: olafkfreund/TFactory, ref: dev, path: TFactory }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: olafkfreund/CFactory, ref: dev, path: CFactory }
 
       - name: Check out factory-gitops
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with: { repository: olafkfreund/factory-gitops, ref: main, path: factory-gitops }
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
