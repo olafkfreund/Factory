@@ -132,6 +132,39 @@ reason = "fixture"
     assert "PASS" not in out
 
 
+@pytest.mark.parametrize("omitted", ["path", "rule", "reason"])
+def test_every_required_field_is_validated_not_just_the_first(
+    tmp_path: Path, ruff: str, omitted: str
+) -> None:
+    """Each required field must be checked, not just whichever is checked first.
+
+    The validator loops over a three-tuple of (field, value). Restricting that
+    loop to its first element left all 24 other tests green — every one of them
+    supplied a complete entry, so `path` alone was ever exercised. It fails
+    OPEN in the way that matters for `reason`: an entry with no justification
+    at all is accepted, and the justification is the entire content of a
+    grandfathering decision.
+
+    (`rule` missing also strands the entry, which surfaces some other way. That
+    is not an argument for leaving it unchecked — a check that happens to be
+    covered by a downstream accident is not a check.)
+    """
+    fields = {
+        "path": '"cache.py"',
+        "rule": '"S301"',
+        "reason": '"fixture"',
+        "issue": '"Factory#721"',
+    }
+    del fields[omitted]
+    (tmp_path / "cache.py").write_text(_PICKLE_RCE, encoding="utf-8")
+    listing = "[[allow]]\n" + "\n".join(f"{k} = {v}" for k, v in fields.items()) + "\n"
+
+    code, out = _run(tmp_path, ruff, allowlist=listing)
+    assert code == 1, out
+    assert "PASS" not in out
+    assert omitted in out, f"omitting `{omitted}` was not reported:\n{out}"
+
+
 def test_a_malformed_issue_reference_fails(tmp_path: Path, ruff: str) -> None:
     (tmp_path / "cache.py").write_text(_PICKLE_RCE, encoding="utf-8")
     vague = """
@@ -307,6 +340,38 @@ expires = "2020-01-01"
     code, out = _run(tmp_path, ruff, allowlist=expired)
     assert code == 1, out
     assert "expired" in out
+
+
+def test_an_expired_entry_fires_when_it_is_not_the_first(tmp_path: Path, ruff: str) -> None:
+    """Expiry is checked per entry, so the fixture needs more than one entry.
+
+    Found by sweeping every loop in the engine and truncating it to its first
+    element (g3-tokens' n=1 heuristic, applied mechanically). `_check_expiry`
+    restricted to `entries[:1]` left all 24 other tests green, and it fails
+    OPEN: an entry that expired two years ago never fires as long as some other
+    entry sits above it. Expiry is part of what stops the allowlist becoming
+    permanent, so silently skipping it is the failure that matters.
+    """
+    (tmp_path / "first.py").write_text(_PICKLE_RCE, encoding="utf-8")
+    (tmp_path / "second.py").write_text(_PICKLE_RCE, encoding="utf-8")
+    listing = """
+[[allow]]
+path = "first.py"
+rule = "S301"
+reason = "current, and deliberately first"
+issue = "Factory#721"
+
+[[allow]]
+path = "second.py"
+rule = "S301"
+reason = "expired, and deliberately not first"
+issue = "Factory#721"
+expires = "2020-01-01"
+"""
+    code, out = _run(tmp_path, ruff, allowlist=listing)
+    assert code == 1, out
+    assert "expired" in out, f"the second entry's expiry was not checked:\n{out}"
+    assert "second.py" in out
 
 
 def test_scanning_zero_files_is_a_failure_not_a_pass(tmp_path: Path, ruff: str) -> None:
