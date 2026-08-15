@@ -10,7 +10,23 @@ have no stock lint rule:
    file vanishes in the TOCTOU window between the check and the read.
 2. Returning raw exception text (``str(e)``, ``repr(e)``, an f-string
    interpolating ``e``) in an HTTP response body leaks stack internals,
-   paths, and query fragments to the client — 152 alerts of this shape today.
+   paths, and query fragments to the client.
+
+   That sentence has named the f-string case since this script was written,
+   and until Factory#781 the pattern could not match it: ``_RAW_EXCEPTION``
+   was four literal spellings, so ``detail=f"failed: {exc}"`` was invisible.
+   Recorded because of who it misled — anyone auditing coverage by READING
+   this docstring would reasonably have concluded the shape was handled, and
+   21 genuine response leaks sat behind that reasonable conclusion. A
+   documented capability the code does not have is worse than an undocumented
+   gap, because it converts a reader's diligence into a wrong answer.
+
+   The original text also carried a count ("152 alerts of this shape today").
+   It is dropped rather than updated: a number in a docstring is stale the
+   week after it is written, and this one had drifted three ways at once (the
+   prose filter in Factory#762 removed 19, the widening in Factory#781 added
+   28, and the gate never ran outside the hub at all). Counts belong in the
+   issue that is tracking them, where they carry a date.
 
 (pickle/eval-exec/shell=True are owned by the g2-seclint ruff-S gate; this
 script deliberately does not re-check them.)
