@@ -1,0 +1,50 @@
+
+import logging
+logger = logging.getLogger(__name__)
+
+
+def caught_after_single_line_log(e):
+    logger.warning("failed: %s", "x")
+    raise HTTPException(status_code=500, detail=str(e))
+
+
+def caught_after_closed_multiline_log(e):
+    logger.warning(
+        "context %s",
+        "safe",
+    )
+    raise HTTPException(status_code=500, detail=str(e))
+
+
+def suppressed_inside_multiline_log(e):
+    logger.warning(
+        "rejected: %s",
+        str(e),
+    )
+    raise HTTPException(status_code=400, detail="literal")
+
+
+def suppressed_inside_single_line_log(e):
+    logger.debug("failed: %s", sanitize_log(str(e)))
+    return []
+
+
+def caught_after_log_closed_on_the_same_line(e):
+    logger.warning("noted"); raise HTTPException(status_code=500, detail=str(e))
+
+
+def caught_when_log_closes_before_a_multiline_response(e):
+    logger.info("about to fail"); raise HTTPException(
+        status_code=500,
+        detail=str(e),
+    )
+
+
+def suppressed_interp_inside_log(e):
+    logger.warning(f"detail={e}")
+    raise HTTPException(status_code=400, detail="literal")
+
+
+def caught_interp_in_response(e):
+    logger.warning("failed")
+    raise HTTPException(status_code=500, detail=f"boom: {e}")
