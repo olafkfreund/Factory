@@ -92,7 +92,37 @@ def _is_skippable(path: Path) -> bool:
 
 
 _EXISTS_THEN_READ = re.compile(r"(existsSync|\.exists\(\)|os\.path\.exists)\s*\(")
-_RAW_EXCEPTION = re.compile(r"\b(str\(e\)|str\(exc\)|repr\(e\)|repr\(exc\))")
+
+# The names an exception is conventionally bound to. `str(err)` leaks exactly
+# what `str(e)` leaks; the original pattern listed two spellings and missed the
+# rest.
+_EXC_NAME = r"(?:e|ex|exc|err|error|exception)"
+_RAW_EXCEPTION = re.compile(rf"\b(?:str|repr)\(\s*{_EXC_NAME}\s*\)")
+
+# Bare interpolation: `detail=f"failed: {exc}"` renders through __str__ and
+# leaks precisely what `str(exc)` leaks, but matched nothing before. 21 genuine
+# response leaks fleet-wide were invisible for this reason alone (Factory#718),
+# including one where the author had wrapped the LOG line in sanitize_log and
+# put raw `{e}` in the response body directly below it.
+#
+# Two restrictions, both measured rather than assumed:
+#
+# 1. **Python files only.** This is f-string syntax. JavaScript writes `${e}`,
+#    and minified bundles are full of it -- scanning `static/assets/*.js` for
+#    this pattern produced 23 matches, every one of them coincidental. The
+#    `str(e)` form above still applies to every language.
+# 2. **The anchor must be on the SAME line**, not merely within the +/-6 line
+#    window the `str(exc)` rule uses. That window is already the weakest part
+#    of this gate -- it is why a local named `response_text` can qualify a line
+#    as a response. Applying it to a pattern this common would have turned 26
+#    findings into 120 in one repo, most of them noise, and a gate that cries
+#    wolf gets switched off. Same-line costs some recall: a `detail=` on a
+#    continuation line below the f-string is missed. That is the right side to
+#    err on for a rule that is about to become blocking.
+_RESPONSE_ANCHOR = re.compile(
+    r"(detail\s*=|HTTPException|JSONResponse|jsonify|\"error\"\s*:|'error'\s*:)"
+)
+_RAW_EXCEPTION_INTERP = re.compile(rf"(?<!\$)\{{\s*{_EXC_NAME}\s*(?:![sra])?\s*(?::[^}}]*)?\}}")
 _HTTP_RESPONSE_HINT = re.compile(
     r"(HTTPException|JSONResponse|Response|jsonify|res\.json|res\.send|reply)",
     re.IGNORECASE,
@@ -188,6 +218,7 @@ def _find_raw_exception_in_response(path: Path, window: int = 6) -> list[tuple[i
     lines = text.splitlines()
     prose = _prose_lines(path, text)
     hits: list[tuple[int, str]] = []
+    is_python = path.suffix == ".py"
     for i, line in enumerate(lines):
         if i + 1 in prose:
             continue
@@ -196,6 +227,9 @@ def _find_raw_exception_in_response(path: Path, window: int = 6) -> list[tuple[i
             context = "\n".join(lines[lo:hi])
             if _HTTP_RESPONSE_HINT.search(context):
                 hits.append((i + 1, line.strip()))
+        elif is_python and _RAW_EXCEPTION_INTERP.search(line) and _RESPONSE_ANCHOR.search(line):
+            # `elif`, so a line carrying both forms is reported once.
+            hits.append((i + 1, line.strip()))
     return hits
 
 
@@ -387,6 +421,72 @@ def _self_test() -> int:
             "an unparseable file must still be scanned, not silently skipped",
         )
         (root / "broken.py").unlink()
+
+        # Case 3e: bare interpolation. `detail=f"...{exc}"` renders through
+        # __str__ and leaks what str(exc) leaks; it matched nothing before
+        # (Factory#718), which hid 21 genuine response leaks fleet-wide.
+        (root / "interp.py").write_text(
+            "def handler(request):\n"
+            "    try:\n"
+            "        do_thing()\n"
+            "    except Exception as exc:\n"
+            '        raise HTTPException(status_code=500, detail=f"failed: {exc}")\n'
+        )
+        problems = check(root, None)
+        expect(
+            failures,
+            any("raw-exception-in-response" in p and "interp.py" in p for p in problems),
+            "an f-string interpolating the exception in a response must be caught",
+        )
+        (root / "interp.py").unlink()
+
+        # Case 3f: the alternate spellings. str(err) leaks exactly what str(e)
+        # leaks; the original pattern listed two names and missed four.
+        (root / "spellings.py").write_text(
+            "def handler(request):\n"
+            "    try:\n"
+            "        do_thing()\n"
+            "    except OSError as err:\n"
+            '        return JSONResponse({"error": str(err)})\n'
+        )
+        problems = check(root, None)
+        expect(
+            failures,
+            any("spellings.py" in p for p in problems),
+            "str(err) must be caught, not only str(e)/str(exc)",
+        )
+        (root / "spellings.py").unlink()
+
+        # Case 3g: a JS template literal is NOT an f-string. Minified bundles
+        # are full of `${e}`; scanning them for this pattern produced 23
+        # coincidental matches, so the interpolation rule is python-only.
+        (root / "bundle.js").write_text("function h(e){return jsonify({error: `failed: ${e}`})}\n")
+        problems = check(root, None)
+        expect(
+            failures,
+            not any("bundle.js" in p for p in problems),
+            "a JS template literal must not be treated as an f-string",
+        )
+        (root / "bundle.js").unlink()
+
+        # Case 3h: interpolation with NO response anchor on the same line is
+        # not a finding. The +/-6 window is the loosest part of this gate and
+        # must not be widened along with the pattern.
+        (root / "logonly.py").write_text(
+            "def handler(request):\n"
+            "    try:\n"
+            "        do_thing()\n"
+            "    except Exception as exc:\n"
+            '        logger.warning(f"failed: {exc}")\n'
+            '        return HTTPException(status_code=500, detail="nope")\n'
+        )
+        problems = check(root, None)
+        expect(
+            failures,
+            not any("logonly.py" in p for p in problems),
+            "interpolation into a log, with a literal response, is not a finding",
+        )
+        (root / "logonly.py").unlink()
 
         # Case 4: allowlisting the handler.py finding silences exactly that one.
         allowlist = root / "allowlist.yaml"
