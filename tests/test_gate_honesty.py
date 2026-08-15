@@ -46,6 +46,7 @@ import check_banned_constructs as banned_gate
 import check_branch_divergence as divergence_gate
 import check_chart_vs_gitops as chart_gate
 import check_cli_freshness as cli_gate
+import check_codeql_analysis_honesty as codeql_honesty_gate
 import check_codeql_exclude_pairing as pairing_gate
 import check_codeql_fork_validation as forkval_gate
 import check_codeql_query_suite as suite_gate
@@ -88,6 +89,8 @@ _COVERED: dict[str, str] = {
     "check_gate_liveness.py": "test_gate_liveness_gate_is_honest",
     # Factory#737.
     "check_codeql_fork_validation.py": "test_codeql_fork_validation_gate_is_honest",
+    # Factory#774.
+    "check_codeql_analysis_honesty.py": "test_codeql_analysis_honesty_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -952,3 +955,75 @@ def test_gate_liveness_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> Non
 
     assert liveness_gate._self_test() == 0, "the self-test must pass on the shipped registry"
     capsys.readouterr()
+
+
+def test_codeql_analysis_honesty_gate_is_honest() -> None:
+    """Factory#774: the LATEST analysis per category must be a real scan.
+
+    codeql-action/analyze's default ``upload: always`` publishes even on a
+    cancelled run, and this repo's own history has it happening twice --
+    Factory#771 (a PR merge-ref) and commit 4e2420e9 on main itself, where a
+    zero-rule upload stood as the ONLY recorded analysis until an unrelated
+    push happened to supersede it 100 seconds later. The property under test
+    is "can it WIN", not "can it be uploaded at all": a superseded zero-rule
+    entry from an earlier commit is Factory#775's benign case and must read
+    clean, while the same entry as the NEWEST one for its category must not.
+    """
+
+    def api(analyses: list[dict[str, object]]):
+        def fetch(url: str) -> object:
+            assert "code-scanning/analyses" in url, f"gate hit an unexpected URL: {url}"
+            return analyses
+
+        return fetch
+
+    ref = "refs/heads/main"
+    real = {
+        "ref": ref,
+        "category": "/language:python",
+        "rules_count": 172,
+        "results_count": 8,
+        "commit_sha": "a" * 40,
+        "created_at": "2026-08-15T12:00:00Z",
+    }
+    honest = api([real])
+
+    # Enumeration, on the PASS path: a reader must be able to check the
+    # rules_count/results_count/commit against the Security tab, not just a
+    # count of how many categories were "fine".
+    lines = codeql_honesty_gate.evidence("o/r", ref, honest)
+    assert lines == [codeql_honesty_gate._cite("/language:python", real)], (
+        "the pass line must cite the exact fragment it compared"
+    )
+    assert codeql_honesty_gate.check("o/r", ref, honest) == [], "a lone real analysis is clean"
+
+    # THE scope mutation this gate's subject is actually about: the same
+    # ref+category, but the NEWEST analysis is the zero-rule one. This is
+    # commit 4e2420e9's exact shape, and it is what decides whether the
+    # defect is cosmetic or can mask a real result.
+    cancelled = dict(
+        real, rules_count=0, results_count=0, commit_sha="b" * 40, created_at="2026-08-15T12:05:00Z"
+    )
+    wins = api([real, cancelled])
+    problems = codeql_honesty_gate.check("o/r", ref, wins)
+    assert len(problems) == 1 and "rules_count=0" in problems[0], (
+        "a later zero-rule upload superseding an earlier real one must be caught"
+    )
+    assert "b" * 10 in problems[0], "the failing verdict must cite which commit lied clean"
+
+    # The inverse must NOT fire -- Factory#775's actual, harmless case: an
+    # older zero-rule analysis a later real one has already superseded.
+    loses = api([cancelled, dict(real, created_at="2026-08-15T12:10:00Z")])
+    assert codeql_honesty_gate.check("o/r", ref, loses) == [], (
+        "a superseded zero-rule analysis must not fail the gate -- it lost"
+    )
+
+    # A ref with no analyses at all must fail loudly, not read as "nothing to
+    # check, therefore clean" -- the same reasoning check_gate_liveness.py
+    # applies to a workflow with zero runs.
+    empty = codeql_honesty_gate.check("o/r", ref, api([]))
+    assert len(empty) == 1 and "no CodeQL analyses found" in empty[0], (
+        "zero analyses for the ref must be caught, not silently passed"
+    )
+
+    assert codeql_honesty_gate._self_test() == 0, "the gate's own self-test must pass"
