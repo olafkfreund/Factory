@@ -388,17 +388,39 @@ def _load_allowlist(path: Path | None) -> set[tuple[str, str]]:
 
 def check(root: Path, allowlist_path: Path | None) -> list[str]:
     allowed = _load_allowlist(allowlist_path)
+    # Which entries actually suppressed something. An entry that suppresses
+    # nothing is reported below: see the block at the end of this function.
+    used: set[tuple[str, str]] = set()
     problems: list[str] = []
     for path in _iter_source_files(root):
         rel = str(path.relative_to(root))
         for lineno, snippet in _find_exists_then_read(path):
             if (rel, "exists-then-read") in allowed:
+                used.add((rel, "exists-then-read"))
                 continue
             problems.append(f"{rel}:{lineno}: exists-then-read — {snippet}")
         for lineno, snippet in _find_raw_exception_in_response(path):
             if (rel, "raw-exception-in-response") in allowed:
+                used.add((rel, "raw-exception-in-response"))
                 continue
             problems.append(f"{rel}:{lineno}: raw-exception-in-response — {snippet}")
+
+    # A grandfather that no longer covers anything is not harmless housekeeping.
+    # Entries are keyed (path, rule) — PATH-level — so a dead entry goes on
+    # exempting the whole file from that rule, and the next real violation
+    # added to it is suppressed by an entry whose finding was fixed months
+    # earlier. AIFactory carried three of these after Factory#782: its OIDC
+    # login callback was exempt from `raw-exception-in-response` for nothing,
+    # and nothing anywhere reported it (Factory#788).
+    #
+    # This is also what makes "empty allowlist by 2026-09-15" (Factory#718)
+    # checkable rather than aspirational: without it, entries that should have
+    # been deleted are indistinguishable from entries still doing work.
+    for path_str, rule in sorted(allowed - used):
+        problems.append(
+            f"{path_str}: allowlist entry for `{rule}` matches nothing — "
+            "the finding is fixed or the path moved; delete the entry"
+        )
     return problems
 
 
@@ -459,6 +481,71 @@ def run_check(root: Path, allowlist_path: Path | None) -> int:
         return 1
     print("OK: no banned constructs found (outside the allowlist).")  # noqa: T201
     return 0
+
+
+def _self_test_allowlist_cases(root: Path, failures: list[str]) -> None:
+    """The allowlist half of the self-test: silencing, review, and the ratchet.
+
+    Extracted from _self_test when Factory#788 added case 6b and pushed it past
+    the statement limit. Splitting on the allowlist boundary rather than by
+    line count keeps each half readable on its own.
+    """
+    # Case 4: allowlisting the handler.py finding silences exactly that one.
+    allowlist = root / "allowlist.yaml"
+    allowlist.write_text(
+        "- path: handler.py\n"
+        "  rule: raw-exception-in-response\n"
+        "  reason: grandfathered, pre-existing\n"
+        "  issue: FAKE-123\n"
+    )
+    remaining = check(root, allowlist)
+    expect(
+        failures,
+        not any("handler.py" in p for p in remaining),
+        "an allowlisted (path, rule) pair must be silenced",
+    )
+    expect(
+        failures,
+        any("toctou.js" not in p for p in remaining) or not remaining,
+        "allowlisting one finding must not silence unrelated files",
+    )
+
+    # Case 5: an allowlist entry with no issue ref fails the gate outright.
+    bad_allowlist = root / "bad.yaml"
+    bad_allowlist.write_text(
+        "- path: handler.py\n  rule: raw-exception-in-response\n  reason: no issue ref\n"
+    )
+    expect(
+        failures,
+        run_check(root, bad_allowlist) == 1,
+        "an allowlist entry without an issue ref must itself fail the gate",
+    )
+
+    # Case 6: healed -> the allowlist entry is now DEAD and must be
+    # reported (Factory#788). Before that check existed this case asserted
+    # the opposite -- that a healed file with its grandfather still in place
+    # was green -- which is precisely how a dead entry survives: the
+    # (path, rule) key means it goes on exempting the whole file, so the
+    # next real violation added to handler.py would be silenced by an entry
+    # whose finding was fixed here.
+    (root / "handler.py").write_text("def handler(request):\n    return safe_message()\n")
+    expect(
+        failures,
+        run_check(root, allowlist) == 1,
+        "a healed finding must leave its allowlist entry reported as dead",
+    )
+
+    # Case 6b: deleting the dead entry is what returns the gate to green.
+    # Asserted as its own case because case 6 alone would also pass against
+    # an implementation that failed on EVERY entry, live ones included --
+    # which is the shape that tells four repos to delete exemptions that
+    # are still doing work.
+    allowlist.write_text("[]\n")
+    expect(
+        failures,
+        run_check(root, allowlist) == 0,
+        "gate must pass once the violation is fixed AND its entry removed",
+    )
 
 
 def _self_test() -> int:
@@ -620,42 +707,7 @@ def _self_test() -> int:
         )
         (root / "logonly.py").unlink()
 
-        # Case 4: allowlisting the handler.py finding silences exactly that one.
-        allowlist = root / "allowlist.yaml"
-        allowlist.write_text(
-            "- path: handler.py\n"
-            "  rule: raw-exception-in-response\n"
-            "  reason: grandfathered, pre-existing\n"
-            "  issue: FAKE-123\n"
-        )
-        remaining = check(root, allowlist)
-        expect(
-            failures,
-            not any("handler.py" in p for p in remaining),
-            "an allowlisted (path, rule) pair must be silenced",
-        )
-        expect(
-            failures,
-            any("toctou.js" not in p for p in remaining) or not remaining,
-            "allowlisting one finding must not silence unrelated files",
-        )
-
-        # Case 5: an allowlist entry with no issue ref fails the gate outright.
-        bad_allowlist = root / "bad.yaml"
-        bad_allowlist.write_text(
-            "- path: handler.py\n  rule: raw-exception-in-response\n  reason: no issue ref\n"
-        )
-        expect(
-            failures,
-            run_check(root, bad_allowlist) == 1,
-            "an allowlist entry without an issue ref must itself fail the gate",
-        )
-
-        # Case 6: healed -> back to green (with the reviewed allowlist).
-        (root / "handler.py").write_text("def handler(request):\n    return safe_message()\n")
-        expect(
-            failures, run_check(root, allowlist) == 0, "gate must pass once the violation is fixed"
-        )
+        _self_test_allowlist_cases(root, failures)
 
         # Case 7: the scanned commit is stated, and a non-git directory says so
         # honestly rather than omitting the line (rule 4.10 — reproducibility).
