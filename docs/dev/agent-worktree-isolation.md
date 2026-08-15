@@ -105,6 +105,55 @@ message naming the lock reason. Getting it wrong requires deliberately typing
 fact -- but nothing needs to, because the unsafe form is the one you have to go
 out of your way to write.
 
+### For bulk cleanup, use the tool
+
+One command at a time is safe by default. Thirty are not, and that is the case
+that actually arises: `scripts/prune_agent_worktrees.py` exists for it.
+
+```bash
+python scripts/prune_agent_worktrees.py --repo /path/to/Repo          # report
+python scripts/prune_agent_worktrees.py --repo /path/to/Repo --remove # act
+```
+
+It reports a verdict per worktree and removes only what passes all four checks.
+It never passes `--force`; a hub test asserts that against the source, because
+the git error text for a stale lock literally recommends `remove -f -f`, and
+taking that advice is what Factory#616 looks like from the inside.
+
+**Why it does not just check for a clean tree** -- this is the part worth
+knowing, because the obvious cleanup script gets it wrong. A first cut kept a
+worktree only if it was locked-with-a-live-pid or dirty. Run against the fleet's
+19 real agent worktrees on 2026-08-15, it proposed removing **all nineteen**:
+
+```
+REMOVE  .../TFactory/.claude/worktrees/w3-logs-tf -- no live owner, clean tree
+REMOVE  .../CFactory/.claude/worktrees/w3-logs-cf -- no live owner, clean tree
+...
+```
+
+Not one of them carried a lock -- the lock in the table above is on
+*harness-created* isolation trees, and a worktree an agent made for itself with
+`git worktree add` has none. Every one was committed clean. Three of those
+branches had commits pushed after their PR merged (Factory#690), so "clean" meant
+"finished committing", not "finished". That is the harness's own defect
+reproduced by hand: **an agent that has committed and pushed is byte-identical
+to an agent that did nothing.**
+
+Content cannot separate them. Recency can, so the tool also keeps anything
+touched in the last 24h (`--min-idle-hours`), reading the worktree's `HEAD`,
+index and reflog rather than the checkout -- a read-only agent moves those and
+never touches a tracked file. With that check on, the same run keeps all
+nineteen and says why:
+
+```
+KEEP    .../TFactory/.claude/worktrees/w3-logs-tf -- touched 20.5h ago (< 24h)
+```
+
+That is a heuristic, not a proof, and it is stated as one. It cannot see an
+agent that has been thinking for a day. What it does is make the failure
+direction *keep too much* rather than *strand an agent*, which is the only
+direction that is cheap to be wrong in.
+
 Two supporting habits, which are advisory and have no detector, stated as such:
 
 - **Push early and often.** Do not batch a single push at the end. This is the
@@ -133,7 +182,15 @@ Harness-side, in the Claude Code agent runtime:
 
 None of the three can be done from a pull request in this repository. Until they
 are, an agent's isolation worktree can vanish mid-run, and the only defences are
-the rule above and pushing early.
+the rule above, `scripts/prune_agent_worktrees.py` for the one removal path that
+is ours, and pushing early.
+
+Point 2 on that list is no longer only a request upstream: the tool implements
+it locally. It is worth noting that writing it is what proved the point --
+the naive version of the same cleanup made exactly the mistake this section asks
+the harness not to make, and only measuring it against 19 real worktrees caught
+that. "Clean tree means finished" is not an oversight anyone makes carelessly;
+it is what the evidence looks like until you check the clock as well.
 
 ## Related
 
