@@ -115,6 +115,12 @@ jobs:
           # Scan breadth, carried into the report. A count that fell because the
           # database covered less code is not an improvement (Factory#737).
           find pfactory -name '*.py' -type f | wc -l > /tmp/source_files
+          # And the QUERY PACK version, which is what actually decides the
+          # counts: same CLI and same database, py/command-line-injection
+          # reports 32 sources under python-queries 1.8.4 and 2 under 1.8.6.
+          # Pinning the bundle pins both, but a bundle bump has to be
+          # attributable to itself rather than read as a code regression.
+          codeql resolve qlpacks --format=json > /tmp/qlpacks.json
 
       - name: Run each fork against its stock counterpart
         run: |
@@ -138,15 +144,36 @@ jobs:
           run_pair partial Security/CWE-918/PartialServerSideRequestForgery.ql  PartialSsrfSanitized.ql
 
           python - <<'PY'
-          import json, pathlib
+          import json, pathlib, re
+
+
+          def pack_version(located):
+              """The pack's DECLARED version, not its directory name.
+
+              The directory layout is not a contract -- a pack resolved from a
+              flat --additional-packs tree has no version segment in its path
+              at all, and taking the last segment silently yields
+              "python-queries". qlpack.yml states the version outright.
+              """
+              if not located:
+                  return "unknown"
+              qlpack_file = pathlib.Path(located[0]) / "qlpack.yml"
+              if not qlpack_file.is_file():
+                  return "unknown"
+              found = re.search(r"^version:\s*(\S+)", qlpack_file.read_text(), re.M)
+              return found.group(1) if found else "unknown"
+
           pairs = [
               ("py/path-injection", "path"),
               ("py/command-line-injection", "cmd"),
               ("py/full-ssrf", "full"),
               ("py/partial-ssrf", "partial"),
           ]
+          packs = json.loads(pathlib.Path("/tmp/qlpacks.json").read_text())
+          located = packs.get("codeql/python-queries") or []
           manifest = {
               "source_files": int(pathlib.Path("/tmp/source_files").read_text().strip()),
+              "query_pack": pack_version(located),
               "forks": [
                   {"rule": rule, "stock": f"stock_{key}.csv", "fork": f"fork_{key}.csv"}
                   for rule, key in pairs
