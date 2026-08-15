@@ -183,3 +183,94 @@ def test_the_suppression_is_python_only(tmp_path: Path) -> None:
     assert gate5._find_raw_exception_in_response(js), (
         "the .ts logger line should still be reported: suppression is Python-only"
     )
+
+
+# ---------------------------------------------------------------------------
+# Gate 5: an allowlist entry that matches nothing is itself a failure
+# (Factory#788). Entries are keyed (path, rule) -- PATH-level -- so a dead
+# entry keeps exempting the whole file, and the next real violation added to
+# it is suppressed by a grandfather whose finding was fixed months earlier.
+# ---------------------------------------------------------------------------
+
+
+def _repo_with_one_finding(tmp_path: Path) -> Path:
+    """A tiny repo whose single source file has exactly one real finding."""
+    # Fixture from tests/data/ for the same reason as _LOGGER_CASES: this repo
+    # runs Gate 5 on ITSELF as a blocking check, and a fixture containing a real
+    # `detail=str(e)` line turns the hub red when it lives in a scanned .py.
+    (tmp_path / "app.py").write_text(
+        (Path(__file__).parent / "data" / "one_finding.py.txt").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _allowlist(tmp_path: Path, path_value: str) -> Path:
+    target = tmp_path / "allow.yaml"
+    target.write_text(
+        f"- path: {path_value}\n"
+        "  rule: raw-exception-in-response\n"
+        "  reason: fixture\n"
+        "  issue: Factory#788\n",
+        encoding="utf-8",
+    )
+    return target
+
+
+def test_a_live_allowlist_entry_still_suppresses(tmp_path: Path) -> None:
+    """The positive control, and it is not optional.
+
+    Without it, an implementation that reported EVERY entry as dead would pass
+    the test below and look like a working ratchet while telling four repos to
+    delete live exemptions. A zero from a broken matcher is byte-identical to a
+    real zero.
+    """
+    repo = _repo_with_one_finding(tmp_path)
+    problems = gate5.check(repo, _allowlist(tmp_path, "app.py"))
+
+    assert problems == [], problems
+
+
+def test_an_allowlist_entry_that_matches_nothing_fails(tmp_path: Path) -> None:
+    """The ratchet. Fix the finding and the entry must go."""
+    repo = _repo_with_one_finding(tmp_path)
+    (repo / "app.py").write_text(  # the finding is now fixed
+        'def handler(e):\n    raise HTTPException(status_code=500, detail="literal")\n',
+        encoding="utf-8",
+    )
+
+    problems = gate5.check(repo, _allowlist(tmp_path, "app.py"))
+
+    assert len(problems) == 1, problems
+    assert "matches nothing" in problems[0]
+    assert "app.py" in problems[0]
+
+
+def test_an_entry_for_a_path_that_moved_fails(tmp_path: Path) -> None:
+    """The other way an entry goes dead: the file was renamed, not fixed.
+
+    Worth separating, because it is the case where the FINDING still exists --
+    it just lives at a path the entry no longer names, so the entry is dead and
+    the finding is unallowlisted at once.
+    """
+    repo = _repo_with_one_finding(tmp_path)
+
+    problems = gate5.check(repo, _allowlist(tmp_path, "moved/elsewhere.py"))
+
+    assert len(problems) == 2, problems
+    assert any("matches nothing" in p for p in problems)
+    assert any("app.py:2: raw-exception-in-response" in p for p in problems)
+
+
+def test_no_allowlist_file_at_all_is_not_a_failure(tmp_path: Path) -> None:
+    """Three of the four service repos have no allowlist yet.
+
+    `allowed` is empty there, so `allowed - used` is empty and nothing is
+    reported. Asserted rather than assumed: an implementation that iterated the
+    file instead of the loaded set would raise on a missing path.
+    """
+    repo = tmp_path / "clean"
+    repo.mkdir()
+    (repo / "app.py").write_text("def handler():\n    return 1\n", encoding="utf-8")
+
+    assert gate5.check(repo, None) == []
