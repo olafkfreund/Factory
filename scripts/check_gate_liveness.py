@@ -84,7 +84,7 @@ _API = GITHUB_API
 _NOT_FOUND = 404
 # The registry is allowed to grow, never to quietly shrink: a gate removed
 # from it stops being watched, which looks exactly like a gate that is fine.
-_MIN_REGISTERED_GATES = 11
+_MIN_REGISTERED_GATES = 12
 
 
 @dataclass(frozen=True)
@@ -148,6 +148,16 @@ GATES: tuple[Gate, ...] = (
         "rules. Registered only after its first confirmed run (2026-08-15, run "
         "31883490034) produced a real cleared/NEW pair -- registering a workflow "
         "with zero runs makes this gate report NEVER RAN on the next push to main.",
+    ),
+    Gate(
+        "codeql-analysis-honesty.yml",
+        72,
+        "37 4 * * *",
+        "Factory#774. Reads the code-scanning API directly for whether the "
+        "LATEST CodeQL analysis per category on main is a real scan, not a "
+        "cancelled run's zero-rule ghost. Registered only after its first "
+        "confirmed run (2026-08-15, run 31888580025) reported all categories "
+        "honest -- same reasoning as codeql-fork-validation.yml above.",
     ),
 )
 
