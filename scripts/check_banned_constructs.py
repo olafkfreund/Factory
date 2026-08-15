@@ -36,6 +36,24 @@ does not need to be perfect, it needs to fail when someone adds occurrence
 number N+1 without going through the allowlist. False positives are handled
 by the allowlist file, not by making the heuristic cleverer.
 
+TWO EXCEPTIONS TO THAT, AND BOTH EXIST FOR THE SAME REASON: the allowlist
+cannot express them. It is keyed ``(path, rule)`` — PATH-level — so an entry
+added for a false positive also grandfathers every real occurrence added to
+that file afterwards. Where a whole file would have to be exempted for a line
+that was never a violation, the heuristic gets smarter instead. The first is
+prose, below. The second is logging calls (Factory#782): a flagged line that
+is an ARGUMENT to ``logger.warning(...)`` is not a response, and five of the
+fleet's findings were exactly that — three of them one deliberately-hardened
+OIDC callback forked into three repos, where the response beside the flagged
+log line is a literal. Allowlisting those would have switched the gate off
+over a login callback.
+
+That check is the one place this script does parse: ``ast`` gives every
+argument a (line, col) span, so "is this text inside a logging call" is a
+comparison rather than an estimate. It is Python-only and it fails CLOSED —
+where it cannot parse, it suppresses nothing, because the only mistake it can
+make is hiding a real finding.
+
 With one exception, added deliberately: matches inside PROSE -- a ``#``
 comment or a docstring -- are skipped for python files. Not because prose FPs
 are more annoying than other FPs, but because the allowlist cannot express
@@ -145,6 +163,93 @@ _HTTP_RESPONSE_HINT = re.compile(
 )
 
 
+# A flagged line that is an ARGUMENT to a logging call is not a response.
+# Five of the fleet's findings were this (Factory#782), and three of them were
+# one deliberately-hardened OIDC handler forked into three repos: the flagged
+# `str(exc)[:200]` is an argument to `logger.warning(`, and the response two
+# lines below is the literal "OIDC callback rejected".
+#
+# Suppressing them at the gate rather than in the allowlist matters because
+# allowlist entries are keyed (path, rule) -- PATH-level. An entry added for a
+# log line ALSO grandfathers every real violation later added to that file, so
+# absorbing these would have switched the gate off over a login callback.
+#
+# The check is Python-only and fails CLOSED: where it cannot parse, it
+# suppresses nothing. The only mistake it can make is hiding a real finding, so
+# where it cannot be exact it does nothing and the finding costs an allowlist
+# entry instead. See _is_logging_argument for why this parses rather than
+# counting parentheses.
+_LOGGER_TARGET = re.compile(r"^(?:logger|log|logging|_log\w*|.*_logger)$", re.IGNORECASE)
+
+
+def _is_logging_call(func: ast.expr) -> bool:
+    """True for `logger.warning(...)`, `logging.info(...)`, `self.log.debug(...)`.
+
+    Matches on the object the method is called on, not the method name: a
+    logger's methods are `info`/`warning`/`exception`/`debug`/`error` but also
+    whatever a wrapper adds, and the object is the reliable half.
+    """
+    if not isinstance(func, ast.Attribute):
+        return False
+    target = func.value
+    if isinstance(target, ast.Name):  # logger.warning / logging.info
+        return bool(_LOGGER_TARGET.match(target.id))
+    if isinstance(target, ast.Attribute):  # self.log.debug / self._logger.warning
+        return bool(_LOGGER_TARGET.match(target.attr))
+    return False
+
+
+def _logging_argument_spans(text: str) -> list[tuple[int, int, int, int]]:
+    """(start_line, start_col, end_line, end_col) for every logging-call argument."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    spans: list[tuple[int, int, int, int]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not _is_logging_call(node.func):
+            continue
+        for arg in [*node.args, *(kw.value for kw in node.keywords)]:
+            if arg.end_lineno is None or arg.end_col_offset is None:
+                continue
+            spans.append((arg.lineno, arg.col_offset, arg.end_lineno, arg.end_col_offset))
+    return spans
+
+
+def _is_logging_argument(spans: list[tuple[int, int, int, int]], lineno: int, col: int) -> bool:
+    """True when (lineno, col) falls inside one of `spans`.
+
+    WHY THE COLUMN MATTERS, i.e. why this parses instead of counting parens.
+    The obvious implementation walks upward counting parentheses, and
+    Factory#782 originally proposed exactly that. It has two failure modes,
+    both of which SUPPRESS A REAL LEAK -- the direction that must never happen
+    -- and both read as correct on the page::
+
+        logger.warning("noted"); raise HTTPException(status_code=500, detail=str(e))
+
+    The logging call opens and CLOSES before the response. A same-line check
+    of the form ``after.count("(") - after.count(")") >= 0`` scores zero here,
+    because the opener's own parenthesis is not inside the slice counted::
+
+        logger.info("about to fail"); raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
+
+    The upward walk crosses that first line, sees the balance go negative,
+    finds ``logger.info(`` on it, and concludes the continuation belongs to the
+    logging call -- when the opener that is actually unclosed is
+    ``HTTPException(``.
+
+    Both are the same mistake: counting parentheses approximates a question the
+    parser answers exactly. With (line, col) spans, containment is a
+    comparison, and neither shape needs a special case.
+
+    Both are pinned by ``test_a_response_near_a_logger_call_is_still_caught``.
+    """
+    return any((sl, sc) <= (lineno, col) < (el, ec) for sl, sc, el, ec in spans)
+
+
 def _iter_source_files(root: Path) -> list[Path]:
     out: list[Path] = []
     for path in root.rglob("*"):
@@ -235,16 +340,27 @@ def _find_raw_exception_in_response(path: Path, window: int = 6) -> list[tuple[i
     prose = _prose_lines(path, text)
     hits: list[tuple[int, str]] = []
     is_python = path.suffix == ".py"
+    # Empty for non-Python, so those files get no suppression (see above).
+    log_args = _logging_argument_spans(text) if is_python else []
     for i, line in enumerate(lines):
         if i + 1 in prose:
             continue
-        if _RAW_EXCEPTION.search(line):
+        match = _RAW_EXCEPTION.search(line)
+        if match:
+            if _is_logging_argument(log_args, i + 1, match.start()):
+                continue
             lo, hi = max(0, i - window), min(len(lines), i + window)
             context = "\n".join(lines[lo:hi])
             if _HTTP_RESPONSE_HINT.search(context):
                 hits.append((i + 1, line.strip()))
-        elif is_python and _RAW_EXCEPTION_INTERP.search(line) and _RESPONSE_ANCHOR.search(line):
-            # `elif`, so a line carrying both forms is reported once.
+            continue
+        # `elif` in spirit: a line carrying both forms is reported once.
+        if not is_python:
+            continue
+        interp = _RAW_EXCEPTION_INTERP.search(line)
+        if interp and _RESPONSE_ANCHOR.search(line):
+            if _is_logging_argument(log_args, i + 1, interp.start()):
+                continue
             hits.append((i + 1, line.strip()))
     return hits
 
