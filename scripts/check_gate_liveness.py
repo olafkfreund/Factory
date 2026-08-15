@@ -216,6 +216,29 @@ def verdict(gate: Gate, repo: str, fetch: Fetcher, now: dt.datetime) -> str | No
     return None
 
 
+def evidence(gate: Gate, repo: str, fetch: Fetcher, now: dt.datetime) -> str:
+    """The line printed for a gate that PASSED.
+
+    The pass path has to cite what it compared, not just how many things it
+    compared (``docs/dev/gate-honesty.md``: a count is not a check). "10 gates
+    are alive" is unfalsifiable by a reader; "security-fork-drift.yml, newest
+    verdict 4h ago, budget 72h" can be checked against the Actions tab.
+    """
+    base = f"{_API}/repos/{repo}/actions/workflows/{gate.workflow}"
+    runs = _fetch_json(fetch, f"{base}/runs?per_page=100")
+    raw = runs.get("workflow_runs", [])
+    items = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+    completed = [r for r in items if r.get("conclusion") in ("success", "failure")]
+    if not completed:
+        return f"{gate.workflow}: no completed run"
+    newest = max(completed, key=lambda r: str(r.get("created_at", "")))
+    age = _age_hours(str(newest["created_at"]), now)
+    return (
+        f"{gate.workflow}: newest verdict {age:.0f}h ago "
+        f"({newest.get('conclusion')}), budget {gate.max_age_hours}h, cron {gate.cron}"
+    )
+
+
 def _fetch_json(fetch: Fetcher, url: str) -> dict[str, object]:
     result = fetch(url)
     return result if isinstance(result, dict) else {}
@@ -228,7 +251,16 @@ def check(repo: str, fetch: Fetcher | None = None, now: dt.datetime | None = Non
 
 
 def run_check(repo: str) -> int:
-    problems = check(repo)
+    now = dt.datetime.now(dt.UTC)
+    problems = check(repo, None, now)
+    # Enumerated on BOTH paths. Printing the subject only when something is
+    # wrong covers the direction that costs an investigation and leaves the
+    # direction that costs a missing control: a registry someone shortened
+    # reports fewer gates, all green, and says nothing about the one it
+    # stopped watching.
+    print(f"Gates registered: {len(GATES)}")  # noqa: T201
+    for gate in GATES:
+        print(f"  * {evidence(gate, repo, _fetch, now)}")  # noqa: T201
     if problems:
         print("GATE LIVENESS -- one or more scheduled gates are not running:")  # noqa: T201
         for problem in problems:
