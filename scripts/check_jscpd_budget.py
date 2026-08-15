@@ -71,7 +71,7 @@ from pathlib import Path
 # refactoring can remove — which had made registering ANY new contract in the
 # catalog over-budget by construction, so #360 sat open with no sanctioned way to
 # close it.
-CLONE_BUDGET = 33
+CLONE_BUDGET = 32
 
 _DEFAULT_REPORT = Path(__file__).resolve().parent.parent / "reports/jscpd/jscpd-report.json"
 

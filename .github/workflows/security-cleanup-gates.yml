@@ -36,11 +36,9 @@ jobs:
     name: Gates 1/2/5 (CodeQL breadth, exclude-pairing, banned constructs)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
+      - uses: ./.github/actions/setup-python-311
 
       - run: pip install pyyaml
 

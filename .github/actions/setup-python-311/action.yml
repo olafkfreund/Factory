@@ -1,0 +1,16 @@
+name: Set up Python 3.11
+description: >
+  Shared setup-python step. Extracted because the checkout+setup-python
+  block became byte-identical across several workflows once each pin
+  carried a SHA plus trailing-tag comment (Factory#715/#775), which
+  pushed the already-similar blocks over jscpd's 50-token clone
+  threshold and started failing the clone-budget gate
+  (scripts/check_jscpd_budget.py). Not a general-purpose abstraction --
+  callers are not obligated to adopt it; it exists to de-duplicate the
+  specific pairing that regressed the budget.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.11"
