@@ -22,24 +22,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
-from pathlib import Path
 from typing import Any
 
 import pytest
-
-_SHARED = Path(__file__).resolve().parents[1] / "shared" / "factory-github"
-if str(_SHARED) not in sys.path:
-    sys.path.insert(0, str(_SHARED))
 
 # httpx is an optional test-time dependency and is deliberately NOT imported by
 # name: the ratchet's mypy runs without it installed, and `Any` here is honest
 # about that rather than papering over it with an ignore that goes stale.
 httpx = pytest.importorskip("httpx")
 
-# Resolved off the sys.path entry above, so mypy cannot follow it; the runtime
-# import is what this whole module exists to exercise.
-from providers.azure_devops_provider import (  # type: ignore[import-not-found]  # noqa: E402
+# `providers` is on sys.path courtesy of tests/conftest.py.
+from providers.azure_devops_provider import (  # noqa: E402
     AzureDevOpsProvider,
     _wiql_literal,
 )
