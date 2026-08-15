@@ -1,0 +1,63 @@
+# Assert every scheduled gate actually produced a verdict recently (Factory#738).
+#
+# The problem this exists for: a scheduled workflow can go silently absent --
+# wrong cron, revoked credential, GitHub's 60-day auto-disable, a rename that
+# orphans the schedule -- and NOTHING inside that workflow can detect it,
+# because none of its steps run. `if: always()` only fires when the workflow
+# fires. A workflow cannot report its own non-existence.
+#
+# Why `push: main` as well as a schedule, which is the obvious question:
+# a purely scheduled liveness check has exactly the exposure it is meant to
+# close. If it auto-disables or its cron breaks, it stops reporting and its
+# silence reads as health. Running on every push to main means it cannot go
+# dark while anyone is still working in the repo, and a repo with no pushes
+# AND no scheduled runs is not one whose gates anybody is relying on.
+name: gate liveness
+
+on:
+  schedule:
+    # 07:31 UTC, after the daily gates it inspects (05:11 through 06:41) have
+    # had time to run and record a conclusion.
+    - cron: "31 7 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # reading other workflows' run history is the whole job
+
+concurrency:
+  group: gate-liveness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  liveness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Proves the checker's own logic before trusting its verdict about
+      # everything else. A liveness gate whose parser silently returned "all
+      # fine" would be the most expensive possible failure here.
+      - name: Self-test
+        run: python scripts/check_gate_liveness.py --self-test
+
+      - name: Check every registered gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # pipefail is NOT on by default in Actions' `bash -e {0}`. Without
+          # it the pipeline reports tee's status, tee always succeeds, and
+          # this gate becomes one that cannot fail -- the same class of defect
+          # it was written to detect, one level up.
+          set -o pipefail
+          python scripts/check_gate_liveness.py --repo "${GITHUB_REPOSITORY}" \
+            | tee -a "${GITHUB_STEP_SUMMARY}"
+        # No `continue-on-error`. The stock GITHUB_TOKEN carries `actions: read`
+        # on its own repository, so unlike the two gates in Factory#693 this
+        # needs no cross-repo credential and cannot fail for want of a secret.
