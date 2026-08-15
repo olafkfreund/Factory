@@ -1,0 +1,24 @@
+# Factory is the hub repo: its own workflows are the actions dependency
+# surface (no requirements.txt/package.json dependency tree here beyond
+# what's already covered elsewhere). An unpinned or abandoned action here
+# runs with repo credentials against the canonical source every other repo
+# vendors from -- same reasoning factory-gitops's lane documents for its
+# deploy-lane actions (Factory#711).
+#
+# github-actions lane added as part of the fleet-wide pinning sweep,
+# Factory#715 -- this was the one repo in the fleet without any Dependabot
+# config, which would have meant pinning today's SHAs with nothing to ever
+# bump them.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "github-actions"
