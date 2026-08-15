@@ -22,6 +22,23 @@ Both directions matter, and they fail in opposite ways:
     selected, because CodeQL's per-sink path selection stops once one flow to a
     sink is reported. Factory#737 measured that case rather than inferring it.
 
+**NEW has never fired on the real forks, and cannot today.** Stated up front
+because four clean rows read like both directions are proven. All four PFactory
+forks are their stock query plus a single ``::Sanitizer`` subclass, with
+``from``/``where``/``select`` identical to stock -- and a barrier can only
+REMOVE flows, so ``NEW`` is 0 by construction until a fork changes its sources
+or sinks. Attempting to force it by widening ``FullSsrfSanitized.ql``'s
+``where`` (dropping ``fullyControlledRequest``) produced 0 rows.
+
+What IS verified, on real CodeQL output rather than fixtures: adding a
+``Source`` subclass to a copy of the command-injection fork makes this gate
+report ``cleared 32, NEW 1`` and exit 1 -- so the direction fires on exactly
+the regression it exists to catch, a fork that stopped being barrier-only. The
+third route, masking (blocking one flow reveals a second the analysis never
+selected), is reachable with a barrier-only fork and is what Factory#737
+measured on AIFactory; it has never fired here. Treat the NEW column as an
+armed check, not as evidence.
+
 **Why NEW is a failure here even though it is sometimes legitimate.** A gate
 cannot tell the two apart -- the procedure that can is in AIFactory's
 ``.github/codeql/VALIDATION.md``: sever the cleared flow at its sink, rebuild,
@@ -86,7 +103,7 @@ principle, one level deeper than it is usually applied.
 2 of 32 and leaves 30. It passes -- ``cleared > 0`` means the barrier still
 matches -- but it is nothing like the near-total clearance the other three
 show, and a reader given only the 1.8.7 numbers would have had the wrong
-picture of it.
+picture of it. Tracked in Factory#778 rather than left inside a green row.
 
 **The rule-4.13 discriminating check was run, and the forks pass it.** Numbers
 alone cannot tell a real barrier from a silencer, so the path-injection
@@ -126,9 +143,11 @@ Exit codes:
 
 from __future__ import annotations
 
+import io
 import json
 import re
 import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -263,6 +282,21 @@ def report(
 
     measured = len(comparisons)
     say(f"\n{measured} fork(s) measured, {measured - failures} OK, {failures} needing attention")
+    if comparisons and all(item.new == 0 for item in comparisons):
+        # Printed exactly when every row reads clean, because that is when a
+        # reader is most likely to conclude both directions are proven. They
+        # are not: NEW has never fired on the real forks (Factory#737). Each is
+        # its stock query plus one ::Sanitizer subclass, and a barrier can only
+        # remove flows, so NEW is 0 BY CONSTRUCTION until a fork starts
+        # changing sources or sinks. An unexercised branch of a gate is not a
+        # verified one, and four clean rows should not imply otherwise.
+        say(
+            "\nNOTE: NEW is 0 for every fork above, and has never fired on these forks. "
+            "Each is its stock query plus one ::Sanitizer subclass; a barrier can only "
+            "REMOVE flows, so NEW is 0 by construction until a fork changes its sources "
+            "or sinks. The direction is reportable and was verified against a "
+            "deliberately broadened fork -- it is not verified by the rows above."
+        )
     return 1 if failures else 0
 
 
@@ -336,6 +370,28 @@ def _self_test() -> int:
         clean = compare("py/command-line-injection", "", "")
         expect(failures, not clean.rotted, "an empty stock result must not read as a rotted fork")
         expect(failures, report([clean]) == 0, "nothing to clear and nothing new must pass")
+
+        # The unexercised-NEW note must appear exactly when every row is clean
+        # -- that is when a reader would otherwise read four zeros as proof --
+        # and must NOT appear once a NEW actually fires, where it would
+        # contradict the finding printed directly above it.
+        clean_out = io.StringIO()
+        with redirect_stdout(clean_out):
+            report([good, compare("py/full-ssrf", stock, healthy)])
+        expect(
+            failures,
+            "has never fired on these forks" in clean_out.getvalue(),
+            "an all-clean report must say the NEW direction is unexercised",
+        )
+
+        fired_out = io.StringIO()
+        with redirect_stdout(fired_out):
+            report([good, compare("py/full-ssrf", healthy, stock)])
+        expect(
+            failures,
+            "has never fired on these forks" not in fired_out.getvalue(),
+            "the unexercised note must disappear once a NEW fires -- it would contradict it",
+        )
 
         # A run that measured nothing must fail. This is the Factory#738 shape:
         # a green exit that produced no measurement is the failure being caught.

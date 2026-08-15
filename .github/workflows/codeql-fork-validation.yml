@@ -35,6 +35,18 @@ name: codeql fork validation
 # pins and the version the baseline in this workflow's comparator docstring was
 # measured with.
 #
+# READING THE OUTPUT: `cleared` is the direction that has ever fired. `NEW`
+# has NOT -- all four forks are their stock query plus one ::Sanitizer
+# subclass, and a barrier can only REMOVE flows, so NEW is 0 by construction
+# until a fork changes its sources or sinks. The report says so itself whenever
+# every row is clean, because four zeros otherwise read as proof of both
+# directions. The NEW column is an armed check, not evidence (Factory#737).
+#
+# The weakest row is py/command-line-injection: the fork clears 2 of 32 sources
+# and leaves 30, while the other three clear 92-100%. It passes -- cleared > 0
+# means the barrier still matches -- and it is tracked separately in
+# Factory#778 rather than being allowed to sit inside a green summary.
+#
 # LIVENESS: the measure step tees its verdict to the job summary on EVERY
 # outcome (`if: always()`), so a run that happened but measured nothing is
 # visible rather than silently green — and the comparator itself exits 1 when it
