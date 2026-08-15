@@ -19,16 +19,16 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Checkout AIFactory (model-catalog + phase_config)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: olafkfreund/AIFactory
           path: _aifactory
           # Needs read access to AIFactory. Reuse the fleet GITOPS_PAT; if it
           # lacks AIFactory scope, set a dedicated read token here.
           token: ${{ secrets.GITOPS_PAT || github.token }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Run the probe

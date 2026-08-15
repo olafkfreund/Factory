@@ -63,12 +63,12 @@ jobs:
     name: ruff + mypy ratchet (diff-scoped, blocking)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Need history back to the PR base for the diff-scoped ratchet.
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -128,9 +128,9 @@ jobs:
     name: ruff format --check (scripts + tests, blocking)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -155,7 +155,7 @@ jobs:
     name: vendored baseline matches standards/ (drift gate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: root ruff.toml must extend the canonical baseline
         run: grep -q 'extend = "standards/ruff.toml"' ruff.toml
