@@ -66,16 +66,21 @@ Exit codes:
 from __future__ import annotations
 
 import datetime as dt
-import json
-import os
 import urllib.error
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from gate_evidence import expect, gate_argparser, gate_fixture, parse_or_self_test, report_self_test
+from gate_evidence import (
+    GITHUB_API,
+    add_repo_arg,
+    expect,
+    fetch_github_json,
+    gate_fixture,
+    report_self_test,
+    run_gate_main,
+)
 
-_API = "https://api.github.com"
+_API = GITHUB_API
 _NOT_FOUND = 404
 # The registry is allowed to grow, never to quietly shrink: a gate removed
 # from it stops being watched, which looks exactly like a gate that is fine.
@@ -147,25 +152,9 @@ GATES: tuple[Gate, ...] = (
 )
 
 Fetcher = Callable[[str], object]
-
-
-def _fetch(url: str, *, timeout: int = 20) -> object:
-    """GET and parse JSON. Uses GITHUB_TOKEN when present (private repos and
-    a far higher rate limit); works unauthenticated against public ones."""
-    # Enforced rather than suppressed. Every URL here is built from the _API
-    # constant, so this can only fire if someone later threads a caller-
-    # supplied URL through -- at which point `file:///etc/shadow` would be a
-    # readable local file, not a failed HTTP request.
-    if not url.startswith(f"{_API}/"):
-        raise ValueError(f"refusing to fetch a URL outside {_API}: {url!r}")
-    request = urllib.request.Request(  # noqa: S310 - scheme enforced immediately above
-        url, headers={"Accept": "application/vnd.github+json"}
-    )
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token:
-        request.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-        return json.loads(response.read().decode("utf-8"))
+# Factory#774: extracted to gate_evidence.fetch_github_json, shared with
+# check_codeql_analysis_honesty.py -- this was a byte-identical second copy.
+_fetch = fetch_github_json
 
 
 def _age_hours(timestamp: str, now: dt.datetime) -> float:
@@ -401,18 +390,13 @@ def _self_test() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = gate_argparser("Assert every scheduled gate ran successfully and recently.")
-    parser.add_argument("--repo", default="olafkfreund/Factory", help="owner/name to inspect")
-    code, args = parse_or_self_test(parser, argv, _self_test)
-    if code is not None or args is None:
-        return code if code is not None else 2
-    try:
-        return run_check(args.repo)
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        print(f"ERROR: could not reach the GitHub API: {exc}")  # noqa: T201
-        # 2, not 0. An unreachable API is an unknown verdict, and an unknown
-        # verdict must never be reported as a healthy fleet.
-        return 2
+    return run_gate_main(
+        "Assert every scheduled gate ran successfully and recently.",
+        _self_test,
+        lambda args: run_check(args.repo),
+        argv,
+        configure=add_repo_arg,
+    )
 
 
 if __name__ == "__main__":

@@ -58,7 +58,28 @@ jobs:
       - name: Autobuild
         uses: github/codeql-action/autobuild@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
 
-      - name: Perform CodeQL Analysis
+      - name: Perform CodeQL Analysis (write SARIF locally, do not upload yet)
+        # upload: never, not the default 'always'. The default uploads even
+        # on a failed or cancelled run (Factory#774) -- a job killed
+        # mid-flight by this workflow's own `cancel-in-progress: true` can
+        # reach that upload with a SARIF that never finished loading its
+        # query suite, publishing rules_count=0 as a real analysis. Routing
+        # the upload through the two steps below means a cancelled job dies
+        # before reaching them, so it can no longer publish anything at all.
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
+          category: "/language:${{ matrix.language }}"
+          upload: never
+          output: codeql-sarif
+
+      - name: Refuse to publish a SARIF that loaded no rules
+        # The other half of Factory#774: even without a cancellation, an
+        # empty rule set is not a clean scan, it asked nothing -- same
+        # defect class as #711, one level down (run, not suite).
+        run: python3 scripts/assert_sarif_has_rules.py codeql-sarif
+
+      - name: Upload the validated SARIF
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          sarif_file: codeql-sarif
           category: "/language:${{ matrix.language }}"

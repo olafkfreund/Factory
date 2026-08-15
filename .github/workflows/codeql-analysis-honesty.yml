@@ -1,0 +1,90 @@
+name: codeql analysis honesty
+
+# "Is the LATEST published CodeQL analysis for main a real scan, not a
+# cancelled run's zero-rule ghost?", asked from outside (Factory#774).
+#
+# codeql.yml's own analyze step now uploads through an explicit rules-count
+# gate (scripts/assert_sarif_has_rules.py) specifically so a job killed by
+# its own `cancel-in-progress: true` dies before reaching the upload at all.
+# That is a defence INSIDE codeql.yml, and nothing a workflow does to itself
+# proves it is not being bypassed later -- by an edit that reverts the gate,
+# a differently-configured CodeQL workflow, or a code path this fix did not
+# anticipate. This is the outside half, the same relationship
+# check_gate_liveness.py has to "did the scheduled workflow run": it reads
+# the code-scanning API directly and asks whether the CURRENT analysis for
+# each category is a real one, regardless of how codeql.yml is written today.
+#
+# WHY THIS IS SEPARATE FROM codeql.yml, NOT A STEP IN IT. The failure mode
+# under investigation is exactly "codeql.yml behaved unexpectedly" -- a check
+# that only runs as part of that same workflow inherits its blind spots.
+# Independent trigger, independent schedule.
+#
+# WHY SCHEDULED, NOT ONLY ON PUSH. The exposure window in both confirmed
+# occurrences (Factory#771, and commit 4e2420e9 on main itself) closed only
+# because a new push happened to land soon after. A repo that goes quiet
+# right after a cancelled run would carry a masked zero-rule analysis
+# indefinitely with nothing to catch it -- this is what re-checks on a
+# schedule regardless of push activity.
+#
+# WHY NO PAT. Reads olafkfreund/Factory's own public code-scanning API with
+# the default GITHUB_TOKEN. If this repo is ever made private, this fails on
+# the fetch, loudly -- no soft-skip path (standards/coding-standards.md rule
+# 4.7).
+
+on:
+  schedule:
+    # Daily at 04:37, offset from codeql-fork-validation (04:29) and the
+    # other scheduled gates in the 04:00-06:00 UTC band. BST != UTC.
+    - cron: "37 4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  security-events: read
+
+concurrency:
+  group: codeql-analysis-honesty
+  cancel-in-progress: false
+
+jobs:
+  honesty:
+    name: latest CodeQL analysis for main is a real scan, not a zero-rule ghost
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test the comparator before trusting it
+        # First, not last, for the same reason every other watchdog here
+        # does it: a broken comparator cannot be trusted to say "everything
+        # is honest", so it fails as a broken comparator rather than
+        # quietly passing (rule 4.7).
+        run: python3 scripts/check_codeql_analysis_honesty.py --self-test
+
+      - name: Check the latest analysis per category on main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          python3 scripts/check_codeql_analysis_honesty.py \
+            --repo "${{ github.repository }}" \
+            --ref refs/heads/main \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: What to do when this job is red
+        if: failure()
+        run: |
+          echo "A category's newest analysis loaded zero rules -- it read as a"
+          echo "clean scan in the Security tab with nothing behind it."
+          echo
+          echo "Fix: trigger a fresh run of codeql.yml for the affected language"
+          echo "(workflow_dispatch or a no-op push) so a real analysis becomes the"
+          echo "newest one for that category. codeql.yml's own"
+          echo "scripts/assert_sarif_has_rules.py should make a NEW zero-rule"
+          echo "publish impossible going forward; if this fires again after that"
+          echo "landed, that gate has a gap -- fix it, do not silence this one."
+          echo
+          echo "NO ANALYSES FOUND means this repo's CodeQL scanning is not"
+          echo "producing anything for this ref at all. Check codeql.yml"
+          echo "directly (or check_gate_liveness.py, which watches whether it"
+          echo "runs); this check cannot tell 'never ran' from 'ran and lied"
+          echo "clean' by itself, and deliberately treats both as red."

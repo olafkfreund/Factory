@@ -21,11 +21,17 @@ resolves on ``sys.path`` with no workflow change and no pin bump.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import tempfile
+import urllib.error
+import urllib.request
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from hashlib import sha256
 from pathlib import Path
+
+GITHUB_API = "https://api.github.com"
 
 
 def gate_argparser(description: str | None) -> argparse.ArgumentParser:
@@ -73,6 +79,43 @@ def parse_or_self_test(
     return None, args
 
 
+def add_repo_arg(parser: argparse.ArgumentParser) -> None:
+    """The ``--repo`` flag every GitHub-API-reading gate's CLI carries."""
+    parser.add_argument("--repo", default="olafkfreund/Factory", help="owner/name to inspect")
+
+
+def run_gate_main(
+    description: str,
+    self_test_fn: Callable[[], int],
+    run_fn: Callable[[argparse.Namespace], int],
+    argv: list[str] | None = None,
+    configure: Callable[[argparse.ArgumentParser], None] | None = None,
+) -> int:
+    """The standard CLI wrapper every gate's ``main()`` repeats.
+
+    Factory#774. ``check_gate_liveness.py`` and ``check_codeql_analysis_honesty.py``
+    had the identical parse/dispatch/network-error tail, caught as net-new
+    duplication the moment the second one landed -- the same shape
+    :func:`fetch_github_json` closes for the fetch half. *configure* adds any
+    gate-specific arguments beyond the ``--self-test`` flag :func:`gate_argparser`
+    already provides; *run_fn* receives the parsed ``Namespace`` and returns the
+    gate's exit code, wrapped so an unreachable API returns 2 (unknown), never 0.
+    """
+    parser = gate_argparser(description)
+    if configure is not None:
+        configure(parser)
+    code, args = parse_or_self_test(parser, argv, self_test_fn)
+    if code is not None or args is None:
+        return code if code is not None else 2
+    try:
+        return run_fn(args)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        print(f"ERROR: could not reach the GitHub API: {exc}")  # noqa: T201
+        # 2, not 0. An unreachable API is an unknown verdict, and an unknown
+        # verdict must never be reported as a healthy fleet.
+        return 2
+
+
 @contextmanager
 def temp_repo() -> Iterator[Path]:
     """A throwaway directory for a gate's self-test fixtures.
@@ -97,6 +140,32 @@ def gate_fixture() -> Iterator[tuple[Path, list[str]]]:
     """
     with tempfile.TemporaryDirectory() as tmp:
         yield Path(tmp), []
+
+
+def fetch_github_json(url: str, *, timeout: int = 20) -> object:
+    """GET *url* and parse JSON, authenticated via GITHUB_TOKEN/GH_TOKEN when present.
+
+    Factory#774. Shared by every gate that reads the GitHub REST API directly
+    (``check_gate_liveness.py``, ``check_codeql_analysis_honesty.py``, ...) --
+    the URL-scheme guard and auth header existed once per gate before this,
+    caught as net-new duplication by ``scripts/check_jscpd_budget.py`` the
+    moment a second copy landed, which is what that budget is for.
+    """
+    # Enforced rather than suppressed. Every caller builds *url* from its own
+    # API-base constant (normally GITHUB_API), so this can only fire if
+    # someone later threads a caller-supplied URL through -- at which point
+    # `file:///etc/shadow` would be a readable local file, not a failed HTTP
+    # request.
+    if not url.startswith(f"{GITHUB_API}/"):
+        raise ValueError(f"refusing to fetch a URL outside {GITHUB_API}: {url!r}")
+    request = urllib.request.Request(  # noqa: S310 - scheme enforced immediately above
+        url, headers={"Accept": "application/vnd.github+json"}
+    )
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        return json.loads(response.read().decode("utf-8"))
 
 
 def digest(path: Path) -> str:
