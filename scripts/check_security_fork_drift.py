@@ -117,21 +117,32 @@ FORK_DIVERGENCES: list[dict[str, object]] = [
     {
         "name": "skills_service.py (skills cache + suggestion service)",
         "digests": {
-            "PFactory": "ff67ee34574139a1e366b327e1b9e2d9a629a147bd6f611ea7fb8cff16040899",
-            "AIFactory": "27baadd8d4f2f3e19ed75e7c07f40b76a9d079c0f3730273ee8c0b6e9facb9b7",
+            "PFactory": "b544a0d31da89df68ecbe8e66efe6c2048d3413ebf628d3eed2444a7a6deee28",
+            "AIFactory": "ee07b54e4c906513957b644289c09b40808d324bfcd241dcdac7cb0f61bf6fb5",
         },
         "reason": (
             "Re-derived from origin/dev (git show origin/dev:<path> | sha256sum) "
-            "on 2026-08-13, per Factory#729 — the earlier digests were read from "
-            "a local working tree that had diverged from origin/dev and were "
-            "wrong. AIFactory carries suggest_selected_skills/suggestion_to_selected "
-            "(a feature "
-            "PFactory has no caller for, deliberately not ported) plus an "
-            "Optional[X] vs X | None typing-style difference (tracked "
-            "separately, Factory#725). The pickle-cache RCE that originally "
-            "flagged this pair is closed on both sides. Factory#727 tracks the "
-            "actual hub-canonical decision (port suggest_selected_skills to "
-            "PFactory, or keep it AIFactory-only permanently)."
+            "on 2026-08-15, per Factory#729 — never from a working tree, which "
+            "is how these were wrong once already. "
+            "THE DIVERGENCE IS PERMANENT AND ARCHITECTURAL, not a grandfather "
+            "awaiting a decision: Factory#727 is closed deciding that "
+            "suggest_selected_skills/suggestion_to_selected stays AIFactory-only. "
+            "Its only caller is AIFactory's routes/execution.py, and PFactory "
+            "has no execution route — executing a plan is AIFactory's stage of "
+            "PARR. Porting it would add an uncalled public function to a shared "
+            "file purely to make this digest comparison simpler. Reversible if "
+            "PFactory ever grows an execution route: drop this entry and the "
+            "files go back to byte-identical. "
+            "The typing-style difference (Optional[X] vs X | None) is gone — "
+            "Factory#725 modernized PFactory to match. "
+            "Both prior security divergences are closed on both sides: the "
+            "pickle-cache RCE that first flagged this pair, and the two "
+            "py/empty-except sites AIFactory fixed in 9fc70e14 which PFactory "
+            "had not followed — a silently-suppressed chmod(0o600) failure on "
+            "the skills cache, and a bare except around a scandir loop. That "
+            "second one is what Factory#753 caught, and it is the whole point "
+            "of this registry: one fork taking a security fix while the other "
+            "does not."
         ),
         "issue": "Factory#727",
     },
