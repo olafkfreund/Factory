@@ -165,6 +165,23 @@ _NOT_AN_INVOCATION = frozenset({"pip", "pip3", "uv", "poetry", "conda", "npm", "
 
 _SHELL_BREAKS = frozenset({"&&", "||", ";", "|", "&"})
 
+# A YAML mapping entry whose key is not `run` is not a command, however much it
+# looks like one. Found wiring this gate into CFactory (Factory#844): that repo's
+# only pytest step is titled `name: Backend pytest`, which shlex-splits to
+# ["name:", "Backend", "pytest"] -- a pytest token with no path arguments after
+# it, i.e. "the whole repo is collected". CFactory's real invocation is a bare
+# `pytest` too, so the verdict happened to be right; but narrow that line to
+# `pytest tests/` and the job TITLE would have kept the boundary at `.` and the
+# newly-orphaned files would have read clean. A false clean sourced from a
+# step's name is the same defect this gate exists to close, one level up.
+#
+# Only `run` survives, so an `args:`-style pytest invocation through a custom
+# action is skipped as well. That errs toward a NARROWER boundary -- more files
+# reported uncollected -- which is the loud direction, not the false-clean one.
+# Lines inside a `run: |` block are bare commands and match no key, so they are
+# unaffected.
+_YAML_KEY = re.compile(r"^\s*(?:-\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*:")
+
 
 class BadEntryError(ValueError):
     """A registry entry that cannot be allowed to exist."""
@@ -253,6 +270,9 @@ def _pytest_path_args(line: str) -> tuple[list[str], bool] | None:
     collects; the caller turns that into an unknown verdict rather than
     guessing in the false-clean direction.
     """
+    key = _YAML_KEY.match(line)
+    if key and key.group(1) != "run":
+        return None
     try:
         tokens = shlex.split(line, comments=True)
     except ValueError:
@@ -537,6 +557,18 @@ def _self_test_boundary(failures: list[str]) -> None:
             + "          pytest tests/\n"
         )
         expect(failures, run_check(root) == 1, "a commented pytest line does not collect anything")
+
+        # A step TITLED after pytest is not a pytest invocation. CFactory's only
+        # pytest step is `name: Backend pytest`, which reads as a bare pytest --
+        # the whole repo collected -- from a line that runs nothing
+        # (Factory#844). The `run:` below is what the boundary must come from.
+        workflow.write_text(
+            "jobs:\n  backend:\n    steps:\n"
+            "      - name: Backend pytest\n"
+            "        run: pytest tests/\n"
+        )
+        expect(failures, run_check(root) == 1, "a step named after pytest is not an invocation")
+        expect(failures, _collected(root).paths == ("tests",), "...and does not widen the boundary")
 
         # `-m "not slow"` must not read as a collected path called "not slow".
         workflow.write_text(steps + '          pytest -m "not slow" tests/\n')
