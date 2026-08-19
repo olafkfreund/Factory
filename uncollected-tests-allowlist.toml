@@ -27,21 +27,3 @@ deliberately, because it is a plain assert script with no pytest cases and no py
 execute on every PR.
 """
 issue = "Factory#489"
-
-[[allow]]
-path = "scripts/benchmarks/test_report.py"
-reason = """
-A real instance of the defect this gate exists for, registered honestly rather than hidden: 35 \
-tests across this file and test_run_pipeline_task.py pass when run by hand and are collected by no \
-workflow. Not fixed here because Factory#844 scopes this PR to the gate and explicitly not to \
-widening any repo's collection; the fix is one path on contracts.yml's pytest line.
-"""
-issue = "Factory#844"
-
-[[allow]]
-path = "scripts/benchmarks/test_run_pipeline_task.py"
-reason = """
-Same instance as test_report.py above -- passes locally, collected by no workflow, and turning it \
-on is a collection change that Factory#844 deliberately keeps out of this PR.
-"""
-issue = "Factory#844"

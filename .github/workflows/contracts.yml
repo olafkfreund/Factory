@@ -166,7 +166,7 @@ jobs:
         #
         # No new dependencies. Both files insert their own package root on
         # sys.path and are stdlib-only apart from pytest itself.
-        run: pytest -v tests/ shared/factory-common/tests/
+        run: pytest -v tests/ shared/factory-common/tests/ scripts/benchmarks/
 
       - name: Guard the shared job-dispatch policy surface
         # Factory#483. scripts/job_dispatch.py carries a self-test with the rules
