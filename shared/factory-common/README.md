@@ -11,6 +11,7 @@ work in the code-quality program (epic Factory#154, issue Factory#161).
 | `factory_common/http.py` | Cloudflare-friendly typed urllib JSON client: Mozilla User-Agent, pluggable auth (bearer / basic / GitLab private-token), timeout, and a bounded retry on 5xx / network error. |
 | `factory_common/secrets.py` | Canonical secret-pattern table plus `scan()` (leak detection) and `redact()` (safe logging). |
 | `factory_common/logsafe.py` | `sanitize_log()` - CWE-117 / `py/log-injection` fix: escapes CR/LF and control characters in a value before it reaches a log message, so untrusted input cannot forge a log record. |
+| `factory_common/client_errors.py` | `InputRejectedError` - a `ValueError` subclass marking a validation message as developer-written about the caller's own input, so a handler may return it verbatim while every other exception gets a correlation id (CWE-209). Raised by `url_safety`. |
 | `factory_common/url_safety.py` | `assert_safe_outbound_url()` - SSRF guard for any URL a service fetches on a caller's behalf, in a strict and a permissive posture, plus a redirect-following fetch that re-validates every hop. |
 
 `url_safety.assert_safe_outbound_url` is registered as a sanitizer BY NAME in
