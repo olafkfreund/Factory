@@ -16,7 +16,3 @@
     self-referential false positive — the gate's own docstring/self-test
     fixture contains the literal pattern as example text, not a live sink
   issue: Factory#718
-- path: shared/factory-common/factory_common/http.py
-  rule: raw-exception-in-response
-  reason: grandfathered at gate rollout
-  issue: Factory#718

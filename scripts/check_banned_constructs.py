@@ -73,7 +73,20 @@ emit one STRING).
 
 Allowlist format matches the sibling ruff-S gate's shape for a future merge:
 YAML list of ``{path, rule, reason, issue}``; an entry with no ``issue`` is
-itself a gate failure (an unreviewed grandfather is not a grandfather).
+itself a gate failure (an unreviewed grandfather is not a grandfather), and so
+is one whose ``reason`` is empty or still the placeholder ``--emit-allowlist``
+writes. A generated reason that PASSES is worse than one that blocks, because
+it ships: it looks reviewed and says nothing about the finding (Factory#798).
+
+The response hint requires a term that can only mean "sent to a client"
+(``HTTPException``, a framework ``*Response(`` construction, ``jsonify``,
+``make_response``, ``res.json``/``res.send``). It used to also match a bare
+``Response`` and ``reply``, case-insensitively, over a +/-6 line window: a
+``response_text`` local, an internal ``HttpResponse`` dataclass, or the word
+"reply" in a comment all qualified a nearby ``str(exc)`` as a response body.
+Measured across the five fleet repos, tightening it dropped 10 findings and
+added none; all 10 were verified false positives, 6 of them the same
+``factory_common/http.py`` CLIENT retry loop (Factory#798, refs #718).
 
 Usage:
     python scripts/check_banned_constructs.py --root . --allowlist banned-constructs-allowlist.yaml
@@ -158,8 +171,9 @@ _RESPONSE_ANCHOR = re.compile(
 )
 _RAW_EXCEPTION_INTERP = re.compile(rf"(?<!\$)\{{\s*{_EXC_NAME}\s*(?:![sra])?\s*(?::[^}}]*)?\}}")
 _HTTP_RESPONSE_HINT = re.compile(
-    r"(HTTPException|JSONResponse|Response|jsonify|res\.json|res\.send|reply)",
-    re.IGNORECASE,
+    r"HTTPException"
+    r"|\b(?:JSON|ORJSON|UJSON|HTML|PlainText|Redirect|Streaming|File)?Response\s*\("
+    r"|jsonify|make_response|res\.json|res\.send"
 )
 
 
@@ -365,6 +379,18 @@ def _find_raw_exception_in_response(path: Path, window: int = 6) -> list[tuple[i
     return hits
 
 
+# What --emit-allowlist writes into every generated entry, and what
+# _load_allowlist REJECTS. The previous default was "grandfathered at gate
+# rollout": it passed the gate, said nothing about the finding, and so shipped
+# an unreviewable entry that looked reviewed (Factory#798). A generated
+# default that blocks until a human replaces it turns "someone must write a
+# reason" from a convention into a mechanism.
+_REASON_PLACEHOLDER_PREFIX = "TODO"
+# No colon in the text: it is written into YAML unquoted, and "TODO: ..."
+# is a mapping there, not a string.
+_REASON_PLACEHOLDER = "TODO — say what this finding is and why it is not a leak"
+
+
 def _load_allowlist(path: Path | None) -> set[tuple[str, str]]:
     """Return {(relative_path, rule_id)} that is pre-approved (grandfathered)."""
     if path is None or not path.is_file():
@@ -374,14 +400,25 @@ def _load_allowlist(path: Path | None) -> set[tuple[str, str]]:
     entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
     allowed: set[tuple[str, str]] = set()
     unreviewed: list[str] = []
+    unwritten: list[str] = []
     for entry in entries:
+        reason = str(entry.get("reason") or "").strip()
         if not entry.get("issue"):
             unreviewed.append(entry.get("path", "<unknown>"))
+            continue
+        if not reason or reason.startswith(_REASON_PLACEHOLDER_PREFIX):
+            unwritten.append(entry.get("path", "<unknown>"))
             continue
         allowed.add((entry["path"], entry["rule"]))
     if unreviewed:
         raise ValueError(
             f"allowlist entries with no `issue` (unreviewed grandfather): {unreviewed}"
+        )
+    if unwritten:
+        raise ValueError(
+            "allowlist entries whose `reason` is empty or still the emitted "
+            f"placeholder (nobody reviewed the finding): {unwritten} — replace it with "
+            "what the finding IS and why it is not a leak"
         )
     return allowed
 
@@ -475,12 +512,84 @@ def run_check(root: Path, allowlist_path: Path | None) -> int:
             print(f"  - {problem}")  # noqa: T201
         print(  # noqa: T201
             "\nFix it, or if pre-existing and out of scope for this change, add an "
-            "entry to the allowlist with a `reason` and an `issue` ref (a "
-            "grandfather with no issue ref itself fails this gate)."
+            "entry to the allowlist with a written `reason` and an `issue` ref (a "
+            "grandfather with no issue ref, or with an empty or still-placeholder "
+            "reason, itself fails this gate)."
         )
         return 1
     print("OK: no banned constructs found (outside the allowlist).")  # noqa: T201
     return 0
+
+
+def _self_test_hint_cases(root: Path, failures: list[str]) -> None:
+    """The response-hint half: what must still be caught, and what must not.
+
+    Both directions are asserted together because a matcher that stops
+    complaining because it stopped looking passes any test that only checks
+    the false positives (Factory#798).
+    """
+    # Case 8: ordinary identifiers are no longer a response. Every term here
+    # was a real fleet false positive: `response_text`/`response_data` locals,
+    # an internal `HttpResponse` dataclass (six findings in factory_common),
+    # and the English word "reply" in a comment (routes/git.py).
+    (root / "weakhint.py").write_text(
+        "class HttpResponse:\n"
+        "    status: int\n"
+        "\n"
+        "def call(url):\n"
+        "    # the server may reply slowly\n"
+        "    response_text = fetch(url)\n"
+        "    try:\n"
+        "        do_thing(response_text)\n"
+        "    except Exception as exc:\n"
+        "        last_error = str(exc)\n"
+        "        return HttpResponse(0, last_error)\n"
+    )
+    expect(
+        failures,
+        not any("weakhint.py" in p for p in check(root, None)),
+        "ordinary identifiers (response_text, HttpResponse, a 'reply' comment) "
+        "must not qualify a line as an HTTP response",
+    )
+    (root / "weakhint.py").unlink()
+
+    # Case 9: every strong term still catches. One file per term so a
+    # regression names the term that broke rather than "the file".
+    strong = {
+        "s_httpexception.py": "        raise HTTPException(status_code=500, detail=str(exc))",
+        "s_jsonresponse.py": '        return JSONResponse({"detail": str(exc)})',
+        "s_response.py": "        return Response(str(exc), status_code=500)",
+        "s_plaintext.py": "        return PlainTextResponse(str(exc))",
+        "s_jsonify.py": '        return jsonify({"detail": str(exc)})',
+        "s_makeresponse.py": "        return make_response(str(exc), 500)",
+    }
+    for name, sink in strong.items():
+        (root / name).write_text(
+            "def handler(request):\n"
+            "    try:\n"
+            "        do_thing()\n"
+            "    except Exception as exc:\n" + sink + "\n"
+        )
+        expect(
+            failures,
+            any("raw-exception-in-response" in p and name in p for p in check(root, None)),
+            f"a raw exception sent through {name[2:-3]} must still be caught",
+        )
+        (root / name).unlink()
+
+    # Case 9b: the JS half of the hint (res.json / res.send) is unchanged.
+    (root / "express.js").write_text(
+        "function handler(req, res) {\n"
+        "  try { doThing(); }\n"
+        "  catch (e) { res.json({error: str(e)}); }\n"
+        "}\n"
+    )
+    expect(
+        failures,
+        any("express.js" in p for p in check(root, None)),
+        "res.json must still qualify as a response",
+    )
+    (root / "express.js").unlink()
 
 
 def _self_test_allowlist_cases(root: Path, failures: list[str]) -> None:
@@ -519,6 +628,43 @@ def _self_test_allowlist_cases(root: Path, failures: list[str]) -> None:
         failures,
         run_check(root, bad_allowlist) == 1,
         "an allowlist entry without an issue ref must itself fail the gate",
+    )
+
+    # Case 5b: the reason --emit-allowlist writes is a placeholder that FAILS
+    # the gate until a human replaces it (Factory#798). The old generated
+    # default ("grandfathered at gate rollout") passed, said nothing about the
+    # finding, and so shipped an entry that looked reviewed and was not.
+    placeholder = root / "placeholder.yaml"
+    placeholder.write_text(
+        "- path: handler.py\n"
+        "  rule: raw-exception-in-response\n"
+        f"  reason: {_REASON_PLACEHOLDER}\n"
+        "  issue: FAKE-123\n"
+    )
+    expect(
+        failures,
+        run_check(root, placeholder) == 1,
+        "an unedited placeholder reason must fail the gate",
+    )
+    empty_reason = root / "emptyreason.yaml"
+    empty_reason.write_text(
+        "- path: handler.py\n  rule: raw-exception-in-response\n  reason: ''\n  issue: FAKE-123\n"
+    )
+    expect(
+        failures,
+        run_check(root, empty_reason) == 1,
+        "an empty reason must fail the gate",
+    )
+
+    # Case 5c: and the round trip -- what --emit-allowlist prints today, fed
+    # straight back in, is REJECTED. This pins the mechanism rather than the
+    # wording: it holds even if the placeholder text is later reworded.
+    emitted = root / "emitted.yaml"
+    emitted.write_text(_emit_allowlist(root, "FAKE-123"))
+    expect(
+        failures,
+        run_check(root, emitted) == 1,
+        "an --emit-allowlist snapshot must not pass the gate unedited",
     )
 
     # Case 6: healed -> the allowlist entry is now DEAD and must be
@@ -707,6 +853,7 @@ def _self_test() -> int:
         )
         (root / "logonly.py").unlink()
 
+        _self_test_hint_cases(root, failures)
         _self_test_allowlist_cases(root, failures)
 
         # Case 7: the scanned commit is stated, and a non-git directory says so
@@ -725,6 +872,9 @@ def _emit_allowlist(root: Path, issue: str) -> str:
 
     This is the ratchet mechanism: run once at rollout to snapshot today's
     violations under one tracking issue, then the gate blocks on anything new.
+
+    The emitted `reason` is a placeholder that FAILS the gate until a human
+    replaces it, so an unreviewed snapshot cannot be committed and forgotten.
     """
     problems = check(root, None)
     entries = []
@@ -743,7 +893,7 @@ def _emit_allowlist(root: Path, issue: str) -> str:
         lines.append(
             f"- path: {e['path']}\n"
             f"  rule: {e['rule']}\n"
-            "  reason: grandfathered at gate rollout\n"
+            f"  reason: {_REASON_PLACEHOLDER}\n"
             f"  issue: {issue}\n"
         )
     return "".join(lines)
