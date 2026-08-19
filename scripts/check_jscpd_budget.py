@@ -71,7 +71,14 @@ from pathlib import Path
 # refactoring can remove — which had made registering ANY new contract in the
 # catalog over-budget by construction, so #360 sat open with no sanctioned way to
 # close it.
-CLONE_BUDGET = 32
+#
+# 2026-08-19 (#825): ratcheted 32 -> 31, and this one IS a code extraction. Making
+# the redirect posture explicit added three lines to each of four inline
+# httpx.AsyncClient constructions in azure_devops_provider.py, which pushed two
+# already-similar write paths over the clone threshold. Collapsing all four onto
+# AzureDevOpsProvider._patch_client() removed that clone and one that predated the
+# change -- exactly the move this ratchet exists to push toward.
+CLONE_BUDGET = 31
 
 _DEFAULT_REPORT = Path(__file__).resolve().parent.parent / "reports/jscpd/jscpd-report.json"
 
