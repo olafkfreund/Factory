@@ -139,7 +139,7 @@ repo_config() {
   CHECKS_DEV=""
   case "$1" in
     CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
+    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","hub test suite + generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     # PFactory's dev carries `docker (P0 acceptance)` and main does not.
     # PFactory#586 shipped a container that could not start: the gate caught it
     # on the causing PR (red at 12:53Z and 13:01Z on that PR's own branch) and

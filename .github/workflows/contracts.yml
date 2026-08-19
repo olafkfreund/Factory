@@ -1,6 +1,12 @@
 name: factory-contracts (staleness gate)
 
 # Single-source-of-truth gate for the generated factory-contracts package
+#
+# The `self-test` job below also runs the WHOLE hub suite
+# (`pytest tests/ shared/factory-common/tests/`), including the
+# factory_common canonical that four repos vendor byte-exact. It is one job
+# rather than two on purpose -- a second job duplicates the checkout/setup
+# block against the jscpd clone budget. Factory#832.
 # (epic Factory#154, issue Factory#160).
 #
 # WHAT THIS PROTECTS
@@ -68,7 +74,7 @@ jobs:
         run: python scripts/gen_contracts.py --check
 
   self-test:
-    name: generated package self-test (pytest)
+    name: hub test suite + generated package self-test (pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
