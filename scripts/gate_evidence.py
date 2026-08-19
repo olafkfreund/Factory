@@ -165,7 +165,12 @@ def fetch_github_json(url: str, *, timeout: int = 20) -> object:
     if token:
         request.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-        return json.loads(response.read().decode("utf-8"))
+        # strict=False: the Actions and code-scanning APIs echo run/step names
+        # and log excerpts, which can carry raw control characters inside a
+        # JSON string. A strict parser rejects the whole document for one of
+        # them, and the gate then reports "could not reach the GitHub API" for
+        # what is actually a successful response (Factory#816).
+        return json.loads(response.read().decode("utf-8"), strict=False)
 
 
 def digest(path: Path) -> str:
