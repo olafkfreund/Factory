@@ -46,6 +46,7 @@ jobs:
   change-gate:
     name: Fides change gate (SoD verdict)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       FIDES_SERVER_URL: ${{ secrets.FIDES_SERVER_URL }}
       FIDES_API_TOKEN: ${{ secrets.FIDES_API_TOKEN }}

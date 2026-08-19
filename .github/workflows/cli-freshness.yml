@@ -64,6 +64,7 @@ jobs:
   freshness:
     name: baked agent-CLI pins are not far behind npm
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -111,6 +112,7 @@ jobs:
   propose:
     name: open or refresh the bump PR in each service repo
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Runs whatever the report said. Being behind is not yet an alert (that is
     # what the 30-day window is for) but it IS already something to propose --
     # which is the whole point: the PR should be sitting there ready long before

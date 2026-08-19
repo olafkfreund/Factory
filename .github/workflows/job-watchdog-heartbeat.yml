@@ -53,6 +53,7 @@ jobs:
   heartbeat:
     name: the cluster watchdog is still alive
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Assert the watchdog stamped recently
         env:
