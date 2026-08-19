@@ -61,6 +61,7 @@ import check_pin_freshness as pin_gate
 import check_planning_card_conformance as card_gate
 import check_security_fork_drift as fork_gate
 import check_sink_coverage as sink_gate
+import check_test_collection as collection_gate
 import check_test_home_isolation as home_gate
 import check_verification_core_drift as vcore_gate
 import pytest
@@ -95,6 +96,8 @@ _COVERED: dict[str, str] = {
     "check_codeql_analysis_honesty.py": "test_codeql_analysis_honesty_gate_is_honest",
     # Factory#834.
     "check_import_resolution.py": "test_import_resolution_gate_is_honest",
+    # Factory#844.
+    "check_test_collection.py": "test_test_collection_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -863,6 +866,67 @@ def test_import_resolution_gate_is_honest(
     assert import_gate.run_check(tmp_path) == 0
     passing = capsys.readouterr().out
     assert "3 files" in passing and "1 first-party import targets" in passing, (
+        "the PASS path must cite what it examined, or a zero-item scan reads as clean"
+    )
+
+
+def test_test_collection_gate_is_honest(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Factory#844's uncollected-test gate, held to this file's criteria.
+
+    Its scope is ``_SKIP_DIRS`` plus ``_NON_COLLECTING`` -- the set of pytest
+    flags that mean "this invocation runs no tests". The second one is the
+    configuration that can shrink unobserved, and shrinking it is not a
+    hypothetical: PFactory's runner-images.yml smoke-tests a built image with
+    ``pytest --version``, and reading that as a real invocation with no path
+    arguments makes the ENTIRE repo look collected. Eight uncollected files,
+    including the alarm for PFactory#607, vanish from the report and the gate
+    prints a clean verdict. The subject is untouched throughout.
+
+    The PASS path is asserted to print its counts: a gate that examined zero
+    test files and one that examined four hundred cleanly must not print the
+    same thing (Factory#832).
+    """
+    assert collection_gate._self_test() == 0
+    capsys.readouterr()
+
+    alarm = collection_gate._pfactory_tree(tmp_path)
+    workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+    steps = "jobs:\n  backend:\n    steps:\n      - run: |\n"
+    workflow.write_text(
+        steps + "          pytest tests/\n" + steps + "          pytest --version\n"
+    )
+
+    assert collection_gate.run_check(tmp_path) == 1
+    report = capsys.readouterr().out
+    assert "apps/backend/agents/test_refactoring.py" in report, (
+        "the report never named the uncollected file it found"
+    )
+    assert "tests" in report, "the report never named the collected paths it measured against"
+
+    kept = collection_gate._NON_COLLECTING
+    collection_gate._NON_COLLECTING = frozenset()
+    try:
+        assert collection_gate.run_check(tmp_path) == 0, (
+            "trusting `pytest --version` as a real invocation made the whole repo "
+            "look collected -- scope shrank to nothing and the verdict went green"
+        )
+        widened = capsys.readouterr().out
+        assert "0 uncollected" in widened and "[., tests]" in widened, (
+            "even the wrong verdict must print what it measured against, or the "
+            "shrink leaves no trace at all"
+        )
+    finally:
+        collection_gate._NON_COLLECTING = kept
+    assert collection_gate.run_check(tmp_path) == 1, (
+        "restoring _NON_COLLECTING restores the finding"
+    )
+    capsys.readouterr()
+
+    alarm.unlink()
+    (tmp_path / "apps" / "web-server" / "tests" / "test_web.py").unlink()
+    assert collection_gate.run_check(tmp_path) == 0
+    passing = capsys.readouterr().out
+    assert "Examined 1 test files" in passing and "0 uncollected" in passing, (
         "the PASS path must cite what it examined, or a zero-item scan reads as clean"
     )
 
