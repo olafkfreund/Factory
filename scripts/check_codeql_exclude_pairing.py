@@ -52,6 +52,43 @@ def _query_ids(query_dir: Path) -> dict[str, Path]:
     return out
 
 
+def _local_library_sources(query: Path, query_dir: Path) -> list[str]:
+    """The query's body plus every sibling ``.qll`` it imports, transitively.
+
+    A query that shares its barrier with another query factors the guard into a
+    ``.qll`` and imports it -- which is the right structure, and used to make
+    the pair look undocumented here, because this gate read only the ``.ql``
+    body (Factory#807). AIFactory's ``FullSsrfSanitized.ql`` and
+    ``PartialSsrfSanitized.ql`` both register the same guard and both document
+    it once, in ``SsrfBarriers.qll``.
+
+    The alternative was to require the reasoning be duplicated into each
+    ``.ql``. That satisfies the regex and trains people to paste a paragraph to
+    satisfy a regex, which is the failure mode this gate family exists to
+    prevent, so it was rejected.
+
+    Only bare single-identifier imports are followed, and only to a file that
+    exists in the same directory. ``import python`` and
+    ``import semmle.python.dataflow.new.DataFlow`` name library packs, not
+    files here, and resolve to nothing.
+    """
+    seen: set[Path] = set()
+    bodies: list[str] = []
+    pending = [query]
+    while pending:
+        current = pending.pop()
+        if current in seen or not current.is_file():
+            continue
+        seen.add(current)
+        body = current.read_text(encoding="utf-8")
+        bodies.append(body)
+        for name in re.findall(r"^\s*import\s+([A-Za-z_]\w*)\s*$", body, re.MULTILINE):
+            sibling = query_dir / f"{name}.qll"
+            if sibling.is_file():
+                pending.append(sibling)
+    return bodies
+
+
 def check(repo: Path) -> list[str]:
     config_path = repo / ".github" / "codeql" / "codeql-config.yml"
     query_dir = repo / ".github" / "codeql" / "custom-queries"
@@ -70,13 +107,16 @@ def check(repo: Path) -> list[str]:
                 f"query in {query_dir} — nothing checks this rule"
             )
             continue
-        body = replacement.read_text(encoding="utf-8")
-        has_reasoning = "sanitiz" in body.lower() or "barrier" in body.lower()
-        has_doc_comment = bool(re.search(r"/\*\*.*?\*/\s*class \w+ extends", body, re.S))
+        bodies = _local_library_sources(replacement, query_dir)
+        has_reasoning = any("sanitiz" in b.lower() or "barrier" in b.lower() for b in bodies)
+        has_doc_comment = any(
+            re.search(r"/\*\*.*?\*/\s*class \w+ extends", b, re.S) for b in bodies
+        )
         if not has_reasoning or not has_doc_comment:
             problems.append(
                 f"{rule_id}-sanitized: {replacement.name} exists but does not document "
-                "its sanitizer claim (needs a doc comment + 'sanitiz'/'barrier' wording)"
+                "its sanitizer claim (needs a doc comment + 'sanitiz'/'barrier' wording, "
+                "in the .ql or in a sibling .qll it imports)"
             )
     return problems
 
@@ -161,6 +201,57 @@ def _self_test() -> int:
             run_check(repo) == 0,
             "run_check must pass once the replacement is restored and documented",
         )
+
+        # Case 6: the reasoning lives in a sibling .qll the query imports, which
+        # is how two queries sharing one barrier are correctly factored
+        # (Factory#807). Documented there, it counts.
+        (query_dir / "PathInjectionSanitized.ql").write_text(
+            "/**\n * @id py/path-injection-sanitized\n */\n"
+            "import python\n"
+            "import semmle.python.dataflow.new.DataFlow\n"
+            "import SharedBarriers\n"
+            "class Q extends int { }\n"
+        )
+        (query_dir / "SharedBarriers.qll").write_text(
+            "/**\n"
+            " * The shared barrier. Recognises safe_spec_component as a sanitizer.\n"
+            " */\n"
+            "class Sanitizer extends DataFlow::Node { }\n"
+        )
+        expect(
+            failures,
+            run_check(repo) == 0,
+            "documentation in an imported sibling .qll must satisfy the gate",
+        )
+
+        # Case 7 (the mutation that keeps case 6 honest): strip the doc comment
+        # out of the .qll and it must fail again. Without this, case 6 would
+        # pass for a gate that had simply stopped checking.
+        (query_dir / "SharedBarriers.qll").write_text(
+            "class Sanitizer extends DataFlow::Node { }\n"
+        )
+        expect(
+            failures,
+            run_check(repo) == 1,
+            "an undocumented sibling .qll must NOT satisfy the gate",
+        )
+
+        # Case 8: documentation that exists but is not imported does not count.
+        # Following the import is the point; scanning the directory would let an
+        # unrelated well-documented file vouch for an undocumented query.
+        (query_dir / "SharedBarriers.qll").write_text(
+            "/**\n * The shared barrier, a documented sanitizer.\n */\n"
+            "class Sanitizer extends DataFlow::Node { }\n"
+        )
+        (query_dir / "PathInjectionSanitized.ql").write_text(
+            "/**\n * @id py/path-injection-sanitized\n */\nimport python\nclass Q extends int { }\n"
+        )
+        expect(
+            failures,
+            run_check(repo) == 1,
+            "an un-imported .qll must not vouch for an undocumented query",
+        )
+        (query_dir / "SharedBarriers.qll").unlink()
 
         # Case 5: no config file at all -> not a violation (nothing to pair).
         no_config_repo = Path(tempfile.mkdtemp())

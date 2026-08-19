@@ -110,6 +110,39 @@ jobs:
             --ref TFactory=HEAD --ref CFactory=HEAD 2>&1 | tee compare-output.txt
           exit "${PIPESTATUS[0]}"
 
+      - name: Self-test the pairing gate before trusting it
+        # Same reasoning as the comparator self-test above (rule 4.7): a gate
+        # that has stopped checking reports "OK" in four repos at once, and
+        # running it for real cannot distinguish that from four clean repos.
+        # Only its own mutation-proof self-test can.
+        run: python3 Factory/scripts/check_codeql_exclude_pairing.py --self-test
+
+      - name: Gate 2 in the SERVICE repos — every CodeQL exclude has a documented replacement
+        # Factory#807. `security-cleanup-gates.yml` runs this same script with
+        # `--repo .`, which is the hub -- and the hub has no
+        # `.github/codeql/codeql-config.yml`, so that invocation prints
+        # "nothing to pair, skipping" and exits 0 every time. The gate has
+        # therefore never asked its question anywhere. The repos that DO
+        # silence stock rules in favour of local forks are the four services,
+        # and none of them vendors a copy of the script.
+        #
+        # It belongs here rather than in each service's own PR lane for the
+        # reason stated at the top of this file: the checkouts already exist,
+        # and four hand-maintained copies is the shape Factory#483 undoes.
+        #
+        # Loops rather than four steps so a failure in PFactory cannot mask
+        # AIFactory: every repo is checked and the exit codes are OR-ed, so
+        # the output names every offender rather than only the first.
+        run: |
+          set -uo pipefail
+          rc=0
+          for repo in PFactory AIFactory TFactory CFactory; do
+            python3 Factory/scripts/check_codeql_exclude_pairing.py \
+              --repo "${GITHUB_WORKSPACE}/${repo}" 2>&1 | tee -a pairing-output.txt
+            [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+          done
+          exit "$rc"
+
       - name: Publish the verdict to the run summary (always, not just on failure)
         if: always()
         run: |
@@ -117,6 +150,10 @@ jobs:
             echo "## security-fork-drift"
             echo '```'
             cat compare-output.txt
+            echo '```'
+            echo "## codeql-exclude-pairing (service repos, Factory#807)"
+            echo '```'
+            cat pairing-output.txt 2>/dev/null || echo "(the pairing step did not run)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
