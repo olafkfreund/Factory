@@ -54,6 +54,7 @@ import check_codeql_query_suite as suite_gate
 import check_factory_github_drift as github_gate
 import check_factory_ui_drift as ui_gate
 import check_gate_liveness as liveness_gate
+import check_import_resolution as import_gate
 import check_merge_attribution as merge_gate
 import check_orphaned_pr_commits as orphan_gate
 import check_pin_freshness as pin_gate
@@ -92,6 +93,8 @@ _COVERED: dict[str, str] = {
     "check_codeql_fork_validation.py": "test_codeql_fork_validation_gate_is_honest",
     # Factory#774.
     "check_codeql_analysis_honesty.py": "test_codeql_analysis_honesty_gate_is_honest",
+    # Factory#834.
+    "check_import_resolution.py": "test_import_resolution_gate_is_honest",
 }
 
 # Gates deliberately out of scope, each with the reason stated. Named, not
@@ -810,6 +813,57 @@ def test_sink_coverage_gate_is_honest(tmp_path: Path) -> None:
         sink_gate.SINK_CLASSES = kept
     assert sink_gate.find_unguarded(tmp_path, {"http_guard": http_guard}), (
         "restoring SINK_CLASSES must restore the finding"
+    )
+
+
+def test_import_resolution_gate_is_honest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Factory#834's whole-repo import gate, held to this file's criteria.
+
+    Its scope is ``_SKIP_DIRS`` (plus the dot-directory rule). Adding a
+    LEGITIMATE source directory name to it must stop a stale import inside that
+    directory being reported, with the subject untouched -- the same shape as
+    the banned-constructs case below, and the reason both gates state their
+    skip rule in the source rather than burying it.
+
+    The PASS path is asserted to print its counts, not just a verdict: a gate
+    that scanned zero files and one that scanned two thousand cleanly must not
+    print the same thing (Factory#832).
+    """
+    assert import_gate._self_test() == 0
+    capsys.readouterr()
+
+    package = tmp_path / "server"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "routes.py").write_text("from server.gone import thing\n")
+
+    assert import_gate.run_check(tmp_path) == 1
+    report = capsys.readouterr().out
+    assert "server/routes.py" in report, "the report never named the file it read"
+    assert "server.gone" in report, "the report never named the target it could not resolve"
+
+    kept = import_gate._SKIP_DIRS
+    import_gate._SKIP_DIRS = kept | {"server"}
+    try:
+        assert import_gate.run_check(tmp_path) == 2, (
+            "adding a legitimate source directory to _SKIP_DIRS left the stale "
+            "import unreported -- scope shrank, nobody noticed"
+        )
+        assert "nothing was gated" in capsys.readouterr().out, (
+            "a scan whose scope shrank to zero must say so, not report a clean tree"
+        )
+    finally:
+        import_gate._SKIP_DIRS = kept
+    assert import_gate.run_check(tmp_path) == 1, "restoring _SKIP_DIRS must restore the finding"
+    capsys.readouterr()
+
+    (package / "gone.py").write_text("thing = 1\n")
+    assert import_gate.run_check(tmp_path) == 0
+    passing = capsys.readouterr().out
+    assert "3 files" in passing and "1 first-party import targets" in passing, (
+        "the PASS path must cite what it examined, or a zero-item scan reads as clean"
     )
 
 
