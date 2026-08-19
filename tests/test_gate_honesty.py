@@ -39,6 +39,7 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 # scripts/ is put on sys.path by tests/conftest.py.
@@ -878,6 +879,84 @@ def test_test_home_isolation_gate_is_honest(
     )
 
 
+def _liveness_api(
+    state: str, runs: list[dict[str, object]], greens: int = 1, reds: int = 0
+) -> Callable[[str], object]:
+    """A fake GitHub Actions API for check_gate_liveness.
+
+    ``greens``/``reds`` are the WHOLE-HISTORY totals the gate reads off
+    ``total_count``, deliberately independent of ``runs`` (the recency page):
+    the two halves of Factory#816's distinction are exactly "what does the
+    newest run say" versus "has anything ever been green".
+    """
+
+    def fetch(url: str) -> object:
+        if url.endswith("/contents/.github/workflows"):
+            return [{"name": g.workflow} for g in liveness_gate.GATES]
+        # The shipped exemptions have to keep matching something, or `check`
+        # correctly reports them as dead entries (Factory#788) and the
+        # all-green control stops being a control.
+        exempt = any(w in url for w in liveness_gate._EXEMPT_WORKFLOWS)
+        if "status=success" in url:
+            return {"total_count": 0 if exempt else greens}
+        if "status=failure" in url:
+            return {"total_count": 2 if exempt else reds}
+        if url.endswith("/runs?per_page=100"):
+            return {"workflow_runs": runs}
+        return {"state": state}
+
+    return fetch
+
+
+def test_gate_liveness_never_green_verdict_is_honest() -> None:
+    """Factory#816: a gate that has never once passed, held to this file's criteria.
+
+    The property under test is the LINE, not the label. Both halves below have
+    the identical subject -- a gate whose newest verdict is red and fresh --
+    and differ only in whether anything green exists anywhere in the history.
+    Getting that backwards re-arms the bug the first version of
+    check_gate_liveness.py shipped with, where a gate correctly reporting
+    findings read as dead.
+    """
+    now = datetime.datetime(2026, 8, 15, 12, 0, tzinfo=datetime.UTC)
+    fresh = (now - datetime.timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+    api = _liveness_api
+    alive = api("active", [{"conclusion": "success", "created_at": fresh}])
+
+    subject: list[dict[str, object]] = [{"conclusion": "failure", "created_at": fresh}]
+    watched = liveness_gate.GATES[0]
+    barren = liveness_gate.verdict(watched, "o/r", api("active", subject, 0, 21), now)
+    assert barren is not None and "NEVER GREEN" in barren, (
+        "a gate with zero successes in its entire history has never shown it can pass"
+    )
+    assert "21" in barren, (
+        "the never-green verdict must cite the count it measured, not just the label"
+    )
+    recovered = liveness_gate.verdict(watched, "o/r", api("active", subject, 3, 5), now)
+    assert recovered is None, (
+        "a gate that is red TODAY but has passed before is doing its job -- this is "
+        "the exact bug the first version of this script shipped, re-armed"
+    )
+
+    # The exemption is a hole in coverage, so it is held to the two rules that
+    # keep holes from widening: it must be justified, and it must still fit.
+    with pytest.raises(ValueError):
+        liveness_gate.NeverGreenExemption(workflow="x.yml", issue="Factory#1", reason="TODO")
+    assert liveness_gate._stale_exemptions(frozenset()) != [], (
+        "an exemption that suppressed nothing must fail the gate, not pass quietly"
+    )
+
+    # The record outlives the file: GitHub keeps reporting state=active for a
+    # workflow deleted from the default branch (Factory#816's zz-*-proof pair).
+    gone = liveness_gate.verdict(
+        liveness_gate.GATES[0], "o/r", alive, now, frozenset({"something-else.yml"})
+    )
+    assert gone is not None and "ABSENT" in gone, (
+        "a deleted workflow file must not read as a live gate on the strength of "
+        "GitHub's stale `state: active`"
+    )
+
+
 def test_gate_liveness_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> None:
     """Factory#738's external liveness check, held to this file's criteria.
 
@@ -891,13 +970,7 @@ def test_gate_liveness_gate_is_honest(capsys: pytest.CaptureFixture[str]) -> Non
     """
     now = datetime.datetime(2026, 8, 15, 12, 0, tzinfo=datetime.UTC)
 
-    def api(state: str, runs: list[dict[str, object]]):
-        def fetch(url: str) -> object:
-            if url.endswith("/runs?per_page=100"):
-                return {"workflow_runs": runs}
-            return {"state": state}
-
-        return fetch
+    api = _liveness_api
 
     fresh = (now - datetime.timedelta(hours=3)).isoformat().replace("+00:00", "Z")
     alive = api("active", [{"conclusion": "success", "created_at": fresh}])
