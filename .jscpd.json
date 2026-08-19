@@ -30,7 +30,8 @@
     "**/dist/**",
     "**/build/**",
     "catalog-info.yaml",
-    "product-catalogs/**"
+    "product-catalogs/**",
+    ".github/workflows/**"
   ],
   "threshold": 100
 }

@@ -78,6 +78,28 @@ from pathlib import Path
 # already-similar write paths over the clone threshold. Collapsing all four onto
 # AzureDevOpsProvider._patch_client() removed that clone and one that predated the
 # change -- exactly the move this ratchet exists to push toward.
+#
+# 2026-08-19 (#836): budget UNCHANGED at 31, but .jscpd.json now ignores
+# .github/workflows/**. Same species as the #286 and #360 exclusions: a format
+# that mandates the duplication and offers nothing to extract.
+#
+# Adding one `timeout-minutes:` line per job (bounding every job so a wedged
+# step goes red instead of pending for six hours) pushed three pairs of Actions
+# PREAMBLE over the 50-token floor -- `jobs:` / `runs-on:` / `steps:` / a
+# SHA-pinned `actions/checkout` / a SHA-pinned `actions/setup-python`. Every one
+# of those lines is required verbatim by the workflow format, and the pinning is
+# not a paste anyone chose: pin-freshness.yml REQUIRES the same digest in every
+# workflow, so two jobs that both check out and both set up Python are
+# byte-identical by policy. There is no hub extraction that removes it.
+#
+# Be explicit about what this does and does not cost, because "exclude the
+# category my PR touched" is exactly how a gate gets quietly narrowed:
+#   - main measured 31 clones with ZERO of them in .github/workflows (run
+#     32278843436). The exclusion therefore removes no finding the gate has
+#     ever made, and the ceiling for real code stays at 31 rather than rising
+#     to 34.
+#   - what it does give up is detection of a WHOLESALE copied workflow, which
+#     jscpd would have caught and now will not. Tracked in Factory#842.
 CLONE_BUDGET = 31
 
 _DEFAULT_REPORT = Path(__file__).resolve().parent.parent / "reports/jscpd/jscpd-report.json"
