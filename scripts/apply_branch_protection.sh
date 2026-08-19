@@ -221,13 +221,29 @@ signatures_one() {
 }
 
 # Per-branch intent. `main` is the release branch: up-to-date-required, reviewed,
-# conversations resolved. `dev` is the integration branch and is deliberately
-# LOOSER: the same CI checks still gate every merge, but there is no review
-# requirement, no strict up-to-date requirement and no conversation-resolution
-# gate. That is not drift to be corrected - a solo maintainer (and the factory's
-# own agents) have nobody to approve their PRs, so requiring a review on the
-# integration branch would stall every merge, and `strict` would force a rebase
-# before each one. See Factory#455 / Factory#468.
+# conversations resolved. `dev` is the integration branch: the same CI checks
+# gate every merge, there is still no review requirement and no
+# conversation-resolution gate - a solo maintainer and the factory's own agents
+# have nobody to approve their PRs, so requiring review would stall the branch
+# (Factory#455 / Factory#468, still current).
+#
+# `strict` on dev REVERSES the earlier decision, deliberately (Factory#834).
+#
+# WHY: two PRs whose diffs do not overlap can each be correctly green and still
+# break the branch together. #1121 deleted a module and repointed the call sites
+# on its branch; #1125 was concurrent, merged first, and carried an import of
+# that module forward. Neither conflicted, both read CLEAN, and no CI run ever
+# evaluated the combination. TFactory dev was broken for about an hour. The same
+# shape recurred twice more the same day and was caught only by checking the
+# merge result by hand.
+#
+# WHAT IT COSTS, measured rather than estimated: 68 PRs merged to dev across the
+# four service repos on 2026-08-19. Under `strict` each must be up to date at
+# merge time, so a busy day pays a rebase-and-rerun per merge, against a slowest
+# job of ~7 minutes. That cost is accepted; the earlier decision weighed the same
+# trade without the incident data.
+#
+# Reverting is a one-line change here plus an --apply.
 build_payload() {
   local repo="$1" branch="$2"
   repo_config "$repo"
@@ -235,7 +251,7 @@ build_payload() {
   local checks="$CHECKS" strict reviews convres
   case "$branch" in
     main) strict=true;  reviews="$REVIEWS"; convres=true ;;
-    dev)  strict=false; reviews=0;          convres=false
+    dev)  strict=true;  reviews=0;          convres=false
           # Per-branch checks (#691): dev may be gated MORE than main, and is
           # for AIFactory, where dev is the default branch.
           [ -n "${CHECKS_DEV:-}" ] && checks="$CHECKS_DEV" ;;

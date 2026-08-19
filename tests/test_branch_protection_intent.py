@@ -157,9 +157,16 @@ def test_dev_is_deliberately_looser_than_main(repo: str) -> None:
     skips the required status checks on the way past. The rule was unsatisfiable
     and the effect was less enforcement, not more.
 
-    So no branch requires a review. What separates `main` from `dev` is
-    `strict` (be up to date with the base before merging) and conversation
-    resolution -- both of which a merge can actually satisfy unaided.
+    So no branch requires a review. Since Factory#834 `strict` is on BOTH
+    branches, so what now separates them is conversation resolution alone.
+
+    `strict` moved to `dev` because two PRs whose diffs do not overlap can each
+    be correctly green and still break the branch together -- TFactory#1121 and
+    #1125 did exactly that, and dev was broken for about an hour. The earlier
+    intent (dev looser, #455/#468) was a considered decision, reversed with the
+    incident data it predated. The review exemption is untouched and the #484
+    reasoning above still holds: a merge can satisfy `strict` unaided, but
+    cannot approve its own PR.
     """
     main, dev = _emit(repo, "main"), _emit(repo, "dev")
 
@@ -170,7 +177,7 @@ def test_dev_is_deliberately_looser_than_main(repo: str) -> None:
     assert main["required_conversation_resolution"] is True
 
     assert dev["required_pull_request_reviews"] is None
-    assert dev["required_status_checks"]["strict"] is False
+    assert dev["required_status_checks"]["strict"] is True  # Factory#834
     assert dev["required_conversation_resolution"] is False
 
     # dev is looser about PROCESS, never about CI. It may be gated MORE:
@@ -252,8 +259,8 @@ def test_matching_live_response_compares_equal() -> None:
     """
     # reviews is None on every row now (#484): no branch requires an approving
     # review, because a single-maintainer account cannot supply one and the rule
-    # only ever produced admin bypasses. main is still distinguished from dev by
-    # strict and conversation resolution.
+    # only ever produced admin bypasses. Since Factory#834 dev is strict too, so
+    # conversation resolution is the only remaining difference from main.
     for repo, branch, contexts, strict, reviews, convres in [
         (
             "TFactory",
@@ -267,7 +274,7 @@ def test_matching_live_response_compares_equal() -> None:
             "TFactory",
             "dev",
             ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
-            False,
+            True,
             None,
             False,
         ),
@@ -292,7 +299,7 @@ def test_matching_live_response_compares_equal() -> None:
                 "ruff format --check (every Python directory)",
                 "shared-baseline drift gate (blocking)",
             ],
-            False,
+            True,
             None,
             False,
         ),
@@ -329,7 +336,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             "ruff format --check (every Python directory)",
             "shared-baseline drift gate (blocking)",
         ],
-        strict=False,
+        strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
     )
@@ -342,7 +349,7 @@ def test_unordered_contexts_compare_equal() -> None:
     # ignore the gate.
     live = _live_shaped(
         contexts=[_VCORE, "critical (fast PR gate)", "backend (ruff + pytest)"],
-        strict=False,
+        strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
     )
@@ -353,8 +360,11 @@ def test_unordered_contexts_compare_equal() -> None:
     "mutate",
     [
         pytest.param(
-            lambda d: d["required_status_checks"].update(strict=True),
-            id="strict-flipped-on-dev",
+            # Since Factory#834 dev IS strict, so flipping it ON is a no-op and
+            # would make this case pass while testing nothing. The divergence
+            # worth detecting is protection having drifted back OFF.
+            lambda d: d["required_status_checks"].update(strict=False),
+            id="strict-flipped-off-on-dev",
         ),
         pytest.param(
             lambda d: d["required_status_checks"]["contexts"].pop(),
@@ -414,7 +424,7 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
     """
     live = _live_shaped(
         contexts=["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
-        strict=False,
+        strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
     )
