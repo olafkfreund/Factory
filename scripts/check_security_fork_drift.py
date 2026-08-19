@@ -51,6 +51,18 @@ finding below):
   divergence — a new one, or the registered one drifting further — fails,
   because nothing vouched for it.
 
+- ``kind="forked-code"`` (e.g. ``assert-hub-pin-on-main.sh``, Factory#819):
+  the registered-divergence model above, applied to the script's EXECUTABLE
+  BODY rather than its bytes — whole-line ``#`` comments and blank lines are
+  removed before hashing (``strip_shell_comments``; the shebang survives).
+  Added for a shell guard whose four copies each document their own repo's
+  inventory of hub-pinned workflows in the header. Under plain ``forked``
+  that entry would need a hub re-registration every time one repo adds a
+  workflow and updates a COMMENT, and a gate that goes red on documentation
+  edits is a gate someone eventually deletes. Under ``forked-code`` the
+  registration pins what is executed, and only a real change to the logic —
+  in one repo and not its siblings — turns it red.
+
 Usage:
     python scripts/check_security_fork_drift.py --fleet-root /path/to/GitHub
         # fleet-root contains Factory/, PFactory/, AIFactory/, TFactory/, CFactory/
@@ -71,6 +83,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from hashlib import sha256
 from pathlib import Path
 
@@ -105,6 +118,31 @@ REGISTRY: dict[str, dict[str, str | None]] = {
         "_kind": "forked",
         "PFactory": "apps/web-server/server/services/skills_service.py",
         "AIFactory": "apps/web-server/server/services/skills_service.py",
+    },
+    # Factory#819. The guard that decides whether a hub pin names a commit on
+    # hub `main` — the thing standing between a fork PR and a gate bypass —
+    # was itself shipped as four independent copies with nothing comparing
+    # them. Measured on 2026-08-19 at each repo's origin/dev: four distinct
+    # blobs, and with whole-line comments stripped the executable bodies
+    # differ by EXACTLY ONE line, the tracking issue named in the failure
+    # message (Factory#806 / TFactory#1049 / AIFactory#1281 / CFactory#373).
+    #
+    # `forked-code`, not `vendored` or `forked`, and the choice is the whole
+    # point of the entry. Byte-identity is unreachable: each copy's header
+    # documents ITS OWN repo's inventory of hub-pinned workflows, which is
+    # correct where it is and not shareable. Registering the RAW digests
+    # (plain `forked`) would work today and then go red the next time any one
+    # repo adds a hub-pinned workflow and updates its inventory comment — a
+    # doc edit forcing a hub re-registration, which is the churn that gets a
+    # gate switched off. Comparing the comment-stripped body pins the part
+    # that matters (the 40-hex check, the compare-API call, the exit-code
+    # contract) and lets the per-repo prose move freely.
+    "assert-hub-pin-on-main.sh (hub-pin-on-main reachability guard)": {
+        "_kind": "forked-code",
+        "PFactory": ".github/scripts/assert-hub-pin-on-main.sh",
+        "AIFactory": ".github/scripts/assert-hub-pin-on-main.sh",
+        "TFactory": ".github/scripts/assert-hub-pin-on-main.sh",
+        "CFactory": ".github/scripts/assert-hub-pin-on-main.sh",
     },
 }
 
@@ -146,7 +184,85 @@ FORK_DIVERGENCES: list[dict[str, object]] = [
         ),
         "issue": "Factory#727",
     },
+    {
+        "name": "assert-hub-pin-on-main.sh (hub-pin-on-main reachability guard)",
+        # sha256 of strip_shell_comments(git show origin/dev:<path>), taken on
+        # 2026-08-19. Re-derive by reading each repo at `git show origin/dev:`
+        # and hashing strip_shell_comments() of the result -- never from a
+        # working tree (Factory#729). The gate's own failure message prints
+        # the current value of every copy, so a re-registration needs no
+        # scripting: run it, copy the four digests it names.
+        # The four bodies are 1085/1086/1087/1088 bytes — the length spread is
+        # exactly the length spread of the four issue references below, which
+        # is the corroboration that nothing else in the logic differs.
+        "digests": {
+            "PFactory": "35bc80a6a19ef7f3df8de3f45b0577e3025c48f518265f53040d498668414770",
+            "AIFactory": "312ae5ed94724d30ad5d3f2939b31e03311fc8e0211df45e8b4afa28fe32eeb0",
+            "TFactory": "2d4ba6300a405503239d36e6c87d46ed6e35fa562dacd579546ae06807afee7c",
+            "CFactory": "da9e74fb28c43d9c49ac2ba967d296258869183d7e341dfc87e39f4f9acc76c1",
+        },
+        "reason": (
+            "Measured, not assumed (Factory#819): with whole-line comments "
+            "stripped, the four copies' executable bodies differ by EXACTLY ONE "
+            "line — the tracking issue named in the failure message. PFactory "
+            "cites Factory#806, TFactory TFactory#1049, AIFactory "
+            "AIFactory#1281, CFactory CFactory#373. That is deliberate: the "
+            "message tells a maintainer in THAT repo where the decision is "
+            "recorded, and a hub issue number in a CFactory failure log sends "
+            "them to the wrong tracker. "
+            "Everything the guard actually does is identical across all four: "
+            "the ^[0-9a-f]{40}$ check, the `gh api repos/olafkfreund/Factory/"
+            "compare/main...<sha>` call with no `|| true`, the "
+            "identical|behind pass set, and the exit-code contract. Those are "
+            "what this registration pins. "
+            "WHY NOT A HUB CANONICAL: making the copies byte-identical would "
+            "mean deleting each header's inventory of that repo's own "
+            "hub-pinned workflows — six in TFactory, a different set in "
+            "PFactory — which is the most useful documentation in the file and "
+            "is genuinely per-repo. Templating it back in trades a real "
+            "reader-facing comment for a vendoring step. Reversible: if the "
+            "per-repo prose ever leaves the file, drop this entry and promote "
+            "the registry entry to `vendored`."
+        ),
+        "issue": "Factory#819",
+    },
 ]
+
+
+def _identity(data: bytes) -> bytes:
+    return data
+
+
+def strip_shell_comments(data: bytes) -> bytes:
+    """A shell script's executable body: whole-line comments and blank lines removed.
+
+    Only lines whose FIRST non-space character is ``#`` are dropped, so a ``#``
+    inside a string or a trailing comment on a real command is never touched —
+    a logic change cannot hide behind this. The ``#!`` shebang is kept: swapping
+    the interpreter is an executable change, and it lives on a comment-shaped
+    line. Line 1 only, because that is the only line on which `#!` means
+    anything to the kernel — a `#!...` further down IS just a comment.
+    """
+    kept: list[bytes] = []
+    for index, line in enumerate(data.split(b"\n")):
+        stripped = line.strip()
+        if index == 0 and stripped.startswith(b"#!"):
+            kept.append(line)
+            continue
+        if not stripped or stripped.startswith(b"#"):
+            continue
+        kept.append(line)
+    return b"\n".join(kept) + b"\n"
+
+
+# What each kind compares. `forked-code` exists because a shared shell guard
+# can carry per-repo documentation that is correct where it is (see the
+# assert-hub-pin-on-main.sh entry above); everything else is compared whole.
+_NORMALISERS: dict[str, Callable[[bytes], bytes]] = {"forked-code": strip_shell_comments}
+
+# Kinds whose copies are ALLOWED to diverge, provided the divergence is
+# registered in FORK_DIVERGENCES with a reason and an issue ref.
+_REGISTERED_DIVERGENCE_KINDS = frozenset({"forked", "forked-code"})
 
 
 def _digest_bytes(data: bytes) -> str:
@@ -211,22 +327,27 @@ def check_drift(fleet_root: Path, repo_refs: dict[str, str] | None = None) -> li
         present = _present_ref_copies(fleet_root, copies, repo_refs)
         if len(present) < _MIN_COPIES_TO_COMPARE:
             continue
-        file_digests = {repo: sha256(data).hexdigest() for repo, data in present.items()}
+        # What is compared is what is cited: for a `forked-code` entry both the
+        # digest and the printed evidence are of the comment-stripped body, so
+        # a reader can reproduce the number the gate actually decided on.
+        normalise = _NORMALISERS.get(str(kind), _identity)
+        compared = {repo: normalise(data) for repo, data in present.items()}
+        file_digests = {repo: sha256(data).hexdigest() for repo, data in compared.items()}
         reference_repo, reference_digest = next(iter(file_digests.items()))
         diverged = any(d != reference_digest for d in file_digests.values())
         if not diverged:
             continue
 
-        cited = ", ".join(f"{repo}={_digest_bytes(data)}" for repo, data in present.items())
+        cited = ", ".join(f"{repo}={_digest_bytes(data)}" for repo, data in compared.items())
 
-        if kind == "vendored":
+        if kind not in _REGISTERED_DIVERGENCE_KINDS:
             problems.append(
                 f"{name}: copies diverge across repos at their registered refs "
                 f"({cited}); reference was {reference_repo}"
             )
             continue
 
-        # kind == "forked": diverging is expected; it must be a REGISTERED
+        # forked / forked-code: diverging is expected; it must be a REGISTERED
         # divergence with an issue ref, matching the CURRENT bytes exactly.
         match = _matching_divergence(name, file_digests)
         if match is None:
@@ -448,6 +569,113 @@ def _self_test_forked(root: Path, failures: list[str]) -> None:
     )
 
 
+_SHELL_A = """#!/usr/bin/env bash
+# PFactory's own inventory of hub-pinned workflows.
+set -euo pipefail
+if ! printf '%s' "${sha}" | grep -qE '^[0-9a-f]{40}$'; then exit 1; fi
+"""
+
+# Same executable body, different header prose: a doc-only edit of the kind a
+# repo makes when it adds a hub-pinned workflow. Must NOT be drift.
+_SHELL_B_COMMENT_ONLY = """#!/usr/bin/env bash
+# TFactory's own inventory of hub-pinned workflows, which is a longer list.
+#
+#   factory-common-drift.yml  factory_common/.hub-sha  -> codeload tarball
+set -euo pipefail
+if ! printf '%s' "${sha}" | grep -qE '^[0-9a-f]{40}$'; then exit 1; fi
+"""
+
+
+def _self_test_forked_code(root: Path, failures: list[str]) -> None:
+    """forked-code kind: comments are noise, the executable body is the assertion.
+
+    The pair of mutations below is the whole reason this kind exists
+    (Factory#819), so both directions are proved rather than one:
+    a header-only edit must stay green, and a one-character change to the
+    40-hex check must go red.
+    """
+    _init_git_repo(root / "CodeA", {"guard.sh": _SHELL_A})
+    _init_git_repo(root / "CodeB", {"guard.sh": _SHELL_B_COMMENT_ONLY})
+    refs = {"CodeA": "main", "CodeB": "main"}
+    REGISTRY["guard.sh"] = {"_kind": "forked-code", "CodeA": "guard.sh", "CodeB": "guard.sh"}
+
+    expect(
+        failures,
+        sha256(_SHELL_A.encode()).hexdigest() != sha256(_SHELL_B_COMMENT_ONLY.encode()).hexdigest(),
+        "sanity: the two fixtures really are different FILES, so a green verdict "
+        "below is the stripping working and not two identical inputs",
+    )
+    expect(
+        failures,
+        check_drift(root, refs) == [],
+        "a comment-only difference must not be drift under forked-code",
+    )
+
+    # Mutation: one character of the executable body, in ONE repo. `{40}` ->
+    # `{4}` would let a 4-hex pin through; nothing else in the file changes.
+    _commit(root / "CodeB", "guard.sh", _SHELL_B_COMMENT_ONLY.replace("{40}", "{4}"))
+    problems = check_drift(root, refs)
+    expect(
+        failures,
+        len(problems) == 1 and "NO registered divergence" in problems[0],
+        f"a one-character executable change in one repo must be flagged, got {problems}",
+    )
+    expect(failures, run_check(root, refs) == 1, "run_check must fail on forked-code logic drift")
+
+    # And the registered-divergence path works for this kind too: register the
+    # CODE digests and the same state passes.
+    def code_digest(repo: str) -> str:
+        body = strip_shell_comments(read_ref(root / repo, "main", "guard.sh") or b"")
+        return sha256(body).hexdigest()
+
+    digests = {repo: code_digest(repo) for repo in ("CodeA", "CodeB")}
+    FORK_DIVERGENCES.append(
+        {"name": "guard.sh", "digests": digests, "reason": "registered", "issue": "FAKE-2"}
+    )
+    expect(
+        failures,
+        run_check(root, refs) == 0,
+        "a registered forked-code divergence with an issue ref must pass",
+    )
+    # ...and a FURTHER comment-only edit must not invalidate that registration,
+    # which is the churn `forked-code` exists to avoid.
+    _commit(
+        root / "CodeB",
+        "guard.sh",
+        _SHELL_B_COMMENT_ONLY.replace("{40}", "{4}").replace(
+            "# TFactory's", "# one more inventory line\n# TFactory's"
+        ),
+    )
+    expect(
+        failures,
+        run_check(root, refs) == 0,
+        "a comment-only edit must not invalidate a registered forked-code divergence",
+    )
+
+    REGISTRY.clear()
+    FORK_DIVERGENCES.clear()
+
+
+def _self_test_strip_shell_comments(failures: list[str]) -> None:
+    """The stripper must not eat anything executable."""
+    expect(
+        failures,
+        strip_shell_comments(b'#!/bin/sh\n# c\n\necho "a # b"\n') == b'#!/bin/sh\necho "a # b"\n',
+        "a `#` inside a string, and the shebang, must both survive",
+    )
+    expect(
+        failures,
+        strip_shell_comments(b"#!/bin/sh\ncmd --flag  # trailing\n")
+        == b"#!/bin/sh\ncmd --flag  # trailing\n",
+        "a trailing comment on a real command must not be stripped (the line is executable)",
+    )
+    expect(
+        failures,
+        strip_shell_comments(b"#!/bin/bash\n") != strip_shell_comments(b"#!/bin/sh\n"),
+        "swapping the interpreter is an executable change and must be visible",
+    )
+
+
 def _self_test() -> int:
     failures: list[str] = []
 
@@ -472,6 +700,10 @@ def _self_test() -> int:
             FORK_DIVERGENCES.clear()
             _self_test_vendored(root, refs, failures)
             _self_test_forked(root, failures)
+            REGISTRY.clear()
+            FORK_DIVERGENCES.clear()
+            _self_test_forked_code(root, failures)
+            _self_test_strip_shell_comments(failures)
         finally:
             REGISTRY.clear()
             REGISTRY.update(registry_backup)
