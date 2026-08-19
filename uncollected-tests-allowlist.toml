@@ -1,0 +1,47 @@
+# Test files in THIS repo that sit outside the paths CI collects.
+#
+# Read by `scripts/check_test_collection.py`, which derives the collected paths
+# from this repo's own `.github/workflows/*.yml` rather than from a list here --
+# see that script's docstring for why.
+#
+# THIS FILE IS NOT AN IGNORE LIST. Four rules, all enforced by the gate:
+#
+#   * An entry that matches NOTHING fails the gate (Factory#788). When a file
+#     becomes collected, its entry must be deleted in the same PR. So this list
+#     can only ratchet down.
+#   * `reason` is validated. Placeholders (TODO, TBD, N/A, none, placeholder,
+#     grandfathered) are rejected, as is anything under six words.
+#   * `issue` is REQUIRED and must look like Repo#123. An uncollected test with
+#     nobody's name on it is a permanent exception wearing a temporary hat.
+#   * Exact paths, no globs. A glob is how one entry quietly comes to cover a
+#     directory nobody reviewed.
+#
+# Adding an entry is a reviewable diff. That is the point.
+
+[[allow]]
+path = "scripts/test_model_probe.py"
+reason = """
+Not uncollected in substance -- contracts.yml runs it as `python3 scripts/test_model_probe.py`, \
+deliberately, because it is a plain assert script with no pytest cases and no pytest dependency \
+(Factory#489). It is outside `pytest tests/ shared/factory-common/tests/` on purpose and it does \
+execute on every PR.
+"""
+issue = "Factory#489"
+
+[[allow]]
+path = "scripts/benchmarks/test_report.py"
+reason = """
+A real instance of the defect this gate exists for, registered honestly rather than hidden: 35 \
+tests across this file and test_run_pipeline_task.py pass when run by hand and are collected by no \
+workflow. Not fixed here because Factory#844 scopes this PR to the gate and explicitly not to \
+widening any repo's collection; the fix is one path on contracts.yml's pytest line.
+"""
+issue = "Factory#844"
+
+[[allow]]
+path = "scripts/benchmarks/test_run_pipeline_task.py"
+reason = """
+Same instance as test_report.py above -- passes locally, collected by no workflow, and turning it \
+on is a collection change that Factory#844 deliberately keeps out of this PR.
+"""
+issue = "Factory#844"

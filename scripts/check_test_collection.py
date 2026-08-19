@@ -1,0 +1,622 @@
+#!/usr/bin/env python3
+"""Fail CI when a ``test_*.py`` file sits outside the paths CI actually collects.
+
+Factory#844, from a real incident with a ten-week fuse.
+``run_autonomous_agent`` is defined nowhere in PFactory, so ``pfactory build``
+cannot run (PFactory#607). A test asserting exactly that property has been in
+the tree since the fork commit on 2026-06-03::
+
+    from agents import coder
+    assert hasattr(coder, "run_autonomous_agent")
+
+It has never executed. It lives in ``apps/backend/agents/test_refactoring.py``,
+and CI collects ``pytest tests/ apps/web-server/tests/``. Ten weeks of green CI
+over a broken entry point, with the alarm for it present in the tree the whole
+time. The fleet-wide sweep found 57 such files across three repos -- 421 tests
+that pass when run by hand and have never once run in CI, plus several that are
+red for real reasons nobody has heard.
+
+This is the fleet's dominant failure mode again: **absence that looks like
+presence**. The tooling works. The measurement is empty, and an empty
+measurement is indistinguishable from a clean one.
+
+WHAT THIS GATE DOES AND DELIBERATELY DOES NOT DO
+------------------------------------------------
+It does NOT widen any repo's collection and does NOT fix the red tests. That is
+a separate, larger job whose cost needs sizing first (issue #844, step 2). This
+is step 3: the durable half. Without it, doing the migration just resets the
+clock -- the 58th file lands next month and nothing notices.
+
+HOW THE COLLECTED PATHS ARE DETERMINED -- the design decision
+-------------------------------------------------------------
+They are DERIVED from the repo's own ``.github/workflows/*.yml``, by finding
+every ``pytest`` invocation and taking its path arguments. They are not
+configured, and not hardcoded here.
+
+The rejected alternative was a declared list (in this file, or in each repo's
+registry). It is simpler to write and it reproduces the exact defect this gate
+exists to close: the day a workflow's ``pytest`` line changes and the declared
+list does not, the gate keeps reporting a confident verdict about a collection
+boundary that has moved. A second thing to keep in sync is a second thing that
+goes stale silently. Deriving costs a small amount of shell-ish parsing and can
+never disagree with what CI runs, because it *is* what CI runs.
+
+The cost of deriving is paid in three explicit unknown-verdict exits rather
+than in silence -- see ``_UNKNOWN`` below. Each one is a case where the derived
+answer might be wrong in the FALSE-CLEAN direction, so the gate refuses to
+report instead of guessing:
+
+  * no ``pytest`` invocation found in any workflow -- "this repo collects
+    nothing" and "I failed to parse it" must not look alike
+  * ``--ignore`` / ``--deselect`` on a pytest line -- those NARROW collection,
+    so ignoring them would report files as collected that are not
+  * a derived path that does not exist in the tree -- either the workflow is
+    stale or the parse is wrong; either way the boundary is not what was read
+
+A bare ``pytest`` with no path arguments (CFactory's ``PYTHONPATH=apps/backend
+pytest -v``) collects the whole repo from the rootdir, unless a root pytest
+config narrows it with ``testpaths``, which is read for that reason.
+
+THE REGISTRY, AND WHY A DEAD ENTRY IS RED
+------------------------------------------
+Each repo carries ``uncollected-tests-allowlist.toml`` at its root, same shape
+as ``security-lint-allowlist.toml``: an exact ``path``, a written ``reason``,
+and an ``issue``. Four rules, all enforced here rather than by convention:
+
+  * An entry that matches NOTHING fails the gate (fleet policy, Factory#788).
+    A stale exemption silently widening coverage is this entire defect family;
+    an allowlist that only ever grows is an ignore list with better manners.
+    When a file gets collected, its entry must be deleted in the same PR.
+  * ``reason`` is validated: placeholders (``TODO``, ``TBD``, ``N/A``,
+    ``none``, ``placeholder``, ``grandfathered``) are REJECTED, as is anything
+    under six words. Same rule as ``check_gate_liveness.py`` and PFactory's
+    ``factory_invariants``.
+  * ``issue`` is REQUIRED and must look like ``Repo#123``. An uncollected test
+    with nobody's name on it is a permanent exception wearing a temporary hat.
+  * Exact paths only, no globs. A glob is how one entry quietly comes to cover
+    a directory nobody reviewed -- which is the defect, not the fix. 57 lines
+    of allowlist is a reviewable diff, and that is the point.
+
+Usage:
+    python scripts/check_test_collection.py --root .
+    python scripts/check_test_collection.py --root . --registry path/to.toml
+    python scripts/check_test_collection.py --self-test
+
+Exit codes:
+    0 - every test file in the tree is collected, or registered with a reason
+    1 - an unregistered uncollected file, a dead entry, or a bad entry
+    2 - bad invocation, or the collection boundary could not be established
+        (including a tree with no test files at all: a scan that examined
+        nothing is an unknown verdict, never a pass)
+"""
+
+from __future__ import annotations
+
+import re
+import shlex
+import sys
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+from gate_evidence import expect, gate_argparser, parse_or_self_test, report_self_test, temp_repo
+
+REGISTRY_NAME = "uncollected-tests-allowlist.toml"
+
+# An unknown verdict. Never 0: a scan that examined nothing, or that could not
+# find the collection boundary, must not be indistinguishable from a clean tree.
+_UNKNOWN = 2
+
+_SKIP_DIRS = frozenset(
+    {"node_modules", "__pycache__", "dist", "build", "vendor", "site-packages", "migrations"}
+)
+
+# Rejected reasons, and the floor on a real one. Same shape as
+# `check_gate_liveness.py` and PFactory's `factory_invariants._PLACEHOLDER`;
+# copied in spirit rather than imported because those live in other repos.
+_PLACEHOLDER_REASON = re.compile(r"^\s*(todo|tbd|n/?a|none|placeholder|grandfathered)\b", re.I)
+_MIN_REASON_WORDS = 6
+_ISSUE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*#\d+$")
+
+# pytest flags that consume the NEXT token. Without this, `-m "not slow"` makes
+# "not slow" look like a collected path, and `-o asyncio_mode=auto` makes the
+# whole repo look collected. Long options overwhelmingly use `--opt=value`.
+_VALUE_FLAGS = frozenset(
+    {
+        "-m",
+        "-k",
+        "-n",
+        "-p",
+        "-o",
+        "-c",
+        "-W",
+        "--rootdir",
+        "--junitxml",
+        "--maxfail",
+        "--durations",
+    }
+)
+
+# Flags that NARROW what pytest collects. Handling them properly means
+# reimplementing pytest's ignore semantics; not handling them means reporting a
+# file as collected when it is not, which is the false-clean direction. So the
+# gate declines to answer instead.
+_NARROWING_FLAGS = ("--ignore", "--deselect")
+
+# Invocations that run no tests at all. Found the hard way: PFactory's
+# runner-images.yml smoke-tests a built image with `pytest --version`, and
+# reading that as a path-argument-free invocation made the ENTIRE repo look
+# collected -- a silent clean verdict over 8 uncollected files. A probe is not
+# evidence of a collection boundary.
+_NON_COLLECTING = frozenset(
+    {"--version", "-V", "--help", "-h", "--fixtures", "--markers", "--co", "--collect-only"}
+)
+
+# `docker run <image> pytest ...` runs the IMAGE's tests, not this repo's, so
+# its paths say nothing about what this repo collects. Same false-clean shape
+# as the probe above and found in the same file.
+_FOREIGN_RUNNERS = frozenset({"docker", "podman", "nerdctl", "kubectl", "ssh"})
+
+# `pip install pytest pytest-asyncio jsonschema httpx` is not a test run, and
+# read as one it says the repo collects a directory called `httpx`. The hub's
+# own contracts.yml has exactly that line -- caught here only because the
+# "collected path does not exist" guard refused to report a verdict.
+_NOT_AN_INVOCATION = frozenset({"pip", "pip3", "uv", "poetry", "conda", "npm", "install"})
+
+_SHELL_BREAKS = frozenset({"&&", "||", ";", "|", "&"})
+
+
+class BadEntryError(ValueError):
+    """A registry entry that cannot be allowed to exist."""
+
+
+@dataclass(frozen=True)
+class Exemption:
+    """One registered uncollected test file, validated on construction.
+
+    Validated in ``__post_init__`` so a placeholder cannot reach the registry
+    at all: an entry reading ``reason = "TODO"`` satisfies any check that only
+    asks whether a reason is present.
+    """
+
+    path: str
+    reason: str
+    issue: str
+
+    def __post_init__(self) -> None:
+        if not self.path:
+            raise BadEntryError("an entry needs a `path`")
+        if not _ISSUE.match(self.issue):
+            raise BadEntryError(
+                f"{self.path}: `issue` must look like Repo#123 -- an uncollected test with "
+                f"nobody's name on it is a permanent exception; got {self.issue!r}"
+            )
+        if _PLACEHOLDER_REASON.match(self.reason) or len(self.reason.split()) < _MIN_REASON_WORDS:
+            raise BadEntryError(
+                f"{self.path}: `reason` must say why this file is not collected and why that "
+                f"is not a defect; got {self.reason!r}"
+            )
+
+
+def _is_skippable(path: Path) -> bool:
+    return any(part in _SKIP_DIRS or part.startswith(".") for part in path.parts)
+
+
+def _test_files(root: Path) -> list[str]:
+    """Every ``test_*.py`` / ``*_test.py`` in the tree, as posix paths from *root*.
+
+    Both conventions, unconditionally. Deciding which convention "applies" in a
+    repo would mean the second one arriving is invisible until someone notices.
+    """
+    found = []
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root)
+        if _is_skippable(relative):
+            continue
+        if path.name.startswith("test_") or path.stem.endswith("_test"):
+            found.append(relative.as_posix())
+    return sorted(found)
+
+
+def _logical_lines(text: str) -> list[str]:
+    """Workflow text with ``\\`` continuations joined into one logical line.
+
+    A ``run: |`` block writes multi-line pytest invocations with the paths on
+    continuation lines (AIFactory's ci.yml does), and reading only the first
+    line would see no path arguments and conclude the whole repo is collected
+    -- a false clean, and the exact shape where this gate reports nothing while
+    looking healthy.
+
+    Comments are NOT filtered here: ``shlex.split(..., comments=True)`` in
+    ``_pytest_path_args`` already drops everything from a ``#`` onward, and a
+    second mechanism doing the same job means neither one has a test that fails
+    when it is removed.
+    """
+    joined: list[str] = []
+    buffer = ""
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if stripped.endswith("\\"):
+            buffer += stripped[:-1] + " "
+            continue
+        joined.append(buffer + stripped)
+        buffer = ""
+    if buffer:
+        joined.append(buffer)
+    return joined
+
+
+def _pytest_path_args(line: str) -> tuple[list[str], bool] | None:
+    """``(path arguments, narrowed)`` for a pytest invocation, or None if there is none.
+
+    *narrowed* is True when the line carries a flag that shrinks what pytest
+    collects; the caller turns that into an unknown verdict rather than
+    guessing in the false-clean direction.
+    """
+    try:
+        tokens = shlex.split(line, comments=True)
+    except ValueError:
+        return None
+    for index, token in enumerate(tokens):
+        if token.rsplit("/", 1)[-1] not in {"pytest", "py.test"}:
+            continue
+        prefix = [t.rsplit("/", 1)[-1] for t in tokens[:index]]
+        if any(t in _FOREIGN_RUNNERS or t in _NOT_AN_INVOCATION for t in prefix):
+            return None
+        rest = tokens[index + 1 :]
+        if any(token.split("=", 1)[0] in _NON_COLLECTING for token in rest):
+            return None
+        return _args_after(rest)
+    return None
+
+
+def _args_after(tokens: list[str]) -> tuple[list[str], bool]:
+    paths: list[str] = []
+    narrowed = False
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in _SHELL_BREAKS:
+            break
+        if token.startswith("-"):
+            narrowed = narrowed or token.split("=", 1)[0] in _NARROWING_FLAGS
+            skip_next = token in _VALUE_FLAGS
+            continue
+        # `tests/foo.py::test_case` selects one case out of a file; the file is
+        # what decides collection.
+        paths.append(token.split("::", 1)[0].rstrip("/"))
+    return paths, narrowed
+
+
+def _testpaths(root: Path) -> list[str]:
+    """``testpaths`` from a root pytest config, which narrows a bare ``pytest``.
+
+    Read for the false-clean direction only: without it, a repo whose CI runs a
+    bare ``pytest`` while ``testpaths`` narrows collection to ``tests/`` would
+    be reported as collecting everything.
+    """
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file():
+        try:
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            return []
+        options = data.get("tool", {}).get("pytest", {}).get("ini_options", {})
+        declared = options.get("testpaths", [])
+        if isinstance(declared, str):
+            return declared.split()
+        return [str(item) for item in declared]
+    for name in ("pytest.ini", "tox.ini", "setup.cfg"):
+        config = root / name
+        if not config.is_file():
+            continue
+        match = re.search(r"^\s*testpaths\s*=(.*)$", config.read_text(encoding="utf-8"), re.M)
+        if match:
+            return match.group(1).split()
+    return []
+
+
+@dataclass(frozen=True)
+class Boundary:
+    """What CI collects, and the workflow lines that say so."""
+
+    paths: tuple[str, ...]
+    evidence: tuple[str, ...]
+    narrowed: bool
+
+
+def _collected(root: Path) -> Boundary:
+    """Derive the collection boundary from the repo's own workflows."""
+    paths: set[str] = set()
+    evidence: list[str] = []
+    narrowed = False
+    workflows = root / ".github" / "workflows"
+    for workflow in sorted(workflows.glob("*.y*ml")) if workflows.is_dir() else []:
+        try:
+            text = workflow.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in _logical_lines(text):
+            parsed = _pytest_path_args(line)
+            if parsed is None:
+                continue
+            args, line_narrowed = parsed
+            narrowed = narrowed or line_narrowed
+            evidence.append(f"{workflow.name}: {' '.join(args) or '<whole repo>'}")
+            # No path arguments: pytest collects from the rootdir, narrowed only
+            # by a `testpaths` setting.
+            paths.update(args or _testpaths(root) or ["."])
+    return Boundary(tuple(sorted(paths)), tuple(evidence), narrowed)
+
+
+def _is_collected(relative: str, collected: tuple[str, ...]) -> bool:
+    return any(
+        prefix in (".", relative) or relative.startswith(f"{prefix}/") for prefix in collected
+    )
+
+
+def _load_registry(path: Path) -> tuple[dict[str, Exemption], list[str]]:
+    if not path.is_file():
+        return {}, []
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        return {}, [f"{path.name} is not readable TOML: {exc}"]
+    entries: dict[str, Exemption] = {}
+    problems: list[str] = []
+    for raw in data.get("allow", []):
+        try:
+            entry = Exemption(
+                path=str(raw.get("path", "")),
+                reason=str(raw.get("reason", "")),
+                issue=str(raw.get("issue", "")),
+            )
+        except BadEntryError as exc:
+            problems.append(str(exc))
+            continue
+        if entry.path in entries:
+            problems.append(f"{entry.path}: listed twice")
+            continue
+        entries[entry.path] = entry
+    return entries, problems
+
+
+def run_check(root: Path, registry_path: Path | None = None) -> int:
+    registry_path = registry_path or root / REGISTRY_NAME
+    files = _test_files(root)
+    boundary = _collected(root)
+    entries, problems = _load_registry(registry_path)
+
+    if not files:
+        # Named as such: a zero-item check. "Scanned nothing" and "found
+        # nothing wrong" must never print the same verdict (Factory#832).
+        print(f"ERROR: no test files found under {root} -- this gate examined ZERO items.")  # noqa: T201
+        return _UNKNOWN
+    if not boundary.evidence:
+        print(  # noqa: T201
+            f"ERROR: no pytest invocation found in {root}/.github/workflows -- the collection "
+            "boundary is unknown, which is not the same as 'nothing is collected'."
+        )
+        return _UNKNOWN
+    if boundary.narrowed:
+        print(  # noqa: T201
+            "ERROR: a workflow pytest invocation carries --ignore/--deselect, which narrows "
+            "collection. This gate cannot model that, and guessing would report uncollected "
+            "files as collected."
+        )
+        return _UNKNOWN
+    missing = [p for p in boundary.paths if p != "." and not (root / p).exists()]
+    if missing:
+        print(  # noqa: T201
+            "ERROR: workflows collect paths that do not exist in the tree "
+            f"({', '.join(missing)}) -- either the workflow is stale or the boundary was "
+            "misread; a verdict against the wrong boundary is worse than none."
+        )
+        return _UNKNOWN
+
+    uncollected = [path for path in files if not _is_collected(path, boundary.paths)]
+    unregistered = [path for path in uncollected if path not in entries]
+    dead = sorted(set(entries) - set(uncollected))
+
+    for path in unregistered:
+        print(f"FAIL {path}: a test file outside every collected path, with no registry entry")  # noqa: T201
+    for path in dead:
+        print(  # noqa: T201
+            f"FAIL {path}: registry entry matches nothing -- the file is collected or gone. "
+            "Delete the entry (Factory#788)."
+        )
+    for problem in problems:
+        print(f"FAIL {registry_path.name}: {problem}")  # noqa: T201
+
+    # Counts on every verdict, pass or fail. A gate that says only "OK" cannot
+    # be told apart from one that examined zero items.
+    print(  # noqa: T201
+        f"Examined {len(files)} test files against {len(boundary.paths)} collected path(s) "
+        f"[{', '.join(boundary.paths)}] from {len(boundary.evidence)} workflow pytest "
+        f"invocation(s); {len(uncollected)} uncollected, {len(entries)} registered, "
+        f"{len(unregistered)} unregistered, {len(dead)} dead entries."
+    )
+    return 1 if (unregistered or dead or problems) else 0
+
+
+def _pfactory_tree(root: Path) -> Path:
+    """PFactory's layout at the moment #607 went undetected, minimised."""
+    (root / ".github" / "workflows").mkdir(parents=True)
+    (root / ".github" / "workflows" / "ci.yml").write_text(
+        "jobs:\n  backend:\n    steps:\n"
+        "      # the sweep in Factory#844 read exactly this line\n"
+        "      - run: apps/backend/.venv/bin/pytest tests/ apps/web-server/tests/ -m 'not slow'\n"
+    )
+    (root / "tests").mkdir()
+    (root / "tests" / "test_collected.py").write_text("def test_ok(): assert True\n")
+    (root / "apps" / "web-server" / "tests").mkdir(parents=True)
+    (root / "apps" / "web-server" / "tests" / "test_web.py").write_text("def test_ok(): ...\n")
+    agents = root / "apps" / "backend" / "agents"
+    agents.mkdir(parents=True)
+    alarm = agents / "test_refactoring.py"
+    alarm.write_text(
+        "from agents import coder\n"
+        "def test_entry_point():\n"
+        "    assert hasattr(coder, 'run_autonomous_agent')\n"
+    )
+    return alarm
+
+
+_GOOD_REASON = (
+    "Asserts an entry point that does not exist yet (PFactory#607); collecting it "
+    "turns CI red on a real defect that is being fixed separately."
+)
+
+
+def _registry(
+    root: Path, *, path: str, reason: str = _GOOD_REASON, issue: str = "PFactory#607"
+) -> None:
+    (root / REGISTRY_NAME).write_text(
+        f'[[allow]]\npath = "{path}"\nreason = """{reason}"""\nissue = "{issue}"\n'
+    )
+
+
+def run_check_text(root: Path, workflow: Path, text: str) -> int:
+    """Write *text* as the repo's workflow and re-run the gate. Self-test only."""
+    workflow.write_text(text)
+    return run_check(root)
+
+
+def _self_test() -> int:
+    failures: list[str] = []
+    with temp_repo() as root:
+        _pfactory_tree(root)
+        # The real case: the alarm for PFactory#607, uncollected and unlisted.
+        expect(failures, run_check(root) == 1, "an uncollected test file with no entry is red")
+
+        _registry(root, path="apps/backend/agents/test_refactoring.py")
+        expect(failures, run_check(root) == 0, "...and green once registered with a real reason")
+
+        for placeholder in ("TODO", "n/a", "grandfathered", "flaky"):
+            _registry(root, path="apps/backend/agents/test_refactoring.py", reason=placeholder)
+            expect(failures, run_check(root) == 1, f"a {placeholder!r} reason is rejected")
+
+        _registry(root, path="apps/backend/agents/test_refactoring.py", issue="nobody")
+        expect(failures, run_check(root) == 1, "an entry without a Repo#123 issue is rejected")
+
+        # Factory#788: an entry that matches nothing must fail, or the list
+        # becomes an ignore list that only ever grows.
+        _registry(root, path="apps/backend/agents/test_deleted.py")
+        expect(failures, run_check(root) == 1, "a registry entry matching nothing is red")
+
+        # The same file, once CI actually collects it: the entry is now dead.
+        _registry(root, path="apps/backend/agents/test_refactoring.py")
+        workflow = root / ".github" / "workflows" / "ci.yml"
+        original = workflow.read_text(encoding="utf-8")
+        workflow.write_text(original.replace("tests/ apps", "tests/ apps/backend apps"))
+        expect(failures, run_check(root) == 1, "widening collection makes the entry dead, not moot")
+        workflow.write_text(original)
+
+    _self_test_boundary(failures)
+    return report_self_test(failures)
+
+
+def _self_test_boundary(failures: list[str]) -> None:
+    """The derived-boundary half: the parses whose failure mode is a false clean."""
+    with temp_repo() as root:
+        alarm = _pfactory_tree(root)
+        workflow = root / ".github" / "workflows" / "ci.yml"
+        steps = "jobs:\n  backend:\n    steps:\n      - run: |\n"
+
+        # A multi-line invocation. Read line-by-line it has no path arguments,
+        # so the whole repo looks collected and the alarm disappears.
+        workflow.write_text(steps + "          pytest \\\n            tests/ \\\n            -q\n")
+        expect(failures, run_check(root) == 1, "a `\\`-continued pytest line keeps its paths")
+
+        # A comment quoting a pytest command must not widen the boundary.
+        workflow.write_text(
+            "# CI runs `pytest apps/backend` -- prose, not a command\n"
+            + steps
+            + "          pytest tests/\n"
+        )
+        expect(failures, run_check(root) == 1, "a commented pytest line does not collect anything")
+
+        # `-m "not slow"` must not read as a collected path called "not slow".
+        workflow.write_text(steps + '          pytest -m "not slow" tests/\n')
+        boundary = _collected(root)
+        expect(failures, boundary.paths == ("tests",), "a -m value is not a collected path")
+
+        # The PFactory runner-images.yml trap, both halves. Each of these read
+        # as "a pytest invocation with no path arguments", i.e. the whole repo
+        # collected, i.e. a clean verdict over the uncollected alarm.
+        probe = steps + "          pytest tests/\n" + steps + "          pytest --version\n"
+        expect(
+            failures,
+            run_check_text(root, workflow, probe) == 1,
+            "`pytest --version` collects nothing",
+        )
+        foreign = (
+            steps + "          pytest tests/\n" + steps + "          docker run img pytest -q\n"
+        )
+        expect(
+            failures,
+            run_check_text(root, workflow, foreign) == 1,
+            "a pytest inside `docker run` is the image's tests, not this repo's",
+        )
+
+        # The hub's own contracts.yml line. Read as an invocation it claims the
+        # repo collects directories named `jsonschema` and `httpx`.
+        install = (
+            steps
+            + "          pytest tests/\n"
+            + steps
+            + "          pip install pytest jsonschema httpx\n"
+        )
+        expect(
+            failures,
+            run_check_text(root, workflow, install) == 1,
+            "`pip install pytest ...` is not a pytest invocation",
+        )
+
+        # A bare pytest collects everything -- so nothing is uncollected.
+        workflow.write_text(steps + "          PYTHONPATH=apps/backend pytest -v\n")
+        expect(failures, run_check(root) == 0, "a bare pytest collects the whole repo")
+
+        # ...unless testpaths narrows it. Without this the tree above reads clean.
+        (root / "pyproject.toml").write_text(
+            '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+        )
+        expect(failures, run_check(root) == 1, "testpaths narrows a bare pytest invocation")
+        (root / "pyproject.toml").unlink()
+
+        # Narrowing flags and stale paths are unknown verdicts, not passes.
+        workflow.write_text(steps + "          pytest . --ignore=apps/backend\n")
+        expect(failures, run_check(root) == _UNKNOWN, "--ignore is unknown, never a pass")
+        workflow.write_text(steps + "          pytest tests/ apps/gone/tests\n")
+        expect(failures, run_check(root) == _UNKNOWN, "a collected path that is absent is unknown")
+
+        # No pytest anywhere: "I could not find the boundary", not "clean".
+        workflow.write_text("jobs:\n  lint:\n    steps:\n      - run: ruff check .\n")
+        expect(failures, run_check(root) == _UNKNOWN, "no pytest invocation is unknown, not green")
+
+        # A tree with no test files at all is the zero-item case.
+        workflow.write_text(steps + "          pytest tests/\n")
+        alarm.unlink()
+        (root / "tests" / "test_collected.py").unlink()
+        (root / "apps" / "web-server" / "tests" / "test_web.py").unlink()
+        expect(failures, run_check(root) == _UNKNOWN, "a tree with no test files is unknown")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = gate_argparser(__doc__)
+    parser.add_argument("--root", help="repo root to scan")
+    parser.add_argument("--registry", help=f"registry file (default: <root>/{REGISTRY_NAME})")
+    early, args = parse_or_self_test(parser, argv, _self_test)
+    if early is not None:
+        return early
+    assert args is not None  # noqa: S101 - parse_or_self_test guarantees this when early is None
+    if not args.root:
+        parser.error("--root is required (or pass --self-test)")
+    root = Path(args.root).resolve()
+    return run_check(root, Path(args.registry).resolve() if args.registry else None)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
