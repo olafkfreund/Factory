@@ -140,7 +140,15 @@ repo_config() {
   case "$1" in
     CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","generated package self-test (pytest)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
-    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    # PFactory's dev carries `docker (P0 acceptance)` and main does not.
+    # PFactory#586 shipped a container that could not start: the gate caught it
+    # on the causing PR (red at 12:53Z and 13:01Z on that PR's own branch) and
+    # the PR merged anyway, because the check was advisory. Made required on dev
+    # in PFactory#588. main does not run the job on every push, so a per-branch
+    # override rather than a single CHECKS -- the same shape AIFactory uses
+    # below, and for the same reason (#691): one CHECKS would PUT main's set
+    # over dev and strip it again.
+    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","docker (P0 acceptance)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # AIFactory's dev is its DEFAULT branch and carries three gates main does
     # not: the ratchet, the format check and the shared-baseline drift gate.
