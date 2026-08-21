@@ -73,13 +73,13 @@ def _normalise(text: str) -> list[str]:
 
 def _boilerplate(files: dict[Path, list[str]]) -> set[str]:
     """Lines shared by BOILERPLATE_MIN_FILES or more workflows."""
-    seen = Counter()
+    seen: Counter[str] = Counter()
     for lines in files.values():
         seen.update(set(lines))
     return {line for line, n in seen.items() if n >= BOILERPLATE_MIN_FILES}
 
 
-def _similarity(a: Counter, b: Counter) -> float:
+def _similarity(a: Counter[str], b: Counter[str]) -> float:
     """Fraction of the SMALLER file's distinctive lines also in the larger.
 
     Asymmetric on purpose: a copy that had lines appended is still a copy, and
