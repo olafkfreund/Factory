@@ -160,6 +160,10 @@ VCORE_CTX="vendored copies match the hub canonical (byte-exact)"
 SECRET_CTX_PF="Gitleaks (PR diff)"
 SECRET_CTX="gitleaks (PR diff)"
 SECRET_CTX_HUB="gitleaks"
+# gitops names neither job, so the reported context is the job ID. Confirmed
+# against a real PR head: `pr-diff-scan :: success`, `full-history-scan ::
+# skipped`. Requiring the skipped one would wedge every PR.
+SECRET_CTX_GITOPS="pr-diff-scan"
 
 
 repo_config() {
@@ -199,7 +203,14 @@ repo_config() {
     # check is one everybody learns to scroll past. Both jobs live in
     # manifest-validate.yml, which carries no `paths:` filter, so requiring this
     # cannot leave a manifest-free PR waiting on a check that never runs.
-    factory-gitops) CHECKS='["kustomize build + schema","no literal secrets in manifests"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
+    #
+    # `no literal secrets in manifests` is NOT the gitleaks scan -- it greps
+    # manifests for literal secret values. Gitleaks itself lives in
+    # secret-scan.yml and reports as `pr-diff-scan`; it was the one repo in the
+    # fleet Factory#814 left unrequired, which is backwards: this is the PUBLIC
+    # repo holding cluster manifests, so it is where an unscanned commit costs
+    # the most. secret-scan.yml has no `paths:` filter either.
+    factory-gitops) CHECKS='["kustomize build + schema","no literal secrets in manifests","'"$SECRET_CTX_GITOPS"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     *) echo "no config for repo: $1" >&2; return 1 ;;
   esac
 }

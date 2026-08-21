@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -42,6 +43,16 @@ _DECLARED = [
     ("AIFactory", "dev"),
     ("factory-gitops", "main"),
 ]
+
+
+def _all_repos() -> set[str]:
+    """The fleet, read from the script's own ``ALL_REPOS`` array."""
+    src = _SCRIPT.read_text(encoding="utf-8")
+    m = re.search(r"^ALL_REPOS=\(([^)]*)\)", src, re.MULTILINE)
+    assert m, "ALL_REPOS not found in apply_branch_protection.sh"
+    repos = set(m.group(1).split())
+    assert repos, "ALL_REPOS parsed as empty -- the regex stopped matching"
+    return repos
 
 
 def _emit(repo: str, branch: str) -> dict:
@@ -92,6 +103,10 @@ _VCORE = "vendored copies match the hub canonical (byte-exact)"
 _GITLEAKS_PF = "Gitleaks (PR diff)"
 _GITLEAKS = "gitleaks (PR diff)"
 _GITLEAKS_HUB = "gitleaks"
+# gitops names neither secret-scan job, so the context IS the job id. Verified
+# against a real PR head rather than read off the YAML: `pr-diff-scan` reports
+# success there and `full-history-scan` reports skipped.
+_GITLEAKS_GITOPS = "pr-diff-scan"
 
 
 def _live_shaped(
@@ -232,6 +247,40 @@ def test_check_contexts_are_per_repo() -> None:
         assert _VCORE not in _emit(repo, "main")["required_status_checks"]["contexts"]
 
 
+def test_every_repo_requires_its_own_secret_scan() -> None:
+    """Factory#814, and the three spellings that make it easy to get wrong.
+
+    The display names genuinely differ -- PFactory capitalises the job,
+    CFactory/TFactory/AIFactory do not, the hub's is bare ``gitleaks``, and
+    gitops names neither job so its context is the job id. Three of the five
+    spellings were asserted nowhere when this test was written, including both
+    of the ones that are unique to a single repo. A context that is unique and
+    unasserted is a typo away from being required-but-never-reported, which
+    wedges the branch rather than protecting it (Factory#529).
+
+    Asserting membership rather than the whole list on purpose: the exact
+    context lists are locked by test_check_contexts_are_per_repo above, and
+    duplicating them here would mean every future gate has to be added twice.
+    """
+    expected = {
+        "CFactory": _GITLEAKS,
+        "TFactory": _GITLEAKS,
+        "AIFactory": _GITLEAKS,
+        "PFactory": _GITLEAKS_PF,
+        "Factory": _GITLEAKS_HUB,
+        "factory-gitops": _GITLEAKS_GITOPS,
+    }
+    for repo, ctx in expected.items():
+        contexts = _emit(repo, "main")["required_status_checks"]["contexts"]
+        assert ctx in contexts, f"{repo} main does not require its secret scan"
+
+    # Every repo in the fleet, not a subset that happens to be listed here. The
+    # list is READ from the script's own ALL_REPOS rather than restated, so a
+    # repo added there fails this test until it is given a scan -- restating it
+    # would just mean the two lists drift and the test keeps passing.
+    assert set(expected) == _all_repos(), "a repo exists that this test never checks"
+
+
 def test_gitops_gates_the_branch_that_reaches_the_cluster() -> None:
     """factory-gitops `main` is what ArgoCD syncs to the live cluster.
 
@@ -256,6 +305,7 @@ def test_gitops_gates_the_branch_that_reaches_the_cluster() -> None:
     assert intent["required_status_checks"]["contexts"] == [
         "kustomize build + schema",
         "no literal secrets in manifests",
+        _GITLEAKS_GITOPS,
     ]
     assert intent["allow_force_pushes"] is False
     assert intent["allow_deletions"] is False
@@ -322,7 +372,11 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "factory-gitops",
             "main",
-            ["kustomize build + schema", "no literal secrets in manifests"],
+            [
+                "kustomize build + schema",
+                "no literal secrets in manifests",
+                _GITLEAKS_GITOPS,
+            ],
             True,
             None,
             True,
