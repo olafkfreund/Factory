@@ -64,6 +64,7 @@ import check_sink_coverage as sink_gate
 import check_test_collection as collection_gate
 import check_test_home_isolation as home_gate
 import check_verification_core_drift as vcore_gate
+import check_workflow_duplication as wfdup_gate
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +88,7 @@ _COVERED: dict[str, str] = {
     "check_security_fork_drift.py": "test_security_fork_drift_gate_is_honest",
     "check_sink_coverage.py": "test_sink_coverage_gate_is_honest",
     "check_banned_constructs.py": "test_banned_constructs_gate_is_honest",
+    "check_workflow_duplication.py": "test_workflow_duplication_gate_is_honest",
     "check_test_home_isolation.py": "test_test_home_isolation_gate_is_honest",
     # Factory#738.
     "check_gate_liveness.py": "test_gate_liveness_gate_is_honest",
@@ -1236,3 +1238,70 @@ def test_codeql_analysis_honesty_gate_is_honest() -> None:
     )
 
     assert codeql_honesty_gate._self_test() == 0, "the gate's own self-test must pass"
+
+
+def test_workflow_duplication_gate_is_honest(tmp_path: Path) -> None:
+    """Factory#842's replacement for the jscpd workflow exclusion.
+
+    The gate exists because `.jscpd.json` stopped counting
+    `.github/workflows/**` (#836 / PR #840) -- the Actions preamble is
+    byte-identical BY POLICY, since pin-freshness requires every workflow to
+    name the same action digest, so three pairs crossed jscpd's token floor
+    with nothing anyone chose to paste.
+
+    So it has to hold BOTH ends at once, and neither alone is evidence:
+
+    * workflows sharing only that preamble are NOT a copy -- reporting them
+      re-creates exactly the false positives the exclusion was made to stop;
+    * a wholesale copy with one line edited IS a copy -- that is the scenario
+      #842 recorded as newly invisible.
+
+    A gate that only ever passes is indistinguishable from one that examines
+    nothing, which is why the empty-directory case is asserted as a FINDING.
+    """
+    assert wfdup_gate._self_test() == 0
+
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    preamble = "name: x\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n"
+    # Each sibling shares SOME non-preamble lines with the others, the way real
+    # workflows do -- a checkout, a setup step, a cache key. Fixtures with
+    # nothing in common would score 0% whatever the threshold, so the
+    # false-positive half would pass without ever being exercised: the
+    # threshold could be dropped to 0.05 and this test would still be green.
+    # 12 distinctive lines each, comfortably above MIN_DISTINCTIVE_LINES: a
+    # smaller fixture trips the gate's "nothing was compared" guard instead of
+    # its similarity rule, which is a different assertion than this one makes.
+    shared = "\n".join(f"      - run: common-step-{k}" for k in range(6))
+    for i in range(3):
+        body = "\n".join(f"      - run: unique-{i}-{k}" for k in range(12))
+        (wf / f"distinct{i}.yml").write_text(preamble + shared + "\n" + body)
+    assert wfdup_gate.check(wf) == [], (
+        "workflows sharing only the policy-mandated preamble and a few common "
+        "steps were reported as copies -- this gate would re-file what the "
+        "jscpd exclusion silenced"
+    )
+
+    copied = (wf / "distinct0.yml").read_text().replace("unique-0-11", "unique-0-EDITED")
+    (wf / "copy.yml").write_text(copied)
+    findings = wfdup_gate.check(wf)
+    assert findings, "a wholesale copy with one edited line was not reported"
+    assert any("copy.yml" in f for f in findings), findings
+
+    # The real false-positive guard, on the real inputs: #842 names three pairs
+    # whose Actions preamble crossed jscpd's token floor
+    # (gate-liveness/parr-regression, code-quality/parr-regression,
+    # chart-vs-gitops/security-fork-drift). Those files are in this repo, so
+    # assert against them rather than against a synthetic pair -- a fixture can
+    # be made to pass by construction, and these cannot.
+    assert wfdup_gate.check(Path(__file__).resolve().parents[1] / ".github" / "workflows") == [], (
+        "the hub's own workflows were reported as copies -- this gate re-files "
+        "exactly the pairs the jscpd exclusion (#836/PR #840) was made to stop"
+    )
+
+    empty = tmp_path / "empty" / ".github" / "workflows"
+    empty.mkdir(parents=True)
+    assert wfdup_gate.check(empty), (
+        "an empty workflow directory must be a finding: a duplication gate that "
+        "compared nothing looks exactly like one that found nothing"
+    )
