@@ -57,6 +57,44 @@ A bare ``pytest`` with no path arguments (CFactory's ``PYTHONPATH=apps/backend
 pytest -v``) collects the whole repo from the rootdir, unless a root pytest
 config narrows it with ``testpaths``, which is read for that reason.
 
+WHEN CI RUNS PYTEST AGAINST A PATH THIS REPO DOES NOT HAVE
+-----------------------------------------------------------
+TFactory's ``portal-ui-runner-image.yml`` runs ``python -m pytest
+/app/portal_testing`` inside the runner image, where ``/app/portal_testing`` is
+this repo's ``portal_testing/`` mounted (or vendored) in. Those tests DO run in
+CI -- 33 of them -- but the derivation cannot map a container path back to a
+repo directory, so they read as uncollected and get registered with a reason
+that is true and permanent. A registry entry that says "covered, but the gate
+cannot see it" converts a covered area into a documented gap (TFactory#1134).
+
+So a workflow may ANNOTATE one pytest invocation with the repo path it
+corresponds to::
+
+    - run: |
+        docker run --rm "${IMAGE}" \
+          sh -c 'python -m pytest /app/portal_testing -q'  # test-collection: portal_testing
+
+The directive is not a declared list: it is attached to a real ``pytest``
+invocation in a real workflow, and it names only that invocation's paths. Delete
+the step and the directive goes with it; move it and the directive moves. What
+it buys is the one fact the parse cannot recover -- which repo directory the
+container path is.
+
+It is deliberately narrow, because it is the one place a workflow author can
+widen the boundary by assertion:
+
+  * the line must contain a genuine ``pytest`` invocation. A directive on a
+    comment, a step ``name:``, or a ``pip install`` line does nothing.
+  * ``.``, absolute paths and anything containing ``..`` are REJECTED as a bad
+    directive (an unknown verdict, exit 2). ``# test-collection: .`` from a
+    comment would mark the whole repo collected -- the false clean this gate
+    exists to close, handed out as a feature.
+  * every directive path still has to EXIST in the tree, by the same guard that
+    catches a stale workflow path. A typo is an unknown verdict, not a pass.
+  * ``--ignore``/``--deselect`` on the annotated line still make the verdict
+    unknown; a directive says what the invocation points at, not that the
+    author has modelled pytest's ignore semantics.
+
 THE REGISTRY, AND WHY A DEAD ENTRY IS RED
 ------------------------------------------
 Each repo carries ``uncollected-tests-allowlist.toml`` at its root, same shape
@@ -97,7 +135,7 @@ import shlex
 import sys
 import tomllib
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from gate_evidence import expect, gate_argparser, parse_or_self_test, report_self_test, temp_repo
 
@@ -182,9 +220,19 @@ _SHELL_BREAKS = frozenset({"&&", "||", ";", "|", "&"})
 # unaffected.
 _YAML_KEY = re.compile(r"^\s*(?:-\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*:")
 
+# `# test-collection: <repo path> [...]` on the same logical line as a pytest
+# invocation: the repo directory a container path corresponds to. See the module
+# docstring for why this is an annotation on a real invocation and not a list.
+_DIRECTIVE = re.compile(r"#\s*test-collection:\s*(.+?)\s*$")
+_RUNS_PYTEST = re.compile(r"(?:^|[\s/\'\"])py\.?test\b")
+
 
 class BadEntryError(ValueError):
     """A registry entry that cannot be allowed to exist."""
+
+
+class BadDirectiveError(ValueError):
+    """A `# test-collection:` directive that must not be believed."""
 
 
 @dataclass(frozen=True)
@@ -273,10 +321,17 @@ def _pytest_path_args(line: str) -> tuple[list[str], bool] | None:
     key = _YAML_KEY.match(line)
     if key and key.group(1) != "run":
         return None
+    declared = _DIRECTIVE.search(line)
+    if declared:
+        return _annotated(line[: declared.start()], declared.group(1))
     try:
-        tokens = shlex.split(line, comments=True)
+        return _invocation_args(shlex.split(line, comments=True))
     except ValueError:
         return None
+
+
+def _invocation_args(tokens: list[str]) -> tuple[list[str], bool] | None:
+    """The same, for a line whose pytest call the shell split leaves visible."""
     for index, token in enumerate(tokens):
         if token.rsplit("/", 1)[-1] not in {"pytest", "py.test"}:
             continue
@@ -288,6 +343,49 @@ def _pytest_path_args(line: str) -> tuple[list[str], bool] | None:
             return None
         return _args_after(rest)
     return None
+
+
+def _annotated(command: str, raw: str) -> tuple[list[str], bool] | None:
+    """A ``# test-collection:``-annotated line: the paths the author declares.
+
+    Read TEXTUALLY, not from the token walk above, because the invocation this
+    exists for is ``sh -c 'pip install pytest && python -m pytest /app/...'`` --
+    one shell word, with pytest inside the quotes, which the walk cannot see
+    (that is precisely why the derivation cannot resolve it).
+
+    Three things still hold, and they are what keep this from being a hand-
+    declared list: the line must really run pytest, ``--ignore``/``--deselect``
+    still make the verdict unknown, and a probe collects nothing however it is
+    annotated. Path safety is in ``_directive_paths`` and existence is checked
+    by the caller's usual stale-path guard.
+    """
+    if not _RUNS_PYTEST.search(command):
+        return None
+    words = [word.strip("\"'") for word in command.split()]
+    if any(word.split("=", 1)[0] in _NON_COLLECTING for word in words):
+        return None
+    narrowed = any(word.split("=", 1)[0] in _NARROWING_FLAGS for word in words)
+    return _directive_paths(raw), narrowed
+
+
+def _directive_paths(raw: str) -> list[str]:
+    """Repo paths from a ``# test-collection:`` directive, or raise.
+
+    Rejecting rather than ignoring: a directive nobody parsed is a workflow
+    author believing a boundary that was never read, which is the same
+    false-clean shape one level up.
+    """
+    paths = raw.split()
+    if not paths:
+        raise BadDirectiveError("`# test-collection:` names no path")
+    for path in paths:
+        parts = PurePosixPath(path).parts
+        if path.startswith(("/", "-")) or path in {".", ""} or ".." in parts:
+            raise BadDirectiveError(
+                f"`# test-collection: {path}` must name a repo-relative path inside the tree; "
+                "`.` would mark the whole repo collected from a comment"
+            )
+    return [path.rstrip("/") for path in paths]
 
 
 def _args_after(tokens: list[str]) -> tuple[list[str], bool]:
@@ -345,12 +443,14 @@ class Boundary:
     paths: tuple[str, ...]
     evidence: tuple[str, ...]
     narrowed: bool
+    bad_directives: tuple[str, ...] = ()
 
 
 def _collected(root: Path) -> Boundary:
     """Derive the collection boundary from the repo's own workflows."""
     paths: set[str] = set()
     evidence: list[str] = []
+    bad_directives: list[str] = []
     narrowed = False
     workflows = root / ".github" / "workflows"
     for workflow in sorted(workflows.glob("*.y*ml")) if workflows.is_dir() else []:
@@ -359,7 +459,11 @@ def _collected(root: Path) -> Boundary:
         except (OSError, UnicodeDecodeError):
             continue
         for line in _logical_lines(text):
-            parsed = _pytest_path_args(line)
+            try:
+                parsed = _pytest_path_args(line)
+            except BadDirectiveError as exc:
+                bad_directives.append(f"{workflow.name}: {exc}")
+                continue
             if parsed is None:
                 continue
             args, line_narrowed = parsed
@@ -368,7 +472,7 @@ def _collected(root: Path) -> Boundary:
             # No path arguments: pytest collects from the rootdir, narrowed only
             # by a `testpaths` setting.
             paths.update(args or _testpaths(root) or ["."])
-    return Boundary(tuple(sorted(paths)), tuple(evidence), narrowed)
+    return Boundary(tuple(sorted(paths)), tuple(evidence), narrowed, tuple(bad_directives))
 
 
 def _is_collected(relative: str, collected: tuple[str, ...]) -> bool:
@@ -425,6 +529,14 @@ def run_check(root: Path, registry_path: Path | None = None) -> int:
             "ERROR: a workflow pytest invocation carries --ignore/--deselect, which narrows "
             "collection. This gate cannot model that, and guessing would report uncollected "
             "files as collected."
+        )
+        return _UNKNOWN
+    if boundary.bad_directives:
+        for problem in boundary.bad_directives:
+            print(f"ERROR: {problem}")  # noqa: T201
+        print(  # noqa: T201
+            "A `# test-collection:` directive that cannot be read is an unknown boundary, not a "
+            "line to skip past."
         )
         return _UNKNOWN
     missing = [p for p in boundary.paths if p != "." and not (root / p).exists()]
@@ -545,6 +657,8 @@ def _self_test_boundary(failures: list[str]) -> None:
         workflow = root / ".github" / "workflows" / "ci.yml"
         steps = "jobs:\n  backend:\n    steps:\n      - run: |\n"
 
+        _self_test_directive(failures, root, workflow, steps)
+
         # A multi-line invocation. Read line-by-line it has no path arguments,
         # so the whole repo looks collected and the alarm disappears.
         workflow.write_text(steps + "          pytest \\\n            tests/ \\\n            -q\n")
@@ -634,6 +748,69 @@ def _self_test_boundary(failures: list[str]) -> None:
         (root / "tests" / "test_collected.py").unlink()
         (root / "apps" / "web-server" / "tests" / "test_web.py").unlink()
         expect(failures, run_check(root) == _UNKNOWN, "a tree with no test files is unknown")
+
+
+def _self_test_directive(failures: list[str], root: Path, workflow: Path, steps: str) -> None:
+    """The container-path directive (TFactory#1134), and what it must refuse.
+
+    Leaves the tree exactly as it found it: the cases after this one in
+    ``_self_test_boundary`` end by emptying the tree of test files, and a
+    leftover directory would make the zero-item case stop being one.
+    """
+    container = root / "portal_testing"
+    container.mkdir()
+    (container / "test_container.py").write_text("def test_ok(): ...\n")
+    _registry(root, path="apps/backend/agents/test_refactoring.py")
+    real = steps + "          pytest tests/ apps/web-server/tests/\n"
+    docker = real + steps + "          docker run img sh -c 'pytest /app/portal_testing -q'"
+
+    # The reading TFactory#1134 is about: the mounted directory's tests DO run,
+    # and the derivation has no way to know that from `/app/portal_testing`.
+    expect(
+        failures,
+        run_check_text(root, workflow, docker + "\n") == 1,
+        "a container pytest path reads as uncollected with no directive",
+    )
+    expect(
+        failures,
+        run_check_text(root, workflow, docker + "  # test-collection: portal_testing\n") == 0,
+        "...and the directive maps it back to the repo directory it mounts",
+    )
+
+    # The three ways an annotation could hand out a false clean.
+    for bad, why in (
+        (".", "`# test-collection: .` marks the whole repo collected from a comment"),
+        ("../elsewhere", "a directive pointing outside the tree"),
+        ("/app/portal_testing", "a directive that just repeats the container path"),
+    ):
+        expect(
+            failures,
+            run_check_text(root, workflow, f"{docker}  # test-collection: {bad}\n") == _UNKNOWN,
+            f"{why} is rejected, not believed",
+        )
+    expect(
+        failures,
+        run_check_text(root, workflow, docker + "  # test-collection: portal_typo\n") == _UNKNOWN,
+        "a directive naming a path absent from the tree is unknown, never a pass",
+    )
+
+    # It annotates an INVOCATION. On anything else it is prose.
+    prose = real + "      # test-collection: portal_testing\n"
+    expect(
+        failures,
+        run_check_text(root, workflow, prose) == 1,
+        "a directive on a line that runs no pytest collects nothing",
+    )
+    expect(
+        failures,
+        run_check_text(root, workflow, docker + " --ignore=x  # test-collection: portal_testing\n")
+        == _UNKNOWN,
+        "--ignore on an annotated line is still an unknown verdict",
+    )
+
+    (container / "test_container.py").unlink()
+    container.rmdir()
+    (root / REGISTRY_NAME).unlink()
 
 
 def main(argv: list[str] | None = None) -> int:

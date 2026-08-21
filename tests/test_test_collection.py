@@ -194,6 +194,81 @@ def test_a_tree_with_no_test_files_is_unknown_not_green(tmp_path: Path) -> None:
     assert gate.run_check(tmp_path) == 2
 
 
+def _container_tree(root: Path, directive: str = "") -> None:
+    """The TFactory#1134 shape: pytest run against a mounted container path.
+
+    ``portal_testing/`` is this repo's directory, mounted into the runner image
+    as ``/app/portal_testing``. Its tests run in CI; nothing in the workflow
+    text says which repo directory that is.
+    """
+    gate._pfactory_tree(root)
+    _register(root, "apps/backend/agents/test_refactoring.py")
+    (root / "portal_testing").mkdir()
+    (root / "portal_testing" / "test_container.py").write_text("def test_ok(): ...\n")
+    (root / ".github" / "workflows" / "ci.yml").write_text(
+        _STEPS
+        + "          pytest tests/ apps/web-server/tests/\n"
+        + _STEPS
+        + "          docker run --rm img \\\n"
+        + "            sh -c 'pip install -q pytest && python -m pytest /app/portal_testing -q'"
+        + f"{directive}\n"
+    )
+
+
+def test_a_container_pytest_path_reads_as_uncollected(tmp_path: Path) -> None:
+    """Unannotated, this is the reading that put two real suites in a registry.
+
+    They are covered -- 33 tests -- and the entry has to say so, which turns a
+    covered area into a documented gap and invites someone to delete them.
+    """
+    _container_tree(tmp_path)
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_the_directive_maps_a_container_path_to_its_repo_directory(tmp_path: Path) -> None:
+    """The mutation of the case above: one comment appears, nothing else moves."""
+    _container_tree(tmp_path, directive="  # test-collection: portal_testing")
+    assert gate.run_check(tmp_path) == 0
+    assert "portal_testing" in gate._collected(tmp_path).paths
+
+
+def test_a_directive_naming_the_whole_repo_is_rejected(tmp_path: Path) -> None:
+    """`# test-collection: .` would hand out the false clean as a feature."""
+    _container_tree(tmp_path, directive="  # test-collection: .")
+    assert gate.run_check(tmp_path) == 2
+
+
+def test_a_directive_escaping_the_tree_is_rejected(tmp_path: Path) -> None:
+    _container_tree(tmp_path, directive="  # test-collection: ../elsewhere")
+    assert gate.run_check(tmp_path) == 2
+
+
+def test_a_directive_naming_an_absent_path_is_unknown(tmp_path: Path) -> None:
+    """A typo must not read as a pass, by the same guard a stale workflow hits."""
+    _container_tree(tmp_path, directive="  # test-collection: portal_typo")
+    assert gate.run_check(tmp_path) == 2
+
+
+def test_a_directive_does_nothing_on_a_line_that_runs_no_pytest(tmp_path: Path) -> None:
+    """It annotates an invocation. Anywhere else it is a comment about one."""
+    gate._pfactory_tree(tmp_path)
+    _register(tmp_path, "apps/backend/agents/test_refactoring.py")
+    (tmp_path / "portal_testing").mkdir()
+    (tmp_path / "portal_testing" / "test_container.py").write_text("def test_ok(): ...\n")
+    (tmp_path / ".github" / "workflows" / "ci.yml").write_text(
+        _STEPS
+        + "          pytest tests/ apps/web-server/tests/\n"
+        + "      # test-collection: portal_testing\n"
+    )
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_an_annotated_line_with_a_narrowing_flag_is_still_unknown(tmp_path: Path) -> None:
+    """A directive says what pytest was pointed at, not that --ignore is modelled."""
+    _container_tree(tmp_path, directive=" --ignore=x  # test-collection: portal_testing")
+    assert gate.run_check(tmp_path) == 2
+
+
 def test_the_hub_tree_is_accounted_for() -> None:
     """The gate's verdict on this repository, run by the ordinary PR suite.
 
