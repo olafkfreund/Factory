@@ -83,6 +83,16 @@ def _normalise(payload: dict) -> dict:
 # "Blocking drift gate" while it was required nowhere.
 _VCORE = "vendored copies match the hub canonical (byte-exact)"
 
+# The PR-diff secret scan, required fleet-wide as of Factory#814. Three
+# spellings because the job display names genuinely differ: PFactory
+# capitalises it, the other three services do not, and the hub's single job is
+# just "gitleaks". NOT the full-history job in the same workflow -- that one is
+# gated to schedule/workflow_dispatch and never posts on a PR, so requiring it
+# would block every PR in the fleet.
+_SECRET_PF = "Gitleaks (PR diff)"
+_SECRET = "gitleaks (PR diff)"
+_SECRET_HUB = "gitleaks"
+
 
 def _live_shaped(
     *,
@@ -200,16 +210,19 @@ def test_check_contexts_are_per_repo() -> None:
     assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == [
         "Backend pytest",
         "Frontend typecheck + build",
+        _SECRET,
         _VCORE,
     ]
     assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == [
         "backend (ruff + pytest)",
         "critical (fast PR gate)",
+        _SECRET,
         _VCORE,
     ]
     # AIFactory has no required frontend check, despite having a frontend suite.
     assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == [
         "backend (ruff + pytest)",
+        _SECRET,
         _VCORE,
     ]
     # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
@@ -265,7 +278,7 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "main",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
+            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _SECRET],
             True,
             None,
             True,
@@ -273,7 +286,7 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "dev",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
+            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _SECRET],
             True,
             None,
             False,
@@ -281,7 +294,7 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "CFactory",
             "main",
-            ["Backend pytest", "Frontend typecheck + build", _VCORE],
+            ["Backend pytest", "Frontend typecheck + build", _VCORE, _SECRET],
             True,
             None,
             True,
@@ -298,6 +311,7 @@ def test_matching_live_response_compares_equal() -> None:
                 "ratchet (ruff + mypy on changed Python)",
                 "ruff format --check (every Python directory)",
                 "shared-baseline drift gate (blocking)",
+                _SECRET,
             ],
             True,
             None,
@@ -335,6 +349,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             "ratchet (ruff + mypy on changed Python)",
             "ruff format --check (every Python directory)",
             "shared-baseline drift gate (blocking)",
+            _SECRET,
         ],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
@@ -348,7 +363,7 @@ def test_unordered_contexts_compare_equal() -> None:
     # GitHub does not promise an order; a spurious diff would train people to
     # ignore the gate.
     live = _live_shaped(
-        contexts=[_VCORE, "critical (fast PR gate)", "backend (ruff + pytest)"],
+        contexts=[_VCORE, _SECRET, "critical (fast PR gate)", "backend (ruff + pytest)"],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
@@ -423,7 +438,7 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
     reports -- the old per-repo script applied main's payload to dev.
     """
     live = _live_shaped(
-        contexts=["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
+        contexts=["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _SECRET],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
