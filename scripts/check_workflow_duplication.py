@@ -93,7 +93,7 @@ def _similarity(a: Counter[str], b: Counter[str]) -> float:
     return shared / total
 
 
-def check(workflow_dir: Path) -> list[str]:
+def check(workflow_dir: Path, counts: dict[str, int] | None = None) -> list[str]:
     paths = sorted(p for p in workflow_dir.glob("*.yml")) + sorted(workflow_dir.glob("*.yaml"))
     if not paths:
         return [f"{workflow_dir}: no workflow files found -- this gate examined nothing"]
@@ -105,6 +105,11 @@ def check(workflow_dir: Path) -> list[str]:
     }
 
     judgeable = {p: c for p, c in distinctive.items() if sum(c.values()) >= MIN_DISTINCTIVE_LINES}
+    if counts is not None:
+        counts["workflows"] = len(paths)
+        counts["judgeable"] = len(judgeable)
+        counts["pairs"] = len(judgeable) * (len(judgeable) - 1) // 2
+        counts["boilerplate_lines"] = len(boiler)
     if not judgeable:
         return [
             f"{workflow_dir}: all {len(paths)} workflow(s) discounted to fewer than "
@@ -131,12 +136,26 @@ def main() -> int:
     if args.self_test:
         return _self_test()
 
-    findings = check(Path(args.root) / ".github" / "workflows")
+    counts: dict[str, int] = {}
+    findings = check(Path(args.root) / ".github" / "workflows", counts)
     for f in findings:
         print(f"FAIL {f}")  # noqa: T201
+
+    # The count goes to BOTH verdicts, pass and fail. A gate that says only
+    # "OK" cannot be told apart from a gate that compared nothing, and the
+    # empty case is the one worth catching: three of this repo's workflows are
+    # under the distinctive-line floor, so "0 pairs compared" is a state this
+    # gate can genuinely reach while still printing OK (Factory#832).
+    summary = (
+        f"Compared {counts.get('pairs', 0)} workflow pair(s) from "
+        f"{counts.get('judgeable', 0)} judgeable of {counts.get('workflows', 0)} "
+        f"workflow file(s), after discarding {counts.get('boilerplate_lines', 0)} "
+        f"boilerplate line(s) shared by {BOILERPLATE_MIN_FILES}+ files"
+    )
     if findings:
+        print(summary)  # noqa: T201
         return 1
-    print("OK: no workflow is a wholesale copy of another.")  # noqa: T201
+    print(f"OK: no workflow is a wholesale copy of another. {summary}.")  # noqa: T201
     return 0
 
 
