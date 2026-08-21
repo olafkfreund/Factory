@@ -475,13 +475,22 @@ def _fetch_json(fetch: Fetcher, url: str) -> dict[str, object]:
     return result if isinstance(result, dict) else {}
 
 
-def _stale_exemptions(never_green: frozenset[str]) -> list[str]:
-    """Exemptions that suppressed nothing this run (Factory#788)."""
+def _stale_exemptions(
+    never_green: frozenset[str],
+    exemptions: tuple[NeverGreenExemption, ...] = NEVER_GREEN_ALLOWED,
+) -> list[str]:
+    """Exemptions that suppressed nothing this run (Factory#788).
+
+    ``exemptions`` is injectable so the rule can be tested when the live
+    allowlist is empty -- which is its healthy state, and was exactly when the
+    test for it stopped exercising anything (it asserted against
+    NEVER_GREEN_ALLOWED directly and returned [] once the last entry went).
+    """
     return [
         f"{e.workflow}: never-green exemption ({e.issue}) matches nothing -- the gate "
         "has passed since, or the workflow was renamed. Delete the entry; while it "
         "stands, the next real never-green state on that workflow is silently exempt."
-        for e in NEVER_GREEN_ALLOWED
+        for e in exemptions
         if e.workflow not in never_green
     ]
 
