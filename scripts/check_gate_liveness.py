@@ -272,17 +272,26 @@ class NeverGreenExemption:
 # Factory#816 at 21-for-21 failures, is NOT here: it produced its first
 # success on 2026-08-19, so an exemption for it would already match nothing
 # and fail this gate -- which is the rule working, not an inconvenience.
-NEVER_GREEN_ALLOWED: tuple[NeverGreenExemption, ...] = (
-    NeverGreenExemption(
-        workflow="cli-freshness.yml",
-        issue="Factory#693",
-        reason=(
-            "Both of its runs died fetching factory-gitops, which needs GITOPS_PAT "
-            "-- a cross-repo credential only the repository owner can mint. The gate "
-            "logic has never executed, so there is nothing here for a code change to "
-            "fix; remove this entry when the secret is set."
-        ),
-    ),
+# Empty on purpose. cli-freshness.yml was the last entry: GITOPS_PAT was set on
+# the Factory repo on 2026-08-21 and the workflow produced its first success the
+# same day, opening the three bump PRs it had never been able to open. Its own
+# exemption said "remove this entry when the secret is set", and leaving it would
+# now fail this gate for matching nothing -- the same rule that kept
+# branch-protection-drift.yml out of here after it went green on 2026-08-19.
+NEVER_GREEN_ALLOWED: tuple[NeverGreenExemption, ...] = ()
+
+# A written reason of the shape the rules are meant to ACCEPT, used only by the
+# self-test. It is a literal rather than ``_SELF_TEST_GOOD_REASON``
+# because the allowlist is legitimately empty whenever every gate is green --
+# sampling from it made emptying the list an IndexError, so the rules could only
+# be tested while an exemption happened to exist. This is the text of the last
+# real entry (cli-freshness.yml, Factory#693), kept so the "a real reason is
+# accepted" check still runs against something that genuinely was one.
+_SELF_TEST_GOOD_REASON = (
+    "Both of its runs died fetching factory-gitops, which needs GITOPS_PAT "
+    "-- a cross-repo credential only the repository owner can mint. The gate "
+    "logic has never executed, so there is nothing here for a code change to "
+    "fix; remove this entry when the secret is set."
 )
 
 _EXEMPT_WORKFLOWS = frozenset(e.workflow for e in NEVER_GREEN_ALLOWED)
@@ -466,13 +475,22 @@ def _fetch_json(fetch: Fetcher, url: str) -> dict[str, object]:
     return result if isinstance(result, dict) else {}
 
 
-def _stale_exemptions(never_green: frozenset[str]) -> list[str]:
-    """Exemptions that suppressed nothing this run (Factory#788)."""
+def _stale_exemptions(
+    never_green: frozenset[str],
+    exemptions: tuple[NeverGreenExemption, ...] = NEVER_GREEN_ALLOWED,
+) -> list[str]:
+    """Exemptions that suppressed nothing this run (Factory#788).
+
+    ``exemptions`` is injectable so the rule can be tested when the live
+    allowlist is empty -- which is its healthy state, and was exactly when the
+    test for it stopped exercising anything (it asserted against
+    NEVER_GREEN_ALLOWED directly and returned [] once the last entry went).
+    """
     return [
         f"{e.workflow}: never-green exemption ({e.issue}) matches nothing -- the gate "
         "has passed since, or the workflow was renamed. Delete the entry; while it "
         "stands, the next real never-green state on that workflow is silently exempt."
-        for e in NEVER_GREEN_ALLOWED
+        for e in exemptions
         if e.workflow not in never_green
     ]
 
@@ -721,7 +739,7 @@ def _self_test_exemptions(failures: list[str]) -> None:
     """
     expect(
         failures,
-        _rejects_exemption(issue="", reason=NEVER_GREEN_ALLOWED[0].reason),
+        _rejects_exemption(issue="", reason=_SELF_TEST_GOOD_REASON),
         "an exemption with no issue reference is rejected",
     )
     expect(failures, _rejects_reason("TODO fix later"), "a TODO reason is rejected")
@@ -730,7 +748,7 @@ def _self_test_exemptions(failures: list[str]) -> None:
     expect(failures, _rejects_reason("blocked on a secret"), "a too-short reason is rejected")
     expect(
         failures,
-        not _rejects_reason(NEVER_GREEN_ALLOWED[0].reason),
+        not _rejects_reason(_SELF_TEST_GOOD_REASON),
         "a real written reason is accepted -- or this proves only that everything fails",
     )
     expect(
