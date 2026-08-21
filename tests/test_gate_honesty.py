@@ -1065,19 +1065,22 @@ def test_gate_liveness_never_green_verdict_is_honest() -> None:
     # against it directly meant this check quietly stopped exercising anything
     # the moment the last entry was removed. The rule is what matters here, not
     # whether a real exemption happens to exist today.
-    assert liveness_gate._stale_exemptions(
-        frozenset(),
-        (
-            liveness_gate.NeverGreenExemption(
-                workflow="suppresses-nothing.yml",
-                issue="Factory#788",
-                reason=(
-                    "A written reason of the accepted shape, so this asserts the "
-                    "stale-match rule and not the reason-format rule."
+    assert (
+        liveness_gate._stale_exemptions(
+            frozenset(),
+            (
+                liveness_gate.NeverGreenExemption(
+                    workflow="suppresses-nothing.yml",
+                    issue="Factory#788",
+                    reason=(
+                        "A written reason of the accepted shape, so this asserts the "
+                        "stale-match rule and not the reason-format rule."
+                    ),
                 ),
             ),
-        ),
-    ) != [], "an exemption that suppressed nothing must fail the gate, not pass quietly"
+        )
+        != []
+    ), "an exemption that suppressed nothing must fail the gate, not pass quietly"
 
     # The record outlives the file: GitHub keeps reporting state=active for a
     # workflow deleted from the default branch (Factory#816's zz-*-proof pair).
