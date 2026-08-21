@@ -12,8 +12,11 @@ how the offline mode of the script is meant to be used.
 
 from __future__ import annotations
 
+import dataclasses
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # scripts/ is put on sys.path by tests/conftest.py.
@@ -371,3 +374,68 @@ def test_the_contracts_gate_reads_a_differently_named_pin() -> None:
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_a_404_is_an_answer_but_a_network_error_is_not(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`unlisted_consumers` must be quietest when it CAN look, not when it cannot.
+
+    It answers "does this repo ship the gate's workflow", and the only way to
+    answer is over the network. Flattening every failure to False would make
+    absence undetectable exactly when GitHub is unreachable — the gate would go
+    green on a fleet it never read, which is the Factory#500 shape and the same
+    defect this whole watchdog exists to catch one level up.
+
+    So: 404 is a real answer (the repo does not have it); anything else raises.
+    """
+
+    def _raise(code: int):
+        def _open(url: str, **_kw: object) -> object:
+            raise urllib.error.HTTPError(url, code, "boom", {}, None)  # type: ignore[arg-type]
+
+        return _open
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise(404))
+    assert pf.workflow_exists("PFactory", ".github/workflows/nope.yml") is False
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise(503))
+    with pytest.raises(pf.PinUnavailableError):
+        pf.workflow_exists("PFactory", ".github/workflows/nope.yml")
+
+
+def test_a_repo_running_a_gate_must_be_in_its_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one scope check that does not compare two hand-written lists.
+
+    Every other check in `scope_problems` compares one declaration against
+    another, so they all agree by construction when both are wrong together.
+    This one compares a layout against the repos, which cannot be edited to
+    make the gate quiet.
+
+    It exists because the list it guards HAD gone stale: Factory#848 declared
+    `test-collection` for aifactory and cfactory, correct that day, and within a
+    day PFactory and TFactory shipped the same workflow (Factory#844) while the
+    hub kept reporting `pin-freshness PASSED ... across 6 gate(s)` without ever
+    reading their pins.
+    """
+    gate = next(g for g in pf.GATES if g.name == "test-collection")
+    assert "tfactory" in gate.layouts, "fixture assumes tfactory is declared today"
+
+    # Pretend every repo missing from a layout DOES ship that gate's workflow.
+    monkeypatch.setattr(pf, "workflow_exists", lambda *_a, **_kw: True)
+    shrunk = dataclasses.replace(
+        gate, layouts={svc: lay for svc, lay in gate.layouts.items() if svc != "tfactory"}
+    )
+    monkeypatch.setattr(pf, "GATES", (shrunk,))
+
+    problems = pf.unlisted_consumers()
+    assert any("TFactory" in p and "test-collection" in p for p in problems), (
+        f"dropping tfactory from the layout while it still ships the workflow "
+        f"was not reported; got {problems}"
+    )
+
+
+def test_no_repo_is_reported_when_none_ships_the_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other direction, so the test above cannot pass by always finding one."""
+    monkeypatch.setattr(pf, "workflow_exists", lambda *_a, **_kw: False)
+    assert pf.unlisted_consumers() == []

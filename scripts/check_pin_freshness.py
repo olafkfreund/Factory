@@ -286,7 +286,12 @@ GATES: tuple[Gate, ...] = (
             service: {
                 "check_test_collection.py": "(not vendored -- fetched at the pin)",
             }
-            for service in ("aifactory", "cfactory")
+            # All four services ship this workflow as of Factory#844.
+            # `unlisted_consumers()` below verifies this tuple against what the
+            # repos actually contain, so it cannot silently go stale again --
+            # which is how it read "aifactory, cfactory" while PFactory and
+            # TFactory had been running the same gate for a day.
+            for service in ("aifactory", "cfactory", "pfactory", "tfactory")
         },
         # Not a required status check. Both repos are at zero uncollected files
         # today, so a `paths:` filter could not wedge a PR; promoting it is a
@@ -298,6 +303,8 @@ GATES: tuple[Gate, ...] = (
 _OWNER = "olafkfreund"
 # HEAD resolves to the repo's default branch, so this does not hardcode `dev`.
 _RAW = "https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}"
+# The one HTTP status that is an ANSWER to "does this repo ship the file".
+_HTTP_NOT_FOUND = 404
 
 _EXIT_BAD_INVOCATION = 2
 
@@ -332,6 +339,28 @@ def fetch_workflow(repo: str, workflow: str, *, timeout: int = 20) -> str:
             # function annotated -> str, which the mypy ratchet blocks.
             body: str = response.read().decode("utf-8")
             return body
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise PinUnavailableError(f"{repo}: cannot fetch {url}: {exc}") from exc
+
+
+def workflow_exists(repo: str, workflow: str, *, timeout: int = 20) -> bool:
+    """Does *repo* ship *workflow* on its default branch?
+
+    A 404 is an ANSWER -- the repo does not have it. Every other failure is
+    "I could not look", which is not an answer, so it propagates rather than
+    being flattened to False. Reading a network error as "absent" would make
+    this watchdog quietest exactly when GitHub is unreachable, and the whole
+    point of the check below is to notice absence.
+    """
+    url = _RAW.format(owner=_OWNER, repo=repo, path=workflow)
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
+            response.read()
+            return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == _HTTP_NOT_FOUND:
+            return False
+        raise PinUnavailableError(f"{repo}: cannot fetch {url}: {exc}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise PinUnavailableError(f"{repo}: cannot fetch {url}: {exc}") from exc
 
@@ -478,6 +507,37 @@ def scope_problems() -> list[str]:
                 f"{gate.name} is a required check but {service} is absent from its "
                 "layout, so a repo is gated by a check the hub does not track"
             )
+    return problems
+
+
+def unlisted_consumers() -> list[str]:
+    """Repos that RUN a gate's workflow but are absent from its layout.
+
+    Every check in :func:`scope_problems` compares one hand-written list
+    against another, so all of them agree by construction whenever both are
+    wrong together. This one compares the layout against the REPOS, which is
+    the only source that cannot be edited to make the gate quiet.
+
+    It exists because the list it guards had already gone stale. Factory#848
+    made this watchdog able to see fetch-at-pin gates and declared
+    `test-collection` for ("aifactory", "cfactory") -- correct that day. Within
+    a day PFactory and TFactory shipped the same workflow (Factory#844) and
+    nothing said so: the hub reported `pin-freshness PASSED ... across 6
+    gate(s)` while two repos ran a pinned hub gate whose pin it never read. A
+    stale pin is invisible precisely in the repos nobody declared.
+
+    Network-bound, so it is separate from :func:`scope_problems`, which is pure
+    and runs first.
+    """
+    problems: list[str] = []
+    for gate in GATES:
+        for service in sorted(set(_REPOS) - set(gate.layouts)):
+            repo = _REPOS[service]
+            if workflow_exists(repo, gate.workflow):
+                problems.append(
+                    f"{gate.name}: {repo} ships {gate.workflow} but is absent from "
+                    f"this gate's layout, so its HUB_PIN_SHA is never read"
+                )
     return problems
 
 
@@ -665,7 +725,21 @@ def main(argv: list[str] | None = None) -> int:
         return _selftest()
 
     # Before anything else: is this gate still covering everyone it should?
+    # The pure list-vs-list checks first, then the one that reads the repos --
+    # if the declarations already disagree with each other there is no point
+    # spending network calls to find out they also disagree with reality.
     problems = scope_problems()
+    if not problems and not args.no_fetch:
+        # Skipped under --no-fetch, which exists so the gate can be exercised
+        # with no network at all. Reading a repo is the whole check, so there is
+        # no offline approximation of it -- and a fabricated verdict is worse
+        # than a missing one.
+        try:
+            problems = unlisted_consumers()
+        except PinUnavailableError as exc:
+            # Fail closed: "I could not look" is not "nothing to find".
+            sys.stderr.write(f"pin-freshness: could not verify gate scope: {exc}\n")
+            return _EXIT_BAD_INVOCATION
     if problems:
         sys.stderr.write("pin-freshness: the gate's own scope is broken:\n")
         for line in problems:
