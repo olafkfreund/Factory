@@ -1299,6 +1299,30 @@ def test_workflow_duplication_gate_is_honest(tmp_path: Path) -> None:
         "exactly the pairs the jscpd exclusion (#836/PR #840) was made to stop"
     )
 
+    # And the verdict has to SAY what it compared. "OK" alone cannot be told
+    # apart from a gate that compared nothing, and 0 pairs is a state this gate
+    # genuinely reaches: a file under MIN_DISTINCTIVE_LINES is discounted, so a
+    # repo whose workflows are all preamble prints OK having judged none of
+    # them. The counts are what make that visible (Factory#832).
+    counts: dict[str, int] = {}
+    wfdup_gate.check(wf, counts)
+    assert counts["workflows"] == 4, counts
+    assert counts["judgeable"] == 4, counts
+    assert counts["pairs"] == 6, counts
+
+    thin = tmp_path / "thin" / ".github" / "workflows"
+    thin.mkdir(parents=True)
+    for i in range(3):
+        (thin / f"bare{i}.yml").write_text(preamble)
+    thin_counts: dict[str, int] = {}
+    findings = wfdup_gate.check(thin, thin_counts)
+    assert thin_counts["workflows"] == 3, thin_counts
+    assert thin_counts["pairs"] == 0, thin_counts
+    assert findings, (
+        "three workflows too thin to compare produced no finding -- a gate that "
+        "compared zero pairs must not read the same as a clean one"
+    )
+
     empty = tmp_path / "empty" / ".github" / "workflows"
     empty.mkdir(parents=True)
     assert wfdup_gate.check(empty), (
