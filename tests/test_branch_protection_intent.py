@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -42,6 +43,16 @@ _DECLARED = [
     ("AIFactory", "dev"),
     ("factory-gitops", "main"),
 ]
+
+
+def _all_repos() -> set[str]:
+    """The fleet, read from the script's own ``ALL_REPOS`` array."""
+    src = _SCRIPT.read_text(encoding="utf-8")
+    m = re.search(r"^ALL_REPOS=\(([^)]*)\)", src, re.MULTILINE)
+    assert m, "ALL_REPOS not found in apply_branch_protection.sh"
+    repos = set(m.group(1).split())
+    assert repos, "ALL_REPOS parsed as empty -- the regex stopped matching"
+    return repos
 
 
 def _emit(repo: str, branch: str) -> dict:
@@ -82,6 +93,20 @@ def _normalise(payload: dict) -> dict:
 # consumers. Required there since Factory#543 — its own header called it a
 # "Blocking drift gate" while it was required nowhere.
 _VCORE = "vendored copies match the hub canonical (byte-exact)"
+
+# The PR-diff secret scan, required fleet-wide as of Factory#814. Three
+# spellings because the job display names genuinely differ: PFactory
+# capitalises it, the other three services do not, and the hub's single job is
+# just "gitleaks". NOT the full-history job in the same workflow -- that one is
+# gated to schedule/workflow_dispatch and never posts on a PR, so requiring it
+# would block every PR in the fleet.
+_GITLEAKS_PF = "Gitleaks (PR diff)"
+_GITLEAKS = "gitleaks (PR diff)"
+_GITLEAKS_HUB = "gitleaks"
+# gitops names neither secret-scan job, so the context IS the job id. Verified
+# against a real PR head rather than read off the YAML: `pr-diff-scan` reports
+# success there and `full-history-scan` reports skipped.
+_GITLEAKS_GITOPS = "pr-diff-scan"
 
 
 def _live_shaped(
@@ -200,16 +225,19 @@ def test_check_contexts_are_per_repo() -> None:
     assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == [
         "Backend pytest",
         "Frontend typecheck + build",
+        _GITLEAKS,
         _VCORE,
     ]
     assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == [
         "backend (ruff + pytest)",
         "critical (fast PR gate)",
+        _GITLEAKS,
         _VCORE,
     ]
     # AIFactory has no required frontend check, despite having a frontend suite.
     assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == [
         "backend (ruff + pytest)",
+        _GITLEAKS,
         _VCORE,
     ]
     # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
@@ -217,6 +245,40 @@ def test_check_contexts_are_per_repo() -> None:
     # workflow exists can never report, which is the Factory#529 wedge.
     for repo in ("Factory", "factory-gitops"):
         assert _VCORE not in _emit(repo, "main")["required_status_checks"]["contexts"]
+
+
+def test_every_repo_requires_its_own_secret_scan() -> None:
+    """Factory#814, and the three spellings that make it easy to get wrong.
+
+    The display names genuinely differ -- PFactory capitalises the job,
+    CFactory/TFactory/AIFactory do not, the hub's is bare ``gitleaks``, and
+    gitops names neither job so its context is the job id. Three of the five
+    spellings were asserted nowhere when this test was written, including both
+    of the ones that are unique to a single repo. A context that is unique and
+    unasserted is a typo away from being required-but-never-reported, which
+    wedges the branch rather than protecting it (Factory#529).
+
+    Asserting membership rather than the whole list on purpose: the exact
+    context lists are locked by test_check_contexts_are_per_repo above, and
+    duplicating them here would mean every future gate has to be added twice.
+    """
+    expected = {
+        "CFactory": _GITLEAKS,
+        "TFactory": _GITLEAKS,
+        "AIFactory": _GITLEAKS,
+        "PFactory": _GITLEAKS_PF,
+        "Factory": _GITLEAKS_HUB,
+        "factory-gitops": _GITLEAKS_GITOPS,
+    }
+    for repo, ctx in expected.items():
+        contexts = _emit(repo, "main")["required_status_checks"]["contexts"]
+        assert ctx in contexts, f"{repo} main does not require its secret scan"
+
+    # Every repo in the fleet, not a subset that happens to be listed here. The
+    # list is READ from the script's own ALL_REPOS rather than restated, so a
+    # repo added there fails this test until it is given a scan -- restating it
+    # would just mean the two lists drift and the test keeps passing.
+    assert set(expected) == _all_repos(), "a repo exists that this test never checks"
 
 
 def test_gitops_gates_the_branch_that_reaches_the_cluster() -> None:
@@ -243,6 +305,7 @@ def test_gitops_gates_the_branch_that_reaches_the_cluster() -> None:
     assert intent["required_status_checks"]["contexts"] == [
         "kustomize build + schema",
         "no literal secrets in manifests",
+        _GITLEAKS_GITOPS,
     ]
     assert intent["allow_force_pushes"] is False
     assert intent["allow_deletions"] is False
@@ -265,7 +328,7 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "main",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
+            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
             True,
             None,
             True,
@@ -273,7 +336,7 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "dev",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
+            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
             True,
             None,
             False,
@@ -281,7 +344,7 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "CFactory",
             "main",
-            ["Backend pytest", "Frontend typecheck + build", _VCORE],
+            ["Backend pytest", "Frontend typecheck + build", _VCORE, _GITLEAKS],
             True,
             None,
             True,
@@ -298,6 +361,7 @@ def test_matching_live_response_compares_equal() -> None:
                 "ratchet (ruff + mypy on changed Python)",
                 "ruff format --check (every Python directory)",
                 "shared-baseline drift gate (blocking)",
+                _GITLEAKS,
             ],
             True,
             None,
@@ -308,7 +372,11 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "factory-gitops",
             "main",
-            ["kustomize build + schema", "no literal secrets in manifests"],
+            [
+                "kustomize build + schema",
+                "no literal secrets in manifests",
+                _GITLEAKS_GITOPS,
+            ],
             True,
             None,
             True,
@@ -335,6 +403,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             "ratchet (ruff + mypy on changed Python)",
             "ruff format --check (every Python directory)",
             "shared-baseline drift gate (blocking)",
+            _GITLEAKS,
         ],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
@@ -348,7 +417,7 @@ def test_unordered_contexts_compare_equal() -> None:
     # GitHub does not promise an order; a spurious diff would train people to
     # ignore the gate.
     live = _live_shaped(
-        contexts=[_VCORE, "critical (fast PR gate)", "backend (ruff + pytest)"],
+        contexts=[_VCORE, _GITLEAKS, "critical (fast PR gate)", "backend (ruff + pytest)"],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
@@ -423,7 +492,7 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
     reports -- the old per-repo script applied main's payload to dev.
     """
     live = _live_shaped(
-        contexts=["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE],
+        contexts=["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
