@@ -83,6 +83,19 @@ jobs:
       - name: Enforce the clone budget (fail on net-new duplication)
         run: python3 scripts/check_jscpd_budget.py
 
+      # jscpd stopped counting .github/workflows in #836/PR #840, because the
+      # Actions preamble is byte-identical BY POLICY (pin-freshness requires
+      # every workflow to name the same action digest) and three pairs crossed
+      # the 50-token floor. Factory#842 recorded what that cost: nothing then
+      # looked for a wholesale COPIED workflow within a repo. This does, and it
+      # ignores the shared preamble rather than the whole directory, so the
+      # exclusion stays and the hole closes.
+      - name: Verify the workflow-duplication self-test
+        run: python3 scripts/check_workflow_duplication.py --self-test
+
+      - name: No workflow is a wholesale copy of another (Factory#842)
+        run: python3 scripts/check_workflow_duplication.py
+
       - name: Publish clone report to the run summary
         if: always()
         run: |

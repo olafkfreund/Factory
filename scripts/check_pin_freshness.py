@@ -260,6 +260,39 @@ GATES: tuple[Gate, ...] = (
         # introduced by a config change.
         required_check=False,
     ),
+    Gate(
+        name="test-collection",
+        workflow=".github/workflows/test-collection.yml",
+        canonical_root="scripts",
+        # FETCH-AT-PIN, not vendored (Factory#848). AIFactory and CFactory pull
+        # check_test_collection.py from the hub at HUB_PIN_SHA and run it in
+        # place; there is no copy, so there is no byte-exact drift gate and
+        # nothing to diff. That was the right call -- an 839-line copy in each
+        # consumer plus a drift workflow to guard it is more machinery than the
+        # gate itself -- but it left the pin invisible to THIS reading, which
+        # only looked at gates with a vendored counterpart.
+        #
+        # A hub improvement to the checker would not reach either repo until
+        # someone bumped HUB_PIN_SHA by hand, and nothing would say so: honestly
+        # green against a stale target, the shape of Factory#519.
+        #
+        # No new gate KIND was needed. `canonical_paths()` reads only the layout
+        # KEY, so the value states the truth instead of naming a path that does
+        # not exist -- the same idiom factory-contracts uses for CFactory's
+        # schema. What this gate answers is "has the canonical moved since the
+        # pin", which is exactly as meaningful for a fetched file as a copied
+        # one.
+        layouts={
+            service: {
+                "check_test_collection.py": "(not vendored -- fetched at the pin)",
+            }
+            for service in ("aifactory", "cfactory")
+        },
+        # Not a required status check. Both repos are at zero uncollected files
+        # today, so a `paths:` filter could not wedge a PR; promoting it is a
+        # separate step (Factory#814 measures which gates are stable enough).
+        required_check=False,
+    ),
 )
 
 _OWNER = "olafkfreund"
