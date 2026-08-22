@@ -95,6 +95,41 @@ widen the boundary by assertion:
     unknown; a directive says what the invocation points at, not that the
     author has modelled pytest's ignore semantics.
 
+WHEN A TEST IS RUN AS A SCRIPT, NOT BY PYTEST
+----------------------------------------------
+factory-gitops has no ``pytest`` invocation anywhere in its workflows. Its five
+CI helper tests live in ``.github/scripts/`` and four of them run as::
+
+    - run: python3 .github/scripts/test_cred_sync.py
+
+Two separate blind spots met there (Factory#926). The scan skipped every
+dot-prefixed path component -- a rule meant for ``.venv``/``.git``/caches that
+swallowed ``.github`` as collateral -- so those files were never even looked at,
+and the repo read as "ZERO items examined". And the derivation only understood
+``pytest``, so narrowing the skip alone would have converted one blind spot into
+five registry entries saying "covered, but the gate cannot see it".
+
+So the skip is now a NAMED list of directories (dot ones included), and a direct
+``python <path>/test_x.py`` run is read as collecting that file. Being executed
+by CI is the entire question this gate asks, and a script run answers it. It
+stays narrow on purpose:
+
+  * the boundary is the EXACT FILE named on the line, never its directory. A
+    directive-free way to widen a boundary to a directory is the false clean
+    this gate exists to close; one file cannot do that.
+  * only a ``test_*.py`` / ``*_test.py`` script counts. ``python3
+    scripts/deploy.py`` is a build step, and reading it as a boundary would
+    hand out coverage on the strength of a script that runs no tests.
+  * only python's FIRST positional counts, so ``python -m ...`` (a module) and
+    ``python -c ...`` (a code string) decline on their own, and a lint step
+    like ``python -m pyflakes .github/scripts/test_x.py`` cannot be read as
+    proof that file runs. A python inside ``docker run`` runs the image's.
+
+The one thing this cannot check is whether the script actually asserts
+anything: ``test_extract_all_embedded.py`` had no ``__main__`` driver, so the
+repo's convention would have imported it and exited 0 having executed nothing.
+That is check_gate_liveness.py's question, not this one.
+
 THE REGISTRY, AND WHY A DEAD ENTRY IS RED
 ------------------------------------------
 Each repo carries ``uncollected-tests-allowlist.toml`` at its root, same shape
@@ -145,8 +180,32 @@ REGISTRY_NAME = "uncollected-tests-allowlist.toml"
 # find the collection boundary, must not be indistinguishable from a clean tree.
 _UNKNOWN = 2
 
+# Directories that hold other people's code or machine output. Dot-directories
+# are named INDIVIDUALLY rather than matched by a `part.startswith(".")` rule,
+# which is what this list used to be. That rule swallowed `.github/` too, and
+# `.github/scripts/` is where a repo's CI helper tests live -- five of them in
+# factory-gitops, one of which had not run since Factory#711 and was found by
+# hand rather than by this gate (Factory#926). A deny-list goes stale toward
+# scanning a new cache directory, which is noisy; the generic rule went stale
+# toward not scanning real tests, which is the false-clean direction.
 _SKIP_DIRS = frozenset(
-    {"node_modules", "__pycache__", "dist", "build", "vendor", "site-packages", "migrations"}
+    {
+        "node_modules",
+        "__pycache__",
+        "dist",
+        "build",
+        "vendor",
+        "site-packages",
+        "migrations",
+        ".git",
+        ".venv",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".idea",
+        ".vscode",
+    }
 )
 
 # Rejected reasons, and the floor on a real one. Same shape as
@@ -226,6 +285,16 @@ _YAML_KEY = re.compile(r"^\s*(?:-\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*:")
 _DIRECTIVE = re.compile(r"#\s*test-collection:\s*(.+?)\s*$")
 _RUNS_PYTEST = re.compile(r"(?:^|[\s/\'\"])py\.?test\b")
 
+# `python3 .github/scripts/test_cred_sync.py` -- a test run that is not a pytest
+# run. Four of factory-gitops' five CI helper tests are invoked exactly this way
+# and no pytest appears anywhere in that repo's workflows, so without this the
+# gate has nothing to derive a boundary from and answers "unknown" forever
+# (Factory#926). The file IS executed by CI, which is the whole question this
+# gate asks, so it is collected -- as itself and nothing else. An exact-file
+# boundary cannot widen past the file named on the line, which is why this is
+# safe in a way that a directory guess would not be.
+_PYTHON = re.compile(r"^python(?:3(?:\.\d+)?)?$")
+
 
 class BadEntryError(ValueError):
     """A registry entry that cannot be allowed to exist."""
@@ -264,7 +333,12 @@ class Exemption:
 
 
 def _is_skippable(path: Path) -> bool:
-    return any(part in _SKIP_DIRS or part.startswith(".") for part in path.parts)
+    return any(part in _SKIP_DIRS for part in path.parts)
+
+
+def _is_test_name(name: str) -> bool:
+    """Both naming conventions. Shared so the scan and the derivation agree."""
+    return name.startswith("test_") or name.removesuffix(".py").endswith("_test")
 
 
 def _test_files(root: Path) -> list[str]:
@@ -278,7 +352,7 @@ def _test_files(root: Path) -> list[str]:
         relative = path.relative_to(root)
         if _is_skippable(relative):
             continue
-        if path.name.startswith("test_") or path.stem.endswith("_test"):
+        if _is_test_name(path.name):
             found.append(relative.as_posix())
     return sorted(found)
 
@@ -325,9 +399,14 @@ def _pytest_path_args(line: str) -> tuple[list[str], bool] | None:
     if declared:
         return _annotated(line[: declared.start()], declared.group(1))
     try:
-        return _invocation_args(shlex.split(line, comments=True))
+        tokens = shlex.split(line, comments=True)
     except ValueError:
         return None
+    invocation = _invocation_args(tokens)
+    if invocation is not None:
+        return invocation
+    script = _script_run(tokens)
+    return ([script], False) if script is not None else None
 
 
 def _invocation_args(tokens: list[str]) -> tuple[list[str], bool] | None:
@@ -342,6 +421,35 @@ def _invocation_args(tokens: list[str]) -> tuple[list[str], bool] | None:
         if any(token.split("=", 1)[0] in _NON_COLLECTING for token in rest):
             return None
         return _args_after(rest)
+    return None
+
+
+def _script_run(tokens: list[str]) -> str | None:
+    """The test file a direct ``python3 path/test_x.py`` invocation executes.
+
+    Only a test-named script counts. `python3 scripts/deploy.py` is a build
+    step, not a collection boundary, and reading it as one would mark a
+    directory collected on the strength of a script that runs no tests.
+    """
+    for index, token in enumerate(tokens):
+        if not _PYTHON.match(token.rsplit("/", 1)[-1]):
+            continue
+        prefix = [t.rsplit("/", 1)[-1] for t in tokens[:index]]
+        if any(t in _FOREIGN_RUNNERS or t in _NOT_AN_INVOCATION for t in prefix):
+            return None
+        for arg in tokens[index + 1 :]:
+            if arg in _SHELL_BREAKS:
+                return None
+            if arg.startswith("-"):
+                continue
+            # Python's FIRST positional is the script, and only it. Scanning the
+            # whole line for a test-named `.py` would read `python -m pyflakes
+            # .github/scripts/test_x.py` -- a lint step -- as proof that file
+            # runs. `python -m ...` and `python -c ...` land on a module name or
+            # a code string here and decline on their own.
+            name = PurePosixPath(arg).name
+            return arg if name.endswith(".py") and _is_test_name(name) else None
+        return None
     return None
 
 
@@ -647,7 +755,81 @@ def _self_test() -> int:
         workflow.write_text(original)
 
     _self_test_boundary(failures)
+    _self_test_dot_directories(failures)
     return report_self_test(failures)
+
+
+def _self_test_dot_directories(failures: list[str]) -> None:
+    """Factory#926: `.github/scripts/` is inside the boundary, `.venv/` is not.
+
+    The rule this replaced skipped every dot-prefixed path component, so five
+    real test files in factory-gitops were invisible to the scan -- one of them
+    had not run since Factory#711 and was found by hand. Narrowing the skip is
+    only half of it: those tests run as `python3 .github/scripts/test_X.py`, and
+    a derivation that only knows `pytest` turns one blind spot into five
+    registry entries.
+    """
+    with temp_repo() as root:
+        _pfactory_tree(root)
+        _registry(root, path="apps/backend/agents/test_refactoring.py")
+        helpers = root / ".github" / "scripts"
+        helpers.mkdir(parents=True)
+        (helpers / "test_cred_sync.py").write_text("assert True\n")
+        workflow = root / ".github" / "workflows" / "ci.yml"
+        steps = "jobs:\n  backend:\n    steps:\n      - run: |\n"
+        real = steps + "          pytest tests/ apps/web-server/tests/\n"
+        ran = real + steps + "          python3 .github/scripts/test_cred_sync.py\n"
+
+        expect(
+            failures,
+            run_check_text(root, workflow, real) == 1,
+            "a test file under .github/ is scanned, not skipped as a dot-directory",
+        )
+        expect(
+            failures,
+            run_check_text(root, workflow, ran) == 0,
+            "...and a direct `python3 <path>/test_x.py` run collects exactly that file",
+        )
+
+        # The deny-list must still skip what the old rule skipped. A vendored
+        # tree full of test files is the reason the rule existed at all.
+        vendored = root / ".venv" / "lib" / "site" / "pytest"
+        vendored.mkdir(parents=True)
+        (vendored / "test_vendored.py").write_text("assert True\n")
+        (root / ".mypy_cache" / "3.13").mkdir(parents=True)
+        (root / ".mypy_cache" / "3.13" / "test_cached.py").write_text("assert True\n")
+        expect(
+            failures,
+            run_check_text(root, workflow, ran) == 0,
+            ".venv/ and .mypy_cache/ are still skipped by name",
+        )
+
+        # The boundary is the FILE. Its neighbour in the same directory does
+        # not run, and a directory-shaped boundary would report it clean.
+        (helpers / "test_never_run.py").write_text("assert True\n")
+        expect(
+            failures,
+            run_check_text(root, workflow, ran) == 1,
+            "a script run collects that file, never its directory",
+        )
+        (helpers / "test_never_run.py").unlink()
+
+        # A script run only counts when the script is a test. Otherwise every
+        # `python3 scripts/deploy.py` step would declare a collection boundary.
+        for command, why in (
+            ("python3 scripts/deploy.py", "a non-test script is not a collection boundary"),
+            (
+                "python -m pyflakes .github/scripts/test_cred_sync.py",
+                "a `python -m` lint step over a test file is not a test run",
+            ),
+            ("python3 -c 'import sys'", "`python -c` runs no file"),
+            ("docker run img python3 .github/scripts/test_cred_sync.py", "a foreign runner"),
+        ):
+            expect(
+                failures,
+                run_check_text(root, workflow, real + steps + f"          {command}\n") == 1,
+                f"{why} leaves .github/scripts/test_cred_sync.py uncollected",
+            )
 
 
 def _self_test_boundary(failures: list[str]) -> None:

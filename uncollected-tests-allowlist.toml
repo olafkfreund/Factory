@@ -17,13 +17,9 @@
 #     directory nobody reviewed.
 #
 # Adding an entry is a reviewable diff. That is the point.
-
-[[allow]]
-path = "scripts/test_model_probe.py"
-reason = """
-Not uncollected in substance -- contracts.yml runs it as `python3 scripts/test_model_probe.py`, \
-deliberately, because it is a plain assert script with no pytest cases and no pytest dependency \
-(Factory#489). It is outside `pytest tests/ shared/factory-common/tests/` on purpose and it does \
-execute on every PR.
-"""
-issue = "Factory#489"
+#
+# Currently EMPTY. `scripts/test_model_probe.py` was the only entry: it read as
+# uncollected because contracts.yml runs it as `python3 scripts/test_model_probe.py`
+# and the derivation only understood `pytest` invocations. It now understands a
+# direct test-script run too (Factory#926), so the file is collected and its entry
+# is dead -- deleted here rather than left, by the first rule above.
