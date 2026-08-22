@@ -165,6 +165,21 @@ SECRET_CTX_HUB="gitleaks"
 # skipped`. Requiring the skipped one would wedge every PR.
 SECRET_CTX_GITOPS="pr-diff-scan"
 
+# The P0 container acceptance suite, required on the branch PRs actually land on
+# (Factory#814). PFactory#586 is the worked example for why: `docker (P0
+# acceptance)` went red on the causing PR twice, the PR merged anyway because the
+# gate was advisory, and `dev` shipped a container that could not start. The gate
+# did its job perfectly and changed nothing.
+#
+# Scoped to dev, matching PFactory. It DOES also report on main in TFactory and
+# AIFactory, but main receives sync merges whose checks already ran on dev, so
+# requiring it there buys nothing and adds a way to wedge a sync.
+#
+# Promoted only after measuring stability, per this issue's own advice: over the
+# last 12 commits on dev, P0 acceptance was 11/11 success in TFactory and 12/12
+# in AIFactory, zero failures. A flaky required check wedges every PR.
+ACCEPT_CTX="docker (P0 acceptance)"
+
 
 repo_config() {
   # Reset the per-branch override FIRST. These are globals set by a case arm,
@@ -184,13 +199,13 @@ repo_config() {
     # below, and for the same reason (#691): one CHECKS would PUT main's set
     # over dev and strip it again.
     PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX_PF"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # AIFactory's dev is its DEFAULT branch and carries three gates main does
     # not: the ratchet, the format check and the shared-baseline drift gate.
     # A single per-repo CHECKS could not express that, so `--apply` would have
     # PUT the two-check main set over dev and stripped all three (#691).
     # CHECKS_DEV is the per-branch override; unset means "same as CHECKS".
-    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs

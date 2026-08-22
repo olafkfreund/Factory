@@ -108,6 +108,13 @@ _GITLEAKS_HUB = "gitleaks"
 # success there and `full-history-scan` reports skipped.
 _GITLEAKS_GITOPS = "pr-diff-scan"
 
+# The P0 container acceptance suite, required on dev as of Factory#814.
+# PFactory#586 is why: it went red on the causing PR twice, the PR merged anyway
+# because the gate was advisory, and dev shipped a container that could not
+# start. Required on dev only -- main takes sync merges whose checks already ran
+# on dev, so requiring it there adds a wedge risk and buys nothing.
+_ACCEPT = "docker (P0 acceptance)"
+
 
 def _live_shaped(
     *,
@@ -336,7 +343,13 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "dev",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
+            [
+                "backend (ruff + pytest)",
+                "critical (fast PR gate)",
+                _ACCEPT,
+                _GITLEAKS,
+                _VCORE,
+            ],
             True,
             None,
             False,
@@ -357,6 +370,7 @@ def test_matching_live_response_compares_equal() -> None:
             "dev",
             [
                 "backend (ruff + pytest)",
+                _ACCEPT,
                 _VCORE,
                 "ratchet (ruff + mypy on changed Python)",
                 "ruff format --check (every Python directory)",
@@ -399,6 +413,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
     live = _live_shaped(
         contexts=[
             "backend (ruff + pytest)",
+            _ACCEPT,
             _VCORE,
             "ratchet (ruff + mypy on changed Python)",
             "ruff format --check (every Python directory)",
@@ -417,7 +432,13 @@ def test_unordered_contexts_compare_equal() -> None:
     # GitHub does not promise an order; a spurious diff would train people to
     # ignore the gate.
     live = _live_shaped(
-        contexts=[_VCORE, _GITLEAKS, "critical (fast PR gate)", "backend (ruff + pytest)"],
+        contexts=[
+            _VCORE,
+            _GITLEAKS,
+            _ACCEPT,
+            "critical (fast PR gate)",
+            "backend (ruff + pytest)",
+        ],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
@@ -492,7 +513,13 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
     reports -- the old per-repo script applied main's payload to dev.
     """
     live = _live_shaped(
-        contexts=["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
+        contexts=[
+            "backend (ruff + pytest)",
+            "critical (fast PR gate)",
+            _ACCEPT,
+            _VCORE,
+            _GITLEAKS,
+        ],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
