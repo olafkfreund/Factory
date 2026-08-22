@@ -269,6 +269,99 @@ def test_an_annotated_line_with_a_narrowing_flag_is_still_unknown(tmp_path: Path
     assert gate.run_check(tmp_path) == 2
 
 
+def _gitops_tree(root: Path, command: str = "") -> None:
+    """The factory-gitops shape (Factory#926): CI helper tests under `.github/`.
+
+    Four of that repo's five run as `python3 .github/scripts/test_X.py` and no
+    pytest appears in any of its workflows, so before this the whole repo read
+    as "no test files found -- ZERO items examined".
+    """
+    gate._pfactory_tree(root)
+    _register(root, "apps/backend/agents/test_refactoring.py")
+    helpers = root / ".github" / "scripts"
+    helpers.mkdir(parents=True)
+    (helpers / "test_cred_sync.py").write_text("assert True\n")
+    (root / ".github" / "workflows" / "ci.yml").write_text(
+        _STEPS
+        + "          pytest tests/ apps/web-server/tests/\n"
+        + (_STEPS + f"          {command}\n" if command else "")
+    )
+
+
+def test_a_test_file_under_dot_github_is_scanned(tmp_path: Path) -> None:
+    """The skip rule dropped every dot-prefixed component, `.github/` included.
+
+    Five real test files in factory-gitops were invisible to this gate; one had
+    not run since Factory#711 and was found by hand, not by the scan.
+    """
+    _gitops_tree(tmp_path)
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_a_direct_python_script_run_collects_that_file(tmp_path: Path) -> None:
+    """The mutation of the case above: one workflow line appears, nothing else.
+
+    Without this half, narrowing the skip only converts one blind spot into
+    five registry entries saying "covered, but the gate cannot see it".
+    """
+    _gitops_tree(tmp_path, "python3 .github/scripts/test_cred_sync.py")
+    assert gate.run_check(tmp_path) == 0
+    assert ".github/scripts/test_cred_sync.py" in gate._collected(tmp_path).paths
+
+
+def test_a_script_run_collects_the_file_and_not_its_directory(tmp_path: Path) -> None:
+    """The boundary is the exact file. A directory would be a false clean.
+
+    `test_cred_sync.py` runs; its neighbour does not, and must still be red.
+    """
+    _gitops_tree(tmp_path, "python3 .github/scripts/test_cred_sync.py")
+    (tmp_path / ".github" / "scripts" / "test_never_run.py").write_text("assert True\n")
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_a_non_test_script_is_not_a_collection_boundary(tmp_path: Path) -> None:
+    """`python3 scripts/deploy.py` is a build step, not evidence of coverage."""
+    _gitops_tree(tmp_path, "python3 .github/scripts/extract_all_embedded.py out")
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_a_lint_step_naming_a_test_file_is_not_a_test_run(tmp_path: Path) -> None:
+    """`python -m pyflakes .github/scripts/test_x.py` reads that file; it does not run it.
+
+    Only python's first positional is the script. Scanning the whole line for a
+    test-named `.py` would turn every lint step into proof of coverage.
+    """
+    _gitops_tree(tmp_path, "python -m pyflakes .github/scripts/test_cred_sync.py")
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_python_c_is_not_a_script_run(tmp_path: Path) -> None:
+    """`python -c` runs no file at all."""
+    _gitops_tree(tmp_path, "python3 -c 'import sys; sys.exit(0)'")
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_a_script_run_inside_docker_runs_the_images_tests(tmp_path: Path) -> None:
+    """Same false-clean shape the pytest half already refuses for `docker run`."""
+    _gitops_tree(tmp_path, "docker run img python3 .github/scripts/test_cred_sync.py")
+    assert gate.run_check(tmp_path) == 1
+
+
+def test_a_vendored_tree_of_tests_is_still_skipped(tmp_path: Path) -> None:
+    """Why the skip rule existed. A deny-list must not readmit `.venv/`.
+
+    The mutation pair for the dot-directory cases: without it they would pass
+    just as well if the skip had been deleted outright, and every repo with a
+    checked-out virtualenv would report thousands of uncollected files.
+    """
+    _gitops_tree(tmp_path, "python3 .github/scripts/test_cred_sync.py")
+    for cache in (".venv/lib/site-packages/pytest", ".mypy_cache/3.13", ".ruff_cache", ".git"):
+        planted = tmp_path / cache
+        planted.mkdir(parents=True, exist_ok=True)
+        (planted / "test_vendored.py").write_text("assert True\n")
+    assert gate.run_check(tmp_path) == 0
+
+
 def test_the_hub_tree_is_accounted_for() -> None:
     """The gate's verdict on this repository, run by the ordinary PR suite.
 
