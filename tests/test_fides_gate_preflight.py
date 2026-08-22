@@ -39,7 +39,7 @@ import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -196,7 +196,9 @@ def local_release(tmp_path: Path) -> Iterator[_LocalRelease]:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        host, port = server.server_address[0], server.server_address[1]
+        # server_address is typed loosely enough that mypy --strict will not let
+        # it be interpolated; for an AF_INET server it is (host, port).
+        host, port = cast("tuple[str, int]", server.server_address)
         yield _LocalRelease(
             base_url=f"http://{host}:{port}",
             version=version,
