@@ -13,14 +13,33 @@ against the live host), so the step reported success having installed nothing.
 Every test here is the mutation of one guard: remove the guard and the test
 fails. Tests that would pass against a preflight which checks nothing are worse
 than no tests, because they certify the certifier.
+
+The download tests serve the tarball from a LOOPBACK HTTP SERVER built by a
+fixture (Factory#928). They used to fetch the real GitHub release on every hub
+PR, which made them flaky *and* false: a 504 from the release host produced the
+same exit status (2) as a rejected digest, so the only thing separating "the
+supply-chain check refused a bad artefact" from "the artefact never arrived"
+was a substring of stderr. Served locally, a checksum mismatch is the only way
+to reach the mismatch branch, and the script now gives the two failures
+DISTINCT exit statuses (3 download, 4 digest) which these tests assert in both
+directions.
 """
 
 from __future__ import annotations
 
+import functools
+import hashlib
+import http.server
+import io
 import os
 import shutil
 import subprocess
+import tarfile
+import threading
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,6 +47,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO_ROOT / "scripts" / "fides_gate_preflight.sh"
 
 _SETTINGS = ("FIDES_SERVER_URL", "FIDES_API_TOKEN", "FIDES_FLOW_ID")
+
+# The script's documented statuses. 3 and 4 exist so that "the tarball never
+# arrived" and "the tarball arrived and was rejected" are distinguishable on the
+# status channel rather than by reading prose out of stderr (Factory#928).
+_EXIT_OK = 0
+_EXIT_SETTING_MISSING = 1
+_EXIT_INSTALL_FAILED = 2
+_EXIT_DOWNLOAD_FAILED = 3
+_EXIT_DIGEST_MISMATCH = 4
 
 # The real v0.4.0 linux_amd64 digest, pinned in the script. Duplicated here on
 # purpose: if someone changes the pin, this test fails and they must say so.
@@ -41,6 +69,12 @@ def _run(
     bindir: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if k not in _SETTINGS}
+    # A proxy configured for the machine would swallow the loopback fetch and
+    # turn every local-release test into a transport error -- i.e. back into the
+    # failure mode this file exists to stop conflating with a digest rejection.
+    for proxy_var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        env.pop(proxy_var, None)
+    env["NO_PROXY"] = env["no_proxy"] = "*"
     # Strip any real CLI from PATH: if `fides` is already installed on the
     # machine running the tests, the script short-circuits and every install
     # assertion below would pass without exercising the install at all.
@@ -109,28 +143,151 @@ def test_no_setting_value_ever_reaches_the_output(tmp_path: Path) -> None:
     assert canary not in proc.stderr
 
 
+@dataclass(frozen=True)
+class _LocalRelease:
+    """A release tarball this test process built, served from loopback."""
+
+    base_url: str
+    version: str
+    sha256: str
+    root: Path
+
+
+def _build_tarball(dest: Path, version: str) -> str:
+    """Write a tarball shaped like the real release and return its sha256.
+
+    The script unpacks into a versioned directory and takes the single
+    user-executable file named ``fides``, so the fixture has to reproduce that
+    shape or the success path would fail for the wrong reason.
+    """
+    payload = b"#!/bin/sh\necho fides " + version.encode() + b"\n"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(dest, "w:gz") as tar:
+        info = tarfile.TarInfo(f"fides_{version}_linux_amd64/fides")
+        info.size = len(payload)
+        info.mode = 0o755
+        tar.addfile(info, io.BytesIO(payload))
+        readme = tarfile.TarInfo(f"fides_{version}_linux_amd64/README.md")
+        readme.size = 0
+        readme.mode = 0o644
+        tar.addfile(readme, io.BytesIO(b""))
+    return hashlib.sha256(dest.read_bytes()).hexdigest()
+
+
+class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+        """Silence the per-request line; pytest output is not a web log."""
+
+
+@pytest.fixture
+def local_release(tmp_path: Path) -> Iterator[_LocalRelease]:
+    """Serve a self-built release over loopback HTTP.
+
+    Real HTTP, not ``file://``: the script relies on curl's ``-f`` turning an
+    HTTP error into a non-zero status, and only a real server exercises that.
+    """
+    version = "v9.9.9-local"
+    root = tmp_path / "release-root"
+    tarball = root / version / f"fides_{version}_linux_amd64.tar.gz"
+    digest = _build_tarball(tarball, version)
+
+    handler = functools.partial(_QuietHandler, directory=str(root))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address[0], server.server_address[1]
+        yield _LocalRelease(
+            base_url=f"http://{host}:{port}",
+            version=version,
+            sha256=digest,
+            root=root,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _release_env(release: _LocalRelease, **overrides: str) -> dict[str, str | None]:
+    env = _all_present()
+    env.update(
+        {
+            "FIDES_CLI_BASE_URL": release.base_url,
+            "FIDES_CLI_VERSION": release.version,
+            "FIDES_CLI_SHA256": release.sha256,
+        }
+    )
+    env.update(overrides)
+    return env
+
+
 @pytest.mark.skipif(shutil.which("curl") is None, reason="needs curl")
-def test_a_download_that_404s_is_an_error_not_a_silent_pass(tmp_path: Path) -> None:
+def test_a_locally_served_release_installs_and_is_runnable(
+    local_release: _LocalRelease, tmp_path: Path
+) -> None:
+    """The other direction (rule 4.9), now without touching the network.
+
+    Every failure test below would pass against a script that installs nothing;
+    this is the one that says the happy path still works. It also proves the
+    loopback fixture actually serves a fetchable, digest-matching tarball, so a
+    non-zero status in the tests below is about the script, not the harness.
+    """
+    proc = _run(_release_env(local_release), tmp_path)
+    assert proc.returncode == _EXIT_OK, proc.stderr
+    installed = tmp_path / "bin" / "fides"
+    assert installed.exists()
+    assert os.access(installed, os.X_OK)
+
+
+@pytest.mark.skipif(shutil.which("curl") is None, reason="needs curl")
+def test_a_download_that_404s_is_an_error_not_a_silent_pass(
+    local_release: _LocalRelease, tmp_path: Path
+) -> None:
     """THE defect this script exists for.
 
     Piped into `sh`, a 404 left the step green with nothing installed. Fetched
-    to a file, the HTTP error is the script's exit status.
+    to a file, the HTTP error is the script's exit status -- and it is the
+    DOWNLOAD status, distinct from the digest one, so a transport failure can
+    never be mistaken for evidence that the digest check ran.
     """
-    proc = _run(_all_present() | {"FIDES_CLI_VERSION": "v0.0.0-does-not-exist"}, tmp_path)
-    assert proc.returncode == 2
+    proc = _run(
+        _release_env(local_release, FIDES_CLI_VERSION="v0.0.0-does-not-exist"),
+        tmp_path,
+    )
+    assert proc.returncode == _EXIT_DOWNLOAD_FAILED
+    assert proc.returncode != _EXIT_DIGEST_MISMATCH
     assert "could not download" in proc.stderr
+    assert "checksum mismatch" not in proc.stderr
     assert not (tmp_path / "bin" / "fides").exists()
 
 
 @pytest.mark.skipif(shutil.which("curl") is None, reason="needs curl")
-def test_a_digest_mismatch_refuses_to_install(tmp_path: Path) -> None:
+def test_a_digest_mismatch_refuses_to_install(local_release: _LocalRelease, tmp_path: Path) -> None:
     """The digest is pinned in the script, NOT read from the .sha256 published
     beside the tarball. A checksum served from the same place as the artefact
-    proves transfer integrity, not provenance -- it moves with the artefact."""
-    proc = _run(_all_present() | {"FIDES_CLI_SHA256": "00" * 32}, tmp_path)
-    assert proc.returncode == 2
+    proves transfer integrity, not provenance -- it moves with the artefact.
+
+    The tarball here is served from loopback and downloads successfully, so the
+    ONLY way to reach exit 4 is for the digest comparison to have run and
+    rejected it. That is what Factory#928 was about: this assertion used to be
+    satisfiable by a 504 from the release host.
+    """
+    proc = _run(_release_env(local_release, FIDES_CLI_SHA256="00" * 32), tmp_path)
+    assert proc.returncode == _EXIT_DIGEST_MISMATCH
+    assert proc.returncode != _EXIT_DOWNLOAD_FAILED
     assert "checksum mismatch" in proc.stderr
+    assert "could not download" not in proc.stderr
     assert not (tmp_path / "bin" / "fides").exists()
+
+
+def test_the_two_download_failures_have_distinct_documented_statuses() -> None:
+    """A gate whose failure modes share an exit status can only be told apart by
+    prose, and prose is not a status channel (Factory#928, Factory#832)."""
+    assert _EXIT_DOWNLOAD_FAILED != _EXIT_DIGEST_MISMATCH
+    text = _SCRIPT.read_text()
+    assert f"#        {_EXIT_DOWNLOAD_FAILED} the download did not complete" in text
+    assert f"#        {_EXIT_DIGEST_MISMATCH} the download completed and its digest did NOT" in text
 
 
 def test_the_pinned_digest_is_the_one_the_script_uses() -> None:
@@ -164,8 +321,12 @@ def test_the_installer_is_never_piped_into_a_shell() -> None:
     reason="hits github.com; set FIDES_PREFLIGHT_NETWORK_TEST=1 to run",
 )
 def test_the_real_release_installs_and_is_runnable(tmp_path: Path) -> None:
-    """The other direction (rule 4.9): the failure tests above would all pass
-    against a script that never installs anything."""
+    """The REAL release, opt-in.
+
+    The local-release test above carries the rule 4.9 duty on every PR; this one
+    is the periodic check that the pinned digest still matches what GitHub
+    serves. It is the only test in this file that touches the network, and it
+    does not run unless asked."""
     proc = _run(_all_present(), tmp_path)
     assert proc.returncode == 0, proc.stderr
     installed = tmp_path / "bin" / "fides"
