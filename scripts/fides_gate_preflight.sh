@@ -34,8 +34,22 @@
 #   - `command -v fides` is ASSERTED, not assumed. An install that installed
 #     nothing is red.
 #
+# The exit statuses of the two download failure modes are DISTINCT (Factory#928).
+# They used to share exit 2, so "the digest was rejected" and "the tarball never
+# arrived" were one stderr substring apart from being indistinguishable: a
+# transient 504 from the release host satisfied a test that meant to observe a
+# checksum rejection. A caller -- or a test -- that wants to know the
+# supply-chain check actually ran must be able to read that off the status
+# channel, not off prose.
+#
 # Usage: scripts/fides_gate_preflight.sh [--bindir DIR]
-# Exit:  0 ready (fides on PATH), 1 a setting is missing, 2 the install failed.
+# Exit:  0 ready (fides on PATH)
+#        1 a setting is missing
+#        2 the install failed after a verified download (bad archive, or
+#          nothing runnable on PATH afterwards)
+#        3 the download did not complete (transport or HTTP error) -- the
+#          digest check never ran
+#        4 the download completed and its digest did NOT match the pin
 set -euo pipefail
 
 # Pinned CLI release. Bump both together; the digest is of the linux_amd64
@@ -43,12 +57,18 @@ set -euo pipefail
 FIDES_CLI_VERSION="${FIDES_CLI_VERSION:-v0.4.0}"
 FIDES_CLI_SHA256="${FIDES_CLI_SHA256:-db2bca7fb10553cd9b526089db65d1bd3f19bf08680d6fdcd99d9c2b12a89d6a}"
 FIDES_CLI_REPO="${FIDES_CLI_REPO:-olafkfreund/fides}"
+# Where the release tarballs live. Overridable so the tests can serve a tarball
+# they built themselves from loopback, and exercise this code path with no
+# network at all. The DIGEST is not overridable in the same spirit: it stays
+# pinned HERE (see above), and the tests that set FIDES_CLI_SHA256 do so to make
+# the pin WRONG on purpose, never to make a fetched checksum authoritative.
+FIDES_CLI_BASE_URL="${FIDES_CLI_BASE_URL:-https://github.com/${FIDES_CLI_REPO}/releases/download}"
 
 BINDIR="${HOME}/.local/bin"
 while [ $# -gt 0 ]; do
   case "$1" in
     --bindir) BINDIR="${2:-}"; shift ;;
-    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,52p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -89,7 +109,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 tarball="fides_${FIDES_CLI_VERSION}_linux_amd64.tar.gz"
-url="https://github.com/${FIDES_CLI_REPO}/releases/download/${FIDES_CLI_VERSION}/${tarball}"
+url="${FIDES_CLI_BASE_URL}/${FIDES_CLI_VERSION}/${tarball}"
 
 echo "downloading ${url}"
 # -f makes an HTTP error a curl failure; -o writes a file rather than piping to
@@ -97,7 +117,8 @@ echo "downloading ${url}"
 # by a downstream `sh` that exits 0 on empty stdin.
 if ! curl -sSfL --retry 3 --retry-delay 2 -o "${tmp}/${tarball}" "$url"; then
   echo "ERROR: could not download the Fides CLI from ${url}" >&2
-  exit 2
+  echo "       The digest check below did NOT run; nothing has been verified." >&2
+  exit 3
 fi
 
 echo "${FIDES_CLI_SHA256}  ${tmp}/${tarball}" | sha256sum -c - || {
@@ -105,7 +126,7 @@ echo "${FIDES_CLI_SHA256}  ${tmp}/${tarball}" | sha256sum -c - || {
   echo "       Expected ${FIDES_CLI_SHA256}." >&2
   echo "       Refusing to install. If the release was re-cut, verify the new" >&2
   echo "       digest deliberately and update FIDES_CLI_SHA256 in this script." >&2
-  exit 2
+  exit 4
 }
 
 tar -xzf "${tmp}/${tarball}" -C "$tmp"
