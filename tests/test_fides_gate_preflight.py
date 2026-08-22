@@ -108,7 +108,12 @@ def _all_present(**overrides: str) -> dict[str, str | None]:
 @pytest.mark.parametrize("missing", _SETTINGS)
 def test_each_missing_setting_fails_closed(missing: str, tmp_path: Path) -> None:
     proc = _run(_all_present(**{missing: None}), tmp_path)  # type: ignore[arg-type]
-    assert proc.returncode == 1
+    assert proc.returncode == _EXIT_SETTING_MISSING
+    # Both ways, for the same reason as the download statuses below: "I could
+    # not reach my input" must not be readable as "I ran and the install
+    # failed". A caller that retries install failures would retry forever on a
+    # missing secret.
+    assert proc.returncode not in (_EXIT_OK, _EXIT_INSTALL_FAILED)
     assert f"MISSING: {missing}" in proc.stderr
 
 
@@ -121,7 +126,8 @@ def test_an_empty_setting_is_missing_not_present(empty: str, tmp_path: Path) -> 
     report whatever the server says to an unauthenticated request.
     """
     proc = _run(_all_present(**{empty: ""}), tmp_path)
-    assert proc.returncode == 1
+    assert proc.returncode == _EXIT_SETTING_MISSING
+    assert proc.returncode not in (_EXIT_OK, _EXIT_INSTALL_FAILED)
     assert f"MISSING: {empty}" in proc.stderr
 
 
@@ -153,20 +159,25 @@ class _LocalRelease:
     root: Path
 
 
-def _build_tarball(dest: Path, version: str) -> str:
+def _build_tarball(dest: Path, version: str, *, include_cli: bool = True) -> str:
     """Write a tarball shaped like the real release and return its sha256.
 
     The script unpacks into a versioned directory and takes the single
     user-executable file named ``fides``, so the fixture has to reproduce that
     shape or the success path would fail for the wrong reason.
+
+    ``include_cli=False`` builds a tarball that downloads cleanly and matches
+    its digest but carries no CLI -- the one way to reach the post-verification
+    install failure.
     """
-    payload = b"#!/bin/sh\necho fides " + version.encode() + b"\n"
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(dest, "w:gz") as tar:
-        info = tarfile.TarInfo(f"fides_{version}_linux_amd64/fides")
-        info.size = len(payload)
-        info.mode = 0o755
-        tar.addfile(info, io.BytesIO(payload))
+        if include_cli:
+            payload = b"#!/bin/sh\necho fides " + version.encode() + b"\n"
+            info = tarfile.TarInfo(f"fides_{version}_linux_amd64/fides")
+            info.size = len(payload)
+            info.mode = 0o755
+            tar.addfile(info, io.BytesIO(payload))
         readme = tarfile.TarInfo(f"fides_{version}_linux_amd64/README.md")
         readme.size = 0
         readme.mode = 0o644
@@ -281,6 +292,53 @@ def test_a_digest_mismatch_refuses_to_install(local_release: _LocalRelease, tmp_
     assert "checksum mismatch" in proc.stderr
     assert "could not download" not in proc.stderr
     assert not (tmp_path / "bin" / "fides").exists()
+
+
+@pytest.mark.skipif(shutil.which("curl") is None, reason="needs curl")
+def test_an_archive_without_the_cli_is_an_install_failure_not_a_success(
+    local_release: _LocalRelease, tmp_path: Path
+) -> None:
+    """A verified download is not an install.
+
+    This tarball downloads cleanly AND matches its pinned digest -- the two
+    supply-chain checks both pass -- and still leaves nothing runnable. That is
+    the shape the whole script exists for (Factory#642: the status channel
+    reported on the process, not on the artefact), and it is the only state
+    behind exit 2, so it must not be reported as either download status.
+    """
+    version = "v9.9.9-no-cli"
+    tarball = local_release.root / version / f"fides_{version}_linux_amd64.tar.gz"
+    digest = _build_tarball(tarball, version, include_cli=False)
+
+    proc = _run(
+        _release_env(local_release, FIDES_CLI_VERSION=version, FIDES_CLI_SHA256=digest),
+        tmp_path,
+    )
+    assert proc.returncode == _EXIT_INSTALL_FAILED
+    # Both ways: an install that failed AFTER the digest verified must not be
+    # readable as the digest having been rejected, nor as the tarball never
+    # arriving. Both of those would send someone to re-cut a release that is
+    # fine.
+    assert proc.returncode not in (_EXIT_OK, _EXIT_DOWNLOAD_FAILED, _EXIT_DIGEST_MISMATCH)
+    assert "contained no 'fides' executable" in proc.stderr
+    assert "checksum mismatch" not in proc.stderr
+    assert "could not download" not in proc.stderr
+    assert not (tmp_path / "bin" / "fides").exists()
+
+
+def test_an_unknown_argument_is_rejected_rather_than_ignored() -> None:
+    """The other exit-2 site. An unrecognised flag must not be silently dropped:
+    a `--bindir` typo that installs to the default while the caller believes
+    otherwise is how a green step leaves nothing where it is looked for."""
+    proc = subprocess.run(  # noqa: S603
+        ["bash", str(_SCRIPT), "--no-such-flag"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == _EXIT_INSTALL_FAILED
+    assert proc.returncode not in (_EXIT_OK, _EXIT_SETTING_MISSING)
+    assert "unknown arg: --no-such-flag" in proc.stderr
 
 
 def test_the_two_download_failures_have_distinct_documented_statuses() -> None:
