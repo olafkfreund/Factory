@@ -972,12 +972,13 @@ def test_trivy_is_not_required_anywhere() -> None:
     wedge. This pins the omission so a future reader does not "finish the job"
     by adding it without first moving Trivy onto the PR trigger.
     """
+    table = _repo_table()
     for repo in _all_repos():
-        for branch in ("main", "dev"):
-            try:
-                contexts = _declared_contexts(repo, branch)
-            except Exception:  # noqa: BLE001 — branch not declared for this repo
-                continue
+        # Iterate the branches the script actually declares rather than
+        # guessing main/dev and swallowing the miss -- a swallowed miss would
+        # silently examine nothing and pass.
+        for branch in table[repo]["BRANCHES"].split():
+            contexts = _declared_contexts(repo, branch)
             assert not [c for c in contexts if "trivy" in c.lower()], (
                 f"{repo}@{branch} requires a Trivy context, but Trivy does not run "
                 "on pull_request in any repo, so it can never report"
