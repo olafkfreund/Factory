@@ -121,6 +121,20 @@ return success while building nothing**:
 # 3. clear the stage record     UPDATE cards SET status='backlog', stage_runs='{}' WHERE card_key=...
 ```
 
+`scripts/reset-demo.sh` does all three, in the order that works, and verifies
+the result rather than assuming it:
+
+```bash
+CARDS="FCT-1 FCT-2 FCT-3 FCT-4" ./scripts/reset-demo.sh
+```
+
+Two things it encodes that are easy to get wrong by hand. **Producers first,
+CFactory last** -- CFactory polls its producers, so clearing it first just
+repopulates it. And it clears `job_states`, because a stale row there
+resurrects a deleted task through the reconcile loop. It deliberately does
+*not* delete the `aifactory/*` branches: those hold the only evidence a
+previous run built anything, and a re-run overwrites them anyway.
+
 The first of those is the one that bites. A dispatch that returns `200` with a
 `task_id` looks identical whether it started a build or adopted a finished one.
 
