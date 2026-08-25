@@ -156,7 +156,14 @@ git rev-list --count origin/main..origin/aifactory/<spec-id>   # 0 means nothing
 | `committed_count` | > 0 | 0 means no test was committed, so no lane ran |
 | `flagged_count` | 0 | every flagged test is one the evaluator would not vouch for |
 | `ac_fidelity.verified_fraction` | `n/n` | `0/n` means no acceptance criterion was exercised |
-| `lane_progress` | lanes not `pending` | all `pending` means nothing executed |
+| `lane_progress` | lanes `executed` | `error` is a lane that could not run; `pending` is one nothing reached |
+
+That `lane_progress` row was wrong in the first edition of this guide, which
+said all-`pending` meant nothing executed. It meant nothing at all: the field
+was written `pending` by two initialisers and never advanced, so it read
+identically for a clean run and a dead one. TFactory#1161 makes it say
+something. On a run from before that landed, ignore the field and use
+`committed_count` and `ac_fidelity`, which were always real.
 
 `triager_warnings` states it plainly when nothing was verified:
 `"0/8 acceptance criteria verified - no committed test exercises any
@@ -187,8 +194,10 @@ Every one of these has happened:
 - **`skip_planning`** is set for every low- and medium-tier card, so no plan and
   no `environment` manifest is written. Anything keyed off that manifest is
   inert for those cards. Run a card at a tier that plans if you need it.
-- **The browser lane** needs the repo to carry its own `flake.nix`; the
-  contract's environment block is absent under `skip_planning`.
+- **The browser lane** needed the repo to carry its own `flake.nix`, because
+  the contract's environment block is absent under `skip_planning`. TFactory#1161
+  gives the lane a generated browser flake when there is neither, so a repo
+  without one is no longer a dead end. A repo-owned flake still wins.
 
 ## Cleaning up between demos
 
