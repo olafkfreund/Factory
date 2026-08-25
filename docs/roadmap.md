@@ -199,6 +199,12 @@ the silent-fallback sweep described above.
 
 ## Next — seams beyond GitHub
 
+- **Planning from observed infrastructure**
+  ([RFC-0024](rfc/0024-planning-from-observed-infrastructure.md)) — RFC-0013 made
+  planning deployment-aware from IaC FILES; this reads the account itself, so a
+  plan can cite the queue that already exists instead of proposing a new one. The
+  credential broker already exists in PFactory and nothing in the planner imports
+  it. Strictly read-only, denied by IAM rather than by code, egress off by default.
 - **Jira and Bitbucket** ([RFC-0022](rfc/0022-work-item-and-code-seams.md),
   epic #392) — splitting the *work-item* seam from the *code* seam, so the
   factory can plan against a Jira board while coding against a different host.
