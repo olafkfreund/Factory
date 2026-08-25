@@ -199,6 +199,13 @@ the silent-fallback sweep described above.
 
 ## Next — seams beyond GitHub
 
+- **Repository onboarding at scale**
+  ([RFC-0023](rfc/0023-repository-onboarding-at-scale.md)) — one action to
+  onboard every repo in an organisation, one identity mapped once instead of
+  four maintained by hand, and continuous reconciliation so drift is detected
+  rather than discovered when a dispatch silently does nothing. GitHub first,
+  with the account-scope seam shaped so GitLab's nested groups and Azure
+  DevOps's mandatory project level are not retrofits.
 - **Jira and Bitbucket** ([RFC-0022](rfc/0022-work-item-and-code-seams.md),
   epic #392) — splitting the *work-item* seam from the *code* seam, so the
   factory can plan against a Jira board while coding against a different host.
