@@ -18,12 +18,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from nix_provisioner import generate_flake  # noqa: E402
+from nix_provisioner import generate_flake
 
 
-def _flake(**env) -> str:
+def _flake(**env: object) -> str:
     env.setdefault("provisioning", {"method": "nix", "generated": True})
-    return generate_flake(env)
+    flake: str = generate_flake(env)
+    return flake
 
 
 def test_jest_is_added_when_implied() -> None:
