@@ -446,12 +446,7 @@ def _python_libs(m: Manifest, project_dir=None) -> list[str]:
     # An explicit mention in the commands still pulls the stack in, so a project
     # that really uses it is unaffected -- as is any Python project with a
     # browser lane, which is what this clause was for.
-    if (
-        "uvicorn" in hay
-        or "fastapi" in hay
-        or "httpx" in hay
-        or (_needs_browser(m) and py_harness)
-    ):
+    if "uvicorn" in hay or "fastapi" in hay or "httpx" in hay or (_needs_browser(m) and py_harness):
         libs += ["fastapi", "uvicorn", "httpx"]
     if project_dir is not None:
         libs += _deps_from_pyproject(project_dir)
