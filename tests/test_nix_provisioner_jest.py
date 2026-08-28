@@ -21,6 +21,7 @@ setup (nix_env.py), which is why there is no jest attribute to assert here.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -80,3 +81,33 @@ def test_a_flake_with_no_jest_is_unchanged() -> None:
 
     assert "jest" not in f
     assert "nodejs" not in f
+
+
+# ── harness-provided tokens (Factory#1007 follow-up) ────────────────────────
+#
+# `pytest`, `pip` and `python` are trigger tokens exactly as `jest` is: the
+# Python harness supplies all three through `withPackages`, and none is a
+# top-level nixpkgs attr. `pkgs.pytest` does not exist -- nixpkgs answers
+# "Did you mean btest, cpptest, evtest" -- so emitting it failed the WHOLE
+# flake eval rather than omitting one package.
+#
+# A manifest naming `pytest` in system_packages is the most obvious thing a
+# planner writes for a Python lane, which is what made this expensive.
+
+
+def test_harness_provided_tokens_are_not_emitted_as_attrs() -> None:
+    # Matched on a WORD BOUNDARY, not as a substring: the flake legitimately
+    # contains `pkgs.python313.withPackages`, and a plain `"pkgs.python" in f`
+    # matches that too -- reporting a failure the code does not have.
+    for token in ("pytest", "pip", "python"):
+        f = _flake(system_packages=[token])
+        assert not re.search(rf"pkgs\.{token}\b(?!\d)", f), (
+            f"pkgs.{token} is not a nixpkgs attr; emitting it fails the flake eval"
+        )
+
+
+def test_pytest_still_reaches_the_shell_through_withpackages() -> None:
+    """Dropping the attr must not drop the tool: the harness still provides it."""
+    f = _flake(system_packages=["pytest"], language="python")
+
+    assert 'p."pytest"' in f
