@@ -8,7 +8,15 @@ stability=error while the tests themselves were correct and matched the
 contracted API; lane_progress read "unit: error". It looked like flakiness; it
 was total.
 
-Giving the lane a Job is only half the fix -- the dev shell has to contain jest.
+Giving the lane a Job is only half the fix -- the shell has to be able to RUN
+jest. It does not get jest from nixpkgs: the `nodePackages` set was removed on
+2026-03-03 and the attribute now throws, so emitting it failed the whole flake
+eval rather than just omitting a package. These tests previously asserted
+`nodePackages.jest` was present, which pinned exactly that broken output and
+stayed green while every jest flake failed to evaluate.
+
+What the flake owes the lane is node. The runner is installed from npm at lane
+setup (nix_env.py), which is why there is no jest attribute to assert here.
 """
 
 from __future__ import annotations
@@ -32,8 +40,11 @@ def test_jest_is_added_when_implied() -> None:
     lane: the manifest never names the attribute path."""
     f = _flake(system_packages=["jest"])
 
-    assert "nodePackages.jest" in f
     assert "nodejs_22" in f
+    # The removed set must never come back. It does not fail loudly -- the
+    # attribute throws at eval time, so the symptom is a dead shell, not a
+    # missing binary.
+    assert "nodePackages" not in f
 
 
 def test_a_jest_only_flake_does_not_drag_in_playwright() -> None:
@@ -51,7 +62,7 @@ def test_node_is_declared_once_when_both_lanes_are_implied() -> None:
     f = _flake(system_packages=["jest", "chromium"])
 
     assert f.count("nodejs_22") == 1
-    assert "nodePackages.jest" in f
+    assert "nodePackages" not in f
     assert "playwright-test" in f
 
 
