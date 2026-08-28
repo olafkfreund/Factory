@@ -302,6 +302,20 @@ _DROP_SYSTEM_PKGS = {
     # runner itself comes from npm at lane setup, because nixpkgs has no jest
     # attribute to name (see the jest block in generate_flake).
     "jest",
+    # The Python harness already supplies all three via `withPackages` a few
+    # lines below, and NONE of them is a top-level nixpkgs attr -- `pkgs.pytest`
+    # does not exist (nixpkgs suggests "btest, cpptest, evtest"), so emitting it
+    # failed the WHOLE flake eval, not just that package. A manifest naming
+    # `pytest` in system_packages is the most obvious thing a planner writes for
+    # a Python lane, and it produced a dev shell that could not be realised.
+    #
+    # Found by the generated-flake evaluation gate in factory-runners, on its
+    # first run. Same defect class as the `nodePackages.jest` emission
+    # (Factory#1007) and invisible for the same reason: the unit tests assert on
+    # the flake's TEXT, and nothing evaluated one.
+    "pytest",
+    "pip",
+    "python",
 }
 
 
