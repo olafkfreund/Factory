@@ -148,6 +148,11 @@ def test_every_gate_is_covered_here_or_named_as_exempt() -> None:
     blind spot by exactly the amount nobody notices.
     """
     found = {path.name for path in sorted(_SCRIPTS.glob("check_*.py"))}
+    # An empty scan already fails the equality below, but it reports "a gate is
+    # neither asserted nor exempt: []" -- naming nothing, and sending the reader
+    # to look for a missing gate when the scan itself is what broke. Diagnose it
+    # here instead (ported from TFactory#1248).
+    assert found, "the registry scan came back empty — the scan is broken, not the repo"
     assert found == set(_COVERED) | set(_EXEMPT), (
         "a gate under scripts/ is neither asserted here nor named as exempt: "
         f"{sorted(found - set(_COVERED) - set(_EXEMPT))}"
