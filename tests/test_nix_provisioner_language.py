@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _provisioner_helpers import flake_for as _flake, has_attr as _has_attr
-from nix_provisioner import ProvisionError
+from nix_provisioner import _GO_ATTR, ProvisionError
 
 # ── the declared toolchains ─────────────────────────────────────────────────
 
@@ -130,8 +130,6 @@ def test_every_pinned_go_minor_names_an_attr_that_exists() -> None:
     was actually violated: the table must not name a minor the fallback would
     have handled better, and every value must look like a real versioned attr.
     """
-    from nix_provisioner import _GO_ATTR
-
     assert _GO_ATTR, "the table must not be empty; that would silently drop pins"
     for minor, attr in _GO_ATTR.items():
         assert attr == "go_" + minor.replace(".", "_"), (
