@@ -34,6 +34,7 @@ detection is indistinguishable from a check nobody wrote.
 
 from __future__ import annotations
 
+import ast
 import datetime
 import re
 import shutil
@@ -151,8 +152,17 @@ def test_every_gate_is_covered_here_or_named_as_exempt() -> None:
         "a gate under scripts/ is neither asserted here nor named as exempt: "
         f"{sorted(found - set(_COVERED) - set(_EXEMPT))}"
     )
-    for gate_name, case in _COVERED.items():
-        assert case in Path(__file__).read_text(), f"{gate_name} names a case that does not exist"
+    # `case in <this file's text>` was ALWAYS true: the string being searched
+    # for is the dict literal a few lines up, in the file being read. Parse for
+    # real function definitions instead, so a registered name that points at no
+    # case is caught (ported from TFactory#1248).
+    defined = {
+        node.name
+        for node in ast.parse(Path(__file__).read_text()).body
+        if isinstance(node, ast.FunctionDef)
+    }
+    missing = {gate: case for gate, case in _COVERED.items() if case not in defined}
+    assert not missing, f"registered cases that do not exist: {missing}"
 
 
 def test_verification_core_gate_is_honest(
