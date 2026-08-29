@@ -34,13 +34,13 @@ detection is indistinguishable from a check nobody wrote.
 
 from __future__ import annotations
 
+import ast
 import datetime
 import re
 import shutil
 import subprocess
 import time
 from collections.abc import Callable
-import ast
 from pathlib import Path
 
 # scripts/ is put on sys.path by tests/conftest.py.
