@@ -30,34 +30,16 @@ binary the lane needs, which is exactly this bug.
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from nix_provisioner import ProvisionError, generate_flake
-
-
-def _flake(**env: object) -> str:
-    env.setdefault("provisioning", {"method": "nix", "generated": True})
-    flake: str = generate_flake(env)
-    return flake
-
-
-def _has_attr(flake: str, attr: str) -> bool:
-    """Word-boundary attr match.
-
-    A plain `"pkgs.python" in flake` matches the legitimate `pkgs.python313`,
-    and `"pkgs.dotnet"` matches `pkgs.dotnet-sdk`. Both mistakes were made on
-    this component this week, in both directions -- a false pass and a false
-    fail. `[\\w-]` excludes the digits AND the hyphen, so `pkgs.dotnet` does not
-    match `pkgs.dotnet-sdk` while `pkgs.dotnet-sdk` still matches itself.
-    """
-    return re.search(rf"pkgs\.{re.escape(attr)}(?![\w-])", flake) is not None
-
+from _provisioner_helpers import flake_for as _flake, has_attr as _has_attr
+from nix_provisioner import ProvisionError
 
 # ── the declared toolchains ─────────────────────────────────────────────────
 

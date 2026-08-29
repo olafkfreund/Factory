@@ -25,15 +25,9 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from nix_provisioner import generate_flake
-
-
-def _flake(**env: object) -> str:
-    env.setdefault("provisioning", {"method": "nix", "generated": True})
-    flake: str = generate_flake(env)
-    return flake
+from _provisioner_helpers import flake_for as _flake
 
 
 def test_jest_is_added_when_implied() -> None:
