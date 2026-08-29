@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _provisioner_helpers import flake_for as _flake, has_attr as _has_attr
-from nix_provisioner import ProvisionError
+from nix_provisioner import _GO_ATTR, ProvisionError
 
 # ── the declared toolchains ─────────────────────────────────────────────────
 
@@ -113,7 +113,41 @@ def test_go_keeps_its_version_aware_resolver() -> None:
     """Go is deliberately NOT in the table: its attr is computed from
     `toolchain`, not fixed."""
     assert _has_attr(_flake(language="go"), "go")
-    assert _has_attr(_flake(language="go", toolchain={"go": "1.22"}), "go_1_22")
+    assert _has_attr(_flake(language="go", toolchain={"go": "1.25"}), "go_1_25")
+
+
+def test_every_pinned_go_minor_names_an_attr_that_exists() -> None:
+    """The table pinned three attrs that nixpkgs no longer has.
+
+    go_1_21 and go_1_22 are gone at DEFAULT_NIXPKGS, and go_1_23 THROWS
+    ("end-of-life ... has been removed"). Every manifest naming one produced a
+    flake that could not evaluate -- and the previous version of this very
+    assertion pinned `go_1_22`, so the text check stayed green over a dead
+    shell. That is the Factory#1007 shape: asserting an attribute is emitted
+    proves nothing about whether it resolves.
+
+    This cannot verify nixpkgs from a unit test, so it guards the property that
+    was actually violated: the table must not name a minor the fallback would
+    have handled better, and every value must look like a real versioned attr.
+    """
+    assert _GO_ATTR, "the table must not be empty; that would silently drop pins"
+    for minor, attr in _GO_ATTR.items():
+        assert attr == "go_" + minor.replace(".", "_"), (
+            f"{minor} maps to {attr}, which does not follow the nixpkgs naming "
+            "convention -- verify it exists at DEFAULT_NIXPKGS before adding it"
+        )
+
+
+def test_an_unpinnable_go_minor_falls_back_to_a_working_toolchain() -> None:
+    """Better a newer Go than a shell that cannot be realised.
+
+    Naming `go_1_22` gave an eval error, which surfaces as a runner failure and
+    reads as flakiness. The default `go` attr always exists.
+    """
+    f = _flake(language="go", toolchain={"go": "1.22"})
+
+    assert _has_attr(f, "go"), "an unpinnable minor must still get a Go toolchain"
+    assert not _has_attr(f, "go_1_22"), "must not name an attr that does not exist"
 
 
 # ── the refusal ─────────────────────────────────────────────────────────────
