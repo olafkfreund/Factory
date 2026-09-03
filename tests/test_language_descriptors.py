@@ -141,3 +141,36 @@ class TestProvisionerReadsDescriptors:
         monkeypatch.setattr(nix_provisioner, "_resolve_descriptor", None)
         with pytest.raises(ProvisionError, match=r"unsupported environment\.language 'swift'"):
             generate_flake({"language": "swift", "verify_commands": ["swift test"]})
+
+
+class TestRegistryAmbiguity:
+    """Collisions must refuse to load, naming both files (PR #1707 review)."""
+
+    def test_alias_claimed_by_two_descriptors_refuses_naming_both_files(self, tmp_path) -> None:
+        """Two descriptors sharing an alias would make resolve_language()
+        depend on filename sort order — stable enough to look deliberate,
+        arbitrary enough to be wrong. The error must name BOTH files so the
+        author knows which pair to untangle."""
+        common = (
+            "detect_weight: 1\nnix: {packages: [x]}\n"
+            "lanes:\n  unit: {available: true, tool: t, command: c}\n"
+        )
+        (tmp_path / "aaa.yaml").write_text("name: aaa\naliases: [aaa, shared]\n" + common)
+        (tmp_path / "bbb.yaml").write_text("name: bbb\naliases: [bbb, shared]\n" + common)
+        with pytest.raises(DescriptorError) as exc:
+            load_languages(tmp_path)
+        message = str(exc.value)
+        assert "shared" in message
+        assert "aaa.yaml" in message and "bbb.yaml" in message
+
+    def test_descriptor_load_failure_surfaces_as_provision_error(self, monkeypatch) -> None:
+        """generate_flake's documented failure type is ProvisionError; a broken
+        descriptor vendoring must not leak DescriptorError past that contract
+        (a caller degrading gracefully on ProvisionError would miss it)."""
+
+        def boom(_token: str) -> None:
+            raise DescriptorError("synthetic: descriptors unreadable")
+
+        monkeypatch.setattr(nix_provisioner, "_resolve_descriptor", boom)
+        with pytest.raises(ProvisionError, match="could not be loaded"):
+            generate_flake({"language": "swift", "verify_commands": ["swift test"]})
