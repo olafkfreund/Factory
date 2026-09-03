@@ -163,7 +163,7 @@ def _parse_lane(path: Path, lane_key: str, raw: object) -> LaneSupport:
 def _parse_descriptor(path: Path) -> LanguageDescriptor:
     # Lazy, deliberately (see the module docstring): importing this module must
     # stay dependency-free; only actually LOADING descriptors needs PyYAML.
-    import yaml  # type: ignore[import-untyped]  # noqa: PLC0415
+    import yaml  # noqa: PLC0415
 
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     _require(isinstance(data, dict), path, "descriptor must be a mapping")

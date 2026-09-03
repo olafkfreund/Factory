@@ -32,6 +32,10 @@ import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # only for annotations; the runtime import is the shim below
+    from language_descriptors import LanguageDescriptor
 
 # The declarative language descriptors (contracts/languages/*.yaml at the hub,
 # vendored beside this module in every consumer). They EXTEND the hardcoded
@@ -43,13 +47,13 @@ from pathlib import Path
 # generate_flake's unknown-language refusal below names it — never silently.
 try:  # package context
     from .language_descriptors import (
-        resolve_language as _resolve_descriptor,  # type: ignore[attr-defined]
+        resolve_language as _resolve_descriptor,
     )
 except ImportError:
     try:  # flat context (hub scripts/, direct execution)
         from language_descriptors import resolve_language as _resolve_descriptor
     except ImportError:  # mis-vendored: module without its sibling
-        _resolve_descriptor = None  # type: ignore[assignment]
+        _resolve_descriptor = None
 
 # nixpkgs pin for generated flakes. A FULL commit rev (not a branch) keeps
 # generated flakes reproducible AND avoids a GitHub API call to resolve the
@@ -451,7 +455,7 @@ _LANG_ATTRS = {
 }
 
 
-def _descriptor_for_language(lang: str):
+def _descriptor_for_language(lang: str) -> LanguageDescriptor | None:
     """The language descriptor to provision from, or None.
 
     None when the builtin branches own the language (go/python and everything in
@@ -463,7 +467,8 @@ def _descriptor_for_language(lang: str):
         return None
     if lang in ("go", "python") or lang in _LANG_ATTRS:
         return None
-    return _resolve_descriptor(lang)
+    descriptor: LanguageDescriptor | None = _resolve_descriptor(lang)
+    return descriptor
 
 
 def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=None) -> str:
