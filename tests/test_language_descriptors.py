@@ -174,3 +174,11 @@ class TestRegistryAmbiguity:
         monkeypatch.setattr(nix_provisioner, "_resolve_descriptor", boom)
         with pytest.raises(ProvisionError, match="could not be loaded"):
             generate_flake({"language": "swift", "verify_commands": ["swift test"]})
+
+    def test_corrupt_yaml_surfaces_as_descriptor_error(self, tmp_path) -> None:
+        """yaml.YAMLError must not leak past the module's own failure type -
+        nix_provisioner's ProvisionError translation wraps DescriptorError
+        only, so an unwrapped parse error would escape both boundaries."""
+        (tmp_path / "broken.yaml").write_text("name: broken\naliases: [\n")
+        with pytest.raises(DescriptorError, match="not valid YAML"):
+            load_languages(tmp_path)
