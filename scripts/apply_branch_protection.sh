@@ -180,6 +180,44 @@ SECRET_CTX_GITOPS="pr-diff-scan"
 # in AIFactory, zero failures. A flaky required check wedges every PR.
 ACCEPT_CTX="docker (P0 acceptance)"
 
+# CodeQL + the whole-repo security lint, promoted per Factory#943 part 1.
+#
+# MEASURED BEFORE PROMOTING, the same way ACCEPT_CTX was. Job-level outcomes
+# over the last 12 commits of each default branch, read from
+# `commits/<sha>/check-runs` -- NOT `gh run list --json name`, which returns the
+# WORKFLOW name and reports runs=0 for a job:
+#
+#   Factory 11/11   PFactory 14/14   TFactory 13/13
+#   AIFactory 10/12   CFactory 10/12 (sinks 11/12)
+#
+# Every non-success is `cancelled`, never `failure` -- concurrency superseding an
+# in-flight run when a newer commit lands. Zero real failures across ~60 commits,
+# so none of these is flaky enough to wedge a PR.
+#
+# THE INDIVIDUAL `Analyze (...)` CONTEXTS, NOT THE `CodeQL` ROLL-UP. The roll-up
+# does not post on every PR; requiring it would leave PRs waiting on a check that
+# never arrives, which is the failure #943 names explicitly.
+#
+# AIFactory SPELLS IT LOWERCASE -- its workflow names the job `analyze`, the
+# other four `Analyze`. Required contexts match case-sensitively, so the wrong
+# case here is a check that can never be satisfied: the same never-posts wedge,
+# arriving through a typo instead of a roll-up.
+#
+# These two carry their own JSON quotes because each expands to several
+# contexts, so they are spliced in UNQUOTED (`,'$CODEQL_CTX',`) rather than with
+# the `'"$VAR"'` form used for single-context variables above -- that form would
+# wrap the whole list in one more pair of quotes and declare a single context
+# named `"Analyze (actions)","Analyze (...)"...`, which nothing ever posts.
+# Assignment RHS is not word-split, so the unquoted splice is safe.
+CODEQL_CTX='"Analyze (actions)","Analyze (javascript-typescript)","Analyze (python)"'
+CODEQL_CTX_AI='"analyze (actions)","analyze (javascript-typescript)","analyze (python)"'
+SINKS_CTX="security sinks (whole repo)"
+
+# Trivy is DELIBERATELY ABSENT although #943 asks for it: it posts no check-run
+# on any repo, because it runs on push/deploy rather than `pull_request`.
+# Requiring a context nothing produces wedges every PR. Moving Trivy into a
+# PR-triggered job is its own piece of work.
+
 
 repo_config() {
   # Reset the per-branch override FIRST. These are globals set by a case arm,
@@ -188,8 +226,8 @@ repo_config() {
   # names to it, which is the same class of bug as #691 pointing the other way.
   CHECKS_DEV=""
   case "$1" in
-    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","hub test suite + generated package self-test (pytest)","'"$SECRET_CTX_HUB"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
+    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'","'"$SECRET_CTX"'",'$CODEQL_CTX',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","hub test suite + generated package self-test (pytest)","'"$SECRET_CTX_HUB"'",'$CODEQL_CTX',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     # PFactory's dev carries `docker (P0 acceptance)` and main does not.
     # PFactory#586 shipped a container that could not start: the gate caught it
     # on the causing PR (red at 12:53Z and 13:01Z on that PR's own branch) and
@@ -198,14 +236,14 @@ repo_config() {
     # override rather than a single CHECKS -- the same shape AIFactory uses
     # below, and for the same reason (#691): one CHECKS would PUT main's set
     # over dev and strip it again.
-    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX_PF"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX_PF"'",'$CODEQL_CTX',"'"$SINKS_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'",'$CODEQL_CTX',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX"'",'$CODEQL_CTX',"'"$SINKS_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'$CODEQL_CTX',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # AIFactory's dev is its DEFAULT branch and carries three gates main does
     # not: the ratchet, the format check and the shared-baseline drift gate.
     # A single per-repo CHECKS could not express that, so `--apply` would have
     # PUT the two-check main set over dev and stripped all three (#691).
     # CHECKS_DEV is the per-branch override; unset means "same as CHECKS".
-    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$SECRET_CTX"'",'$CODEQL_CTX_AI',"'"$SINKS_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'$CODEQL_CTX_AI',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs
