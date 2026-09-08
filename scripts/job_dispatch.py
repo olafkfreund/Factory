@@ -234,9 +234,18 @@ def _store_args() -> str:
 
     The baked store is kept as a substituter so warm paths stay warm: copying an
     already-present closure from it measured 0.8s, a local file copy rather than
-    the network fetch that #768 removed. Signature checking is off for that
-    source alone — it is the image's own store, already trusted by virtue of
-    being the thing we boot from.
+    the network fetch that TFactory#768 removed.
+
+    ``require-sigs false`` is needed because the image's store carries no
+    per-path signatures for this user to verify. Nix has no per-substituter form
+    of that option, so it applies to the WHOLE invocation, cache.nixos.org
+    included — the honest description of the trade. What limits it: the only
+    substituters in play are that store, which is the image the Job already
+    boots from and therefore trusts completely, and cache.nixos.org over TLS,
+    whose paths are content-addressed, so a substituted path that did not hash
+    to the requested store path would not be accepted as it. The exposure is a
+    substituter able to serve a path for a hash it does not match, which is not
+    reachable from either source here.
     """
     return (
         f'--store "local?root={WRITABLE_STORE_ROOT}" '
