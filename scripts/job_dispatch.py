@@ -707,6 +707,23 @@ def _selftest_gcp_creds() -> None:
             os.environ[GCP_CREDS_SECRET_ENV] = saved
 
 
+def _check_nix_develop(command: str) -> None:
+    """The per-task nix invocation: the flake ref, and a store it can write to.
+
+    Without a writable store it can only ever use what was baked, which is one
+    warmed language (AIFactory#1492). These four are what make a cold derivation
+    possible without re-fetching the warm ones.
+    """
+    _require("nix develop path:/work#default" in command, "nix develop wrap")
+    _require(f'--store "local?root={WRITABLE_STORE_ROOT}"' in command, "writable chroot store")
+    _require('--extra-substituters "local?root=/"' in command, "baked store kept as a substituter")
+    _require(
+        command.strip().startswith(f"mkdir -p {WRITABLE_STORE_ROOT}"),
+        "store root created before nix is asked to use it",
+    )
+    _require(not WRITABLE_STORE_ROOT.startswith("/work"), "store is outside the worktree")
+
+
 def _selftest() -> None:
     spec = JobSpec(
         service="aifactory",
@@ -810,24 +827,7 @@ def _selftest() -> None:
         "container securityContext (#812)",
     )
     _require(c["image"] == DEFAULT_NIX_IMAGE, "nix-base image")
-    _require("nix develop path:/work#default" in c["command"][2], "nix develop wrap")
-    # The baked store is read-only to the sandbox uid, so without a writable
-    # store the Job can only ever use what the image already carries -- which is
-    # one warmed language (AIFactory#1492). These three are what make a cold
-    # derivation possible without re-fetching the warm ones.
-    _require(
-        f'--store "local?root={WRITABLE_STORE_ROOT}"' in c["command"][2],
-        "writable chroot store",
-    )
-    _require(
-        '--extra-substituters "local?root=/"' in c["command"][2],
-        "baked store kept as a substituter",
-    )
-    _require(
-        c["command"][2].strip().startswith(f"mkdir -p {WRITABLE_STORE_ROOT}"),
-        "store root created before nix is asked to use it",
-    )
-    _require(not WRITABLE_STORE_ROOT.startswith("/work"), "store is outside the worktree")
+    _check_nix_develop(c["command"][2])
     _require("go test ./..." in c["command"][2], "task command present")
     mount_paths = {mt["mountPath"] for mt in c["volumeMounts"]}
     _require(mount_paths == {"/work", "/nix/store"}, f"mounts: {mount_paths}")
