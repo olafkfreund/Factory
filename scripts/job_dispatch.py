@@ -571,6 +571,16 @@ def build_job_manifest(spec: JobSpec) -> dict[str, Any]:
     if mounts:
         container["volumeMounts"] = mounts
 
+    # A token without an explicit service account mounts the NAMESPACE DEFAULT
+    # SA's token, which is not the scoped identity the caller meant to grant and
+    # may carry wider permissions. Refuse rather than silently widen the grant.
+    if spec.automount_service_account_token and not spec.service_account:
+        raise ValueError(
+            "automount_service_account_token requires an explicit service_account: "
+            "without one the pod would receive the namespace default "
+            "ServiceAccount's API token instead of a scoped identity"
+        )
+
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
         "automountServiceAccountToken": spec.automount_service_account_token,
@@ -732,6 +742,19 @@ def _selftest_service_account(spec: JobSpec, ps: dict[str, Any]) -> None:
     """
     _require(ps["serviceAccountName"] == "aifactory-sandbox", "SA")
     _require(ps["automountServiceAccountToken"] is False, "no token automount")
+    # A token with no explicit SA would mount the namespace default's token —
+    # a wider grant than the caller asked for, so the builder must refuse.
+    try:
+        build_job_manifest(
+            replace(spec, service_account=None, automount_service_account_token=True)
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "build_job_manifest ACCEPTED automount_service_account_token with no "
+            "service_account — the pod would get the namespace default SA's token"
+        )
     manifest = build_job_manifest(replace(spec, automount_service_account_token=True))
     _require(
         manifest["spec"]["template"]["spec"]["automountServiceAccountToken"] is True,
