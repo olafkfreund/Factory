@@ -481,8 +481,24 @@ def assert_job_policy(manifest: dict[str, Any]) -> None:
     )
 
 
+def _validate_spec(spec: JobSpec) -> None:
+    """Reject spec combinations that would silently grant more than asked.
+
+    A token without an explicit service account mounts the NAMESPACE DEFAULT
+    SA's token, which is not the scoped identity the caller meant to grant and
+    may carry wider permissions.
+    """
+    if spec.automount_service_account_token and not spec.service_account:
+        raise ValueError(
+            "automount_service_account_token requires an explicit service_account: "
+            "without one the pod would receive the namespace default "
+            "ServiceAccount's API token instead of a scoped identity"
+        )
+
+
 def build_job_manifest(spec: JobSpec) -> dict[str, Any]:
     """Return a complete k8s Job manifest dict for one PARR task. Pure."""
+    _validate_spec(spec)
     name = job_name(spec.service, spec.job_id)
 
     inner = nix_develop_wrap(spec.commands) if spec.nix_develop else " && ".join(spec.commands)
@@ -570,16 +586,6 @@ def build_job_manifest(spec: JobSpec) -> dict[str, Any]:
     }
     if mounts:
         container["volumeMounts"] = mounts
-
-    # A token without an explicit service account mounts the NAMESPACE DEFAULT
-    # SA's token, which is not the scoped identity the caller meant to grant and
-    # may carry wider permissions. Refuse rather than silently widen the grant.
-    if spec.automount_service_account_token and not spec.service_account:
-        raise ValueError(
-            "automount_service_account_token requires an explicit service_account: "
-            "without one the pod would receive the namespace default "
-            "ServiceAccount's API token instead of a scoped identity"
-        )
 
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
