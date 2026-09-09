@@ -724,7 +724,7 @@ def _selftest_gcp_creds() -> None:
             os.environ[GCP_CREDS_SECRET_ENV] = saved
 
 
-def _selftest_service_account(spec: JobSpec, ps: dict) -> None:
+def _selftest_service_account(spec: JobSpec, ps: dict[str, Any]) -> None:
     """Identity: the SA, the tokenless default, and the orchestrator opt-in.
 
     Asserting only the default would let the flag be silently ignored — the Job
