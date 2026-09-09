@@ -161,9 +161,11 @@ def test_a_declared_unknown_language_is_refused() -> None:
 
     msg = str(exc.value)
     # The error has to name the language AND the fix; a bare "unsupported" sends
-    # the reader back into the generator to find out what to do about it.
+    # the reader back into the generator to find out what to do about it. The
+    # named fix is now the paved road: a contracts/languages/ descriptor, not an
+    # edit to the generator's tables.
     assert "cobol" in msg
-    assert "_LANG_ATTRS" in msg
+    assert "contracts/languages" in msg
 
 
 def test_the_refusal_does_not_leak_a_python_flake() -> None:

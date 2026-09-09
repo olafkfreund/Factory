@@ -27,6 +27,8 @@ def _make_canonical(root: Path) -> Path:
     canonical = root / "canonical"
     canonical.mkdir(parents=True)
     for module in gate.CANONICAL_MODULES:
+        # A canonical entry may be a path under scripts/ (languages/*.yaml).
+        (canonical / module).parent.mkdir(parents=True, exist_ok=True)
         (canonical / module).write_text(f"# {module}\nVALUE = 1\n")
     return canonical
 
