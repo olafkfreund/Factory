@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1710
 spec: spec/2026-09-18-1710-runtime-node-glibc.md
 ---
