@@ -132,6 +132,23 @@ step.
   test covers it; dropping `kotlin_completed` from the real call fails that test
   while the four helper tests stay green.
 
+- **Review fixes on TFactory#1310 (`ba492f17`):**
+  1. **Batch routing (a real bug the live proof could not see).** In Nix mode,
+     `_stability_for_subtask` sent every non-Jest subtask to the batched
+     *pytest* path, so a Kotlin subtask with a contract nix env or an existing
+     `flake.nix` would have been graded by pytest. The live proof called the
+     runner directly and so bypassed it. Only python/unset or `jest` subtasks
+     are batchable now; Go had the same latent bug and is covered by the same
+     guard.
+  2. Every path spliced into the job script is shell-quoted.
+  3. **Evidence rule:** a zero Gradle exit is not trusted alone. A missing
+     report, zero tests, or recorded failures/errors fail the lane.
+  Each fix has a test that fails when the fix is removed.
+- **Security-sink gate:** the first push used `xml.etree` in a test (S314).
+  It is replaced with textual asserts; the hub `security_lint.py` passes.
+- **Step 5 gates:** TFactory has no `cq_ratchet.py`; its equivalent is
+  `scripts/ratchet_lint.py` (ruff 0.15.17 + mypy 1.20.1, the CI pins).
+
 ## Tests
 
 ```sh
