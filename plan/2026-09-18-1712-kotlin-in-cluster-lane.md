@@ -148,6 +148,14 @@ step.
   It is replaced with textual asserts; the hub `security_lint.py` passes.
 - **Step 5 gates:** TFactory has no `cq_ratchet.py`; its equivalent is
   `scripts/ratchet_lint.py` (ruff 0.15.17 + mypy 1.20.1, the CI pins).
+- **Step 8:** hub PR #2824 merged as `19f5c409`.
+- **Step 9:** TFactory could not bump its pin with `kotlin.yaml` alone. Its
+  vendored `job_dispatch.py` predated hub #2404/#2420, so the drift gate
+  failed against any newer hub SHA. TFactory #1312 re-vendors it too. The new
+  `_validate_spec` rejects a mounted token without an explicit service
+  account; no TFactory caller sets `automount_service_account_token`, and
+  202 related tests pass. PFactory #743 and AIFactory #1577 carry
+  `kotlin.yaml` only.
 
 ## Tests
 
