@@ -109,6 +109,15 @@ step.
 11. **Close out:** file the follow-up (Kotlin test generation in
     `planner.md`), close #1712 with the step 6 evidence, and update memory.
 
+## Deviations recorded during implementation
+
+- **Step 2 (TFactory `e52abb61`):** `kotlin_environment()` does not read the
+  descriptor itself. `generate_flake` already resolves descriptor-declared
+  languages first and prepends their `nix.packages`, so the environment only
+  names `language: kotlin`. Same intent (the descriptor is the single source,
+  no literals), through the existing path. Tests run the real generator and
+  swap the descriptor; hard-coding the packages fails two of them.
+
 ## Tests
 
 ```sh
