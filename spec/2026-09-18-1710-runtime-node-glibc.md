@@ -82,6 +82,11 @@ three repos.
   (P0 Docker build, Trivy, tests) still decide. Auto-merge merges only after
   they pass, so a bad base still cannot land.
 - The weeks-long queue becomes one day, which is Dependabot's schedule.
+- *(Erratum 2026-09-18: as built, the job also requires
+  `pull_request.base.ref == 'dev'`, and a `disarm` job on `edited` removes
+  auto-merge from a Dependabot PR retargeted off `dev`. Without these, a
+  retargeted PR could have been armed or stayed armed into `main`. See the
+  plan's Deviations section.)*
 
 **This is a policy change that needs your explicit approval:** it lets a bot
 land base-image updates without a human click. The gates are unchanged; the

@@ -108,6 +108,8 @@ repo, one PR each.
      argv.
    → verify: `actionlint` clean, and the repo's workflow-pin / supply-chain
    checks pass.
+   *(As built, this step also requires `base.ref == 'dev'` and adds an `edited`
+   trigger with a `disarm` job; see Deviations.)*
 8. **Enable the setting:** `gh api -X PATCH repos/olafkfreund/<repo> -F allow_auto_merge=true`
    → verify with `gh api repos/… --jq .allow_auto_merge` = `true`.
 9. **Clear the backlog (Fix C):** `@dependabot rebase` on AIFactory#1452,
