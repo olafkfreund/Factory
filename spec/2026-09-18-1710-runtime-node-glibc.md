@@ -21,7 +21,7 @@ runtime base AIFactory and TFactory pin today.
    (`so:libm.so.6`, `so:libc.so.6`) and carry no `GLIBC_2.xx` symbol version,
    so apk installs a Node built for a newer glibc than the image has.
 3. **There is no headroom.** `apk add nodejs` installs `nodejs-26` (the newest
-   major, while `.nvmrc` says 24), and that binary needs exactly `GLIBC_2.44`,
+   major, whatever `.nvmrc` says; AIFactory's says 24), and that binary needs exactly `GLIBC_2.44`,
    the image's own version. The next Wolfi rebuild against 2.45 breaks every
    PR again.
 4. **It is not only Node.** `curl` from the index already needs `GLIBC_2.43`.
@@ -85,8 +85,9 @@ three repos.
 
 **This is a policy change that needs your explicit approval:** it lets a bot
 land base-image updates without a human click. The gates are unchanged; the
-human click goes. Memory note: no PR review is required anywhere today, so
-this adds no bypass that does not already exist, but it does add a merger.
+human click goes. Branch protection in these repos requires status checks,
+not an approving review, so no review gate is bypassed. What changes is
+that nobody has to click merge.
 
 ### C. Clear the current backlog
 
@@ -112,8 +113,8 @@ them. PFactory then moves to the same digest as the others.
 
 ## Risks
 
-- **The official Node binary needs `libstdc++`/`libgcc_s` from the base.** Both
-  are in the base's pinned world today. If Chainguard ever dropped them from
+- **The official Node binary needs `libstdc++`, `libgcc_s` and (on 26)
+  `libatomic` from the base.** All three are in the base's pinned world today. If Chainguard ever dropped them from
   `python:latest-dev`, the build fails loudly on the first `node --version`
   step, not at runtime.
 - **AIFactory's CLIs move from Node 26 (apk) to 24 (`.nvmrc`).** Declared
@@ -132,7 +133,7 @@ them. PFactory then moves to the same digest as the others.
 ## Verification
 
 - **Build**, per repo: the root `Dockerfile` builds, and in the runtime image
-  `node --version` is `v24.x`, `npm --version` works, and `claude`, `codex`,
+  `node --version` matches that repo's `.nvmrc` major, `npm --version` works, and `claude`, `codex`,
   `gemini`, `antigravity` each print a version.
 - **The property itself:** `objdump -T $(readlink -f $(which node))` in the
   built image shows max `GLIBC_2.28`, far below the image's glibc, and the
