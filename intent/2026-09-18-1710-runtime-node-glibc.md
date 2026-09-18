@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1710
 author: olafkfreund
 ---
@@ -54,15 +54,11 @@ broke it is unchanged in all three.
 - Trivy HIGH/CRITICAL gates stay as they are.
 - Keep one approach across the three repos (one engine, no drift).
 
-## Open questions
+## Decisions (approved 2026-09-18)
 
-1. **Why did `apk upgrade` not bring glibc forward with Node?** The runtime
-   stage runs `apk upgrade` before `apk add nodejs`, from the same index, and
-   the failure still happened. This mechanism is not yet measured. It decides
-   whether the fix is about pinning, ordering, or the Chainguard base's package
-   set, so the spec must establish it first.
-2. **Scope:** only Node, or every apk package installed on top of the pinned
-   base (`gh`, `git`, `curl`...)? They have the same structure; only Node has
-   broken so far.
-3. **PFactory#674** reports the same thing for one repo. Proposed: close it in
-   favour of #1710 once this lands.
+1. **Measure first.** The spec establishes why `apk upgrade` did not move
+   glibc forward with Node before it chooses a fix.
+2. **Scope** is decided in the spec from that measurement: Node alone if the
+   mechanism is specific to Node, every package installed on top of the base
+   if it is not. (No option was proposed at approval, so none is assumed.)
+3. **PFactory#674** is closed in favour of #1710 once the fix lands.
