@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1712
 spec: spec/2026-09-18-1712-kotlin-in-cluster-lane.md
 ---
