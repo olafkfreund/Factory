@@ -1,10 +1,14 @@
 ---
-status: approved
+status: draft
 issue: 1712
 author: olafkfreund
 ---
 
 # Intent: the Kotlin verify lane runs in-cluster, not only on the docker host
+
+Revision 2. Revision 1 was approved on the premise that TFactory's nix-Job lane
+path could already run a Kotlin lane and only needed proving. Reading the code
+showed it cannot (see "What the code shows" below), so this is back to draft.
 
 ## Problem
 
@@ -27,16 +31,40 @@ completion inside the cluster**. Until someone does, the descriptor keeps
 warning off in-cluster Kotlin verification, and a Kotlin task's verification
 evidence depends on which substrate happened to run it.
 
+## What the code shows (TFactory `dev`, 2026-09-18)
+
+- The only **in-cluster** lane executors are per-language nix functions in
+  `agents/nix_env.py`: `run_pytest_lane_via_nix`, `run_gotest_lane_via_nix`
+  (TFactory#543, ~150 lines), `run_jest_lane_via_nix`, and the deploy lane.
+  **There is no gradle/Kotlin equivalent.**
+- Every other lane goes through `tools/runners/lane_dispatch.py` →
+  `DockerRunner` (`docker run`), which needs a container runtime. The cluster
+  has none, which is why #1707's proof ran on the docker host.
+- So egress was never what kept Kotlin out of the cluster. **No in-cluster
+  executor exists**, whatever the network allows.
+
 ## Proposed outcome
 
-- A real in-cluster Kotlin verify run (TFactory's per-task nix Job substrate)
-  of a minimal Gradle module completes: tests run, pass, and a mutated test
-  fails.
-- `contracts/languages/kotlin.yaml` states what is true: the lane is proven
-  in-cluster, and it no longer says fetches stall. The hub copy is corrected
-  first, then re-vendored into TFactory, PFactory and AIFactory, with the
-  drift pins bumped.
-- #1712 closes on that evidence, not on the policy reading alone.
+Depends on the scope decision below. Either way:
+
+- `contracts/languages/kotlin.yaml` stops blaming egress and states the true
+  reason and status. Hub first, then re-vendored into the three services with
+  the pins bumped.
+- #1712 closes on evidence, and the executor gap is tracked on its own if it
+  is not built here.
+
+**Option A (recommended): build the executor.** Add a
+`run_gradle_lane_via_nix` in TFactory, mirroring `run_gotest_lane_via_nix`
+(generated flake from the descriptor's `nix.packages`, `gradle test` in the
+per-task nix Job, JUnit results parsed into the lane result), wired into the
+evaluator the same way. Then prove it: a minimal Kotlin fixture's
+`gradle test` completes in-cluster, passes, and a mutated test fails. Kotlin
+then verifies in-cluster like Python, Go and JS.
+
+**Option B: correct the record only.** Fix the descriptor's caveat to "no
+in-cluster gradle executor; docker-host only", close #1712's egress question,
+and file the executor as a new issue. Small, but Kotlin still cannot verify
+in-cluster.
 
 ## Affected users and systems
 
@@ -44,7 +72,8 @@ evidence depends on which substrate happened to run it.
 - Vendored copies: TFactory `apps/backend/tools/runners/languages/kotlin.yaml`,
   PFactory `apps/backend/plan/languages/kotlin.yaml`, AIFactory
   `apps/backend/core/languages/kotlin.yaml`, and their drift gates and pins.
-- TFactory's evaluator nix-Job lane path (the substrate the run goes through).
+- TFactory `agents/nix_env.py` and `agents/evaluator.py` (Option A: new
+  `run_gradle_lane_via_nix` and its call site).
 - Anyone verifying a Kotlin project in the cluster, e.g. the
   `pfactory-friends-demo` Kotlin lanes.
 
@@ -53,8 +82,8 @@ evidence depends on which substrate happened to run it.
 - **Measure, don't assume.** A lane counts as proven only when a real run
   completes with real test results, including a mutated test that fails. A Job
   that starts, or an exit code without test counts, does not count.
-- Run it **through the factory's own lane path** (TFactory's nix Job), not a
-  hand-rolled pod, so the proof covers the path real tasks take.
+- Option A's proof runs **through the evaluator's real lane path** (the new
+  nix runner), not a hand-rolled pod, so it covers what real tasks take.
 - **One engine, no drift:** fix the hub canonical first, then re-vendor
   byte-exact and bump the pins in the right order (the drift-gate landing
   order).
@@ -62,9 +91,14 @@ evidence depends on which substrate happened to run it.
   different substrate, tracked in AIFactory#1560.
 - No change to the egress policy. It already admits what Gradle needs.
 
-## Decisions (approved 2026-09-18)
+## Decisions carried from revision 1 (still valid)
 
 1. **Fixture:** a dedicated minimal Kotlin module, independent of
-   `pfactory-friends-demo` and its open conflicts.
-2. **Scope:** prove `gradle test` in-cluster. `gradle pitest` is a follow-up
-   only if it behaves differently.
+   `pfactory-friends-demo`.
+2. **Scope of the proof:** `gradle test`; `gradle pitest` is a follow-up.
+
+## Open questions
+
+1. **Option A or Option B?** A is a medium feature in TFactory (~150-line
+   runner on an existing pattern, plus evaluator wiring and JUnit parsing). B
+   is a docs correction plus a new issue.
