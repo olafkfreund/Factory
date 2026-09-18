@@ -124,7 +124,27 @@ repo, one PR each.
     close #1710 with the evidence, update each repo's docs where the runtime
     Node is described, and update memory.
 
-## Tests
+## Deviations recorded during implementation
+
+- **Newer Node digests, forced by the Trivy gate.** The first PFactory and
+  TFactory builds passed every local check, then CI's `docker (P0 acceptance)`
+  Trivy test failed on four HIGHs **inside the npm bundled with the reused
+  `frontend-build` digest** (brace-expansion 5.0.7, ip-address 10.2.0, tar
+  7.5.19). The local checks never ran Trivy; that was the gap. The node:26
+  digest `c8fedd78` (v26.9.0, npm 11.19.1) ships them fixed. PFactory and
+  TFactory moved **both** `FROM` lines to it, keeping the one-digest decision.
+  Verified with `trivy rootfs` on the copied npm tree: the old digest
+  reproduces exactly CI's four findings, and the new one scans 0.
+- **AIFactory pins `npm@11.19.1`.** No node:24 image ships a patched npm yet
+  (newest `2fe369e9` has npm 11.19.0). AIFactory's `.nvmrc` is 24, so the
+  runtime stage runs `npm install -g npm@11.19.1` (engines `^20.17 || >=22.9`),
+  and both node:24 lines moved to `2fe369e9` (v24.21.0). Dependabot cannot
+  track a version inside `RUN`, so the comment states the removal condition
+  (a node:24 image with npm >= 11.19.1). The final image scans 0 HIGH/CRITICAL
+  in `/usr/local/lib/node_modules`.
+- **Step 5 gains a check:** run Trivy (`rootfs`, HIGH/CRITICAL) on the
+  copied `/usr/local/lib/node_modules`, not just the build and version checks.
+
 
 - Local, per repo: step 5's checks all hold, and step 4's mutation fails the
   build with the drift message.
