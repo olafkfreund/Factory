@@ -164,8 +164,8 @@ step.
 .venv/bin/python -m pytest tests/test_nix_env.py -q -k "gradle or kotlin"
 .venv/bin/python -m pytest tests/ -q -k "evaluator and kotlin"
 # each new test module alone (collection-order free-riding)
-apps/backend/.venv/bin/python scripts/cq_ratchet.py --tool ruff --base origin/dev ...
-apps/backend/.venv/bin/python scripts/cq_ratchet.py --tool mypy --base origin/dev ...
+apps/backend/.venv/bin/python scripts/ratchet_lint.py --base origin/dev \
+  --package apps/backend --package apps/web-server --package scripts
 ```
 
 Expected: every new test fails before its step's code and passes after; the
@@ -173,7 +173,11 @@ routing mutation fails; the live run reports 3/0, then non-zero on mutation.
 
 ## Rollback
 
-- TFactory: revert the PR. Kotlin subtasks go back to the `unit` bucket (the
-  current behaviour); nothing else uses the new runner.
-- Descriptor: revert the hub PR and re-vendor the previous text with the pin
-  bumped back. It is data only, so there is no runtime effect.
+- TFactory: revert #1310 and #1312. Kotlin subtasks then match no lane
+  filter again: they are silently dropped and a Kotlin-only plan ends as
+  `evaluated_empty` (the pre-#1712 behaviour). Nothing else uses the new
+  runner.
+- Descriptor: revert hub #2824 and re-vendor the previous text into all three
+  services with the pin bumped back. It is data only, so there is no runtime
+  effect. Reverting #1312 alone would also revert `job_dispatch.py` and fail
+  the drift gate, so re-vendor from the hub rather than reverting.
