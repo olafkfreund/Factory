@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1712
 author: olafkfreund
 ---
@@ -97,8 +97,8 @@ in-cluster.
    `pfactory-friends-demo`.
 2. **Scope of the proof:** `gradle test`; `gradle pitest` is a follow-up.
 
-## Open questions
+## Decisions on revision 2 (approved 2026-09-18)
 
-1. **Option A or Option B?** A is a medium feature in TFactory (~150-line
-   runner on an existing pattern, plus evaluator wiring and JUnit parsing). B
-   is a docs correction plus a new issue.
+1. **Option A:** build `run_gradle_lane_via_nix` in TFactory, wire it into
+   the evaluator, prove it in-cluster with the minimal fixture, and correct
+   the descriptor.
