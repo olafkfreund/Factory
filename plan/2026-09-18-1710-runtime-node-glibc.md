@@ -142,6 +142,16 @@ repo, one PR each.
   track a version inside `RUN`, so the comment states the removal condition
   (a node:24 image with npm >= 11.19.1). The final image scans 0 HIGH/CRITICAL
   in `/usr/local/lib/node_modules`.
+- **Auto-merge workflow hardened after review (steps 7-8).** Two additions:
+  a `base.ref == 'dev'` guard (#738/#1306/#1574), so a Dependabot PR
+  retargeted at `main` is never armed, and a `disarm` job on `edited`
+  (#741/#1306/#1576) that takes auto-merge back off an already-armed PR moved
+  off `dev`. For PRs into `main`, GitHub evaluates the workflow from `main`,
+  so both protect `main` from each repo's next release onward.
+- **Post-apk guard (step 4 extended):** the `.nvmrc` guard runs before the
+  apk block, so an apk `nodejs` re-added later would not have been caught. A
+  second assertion after the apk block fails the build (#740/#1307/#1575).
+  Verified both ways on PFactory.
 - **Step 5 gains a check:** run Trivy (`rootfs`, HIGH/CRITICAL) on the
   copied `/usr/local/lib/node_modules`, not just the build and version checks.
 
