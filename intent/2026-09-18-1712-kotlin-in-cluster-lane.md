@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1712
 author: olafkfreund
 ---
@@ -62,11 +62,9 @@ evidence depends on which substrate happened to run it.
   different substrate, tracked in AIFactory#1560.
 - No change to the egress policy. It already admits what Gradle needs.
 
-## Open questions
+## Decisions (approved 2026-09-18)
 
-1. **What to run:** a dedicated minimal Kotlin fixture module, or one of
-   `pfactory-friends-demo`'s real Kotlin lanes? Proposed: the minimal fixture,
-   so the proof is independent of that demo's open PR conflicts (#51/#53).
-2. **Also prove `gradle pitest` (mutation lane) in-cluster, or `gradle test`
-   only?** #1712's "Done means" names `gradle test`. Proposed: test only, with
-   pitest as a follow-up if it behaves differently.
+1. **Fixture:** a dedicated minimal Kotlin module, independent of
+   `pfactory-friends-demo` and its open conflicts.
+2. **Scope:** prove `gradle test` in-cluster. `gradle pitest` is a follow-up
+   only if it behaves differently.
