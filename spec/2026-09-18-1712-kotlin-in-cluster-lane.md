@@ -26,7 +26,10 @@ Paths are relative to `apps/backend/` unless stated otherwise.
   - `_build_all_bundles(..., jest, go)` (L2465) is the dispatcher
 - **Today a Kotlin subtask falls into the `unit` bucket, which uses the
   pytest/`DockerRunner` path. That is wrong for Kotlin, and the cluster has no
-  container runtime anyway.**
+  container runtime anyway.** *(Erratum 2026-09-18: worse than that. The pytest
+  filter admits only `language in (None, "python")`, so a Kotlin subtask matched
+  no lane at all. It was silently dropped, and a Kotlin-only plan early-exited
+  as `evaluated_empty`. See the plan's Deviations.)*
 - Stability is decided purely on return codes (`stability_runner.py`:
   `{0}` → STABLE, one non-zero code → CONSISTENT_FAIL, mixed → FLAKY). JUnit
   and coverage are persisted as evidence (`_with_durable_artifacts`) but do

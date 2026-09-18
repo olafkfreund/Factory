@@ -118,6 +118,20 @@ step.
   no literals), through the existing path. Tests run the real generator and
   swap the descriptor; hard-coding the packages fails two of them.
 
+- **Step 3 (TFactory `97ceabae`):** build in `/tmp`, not the stage dir. The
+  code documents that `/work` is read-only to the Job's uid (`_DEPS_TARGET`),
+  and Gradle writes `build/` and `.gradle/` inside the module. So the job
+  script copies the module to `/tmp/tf_gradle_src` and sets `GRADLE_USER_HOME`
+  under `/tmp`; only the merged JUnit goes to the writable stage dir. This is
+  the spec's mitigation, applied from the code's own documentation rather than
+  after a failed live run.
+- **Step 4 (TFactory `cc716cc4`):** there was nothing to take "out of `unit`".
+  A Kotlin subtask matched no lane filter (pytest admits only Python), so it was
+  dropped and a Kotlin-only plan came back `evaluated_empty`. The change adds the
+  lane. Because the helper tests cannot see the call site, a `run_evaluator`
+  test covers it; dropping `kotlin_completed` from the real call fails that test
+  while the four helper tests stay green.
+
 ## Tests
 
 ```sh
