@@ -14,6 +14,10 @@ The registry describes every Factory stage, gate, connector, and runtime with:
   - ``effect``   in {read-only, read-write}
   - ``enabled``  — operator-gating state (RFC-0014: a gated runtime is
     ``enabled=false`` until an operator opts in)
+  - ``mandatory`` — optional; ``true`` marks a built-in that always runs (e.g.
+    a mandatory review lens). It must stay ``enabled=true``: a mandatory entry
+    reading ``enabled=false`` would tell an operator it is off when it is on
+    (PFactory#682)
   - ``owner_service`` — which service owns the extension
 
 Run directly to execute the self-tests: ``python3 scripts/extension_registry.py``.
@@ -43,6 +47,7 @@ class Extension(TypedDict, total=False):
     category: str
     effect: str
     enabled: bool
+    mandatory: bool
     description: str
     owner_service: str
 
@@ -69,7 +74,8 @@ def validate_entry(entry: Extension) -> list[str]:
     """Return a list of validation errors for one extension entry (empty => valid).
 
     Checks the required name plus the ``category``/``effect`` enum membership. A
-    missing/unknown value is an error, not a silent pass.
+    missing/unknown value is an error, not a silent pass. A ``mandatory`` entry
+    must be ``enabled`` (PFactory#682).
     """
     errors: list[str] = []
     name = entry.get("name")
@@ -82,6 +88,8 @@ def validate_entry(entry: Extension) -> list[str]:
     effect = entry.get("effect")
     if effect not in EFFECTS:
         errors.append(f"{label}: invalid effect {effect!r} (expected one of {EFFECTS})")
+    if entry.get("mandatory") is True and entry.get("enabled") is not True:
+        errors.append(f"{label}: mandatory entry must be enabled (it always runs)")
     return errors
 
 
@@ -148,6 +156,16 @@ def _test_validate_rejects() -> None:
     dupes = [*_fixture(), dup]
     found_dupe = any("duplicate" in e for e in validate_registry(dupes))
     _check(found_dupe, "duplicate name must be flagged")
+    off: Extension = {
+        "name": "m",
+        "category": "review",
+        "effect": "read-only",
+        "enabled": False,
+        "mandatory": True,
+    }
+    _check(bool(validate_entry(off)), "a disabled mandatory entry must be rejected")
+    on: Extension = {**off, "enabled": True}
+    _check(not validate_entry(on), "an enabled mandatory entry must validate")
 
 
 def _test_filters() -> None:
