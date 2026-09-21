@@ -67,7 +67,7 @@ jobs:
         # query suite, publishing rules_count=0 as a real analysis. Routing
         # the upload through the two steps below means a cancelled job dies
         # before reaching them, so it can no longer publish anything at all.
-        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           category: "/language:${{ matrix.language }}"
           upload: never
