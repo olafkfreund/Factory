@@ -85,6 +85,21 @@ def _stdin_hook(mode: str, payload: dict[str, object]) -> str:
     return out.stdout
 
 
+def _declared_contexts(repo: str, branch: str) -> list[str]:
+    """The contexts the script declares for a branch, for fixtures to start from.
+
+    Hard-coded copies of these lists went stale twice -- once when the P0
+    acceptance gate was promoted (Factory#814) and again for CodeQL and the
+    security sinks (Factory#943). Both times the failure was
+    ``fixture must start clean``, in a test whose subject is the COMPARATOR, not
+    the list. Deriving removes a maintenance trap without weakening anything:
+    the exact per-repo lists are pinned by
+    ``test_check_contexts_are_per_repo``, and a mutation test that starts from
+    the real declaration still has to detect the mutation.
+    """
+    return list(_emit(repo, branch)["required_status_checks"]["contexts"])
+
+
 def _normalise(payload: dict) -> dict:
     return json.loads(_stdin_hook("--normalise-stdin", payload))
 
@@ -114,6 +129,13 @@ _GITLEAKS_GITOPS = "pr-diff-scan"
 # start. Required on dev only -- main takes sync merges whose checks already ran
 # on dev, so requiring it there adds a wedge risk and buys nothing.
 _ACCEPT = "docker (P0 acceptance)"
+# Factory#943 part 1. CodeQL reports one context per matrix language, not a
+# single roll-up, and AIFactory's job is spelled lowercase where the other four
+# capitalise it -- required contexts match case-sensitively, so the two spellings
+# are not interchangeable.
+_CODEQL = ["Analyze (actions)", "Analyze (javascript-typescript)", "Analyze (python)"]
+_CODEQL_AI = ["analyze (actions)", "analyze (javascript-typescript)", "analyze (python)"]
+_SINKS = "security sinks (whole repo)"
 
 
 def _live_shaped(
@@ -229,24 +251,36 @@ def test_check_contexts_are_per_repo() -> None:
     The bug in Factory#468 was one repo's check names hardcoded into a script
     vendored to repos whose jobs are named differently. Lock the distinction.
     """
-    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == [
-        "Backend pytest",
-        "Frontend typecheck + build",
-        _GITLEAKS,
-        _VCORE,
-    ]
-    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == [
-        "backend (ruff + pytest)",
-        "critical (fast PR gate)",
-        _GITLEAKS,
-        _VCORE,
-    ]
+    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "Backend pytest",
+            "Frontend typecheck + build",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
+    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            "critical (fast PR gate)",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
     # AIFactory has no required frontend check, despite having a frontend suite.
-    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == [
-        "backend (ruff + pytest)",
-        _GITLEAKS,
-        _VCORE,
-    ]
+    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL_AI,
+            _SINKS,
+        ]
+    )
     # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
     # factory-gitops vendors none of it. A context required where no such
     # workflow exists can never report, which is the Factory#529 wedge.
@@ -331,11 +365,10 @@ def test_matching_live_response_compares_equal() -> None:
     # review, because a single-maintainer account cannot supply one and the rule
     # only ever produced admin bypasses. Since Factory#834 dev is strict too, so
     # conversation resolution is the only remaining difference from main.
-    for repo, branch, contexts, strict, reviews, convres in [
+    for repo, branch, strict, reviews, convres in [
         (
             "TFactory",
             "main",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
             True,
             None,
             True,
@@ -343,13 +376,6 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "dev",
-            [
-                "backend (ruff + pytest)",
-                "critical (fast PR gate)",
-                _ACCEPT,
-                _GITLEAKS,
-                _VCORE,
-            ],
             True,
             None,
             False,
@@ -357,7 +383,6 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "CFactory",
             "main",
-            ["Backend pytest", "Frontend typecheck + build", _VCORE, _GITLEAKS],
             True,
             None,
             True,
@@ -368,15 +393,6 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "AIFactory",
             "dev",
-            [
-                "backend (ruff + pytest)",
-                _ACCEPT,
-                _VCORE,
-                "ratchet (ruff + mypy on changed Python)",
-                "ruff format --check (every Python directory)",
-                "shared-baseline drift gate (blocking)",
-                _GITLEAKS,
-            ],
             True,
             None,
             False,
@@ -386,11 +402,6 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "factory-gitops",
             "main",
-            [
-                "kustomize build + schema",
-                "no literal secrets in manifests",
-                _GITLEAKS_GITOPS,
-            ],
             True,
             None,
             True,
@@ -398,7 +409,7 @@ def test_matching_live_response_compares_equal() -> None:
     ]:
         code_owner = repo in {"PFactory", "TFactory", "AIFactory"} and reviews is not None
         live = _live_shaped(
-            contexts=contexts,
+            contexts=_declared_contexts(repo, branch),
             strict=strict,
             reviews=reviews,
             code_owner=code_owner,
@@ -411,15 +422,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
     # Newer responses may carry only .checks[].context; both spellings must work,
     # or the gate reports a phantom "all checks removed" drift.
     live = _live_shaped(
-        contexts=[
-            "backend (ruff + pytest)",
-            _ACCEPT,
-            _VCORE,
-            "ratchet (ruff + mypy on changed Python)",
-            "ruff format --check (every Python directory)",
-            "shared-baseline drift gate (blocking)",
-            _GITLEAKS,
-        ],
+        contexts=_declared_contexts("AIFactory", "dev"),
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
@@ -432,13 +435,9 @@ def test_unordered_contexts_compare_equal() -> None:
     # GitHub does not promise an order; a spurious diff would train people to
     # ignore the gate.
     live = _live_shaped(
-        contexts=[
-            _VCORE,
-            _GITLEAKS,
-            _ACCEPT,
-            "critical (fast PR gate)",
-            "backend (ruff + pytest)",
-        ],
+        # Reversed on purpose: the subject is order-independence, so the fixture
+        # must not arrive in the declared order.
+        contexts=list(reversed(_declared_contexts("TFactory", "dev"))),
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
@@ -513,13 +512,7 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
     reports -- the old per-repo script applied main's payload to dev.
     """
     live = _live_shaped(
-        contexts=[
-            "backend (ruff + pytest)",
-            "critical (fast PR gate)",
-            _ACCEPT,
-            _VCORE,
-            _GITLEAKS,
-        ],
+        contexts=_declared_contexts("TFactory", "dev"),
         strict=True,  # dev is strict since Factory#834
         reviews=None,
         conversation_resolution=False,
@@ -564,15 +557,47 @@ def test_missing_token_fails_rather_than_reports_clean() -> None:
 # ── the required contexts must be producible (Factory#529) ──────────────────
 
 
+def _expand_matrix_names(name: str, wf_text: str) -> set[str]:
+    """Expand one `${{ matrix.<key> }}` in a job name into the names it reports.
+
+    A matrix job does not report the literal name written in the YAML: GitHub
+    substitutes each matrix value, so `Analyze (${{ matrix.language }})` arrives
+    as three separate contexts. Reading the literal made every matrix-named job
+    invisible to the check below -- a required context could point at one and
+    the guard would call it missing, or (worse, and the reason this matters)
+    could point at a MISSPELLED one and the guard could not tell.
+
+    Deliberately simple: one placeholder, and the values are read from the
+    `<key>: [a, b, c]` list in the same file. A matrix this parser cannot read
+    returns nothing extra, so the caller sees the literal and fails loudly
+    rather than silently widening what counts as a real job name.
+    """
+    m = re.search(r"\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}", name)
+    if not m:
+        return {name}
+    key = m.group(1)
+    values = re.search(rf"^\s*{re.escape(key)}:\s*\[([^\]]*)\]\s*$", wf_text, re.M)
+    if not values:
+        return {name}
+    expanded = {
+        name[: m.start()] + v.strip().strip("\"'") + name[m.end() :]
+        for v in values.group(1).split(",")
+        if v.strip()
+    }
+    return expanded or {name}
+
+
 def _workflow_job_names() -> set[str]:
     """Every `name:` a job in .github/workflows/ can report as a status context."""
     names: set[str] = set()
     for wf in (_REPO_ROOT / ".github" / "workflows").glob("*.yml"):
-        for line in wf.read_text(encoding="utf-8").splitlines():
+        text = wf.read_text(encoding="utf-8")
+        for line in text.splitlines():
             stripped = line.strip()
             # Job-level `name:` is indented; a workflow-level one is not.
             if stripped.startswith("name:") and line.startswith(" "):
-                names.add(stripped[len("name:") :].strip().strip("\"'"))
+                raw = stripped[len("name:") :].strip().strip("\"'")
+                names |= _expand_matrix_names(raw, text)
     return names
 
 
@@ -897,3 +922,64 @@ def test_the_guard_blocks_only_removal(
         "required_status_checks": None if wanted is None else {"contexts": wanted}
     }
     assert _assert_no_strip(live, payload) == expected_rc, case
+
+
+def test_codeql_and_sinks_are_required_on_every_code_repo() -> None:
+    """Factory#943 part 1, and the two ways it is easy to get wrong.
+
+    A gate nobody is required to pass is a notification, not a gate. These four
+    were advisory everywhere while being green everywhere: measured job-level
+    outcomes over the last 12 commits of each default branch gave Factory 11/11,
+    PFactory 14/14, TFactory 13/13, AIFactory 10/12 and CFactory 10/12, with
+    every non-success a `cancelled` (concurrency superseding an in-flight run),
+    never a `failure`.
+
+    Two traps this pins:
+
+    * **The matrix contexts, not a roll-up.** CodeQL reports one context per
+      language. The `CodeQL` roll-up does not post on every PR, so requiring it
+      leaves PRs waiting forever on a check that never arrives (Factory#529).
+    * **AIFactory spells it lowercase.** Required contexts match
+      case-sensitively, so `Analyze` and `analyze` are different checks and only
+      one of them ever reports on a given repo.
+
+    factory-gitops is excluded on purpose: it runs neither job, and a context
+    required where no workflow produces it can never report.
+    """
+    for repo in ("Factory", "PFactory", "TFactory", "CFactory"):
+        contexts = set(_declared_contexts(repo, _repo_table()[repo]["DEFAULT_BRANCH"]))
+        assert set(_CODEQL) <= contexts, f"{repo} does not require the CodeQL contexts"
+        assert _SINKS in contexts, f"{repo} does not require {_SINKS}"
+
+    ai = set(_declared_contexts("AIFactory", "dev"))
+    assert set(_CODEQL_AI) <= ai, "AIFactory must require the lowercase spelling"
+    assert not (set(_CODEQL) & ai), (
+        "AIFactory must NOT require the capitalised spelling -- its job is named "
+        "`analyze`, so `Analyze (...)` would never report and would wedge the branch"
+    )
+
+    gitops = set(_declared_contexts("factory-gitops", "main"))
+    assert not (set(_CODEQL) & gitops) and _SINKS not in gitops, (
+        "factory-gitops runs neither job; requiring them there can never be satisfied"
+    )
+
+
+def test_trivy_is_not_required_anywhere() -> None:
+    """#943 asks for Trivy too, and it is deliberately absent.
+
+    Trivy posts no check-run on any repo: it runs on push/deploy, not on
+    `pull_request`. Requiring a context nothing produces is the Factory#529
+    wedge. This pins the omission so a future reader does not "finish the job"
+    by adding it without first moving Trivy onto the PR trigger.
+    """
+    table = _repo_table()
+    for repo in _all_repos():
+        # Iterate the branches the script actually declares rather than
+        # guessing main/dev and swallowing the miss -- a swallowed miss would
+        # silently examine nothing and pass.
+        for branch in table[repo]["BRANCHES"].split():
+            contexts = _declared_contexts(repo, branch)
+            assert not [c for c in contexts if "trivy" in c.lower()], (
+                f"{repo}@{branch} requires a Trivy context, but Trivy does not run "
+                "on pull_request in any repo, so it can never report"
+            )
