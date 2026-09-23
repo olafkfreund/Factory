@@ -31,6 +31,17 @@ on:
         type: number
         required: false
         default: 45
+      deploys_on:
+        description: >-
+          What makes a commit deployable in the calling repo: "push" (every
+          deployable push to main ships — the default, and what every service
+          did before AIFactory#1559) or "version-bump" (only a commit that
+          changes package.json's version ships). With the wrong value this
+          watchdog is loud about drift that is by design, or silent about drift
+          that is not.
+        type: string
+        required: false
+        default: push
     secrets:
       GITOPS_PAT:
         description: "Read access to olafkfreund/factory-gitops"
@@ -76,6 +87,12 @@ jobs:
       - name: Resolve the newest commit that should have deployed
         id: expected
         working-directory: repo
+        env:
+          # Through env, never interpolated into the shell source: a workflow
+          # input is caller-controlled and `${{ }}` is substituted BEFORE bash
+          # parses the script, so a crafted value would run as code in a job
+          # that later holds GITOPS_PAT (CodeQL code-injection, Copilot review).
+          DEPLOYS_ON: ${{ inputs.deploys_on }}
         run: |
           set -euo pipefail
           # deploy.yml ignores docs/** and root-level *.md, so main's HEAD is
@@ -103,7 +120,47 @@ jobs:
           # how a watchdog gets muted and stops being a watchdog. --first-parent
           # asks exactly what deploy.yml's push trigger asks: did main itself
           # move a deployable file?
-          sha=$(git log -1 --first-parent --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
+          #
+          # AIFactory#1559: a repo may deploy only on a version bump. There,
+          # main's newest deployable commit is NOT what should be live -- a
+          # commit that lands without bumping deliberately does not ship, and
+          # comparing against it reports drift for every merge, forever. So ask
+          # the question that repo's deploy.yml asks: which commit last changed
+          # package.json's version? Same --first-parent walk, same reason.
+          case "${DEPLOYS_ON}" in
+            push)
+              sha=$(git log -1 --first-parent --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
+              ;;
+            version-bump)
+              # Only commits that TOUCHED package.json can have changed its
+              # version, so walk those rather than every commit. No -n cap: a
+              # repo may legitimately have hundreds of merges between releases,
+              # and a cap would make this fail instead of answering (Copilot
+              # review). `|| true` on both reads because `set -euo pipefail`
+              # otherwise turns a missing manifest -- guaranteed at the root
+              # commit -- into a dead step rather than the documented case.
+              sha=""
+              for candidate in $(git log --first-parent --format='%H' main -- package.json); do
+                new=$( { git show "${candidate}:package.json" 2>/dev/null || true; } | jq -r '.version // empty')
+                old=$( { git show "${candidate}^:package.json" 2>/dev/null || true; } | jq -r '.version // empty')
+                # No parent (root commit) counts as a bump: there is a version
+                # now and there was none before.
+                if [ -n "${new}" ] && [ "${new}" != "${old}" ]; then
+                  sha="${candidate}"
+                  break
+                fi
+              done
+              if [ -z "${sha}" ]; then
+                echo "::error::no commit on main ever changed package.json's version."
+                echo "::error::Either this repo does not deploy on a version bump, or package.json moved."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::deploys_on must be 'push' or 'version-bump', got '${DEPLOYS_ON}'."
+              exit 1
+              ;;
+          esac
           if [ -z "${sha}" ]; then
             echo "::error::no deployable commit found on main; the pathspec is wrong."
             exit 1
