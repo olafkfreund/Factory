@@ -182,7 +182,7 @@ def content_landed(repo: Path, upstream: str, head: str, sha: str) -> bool:
     if not files:
         return True  # nothing to compare; not evidence of divergence
     code = subprocess.run(  # noqa: S603
-        ["git", "-C", str(repo), "diff", "--quiet", upstream, head, "--", *files],
+        ["git", "-C", str(repo), "diff", "--quiet", upstream, head, "--", *files],  # noqa: S607
         capture_output=True,
         check=False,
     ).returncode
