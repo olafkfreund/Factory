@@ -115,6 +115,14 @@ _GITLEAKS_GITOPS = "pr-diff-scan"
 # on dev, so requiring it there adds a wedge risk and buys nothing.
 _ACCEPT = "docker (P0 acceptance)"
 
+# CodeQL and the whole-repo security sink lint (Factory#2943). These were live
+# on every branch while the declared intent omitted them, so an `--apply` would
+# have dropped them. AIFactory lower-cases its Analyze jobs and a required
+# context matches verbatim, hence two spellings.
+_CODEQL = ["Analyze (actions)", "Analyze (javascript-typescript)", "Analyze (python)"]
+_CODEQL_LC = ["analyze (actions)", "analyze (javascript-typescript)", "analyze (python)"]
+_SINKS = "security sinks (whole repo)"
+
 
 def _live_shaped(
     *,
@@ -229,24 +237,36 @@ def test_check_contexts_are_per_repo() -> None:
     The bug in Factory#468 was one repo's check names hardcoded into a script
     vendored to repos whose jobs are named differently. Lock the distinction.
     """
-    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == [
-        "Backend pytest",
-        "Frontend typecheck + build",
-        _GITLEAKS,
-        _VCORE,
-    ]
-    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == [
-        "backend (ruff + pytest)",
-        "critical (fast PR gate)",
-        _GITLEAKS,
-        _VCORE,
-    ]
+    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "Backend pytest",
+            "Frontend typecheck + build",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
+    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            "critical (fast PR gate)",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
     # AIFactory has no required frontend check, despite having a frontend suite.
-    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == [
-        "backend (ruff + pytest)",
-        _GITLEAKS,
-        _VCORE,
-    ]
+    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL_LC,
+            _SINKS,
+        ]
+    )
     # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
     # factory-gitops vendors none of it. A context required where no such
     # workflow exists can never report, which is the Factory#529 wedge.
@@ -335,7 +355,14 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "main",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
+            [
+                "backend (ruff + pytest)",
+                "critical (fast PR gate)",
+                _VCORE,
+                _GITLEAKS,
+                *_CODEQL,
+                _SINKS,
+            ],
             True,
             None,
             True,
@@ -349,6 +376,8 @@ def test_matching_live_response_compares_equal() -> None:
                 _ACCEPT,
                 _GITLEAKS,
                 _VCORE,
+                *_CODEQL,
+                _SINKS,
             ],
             True,
             None,
@@ -357,7 +386,14 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "CFactory",
             "main",
-            ["Backend pytest", "Frontend typecheck + build", _VCORE, _GITLEAKS],
+            [
+                "Backend pytest",
+                "Frontend typecheck + build",
+                _VCORE,
+                _GITLEAKS,
+                *_CODEQL,
+                _SINKS,
+            ],
             True,
             None,
             True,
@@ -376,6 +412,8 @@ def test_matching_live_response_compares_equal() -> None:
                 "ruff format --check (every Python directory)",
                 "shared-baseline drift gate (blocking)",
                 _GITLEAKS,
+                *_CODEQL_LC,
+                _SINKS,
             ],
             True,
             None,
@@ -415,6 +453,8 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             "backend (ruff + pytest)",
             _ACCEPT,
             _VCORE,
+            *_CODEQL_LC,
+            _SINKS,
             "ratchet (ruff + mypy on changed Python)",
             "ruff format --check (every Python directory)",
             "shared-baseline drift gate (blocking)",
@@ -433,6 +473,8 @@ def test_unordered_contexts_compare_equal() -> None:
     # ignore the gate.
     live = _live_shaped(
         contexts=[
+            _SINKS,
+            *_CODEQL,
             _VCORE,
             _GITLEAKS,
             _ACCEPT,
@@ -519,6 +561,8 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
             _ACCEPT,
             _VCORE,
             _GITLEAKS,
+            *_CODEQL,
+            _SINKS,
         ],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
@@ -565,14 +609,37 @@ def test_missing_token_fails_rather_than_reports_clean() -> None:
 
 
 def _workflow_job_names() -> set[str]:
-    """Every `name:` a job in .github/workflows/ can report as a status context."""
+    """Every `name:` a job in .github/workflows/ can report as a status context.
+
+    A matrix job reports one context PER combination, named by substituting the
+    matrix value into the job name: `name: Analyze (${{ matrix.language }})`
+    over three languages reports `Analyze (python)`, `Analyze (actions)` and
+    `Analyze (javascript-typescript)`. Without expanding those, this guard
+    cannot see any matrix-produced context and would call a perfectly real
+    required check unproducible (Factory#2943).
+    """
     names: set[str] = set()
     for wf in (_REPO_ROOT / ".github" / "workflows").glob("*.yml"):
-        for line in wf.read_text(encoding="utf-8").splitlines():
+        text = wf.read_text(encoding="utf-8")
+        raw_names: set[str] = set()
+        for line in text.splitlines():
             stripped = line.strip()
             # Job-level `name:` is indented; a workflow-level one is not.
             if stripped.startswith("name:") and line.startswith(" "):
-                names.add(stripped[len("name:") :].strip().strip("\"'"))
+                raw_names.add(stripped[len("name:") :].strip().strip("\"'"))
+        for raw in raw_names:
+            match = re.search(r"\$\{\{\s*matrix\.(\w+)\s*\}\}", raw)
+            if not match:
+                names.add(raw)
+                continue
+            # Expand `key: [a, b, c]` from the same workflow.
+            key = match.group(1)
+            values = re.search(rf"^\s*{re.escape(key)}:\s*\[(.+?)\]\s*$", text, re.M)
+            if not values:
+                names.add(raw)  # cannot expand: keep it visible rather than drop it
+                continue
+            for value in (v.strip().strip("\"'") for v in values.group(1).split(",")):
+                names.add(re.sub(r"\$\{\{\s*matrix\.\w+\s*\}\}", value, raw))
     return names
 
 
