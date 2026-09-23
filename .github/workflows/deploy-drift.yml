@@ -87,6 +87,12 @@ jobs:
       - name: Resolve the newest commit that should have deployed
         id: expected
         working-directory: repo
+        env:
+          # Through env, never interpolated into the shell source: a workflow
+          # input is caller-controlled and `${{ }}` is substituted BEFORE bash
+          # parses the script, so a crafted value would run as code in a job
+          # that later holds GITOPS_PAT (CodeQL code-injection, Copilot review).
+          DEPLOYS_ON: ${{ inputs.deploys_on }}
         run: |
           set -euo pipefail
           # deploy.yml ignores docs/** and root-level *.md, so main's HEAD is
@@ -121,15 +127,22 @@ jobs:
           # comparing against it reports drift for every merge, forever. So ask
           # the question that repo's deploy.yml asks: which commit last changed
           # package.json's version? Same --first-parent walk, same reason.
-          case "${{ inputs.deploys_on }}" in
+          case "${DEPLOYS_ON}" in
             push)
               sha=$(git log -1 --first-parent --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
               ;;
             version-bump)
+              # Only commits that TOUCHED package.json can have changed its
+              # version, so walk those rather than every commit. No -n cap: a
+              # repo may legitimately have hundreds of merges between releases,
+              # and a cap would make this fail instead of answering (Copilot
+              # review). `|| true` on both reads because `set -euo pipefail`
+              # otherwise turns a missing manifest -- guaranteed at the root
+              # commit -- into a dead step rather than the documented case.
               sha=""
-              for candidate in $(git log --first-parent --format='%H' -n 200 main); do
-                new=$(git show "${candidate}:package.json" 2>/dev/null | jq -r '.version // empty')
-                old=$(git show "${candidate}^:package.json" 2>/dev/null | jq -r '.version // empty')
+              for candidate in $(git log --first-parent --format='%H' main -- package.json); do
+                new=$( { git show "${candidate}:package.json" 2>/dev/null || true; } | jq -r '.version // empty')
+                old=$( { git show "${candidate}^:package.json" 2>/dev/null || true; } | jq -r '.version // empty')
                 # No parent (root commit) counts as a bump: there is a version
                 # now and there was none before.
                 if [ -n "${new}" ] && [ "${new}" != "${old}" ]; then
@@ -138,13 +151,13 @@ jobs:
                 fi
               done
               if [ -z "${sha}" ]; then
-                echo "::error::no version bump found in the last 200 first-parent commits on main."
+                echo "::error::no commit on main ever changed package.json's version."
                 echo "::error::Either this repo does not deploy on a version bump, or package.json moved."
                 exit 1
               fi
               ;;
             *)
-              echo "::error::deploys_on must be 'push' or 'version-bump', got '${{ inputs.deploys_on }}'."
+              echo "::error::deploys_on must be 'push' or 'version-bump', got '${DEPLOYS_ON}'."
               exit 1
               ;;
           esac
