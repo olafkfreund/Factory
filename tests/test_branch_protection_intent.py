@@ -237,27 +237,36 @@ def test_check_contexts_are_per_repo() -> None:
     The bug in Factory#468 was one repo's check names hardcoded into a script
     vendored to repos whose jobs are named differently. Lock the distinction.
     """
-    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == sorted([
-        "Backend pytest",
-        "Frontend typecheck + build",
-        _GITLEAKS,
-        _VCORE,
-        *_CODEQL, _SINKS,
-    ])
-    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == sorted([
-        "backend (ruff + pytest)",
-        "critical (fast PR gate)",
-        _GITLEAKS,
-        _VCORE,
-        *_CODEQL, _SINKS,
-    ])
+    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "Backend pytest",
+            "Frontend typecheck + build",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
+    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            "critical (fast PR gate)",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
     # AIFactory has no required frontend check, despite having a frontend suite.
-    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == sorted([
-        "backend (ruff + pytest)",
-        _GITLEAKS,
-        _VCORE,
-        *_CODEQL_LC, _SINKS,
-    ])
+    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            _GITLEAKS,
+            _VCORE,
+            *_CODEQL_LC,
+            _SINKS,
+        ]
+    )
     # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
     # factory-gitops vendors none of it. A context required where no such
     # workflow exists can never report, which is the Factory#529 wedge.
