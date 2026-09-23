@@ -115,6 +115,10 @@ _GITLEAKS_GITOPS = "pr-diff-scan"
 # on dev, so requiring it there adds a wedge risk and buys nothing.
 _ACCEPT = "docker (P0 acceptance)"
 
+# TFactory's ruff-format job, required since Factory#2943: it ran on every PR
+# and blocked nothing, which is how TFactory#1322 merged red.
+_TF_FORMAT = "ruff format --check (apps/backend + apps/web-server + scripts + tests)"
+
 # CodeQL and the whole-repo security sink lint (Factory#2943). These were live
 # on every branch while the declared intent omitted them, so an `--apply` would
 # have dropped them. AIFactory lower-cases its Analyze jobs and a required
@@ -253,6 +257,7 @@ def test_check_contexts_are_per_repo() -> None:
             "critical (fast PR gate)",
             _GITLEAKS,
             _VCORE,
+            _TF_FORMAT,
             *_CODEQL,
             _SINKS,
         ]
@@ -360,6 +365,7 @@ def test_matching_live_response_compares_equal() -> None:
                 "critical (fast PR gate)",
                 _VCORE,
                 _GITLEAKS,
+                _TF_FORMAT,
                 *_CODEQL,
                 _SINKS,
             ],
@@ -374,6 +380,7 @@ def test_matching_live_response_compares_equal() -> None:
                 "backend (ruff + pytest)",
                 "critical (fast PR gate)",
                 _ACCEPT,
+                _TF_FORMAT,
                 _GITLEAKS,
                 _VCORE,
                 *_CODEQL,
@@ -478,6 +485,7 @@ def test_unordered_contexts_compare_equal() -> None:
             _VCORE,
             _GITLEAKS,
             _ACCEPT,
+            _TF_FORMAT,
             "critical (fast PR gate)",
             "backend (ruff + pytest)",
         ],
@@ -559,6 +567,7 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
             "backend (ruff + pytest)",
             "critical (fast PR gate)",
             _ACCEPT,
+            _TF_FORMAT,
             _VCORE,
             _GITLEAKS,
             *_CODEQL,
