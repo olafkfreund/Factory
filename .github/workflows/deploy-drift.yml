@@ -31,6 +31,17 @@ on:
         type: number
         required: false
         default: 45
+      deploys_on:
+        description: >-
+          What makes a commit deployable in the calling repo: "push" (every
+          deployable push to main ships — the default, and what every service
+          did before AIFactory#1559) or "version-bump" (only a commit that
+          changes package.json's version ships). With the wrong value this
+          watchdog is loud about drift that is by design, or silent about drift
+          that is not.
+        type: string
+        required: false
+        default: push
     secrets:
       GITOPS_PAT:
         description: "Read access to olafkfreund/factory-gitops"
@@ -103,7 +114,40 @@ jobs:
           # how a watchdog gets muted and stops being a watchdog. --first-parent
           # asks exactly what deploy.yml's push trigger asks: did main itself
           # move a deployable file?
-          sha=$(git log -1 --first-parent --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
+          #
+          # AIFactory#1559: a repo may deploy only on a version bump. There,
+          # main's newest deployable commit is NOT what should be live -- a
+          # commit that lands without bumping deliberately does not ship, and
+          # comparing against it reports drift for every merge, forever. So ask
+          # the question that repo's deploy.yml asks: which commit last changed
+          # package.json's version? Same --first-parent walk, same reason.
+          case "${{ inputs.deploys_on }}" in
+            push)
+              sha=$(git log -1 --first-parent --format='%H' main -- . ':(exclude)docs' ':(exclude,glob)*.md')
+              ;;
+            version-bump)
+              sha=""
+              for candidate in $(git log --first-parent --format='%H' -n 200 main); do
+                new=$(git show "${candidate}:package.json" 2>/dev/null | jq -r '.version // empty')
+                old=$(git show "${candidate}^:package.json" 2>/dev/null | jq -r '.version // empty')
+                # No parent (root commit) counts as a bump: there is a version
+                # now and there was none before.
+                if [ -n "${new}" ] && [ "${new}" != "${old}" ]; then
+                  sha="${candidate}"
+                  break
+                fi
+              done
+              if [ -z "${sha}" ]; then
+                echo "::error::no version bump found in the last 200 first-parent commits on main."
+                echo "::error::Either this repo does not deploy on a version bump, or package.json moved."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::deploys_on must be 'push' or 'version-bump', got '${{ inputs.deploys_on }}'."
+              exit 1
+              ;;
+          esac
           if [ -z "${sha}" ]; then
             echo "::error::no deployable commit found on main; the pathspec is wrong."
             exit 1
