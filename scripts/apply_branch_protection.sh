@@ -180,6 +180,11 @@ SECRET_CTX_GITOPS="pr-diff-scan"
 # in AIFactory, zero failures. A flaky required check wedges every PR.
 ACCEPT_CTX="docker (P0 acceptance)"
 
+# TFactory's ruff-format job. It ran on every PR and blocked nothing, so #1322
+# merged with it RED and dev went red until #1323 repaired it (Factory#2943).
+# AIFactory has required its equivalent since #814; TFactory was the outlier.
+TF_FORMAT_CTX="ruff format --check (apps/backend + apps/web-server + scripts + tests)"
+
 # CodeQL + the whole-repo security sink lint. These were live on every branch
 # but absent from the declared intent below, so `--apply` would have PUT a list
 # without them and silently dropped CodeQL as a required check (#2943). The job
@@ -208,7 +213,7 @@ repo_config() {
     # below, and for the same reason (#691): one CHECKS would PUT main's set
     # over dev and strip it again.
     PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # AIFactory's dev is its DEFAULT branch and carries three gates main does
     # not: the ratchet, the format check and the shared-baseline drift gate.
     # A single per-repo CHECKS could not express that, so `--apply` would have
