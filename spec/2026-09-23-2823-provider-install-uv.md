@@ -31,12 +31,15 @@ a running service's site-packages.
 
 `install_argv`'s `pip` branch, in both repos, becomes:
 
+Pseudocode — each repo raises **its own** existing exception, see below:
+
 ```python
-uv_path = shutil.which("uv")
-if uv_path is None:
-    raise InstallToolMissingError(
-        "uv is not on PATH; the runtime image ships no pip, so a pip-kind "
-        "provider cannot be installed. See Factory#2823."
+uv = shutil.which("uv")
+if uv is None:
+    raise <that repo's install-rejection error>(
+        f"cannot install {rt.name}: uv is not on PATH and the runtime image "
+        "ships no pip, so a pip-kind provider cannot be installed "
+        "(Factory#2823)"
     )
 return [
     uv_path, "pip", "install",
@@ -59,10 +62,13 @@ return [
 ### Failing loudly when uv is absent
 
 Today a missing tool produces a non-zero `InstallResult` that nothing reads —
-which is why this went unnoticed for three weeks. A missing uv now raises the
-same `InputRejectedError` family the function already raises for an unknown
-kind, so the API surfaces a message naming the cause. This is deliberately a
-different failure class from "the install ran and failed".
+which is why this went unnoticed for three weeks. A missing uv now raises,
+using **whichever exception that repo's `install_argv` already raises** for an
+unmanaged runtime: `InputRejectedError` in PFactory, plain `ValueError` in
+TFactory, which its route converts to a client error. Matching each repo's own
+convention beats importing one repo's exception into the other. Either way the
+API surfaces a message naming the cause — deliberately a different failure
+class from "the install ran and failed".
 
 ### Why the two repos change identically
 

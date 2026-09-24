@@ -62,8 +62,9 @@ runtime image.
   literal port to `uv pip install --upgrade <spec>` resolves the whole
   environment and would move `starlette` from `1.3.1` to `1.7.0`. That pin is
   deliberate — fastapi 0.137 / starlette 1.7 broke routing fleet-wide. The
-  constrained form `uv pip install --python <venv> --upgrade-package <spec>
-  <spec>` moves only the requested package (verified by dry run in the pod:
+  constrained form `uv pip install --python <venv> --upgrade-package <package>
+  <spec>` — the bare package NAME for `--upgrade-package`, the (optionally
+  pinned) requirement as the argument — moves only the requested package (verified by dry run in the pod:
   `claude-agent-sdk 0.2.157 -> 0.2.158`, everything else untouched).
 - The two services must stay consistent: this is the same function in both
   repos, and divergence here is how the fleet gets two behaviours for one
