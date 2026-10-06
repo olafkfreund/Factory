@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3151
 author: olafkfreund
 ---
@@ -103,3 +103,8 @@ change.
    one `java.unit` framework whose runner picks maven or gradle from the
    manifest at run time. The second avoids a registry change but hides the
    build tool from the plan.
+
+## Decisions on approval (2026-10-06)
+
+1. **Option A: build it.** The recommended option, approved without amendment.
+2. How Gradle is chosen for Java is deferred to the spec, as stated above.
