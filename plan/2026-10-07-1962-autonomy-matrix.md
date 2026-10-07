@@ -484,3 +484,34 @@ outcome.
     hold-async.
   - **Control:** exit 0,
     `ok: tiers=10 overlay=12 val=8 paths=28 gates=3`.
+
+### Independent review of PR 1 and its fixes (2026-10-07)
+
+A fresh Opus reviewer found nothing that blocks. All five findings were fixed
+before the PR (`19dfb5ad` generator, `ef5fd21e` tests).
+
+- **HIGH, a deviation in the prober's scope:** the walk skipped parent package
+  `__init__` files. `merge/__init__.py` imports `ai_resolver`, which reaches
+  the model clients.
+  - Decision: the label stays scoped to the gate module's own import edges, and
+    the page says so.
+  - A **derived** column, "package `__init__` reaches a model client", reports
+    the parent-package reach separately. For `merge_policy` it reads: yes, via
+    `merge/__init__.py`.
+  - Paths are listed on the page when there are 3 or fewer; otherwise there's a
+    count, and the full list goes in JSON `gates[].init_reach`.
+- **MEDIUM:** a dynamic import (`importlib.import_module` or `__import__`) in a
+  closure makes the label `undetermined (…)`, never `deterministic`. In the
+  model-assisted rows it's noted in the same cell.
+- **LOW:** the spawn edge now requires the three path parts in one assigning
+  statement, a spawn call using that variable, and each `extra_root` matched
+  in one statement.
+- **Tests:** 7 → 15.
+  - The vacuous constant and minimum tests were fixed.
+  - Added: the spawn-edge negative cases, relative imports, a dynamic import,
+    and the parent-`__init__` case.
+- **NIT:** the A2 required-gates line is rendered from the probe variable.
+- **After the fixes:**
+  - `--check` gives
+    `ok: tiers=10 overlay=12 val=8 paths=28 gates=3`;
+  - the full suite gives 5535 passed, 60 skipped, 71 deselected, 2 xpassed.
