@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1962
 author: olafkfreund
 ---
@@ -151,3 +151,15 @@ generator built on it would invent content in its very first render.
 3. **Review cadence** (#1962's "rubber-stamp rate" item). Recording a cadence
    is a process decision, not code. Should it go in the published page as a
    stated policy, or be dropped from this task?
+
+## Decisions on approval (2026-10-07)
+
+1. **Option A.** Run the `enforce_admins` scratch-repo experiment first, as
+   part of this task's plan, and let its result set the published wording. If
+   the merge succeeds, the fix belongs to #943/#1963.
+2. **One task, two PRs.**
+   - PR 1: matrix, staleness gate and determinism prober.
+   - PR 2: control-objective mapping and the #324 link.
+
+   Publication waits for PR 2.
+3. **Review cadence: dropped from this task.**
