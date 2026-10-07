@@ -245,3 +245,27 @@ spec: spec/2026-10-06-3151-gradle-java-lane.md
 Revert the TFactory PR. Every change is additive and behind the
 "no pom.xml + Gradle marker" condition. Maven-Java and Kotlin paths are
 untouched, and there's no hub, vendoring, schema or data change to unwind.
+
+## Implementation record (2026-10-07)
+
+- Steps 1–7 were written by the `coder` agent and committed one per step on
+  TFactory `fix/3151-gradle-java-lane` (`ae164dc8`..`6b1e4614`). Step 8
+  (the live proof) was run by the session model.
+- **Step 8 evidence:** all three outcomes were met, in-cluster through
+  `_resolve_java_runner_fn`:
+  - gradle-java-min: rc=0, `tests="3" failures="0"`;
+  - mutated: rc=1, `failures="1"`;
+  - maven-min: rc=0, `tests="3" failures="0"`, via `mvn`.
+- **Deviation (additive, from the independent review):** step 6 gained two
+  assertions:
+  - a nested `sub/pom.xml` beside a root `build.gradle` routes to maven,
+    which guards the "anywhere" half of the rule;
+  - `run_gradle_lane_via_nix` without `env` still materializes Kotlin's env.
+
+  A docstring line in `java_environment` was also wrapped. This is commit
+  `fix(review)` on the same branch. There is no design change.
+- **Noted, not fixed (out of scope):**
+  - the `frameworks/maven` header says `frameworks/junit` "no longer claims
+    `unit`", but `frameworks/junit/descriptor.yaml` still lists it;
+  - a Gradle-Java repo with a stray `pom.xml` (for example a test resource)
+    routes to Maven. That is the approved rule, and it fails closed.
