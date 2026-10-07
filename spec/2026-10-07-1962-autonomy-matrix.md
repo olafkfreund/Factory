@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1962
 intent: intent/2026-10-07-1962-autonomy-matrix.md
 ---
