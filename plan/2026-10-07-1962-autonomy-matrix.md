@@ -458,3 +458,29 @@ outcome.
 
   No label is hardcoded. Minimum closure sizes use `max(2, floor(0.5 × measured))`,
   because `merge_policy`'s closure is 2.
+
+### Steps 3–7 (2026-10-07)
+
+- **Step 3:** `a03879cc`. Measured closures:
+  - `merge_policy` is 2, deterministic;
+  - `pr_review_service` is 263 via the spawn edge, model-assisted;
+  - `pr_endgame` is 352, model-assisted.
+
+  Minimums are 2, 131 and 176.
+- **Step 4:** `23684a89`, plus `cef3ce8d` (a readability follow-up: a computed
+  "otherwise" and a legend in A1).
+- **Step 5:** `9fee2c42`, 7 tests.
+  - Full suite: 5526 passed, 60 skipped, 71 deselected, 2 xpassed.
+  - Test 3 checks the closure size directly; exit 4 is covered by test 4.
+- **Step 6:** `3de0b374`.
+  - `actionlint` is clean.
+  - The hub's `check_workflow_duplication.py` reports OK.
+  - There is no composite setup action to reuse.
+- **Step 7, mutations (session model; reverted, tree clean):**
+  - **A, value:** exit 1, `line 20 differs: hold-async-v2 vs hold-async`.
+  - **B, shape:** exit 1, `line 36 differs`. The overlay auto-merge row went from
+    9 to 6 combos.
+  - **D, wiring:** exit 1, `line 103 differs`. Blank went from auto-merge to
+    hold-async.
+  - **Control:** exit 0,
+    `ok: tiers=10 overlay=12 val=8 paths=28 gates=3`.
