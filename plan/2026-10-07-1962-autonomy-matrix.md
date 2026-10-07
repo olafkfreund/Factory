@@ -397,3 +397,26 @@ outcome.
   or every PR wedges.
 - **Step 0:** the scratch repo is deleted at the end of the step. If a merge
   went through there, nothing outside the scratch repo is touched.
+
+## Implementation record
+
+### Step 0: `enforce_admins` experiment (2026-10-07, session model)
+
+- **Repo:** `olafkfreund/protection-probe-1962` (private).
+  - Required check `must-pass` runs `exit 1`; `strict: true`;
+    `enforce_admins: false`; no reviews.
+  - The PR's `must-pass` was red and `mergeStateStatus` was `BLOCKED`.
+  - Account `olafkfreund`, a repo admin.
+- **Attempt 1:** `gh pr merge 1 --squash` was **refused**, exit 1: "the base
+  branch policy prohibits the merge … add the `--admin` flag".
+- **Attempt 2:** `gh api -X PUT …/pulls/1/merge -f merge_method=squash`
+  **merged**, exit 0: `{"merged":true,"sha":"030dd1fa…"}`.
+- **Outcome:** the server doesn't enforce the floor for admins.
+  - Every AIFactory GitHub merge path uses `gh pr merge` without `--admin`, so
+    today the floor holds by client convention.
+  - The scratch repo is deleted.
+  - Filed on #943 (issuecomment on 2026-10-07).
+- **Effect on PR 2 (step 10):** the branch-protection `claim` is: "enforced by
+  branch protection for non-admin merges; the fleet's merge paths do not use
+  admin bypass, but GitHub does not prevent it while `enforce_admins` is
+  false."
