@@ -515,3 +515,15 @@ before the PR (`19dfb5ad` generator, `ef5fd21e` tests).
   - `--check` gives
     `ok: tiers=10 overlay=12 val=8 paths=28 gates=3`;
   - the full suite gives 5535 passed, 60 skipped, 71 deselected, 2 xpassed.
+
+### Step 8: PR 1 opened (2026-10-07)
+
+- **PR:** AIFactory#1651 → `dev`.
+- **First CI run:** the new gate `autonomy matrix matches the policy (--check, blocking)`
+  passed. The ratchet failed because new files are held to the strict
+  baselines (`standards/ruff.toml`, `standards/mypy.ini`): 23 ruff findings and
+  6 mypy findings.
+- **Fixes:** made without blanket `noqa` or `type: ignore`. Outputs are
+  byte-identical, and the 15 tests still pass.
+- **Final CI:** 52 pass, 5 skipped, 0 fail.
+- **Trap for PR 2:** run both strict configs locally before pushing.
