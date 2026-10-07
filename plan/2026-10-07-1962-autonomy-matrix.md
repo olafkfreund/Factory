@@ -420,3 +420,41 @@ outcome.
   branch protection for non-admin merges; the fleet's merge paths do not use
   admin bypass, but GitHub does not prevent it while `enforce_admins` is
   false."
+
+### Steps 1–3 (coder, 2026-10-07)
+
+- **Step 1:** `a8b371d5`. The VAL probes were corrected to the spec's exact 8,
+  and the blank tier renders as `(blank)`.
+- **Step 2:** `c1b761a6`. All three expectations hold:
+  - blank == low;
+  - both flags default off;
+  - the path floor gives `(low, blocking)` when advisory and
+    `(blocking, blocking)` when enforced.
+- `AIFACTORY_AUTO_MERGE` has no module constant, so the name is restated with a
+  `ponytail:` comment. The flag value still comes from calling
+  `is_auto_merge_enabled`, so a rename shows up as output drift.
+- **Finding, rendered and not changed:** `merge_gate_signals` gives unmeasured
+  signals passing defaults:
+  - `host_ci_green=True`
+  - `tfactory_verdict='pass'`
+  - `ci_parity=True`
+  - `achieved_val=0` with `val_floor=None`
+
+  So a `low` task with nothing recorded auto-merges when
+  `AIFACTORY_AUTO_MERGE` is on. This is documented as deliberate in
+  `merge_gate_signals`. It's out of scope here and relevant to #1963.
+- **Step 3 deviation: a spawn edge in the prober.** The step 3 stop-trap fired,
+  because `server.services.pr_review_service` labelled *deterministic*. The
+  service runs the model-backed reviewer as a subprocess
+  (`apps/backend/runners/github/runner.py`, through `create_subprocess_exec`,
+  with `PYTHONPATH` = backend + `runners/github`), which an import walk can't
+  see. The fix, decided by the planner:
+  - a marked `_SPAWN_EDGES` literal (caller → script, plus extra import roots
+    that mirror the subprocess `PYTHONPATH`);
+  - **verified against the caller's AST** on every run: the path string
+    constants and a subprocess-exec call must be present, and the script must
+    exist, or the run exits 4;
+  - the caller's closure = its import closure ∪ the script's closure.
+
+  No label is hardcoded. Minimum closure sizes use `max(2, floor(0.5 × measured))`,
+  because `merge_policy`'s closure is 2.
