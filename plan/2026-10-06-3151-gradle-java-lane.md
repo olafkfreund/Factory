@@ -263,7 +263,7 @@ untouched, and there's no hub, vendoring, schema or data change to unwind.
   - `run_gradle_lane_via_nix` without `env` still materializes Kotlin's env.
 
   A docstring line in `java_environment` was also wrapped. This is commit
-  `fix(review)` on the same branch. There is no design change.
+  `e46da1f2` on the same branch. There is no design change.
 - **Noted, not fixed (out of scope):**
   - the `frameworks/maven` header says `frameworks/junit` "no longer claims
     `unit`", but `frameworks/junit/descriptor.yaml` still lists it;
