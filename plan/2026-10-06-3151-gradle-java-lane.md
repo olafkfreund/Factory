@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3151
 spec: spec/2026-10-06-3151-gradle-java-lane.md
 ---
