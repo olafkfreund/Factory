@@ -47,7 +47,7 @@ as separate columns here.
 | Audit logging | Hash-chain + daily signed anchor + air-gapped verifier | Background/WS events unchained; no SIEM forward; no security alerting | #313 |
 | Encryption at rest | TLS at Cloudflare edge; agenix host key | No at-rest encryption on DB/MinIO; no KMS; cluster-internal cleartext | #314 |
 | Secrets management | agenix + cred-broker rotation; `scan_secrets.py` | Rotation one credential deep; no inventory; SOPS claim not real | #315 |
-| Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built); merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | Direct-to-main gitops auto-deploy; no branch protection; Fides unwired | #316 |
+| Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built); merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | Direct-to-main gitops auto-deploy; branch protection with required checks on all four service repos (and factory-gitops), but `enforce_admins` off, so an admin can merge past a red check via the API (#943); Fides unwired | #316 |
 | Vuln & patch mgmt | CodeQL x5, Trivy P0 gate, Dependabot base-image updates x4; remediation SLA + vulnerability register documented | CFactory even-coverage in flight (CFactory#191); external pen test not yet run; factory-gitops agent-CLI pins unmanaged (#436 gap #7) | #317 |
 | Supply-chain integrity | Cosign + dual SBOM on PFactory/AIFactory/TFactory | CFactory unsigned; no signature-verification admission gate | #318 |
 | Incident response | SECURITY.md disclosure; audit chain for forensics | No IR runbook wired to alerting; untested; no paging | #319 |
