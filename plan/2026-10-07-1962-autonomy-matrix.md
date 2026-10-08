@@ -546,3 +546,16 @@ before the PR (`19dfb5ad` generator, `ef5fd21e` tests).
   unresolved review thread, so local `main` lacked the change and the run
   re-applied the existing protection (a no-op). Apply only after confirming
   `git log -1` on `main` shows the merge.
+
+### Step 10 deviation: TOML, not YAML (2026-10-08)
+
+PyYAML isn't a direct dependency of the backend or web-server. It's declared
+only in `tests/requirements-test.txt`, and the autonomy-matrix workflow doesn't
+install that file. Locally it arrives transitively through
+`kubernetes_asyncio`, so `--check` would pass locally and fail in CI with
+`ModuleNotFoundError`.
+
+The mapping is therefore `docs/compliance/control-objectives.toml`, read with
+the stdlib `tomllib` (Python 3.12). There's no new dependency and no workflow
+change, and it's still human-editable with comments. Everything else in step 10
+is unchanged.
