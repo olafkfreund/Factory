@@ -219,7 +219,13 @@ repo_config() {
     # A single per-repo CHECKS could not express that, so `--apply` would have
     # PUT the two-check main set over dev and stripped all three (#691).
     # CHECKS_DEV is the per-branch override; unset means "same as CHECKS".
-    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    #
+    # `autonomy matrix matches the policy` (Factory#1962) is required on both
+    # branches: the published autonomy matrix is generated from merge_policy.py
+    # and a stale one is a governance document that lies. Its workflow has no
+    # `paths:` filter, so it reports on every PR -- dev's and main's release/*
+    # PRs alike -- and cannot leave a PR waiting on a check that never runs.
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs
