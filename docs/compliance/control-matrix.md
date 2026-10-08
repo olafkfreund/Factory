@@ -47,14 +47,14 @@ as separate columns here.
 | Audit logging | Hash-chain + daily signed anchor + air-gapped verifier | Background/WS events unchained; no SIEM forward; no security alerting | #313 |
 | Encryption at rest | TLS at Cloudflare edge; agenix host key | No at-rest encryption on DB/MinIO; no KMS; cluster-internal cleartext | #314 |
 | Secrets management | agenix + cred-broker rotation; `scan_secrets.py` | Rotation one credential deep; no inventory; SOPS claim not real | #315 |
-| Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built) | Direct-to-main gitops auto-deploy; no branch protection; Fides unwired | #316 |
+| Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built); merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | Direct-to-main gitops auto-deploy; branch protection with required checks on all four service repos (and factory-gitops), but `enforce_admins` off, so an admin can merge past a red check via the API (#943); Fides unwired | #316 |
 | Vuln & patch mgmt | CodeQL x5, Trivy P0 gate, Dependabot base-image updates x4; remediation SLA + vulnerability register documented | CFactory even-coverage in flight (CFactory#191); external pen test not yet run; factory-gitops agent-CLI pins unmanaged (#436 gap #7) | #317 |
 | Supply-chain integrity | Cosign + dual SBOM on PFactory/AIFactory/TFactory | CFactory unsigned; no signature-verification admission gate | #318 |
 | Incident response | SECURITY.md disclosure; audit chain for forensics | No IR runbook wired to alerting; untested; no paging | #319 |
 | Data governance | Redactor `llm_pii_redactor.py`; local-Ollama egress option | PII egress to LLM providers default-on; no classification/retention | #320 |
 | Business continuity / DR | Cred-broker CronJob only | Zero backups for Postgres/MinIO; no tested restore; RPO unbounded | #321 |
 | Runtime isolation | bwrap sandbox (#363), Job NetworkPolicy + non-root (default-on) | No microVM; coarse 443-to-any egress; no PodSecurity Admission | #322 |
-| Agentic-AI governance | Signed contracts, injection/egress guards, RFC-0001a/0006/0012 gates | No model registry/eval gate; no output DLP; trusted-plan key no rotation | #323 |
+| Agentic-AI governance | Signed contracts, injection/egress guards, RFC-0001a/0006/0012 gates; merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | No model registry/eval gate; no output DLP; trusted-plan key no rotation | #323 |
 | Evidence & audit-readiness | This directory (Wave 0) | No automated evidence collection; no per-framework gap sign-off | #324 |
 
 ## Statement of Applicability
