@@ -615,3 +615,8 @@ it on AIFactory `dev`.
     `wiring.live_overlay`.
   - **Publication is held** until PR 3 merges. The AIFactory release to `main`
     is the owner's call either way: it ships 15 commits, including #1626.
+- **PR 3 merged:** AIFactory#1659 → `dev`. Section B5 shows the live overlay:
+  - production and `risk_class=high` with the flag unset give **auto-merge**;
+  - with the flag `1` they give hold-blocking.
+
+  There are 13 controls and 22 tests. 52 checks passed.
