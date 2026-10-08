@@ -126,6 +126,8 @@ _TF_FORMAT = "ruff format --check (apps/backend + apps/web-server + scripts + te
 _CODEQL = ["Analyze (actions)", "Analyze (javascript-typescript)", "Analyze (python)"]
 _CODEQL_LC = ["analyze (actions)", "analyze (javascript-typescript)", "analyze (python)"]
 _SINKS = "security sinks (whole repo)"
+# AIFactory only (Factory#1962): the generated autonomy matrix staleness gate.
+_AUTONOMY = "autonomy matrix matches the policy (--check, blocking)"
 
 
 def _live_shaped(
@@ -270,6 +272,7 @@ def test_check_contexts_are_per_repo() -> None:
             _VCORE,
             *_CODEQL_LC,
             _SINKS,
+            _AUTONOMY,
         ]
     )
     # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
@@ -421,6 +424,7 @@ def test_matching_live_response_compares_equal() -> None:
                 _GITLEAKS,
                 *_CODEQL_LC,
                 _SINKS,
+                _AUTONOMY,
             ],
             True,
             None,
@@ -462,6 +466,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             _VCORE,
             *_CODEQL_LC,
             _SINKS,
+            _AUTONOMY,
             "ratchet (ruff + mypy on changed Python)",
             "ruff format --check (every Python directory)",
             "shared-baseline drift gate (blocking)",
