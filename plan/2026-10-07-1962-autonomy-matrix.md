@@ -527,3 +527,22 @@ before the PR (`19dfb5ad` generator, `ef5fd21e` tests).
   byte-identical, and the 15 tests still pass.
 - **Final CI:** 52 pass, 5 skipped, 0 fail.
 - **Trap for PR 2:** run both strict configs locally before pushing.
+
+### Steps 8 and 9 (2026-10-08)
+
+- **PR 1 merged:** AIFactory#1651 → `dev` @ `c9361690`. The gate ran on the
+  `dev` push and passed.
+- **How `main` gets changes:** `main` receives `release/*` PRs, which run
+  `pull_request` workflows, so the context is required on both branches.
+- **Step 9:** hub Factory#3542 → `main` @ `5c13340c`.
+  - The context was added to AIFactory `CHECKS` and `CHECKS_DEV`.
+  - `tests/test_branch_protection_intent.py` pins it: `_AUTONOMY` in the
+    AIFactory/main expectation and in both AIFactory/dev live fixtures.
+  - The dry-run before applying showed this context as the only drift.
+- **Applied:** `scripts/apply_branch_protection.sh --apply --repo AIFactory`.
+  - Live: `dev` has 12 contexts, `main` has 8, and the autonomy gate is on both.
+  - A re-check reports "live branch protection matches the declared intent".
+- **Trap seen:** the first `--apply` ran while #3542 was still blocked on an
+  unresolved review thread, so local `main` lacked the change and the run
+  re-applied the existing protection (a no-op). Apply only after confirming
+  `git log -1` on `main` shows the merge.
