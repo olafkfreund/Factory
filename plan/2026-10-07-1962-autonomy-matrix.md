@@ -559,3 +559,32 @@ The mapping is therefore `docs/compliance/control-objectives.toml`, read with
 the stdlib `tomllib` (Python 3.12). There's no new dependency and no workflow
 change, and it's still human-editable with comments. Everything else in step 10
 is unchanged.
+
+### Steps 10–12: PR 2 (2026-10-08)
+
+- **Step 10:** coder; mapping reviewed by the session model.
+  - `docs/compliance/control-objectives.toml` has 12 entries, matching the 12
+    derived ids.
+  - The branch-protection claim is verbatim on `policy.tier.*` and `gate.*`.
+  - Framework vocabulary is the hub's, and the SEC column is omitted.
+  - **ISO A.5.23 was removed by the session model:** it covers the use of cloud
+    services, not a model-assisted gate, even though the hub's #323 row cites
+    it. The reason is in the TOML header.
+  - **Orphans, both directions:** deleting an entry gives exit 1, naming
+    `policy.val_floor`; a bogus entry gives exit 1, naming `bogus.x`.
+- **Step 11:** `draft: true` was removed and the sidebar entry added.
+  - The local `npm ci && npm run build` first **failed on our page**: the
+    HTML-comment banner and `<br>` are invalid MDX, which `draft: true` had hidden
+    in PR 1. These are now an MDX comment and `<br/>`, and the build passes.
+- **Step 12:** AIFactory#1657 → `dev` @ `46c9e51f`, with 52 checks passing.
+  - Copilot found that a non-table entry crashed with a traceback and that a
+    non-string `claim` was published. The session model fixed both as named
+    errors, with 2 tests that fail when the fix is reverted.
+  - 20 generator tests.
+- **Still to do:**
+  - **Publication:** happens on the next AIFactory `release/*` → `main` merge.
+  - **Step 13:** the hub links are staged on Factory branch
+    `docs/1962-control-matrix-links` (`4dfdb6ee`). Merge them once
+    `https://olafkfreund.github.io/AIFactory/compliance/autonomy-matrix`
+    returns 200.
+  - **Afterwards:** close #1962 and comment on #1958 and #1963.
