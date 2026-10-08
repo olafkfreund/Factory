@@ -588,3 +588,30 @@ is unchanged.
     `https://olafkfreund.github.io/AIFactory/compliance/autonomy-matrix`
     returns 200.
   - **Afterwards:** close #1962 and comment on #1958 and #1963.
+
+### Deviation: the live-overlay probe, PR 3 (2026-10-08)
+
+Copilot's review on Factory#3543 found the gap, and the session model measured
+it on AIFactory `dev`.
+
+- **The gap:** the RFC-0013 deployment overlay is **advisory on the live path**
+  unless `AIFACTORY_PATH_RISK_FLOOR_ENFORCE` is set.
+  - `merge_disposition` passes no `deployment` to `decide_merge`.
+  - The overlay reaches the live decision only through `apply_path_risk_floor`,
+    whose floor isn't applied while the flag is off.
+- **Measured** with a production contract, a `low` tier, all-green signals and a
+  non-risky diff:
+  - flag unset: effective `low`, live disposition **`auto-merge`**;
+  - flag `1`: effective `blocking`, live disposition `hold-blocking`.
+- **Effect on the page:** Section A ("production never autonomous") is true of
+  the policy function only. PR 1 and PR 2's Section B didn't show the live
+  overlay, so the page as merged overstates how strict the live path is.
+- **Actions:**
+  - The gap is filed as **AIFactory#1658**. It's a behaviour change, out of scope
+    for #1962, and linked to #1963.
+  - **PR 3** adds a derived Section B probe, "deployment overlay on the live
+    path": production and high risk × flag unset and `1`, calling
+    `apply_path_risk_floor` then `merge_disposition`. It also adds control id
+    `wiring.live_overlay`.
+  - **Publication is held** until PR 3 merges. The AIFactory release to `main`
+    is the owner's call either way: it ships 15 commits, including #1626.
