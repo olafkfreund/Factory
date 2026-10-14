@@ -558,6 +558,26 @@ def _installed_python_hook(py_ver: object, py_pkgs: list[str]) -> str:
     )
 
 
+def _python_toolchain(m: Manifest, project_dir=None) -> tuple[str, str]:
+    """(package line, shellHook) for the Python branch.
+
+    A version in _PY_ATTR gets the Nix interpreter (with its libs via
+    withPackages); one the pin does not carry gets uv and an install hook.
+    """
+    py_ver = m.toolchain.get("python")
+    py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m, project_dir=project_dir)]
+    if py_ver and py_ver not in _PY_ATTR:
+        return "pkgs.uv", _installed_python_hook(py_ver, py_pkgs)
+    py = _python_attr(m)
+    if not py_pkgs:
+        return f"pkgs.{py}", ""
+    # Reference each attr as ``p."name"`` (quoted) rather than
+    # ``with p; [ name ]`` so hyphenated attrs (pytest-cov,
+    # scikit-learn) don't parse as Nix subtraction.
+    joined = " ".join(f'p."{name}"' for name in py_pkgs)
+    return f"(pkgs.{py}.withPackages (p: [ {joined} ]))", ""
+
+
 def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=None) -> str:
     """Render a reproducible `flake.nix` from an RFC-0005 environment manifest.
 
@@ -607,21 +627,9 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
         # python's is a `withPackages` expression, not a bare attr name.)
         sys_attrs = _LANG_ATTRS[lang] + sys_attrs
     elif lang == "python":
-        py_ver = m.toolchain.get("python")
-        py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m, project_dir=project_dir)]
-        if py_ver and py_ver not in _PY_ATTR:
-            pkg_lines.append("pkgs.uv")
-            env_lines += _installed_python_hook(py_ver, py_pkgs)
-        else:
-            py = _python_attr(m)
-            if py_pkgs:
-                # Reference each attr as ``p."name"`` (quoted) rather than
-                # ``with p; [ name ]`` so hyphenated attrs (pytest-cov,
-                # scikit-learn) don't parse as Nix subtraction.
-                joined = " ".join(f'p."{name}"' for name in py_pkgs)
-                pkg_lines.append(f"(pkgs.{py}.withPackages (p: [ {joined} ]))")
-            else:
-                pkg_lines.append(f"pkgs.{py}")
+        py_line, py_hook = _python_toolchain(m, project_dir)
+        pkg_lines.append(py_line)
+        env_lines += py_hook
     else:
         # FAIL CLOSED. Emitting the Python shell here is what #1012 was: the
         # generated flake builds, the lane starts, and the declared command dies

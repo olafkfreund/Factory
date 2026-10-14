@@ -56,8 +56,8 @@ def test_every_reachable_attr_evaluates_at_the_pin() -> None:
         "&& (builtins.tryEval pkgs.${a}.drvPath).success)) "
         f"(builtins.fromJSON {json.dumps(json.dumps(names))})"
     )
-    out = subprocess.run(
-        [
+    out = subprocess.run(  # noqa: S603 - fixed argv, expr built from repo tables
+        [  # noqa: S607
             "nix",
             "--extra-experimental-features",
             "nix-command flakes",
