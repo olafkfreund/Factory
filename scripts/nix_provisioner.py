@@ -345,6 +345,8 @@ def _go_attr(m: Manifest) -> str:
 # nixpkgs top-level attrs we know how to map system_packages onto. Browser libs
 # come bundled with playwright-driver.browsers, so a bare 'chromium' is dropped
 # in favour of the playwright stack (added separately) to avoid version skew.
+# `python`/`pip` are not here (#1020): dropping them is right only on the Python
+# branch, whose harness supplies them, so _system_pkg_attrs decides per language.
 _DROP_SYSTEM_PKGS = {
     "chromium",
     "playwright",
@@ -355,8 +357,8 @@ _DROP_SYSTEM_PKGS = {
     # runner itself comes from npm at lane setup, because nixpkgs has no jest
     # attribute to name (see the jest block in generate_flake).
     "jest",
-    # The Python harness already supplies all three via `withPackages` a few
-    # lines below, and NONE of them is a top-level nixpkgs attr -- `pkgs.pytest`
+    # The Python harness already supplies pytest via `withPackages` a few
+    # lines below, and it is not a top-level nixpkgs attr -- `pkgs.pytest`
     # does not exist (nixpkgs suggests "btest, cpptest, evtest"), so emitting it
     # failed the WHOLE flake eval, not just that package. A manifest naming
     # `pytest` in system_packages is the most obvious thing a planner writes for
@@ -367,8 +369,6 @@ _DROP_SYSTEM_PKGS = {
     # (Factory#1007) and invisible for the same reason: the unit tests assert on
     # the flake's TEXT, and nothing evaluated one.
     "pytest",
-    "pip",
-    "python",
     # `selenium` is a PyPI/npm package, not a nixpkgs top-level attr — the same
     # shape as `jest` above. Unlike `jest` it does NOT name a toolchain we can
     # infer: selenium bindings exist for Python and for node, and the manifest's
@@ -383,17 +383,19 @@ _DROP_SYSTEM_PKGS = {
 # pinned rev (Factory#1009). These differ from _DROP_SYSTEM_PKGS: they name a
 # REAL toolchain, so dropping them would silently take the toolchain away rather
 # than fix the flake. Each token below was measured against nixpkgs 567a49d1 —
-# `pkgs.node`, `pkgs.npm`, `pkgs.rust`, `pkgs.dotnet` and `pkgs.vitest` do not
-# exist, and a missing attr fails the WHOLE devShell eval, so the lane reports a
-# runner failure instead of a test result (reads as flakiness, is not).
+# `pkgs.node`, `pkgs.npm` and `pkgs.vitest` do not exist, and a missing attr
+# fails the WHOLE devShell eval, so the lane reports a runner failure instead of
+# a test result (reads as flakiness, is not).
 #
 #   node/npm -> nodejs_22, the same attr the jest and browser blocks add; npm
 #               ships inside the nodejs derivation, so it needs no attr of its own.
 #   vitest   -> nodejs_22 too: no nixpkgs attr exists, but unlike selenium it is
 #               unambiguously a node runner, so the token buys node and the
 #               runner comes from npm at lane setup (the jest contract).
-#   rust     -> rustc. `cargo` is already a valid top-level attr and needs no alias.
-#   dotnet   -> dotnet-sdk.
+#
+# `rust` and `dotnet` left this table (#1020): as a system_package `rust` meant
+# rustc alone while `language: rust` meant rustc + cargo, so `cargo test` died.
+# _system_pkg_attrs now reads _LANG_ATTRS for any language token, one meaning.
 #
 # Aliasing makes collisions routine — `node` + `npm` is the likeliest pair a
 # planner writes, and `vitest` beside a browser lane is another — so
@@ -404,17 +406,24 @@ _SYSTEM_PKG_ALIASES = {
     "node": "nodejs_22",
     "npm": "nodejs_22",
     "vitest": "nodejs_22",
-    "rust": "rustc",
-    "dotnet": "dotnet-sdk",
 }
 
 
-def _system_pkg_attrs(m: Manifest) -> list[str]:
-    return [
-        _SYSTEM_PKG_ALIASES.get(p.lower(), p)
-        for p in m.system_packages
-        if p.lower() not in _DROP_SYSTEM_PKGS
-    ]
+def _system_pkg_attrs(m: Manifest, lang: str) -> list[str]:
+    """One lookup per token, lower-cased (#1020): python/pip, drop, language, alias."""
+    attrs: list[str] = []
+    for package in m.system_packages:
+        package = package.lower()
+        if package in ("python", "pip"):
+            if lang != "python":
+                attrs.append("python313")
+        elif package in _DROP_SYSTEM_PKGS:
+            continue
+        elif package in _LANG_ATTRS:
+            attrs.extend(_LANG_ATTRS[package])
+        else:
+            attrs.append(_SYSTEM_PKG_ALIASES.get(package, package))
+    return attrs
 
 
 # Declared `language` -> the nixpkgs attrs that put its toolchain on PATH
@@ -511,7 +520,7 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
     """
     m = Manifest.from_contract(env)
     lang = (m.language or "python").lower()
-    sys_attrs = _system_pkg_attrs(m)
+    sys_attrs = _system_pkg_attrs(m, lang)
 
     # Descriptor-declared languages (swift, kotlin, ...): resolved FIRST so the
     # paved road extends the generator without touching it, but only for

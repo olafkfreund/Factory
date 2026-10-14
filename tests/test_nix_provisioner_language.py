@@ -203,6 +203,34 @@ def test_system_packages_still_ride_along_on_a_declared_language() -> None:
     assert _has_attr(f, "openssl")
 
 
+def test_rust_system_package_includes_cargo() -> None:
+    f = _flake(system_packages=["rust"])
+
+    assert _has_attr(f, "rustc")
+    assert _has_attr(f, "cargo")
+
+
+def test_python_tokens_supply_an_interpreter_outside_python() -> None:
+    f = _flake(language="rust", system_packages=["python", "pip"])
+
+    assert _has_attr(f, "python313")
+    assert f.count("pkgs.python313") == 1
+
+
+def test_python_system_package_does_not_duplicate_its_interpreter() -> None:
+    f = _flake(language="python", system_packages=["python"])
+
+    assert _has_attr(f, "python313")
+    assert f.count("pkgs.python313") == 1
+
+
+def test_system_package_passthrough_is_lowercase() -> None:
+    f = _flake(system_packages=["OpenSSL"])
+
+    assert _has_attr(f, "openssl")
+    assert not _has_attr(f, "OpenSSL")
+
+
 def test_a_rust_browser_lane_does_not_buy_the_python_web_stack() -> None:
     """The browser clause needs a POSITIVE python signal (the #996/#1001 fix).
     A declared non-python language is not one, and the OOM that clause caused is
