@@ -128,6 +128,26 @@ _CODEQL_LC = ["analyze (actions)", "analyze (javascript-typescript)", "analyze (
 _SINKS = "security sinks (whole repo)"
 # AIFactory only (Factory#1962): the generated autonomy matrix staleness gate.
 _AUTONOMY = "autonomy matrix matches the policy (--check, blocking)"
+_COLLECTED = "every test file is inside a collected path"
+_FCOMMON = "vendored factory_common matches the hub canonical"
+_GATE5 = "Gate 5 — banned constructs (blocking, Factory#786)"
+_GATE5_AI = "Gate 5 — banned constructs (blocking, Factory#718)"
+_CF_NEW = [
+    _GATE5,
+    "frontend lint + format + unit tests (blocking)",
+    "ruff check (apps/backend/cfactory + scripts, blocking)",
+    "ruff format --check (apps/backend/cfactory + scripts, blocking)",
+    "ruff + mypy ratchet (diff-scoped, blocking)",
+    "card models match the hub contract",
+]
+_PF_NEW = [
+    _GATE5,
+    "frontend (eslint, blocking)",
+    "ratchet ruff + mypy (changed files, blocking)",
+    "ruff format --check (apps/backend + apps/web-server + scripts, blocking)",
+]
+_TF_NEW = [_GATE5, "frontend (eslint, blocking)"]
+_AI_NEW = [_GATE5_AI, "frontend lint + format (blocking, #647)"]
 
 
 def _live_shaped(
@@ -227,8 +247,8 @@ def test_dev_is_deliberately_looser_than_main(repo: str) -> None:
     assert dev["required_conversation_resolution"] is False
 
     # dev is looser about PROCESS, never about CI. It may be gated MORE:
-    # AIFactory's dev is its default branch and carries three checks main
-    # does not (#691). The invariant is therefore a superset, not equality --
+    # AIFactory's dev is its default branch and carries extra checks (#691).
+    # The invariant is therefore a superset, not equality --
     # equality would have to be relaxed the first time any repo gates its
     # default branch properly, and relaxing it to "no constraint" is how the
     # stripping in #691 would have gone unnoticed.
@@ -249,6 +269,9 @@ def test_check_contexts_are_per_repo() -> None:
             "Frontend typecheck + build",
             _GITLEAKS,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            *_CF_NEW,
             *_CODEQL,
             _SINKS,
         ]
@@ -259,17 +282,36 @@ def test_check_contexts_are_per_repo() -> None:
             "critical (fast PR gate)",
             _GITLEAKS,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            *_TF_NEW,
             _TF_FORMAT,
             *_CODEQL,
             _SINKS,
         ]
     )
-    # AIFactory has no required frontend check, despite having a frontend suite.
+    assert _emit("PFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            "critical (fast PR gate)",
+            _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            *_PF_NEW,
+            _GITLEAKS_PF,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
     assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == sorted(
         [
             "backend (ruff + pytest)",
             _GITLEAKS,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            *_AI_NEW,
+            "shared-baseline drift gate (blocking)",
             *_CODEQL_LC,
             _SINKS,
             _AUTONOMY,
@@ -280,6 +322,56 @@ def test_check_contexts_are_per_repo() -> None:
     # workflow exists can never report, which is the Factory#529 wedge.
     for repo in ("Factory", "factory-gitops"):
         assert _VCORE not in _emit(repo, "main")["required_status_checks"]["contexts"]
+    assert _emit("Factory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "ruff + mypy ratchet (diff-scoped, blocking)",
+            "ruff format --check (scripts + tests, blocking)",
+            "hub test suite + generated package self-test (pytest)",
+            _GITLEAKS_HUB,
+            *_CODEQL,
+            _SINKS,
+            "committed output matches inputs (--check, blocking)",
+        ]
+    )
+
+
+@pytest.mark.parametrize("repo", ["CFactory", "PFactory", "TFactory", "AIFactory"])
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_service_repos_require_the_shared_measured_guards(repo: str, branch: str) -> None:
+    contexts = _emit(repo, branch)["required_status_checks"]["contexts"]
+    assert _COLLECTED in contexts
+    assert _FCOMMON in contexts
+    assert set(
+        {
+            "CFactory": _CF_NEW,
+            "PFactory": _PF_NEW,
+            "TFactory": _TF_NEW,
+            "AIFactory": _AI_NEW,
+        }[repo]
+    ) <= set(contexts)
+
+
+@pytest.mark.parametrize(
+    ("names", "expected_rc", "mislabel"),
+    [
+        (["x (blocking)"], 1, 'MISLABEL Factory@main: "x (blocking)"'),
+        (["committed output matches inputs (--check, blocking)"], 0, ""),
+        (["optional advisory"], 0, ""),
+        (["X (BLOCKING)"], 1, 'MISLABEL Factory@main: "X (BLOCKING)"'),
+        (["nonblocking-ish"], 0, ""),
+        ([], 2, ""),
+    ],
+)
+def test_blocking_stdin(names: list[str], expected_rc: int, mislabel: str) -> None:
+    out = subprocess.run(  # noqa: S603
+        ["bash", str(_SCRIPT), "--blocking-stdin", "Factory", "main"],  # noqa: S607
+        input=json.dumps(names),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == expected_rc
+    assert mislabel in out.stdout if mislabel else not out.stdout
 
 
 def test_every_repo_requires_its_own_secret_scan() -> None:
@@ -367,6 +459,9 @@ def test_matching_live_response_compares_equal() -> None:
                 "backend (ruff + pytest)",
                 "critical (fast PR gate)",
                 _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                *_TF_NEW,
                 _GITLEAKS,
                 _TF_FORMAT,
                 *_CODEQL,
@@ -386,6 +481,9 @@ def test_matching_live_response_compares_equal() -> None:
                 _TF_FORMAT,
                 _GITLEAKS,
                 _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                *_TF_NEW,
                 *_CODEQL,
                 _SINKS,
             ],
@@ -400,6 +498,9 @@ def test_matching_live_response_compares_equal() -> None:
                 "Backend pytest",
                 "Frontend typecheck + build",
                 _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                *_CF_NEW,
                 _GITLEAKS,
                 *_CODEQL,
                 _SINKS,
@@ -409,7 +510,7 @@ def test_matching_live_response_compares_equal() -> None:
             True,
         ),
         # AIFactory@dev is gated MORE than main: it is the default branch and
-        # carries the ratchet, the format check and the shared-baseline gate
+        # carries the ratchet and the format check beyond main
         # (#691). A single per-repo CHECKS could not express that.
         (
             "AIFactory",
@@ -418,6 +519,9 @@ def test_matching_live_response_compares_equal() -> None:
                 "backend (ruff + pytest)",
                 _ACCEPT,
                 _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                *_AI_NEW,
                 "ratchet (ruff + mypy on changed Python)",
                 "ruff format --check (every Python directory)",
                 "shared-baseline drift gate (blocking)",
@@ -464,6 +568,9 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             "backend (ruff + pytest)",
             _ACCEPT,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            *_AI_NEW,
             *_CODEQL_LC,
             _SINKS,
             _AUTONOMY,
@@ -488,6 +595,9 @@ def test_unordered_contexts_compare_equal() -> None:
             _SINKS,
             *_CODEQL,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            *_TF_NEW,
             _GITLEAKS,
             _ACCEPT,
             _TF_FORMAT,
@@ -574,6 +684,9 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
             _ACCEPT,
             _TF_FORMAT,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            *_TF_NEW,
             _GITLEAKS,
             *_CODEQL,
             _SINKS,
