@@ -22,7 +22,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-import nix_provisioner as np  # noqa: E402
+import nix_provisioner as np
 
 # Attrs generate_flake adds itself, outside the tables.
 _FIXED_ATTRS = {"nodejs_22", "playwright-test", "dejavu_fonts", "uv", "go", "python313"}
@@ -56,8 +56,8 @@ def test_every_reachable_attr_evaluates_at_the_pin() -> None:
         "&& (builtins.tryEval pkgs.${a}.drvPath).success)) "
         f"(builtins.fromJSON {json.dumps(json.dumps(names))})"
     )
-    out = subprocess.run(  # noqa: S603 - fixed argv, expr built from repo tables
-        [  # noqa: S607
+    out = subprocess.run(
+        [
             "nix",
             "--extra-experimental-features",
             "nix-command flakes",

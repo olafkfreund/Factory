@@ -30,7 +30,6 @@ import hashlib
 import json
 import logging
 import re
-import shlex
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -523,6 +522,42 @@ def _checked_version(tool: str, ver: object) -> str:
     return text
 
 
+def _installed_go_env(go_ver: object) -> str:
+    """GOTOOLCHAIN env for a Go version the pin does not carry, else ''."""
+    if not go_ver or go_ver in _GO_ATTR:
+        return ""
+    ver = _checked_version("go", go_ver)
+    full = f"{ver}.0" if ver.count(".") == 1 else ver
+    logging.getLogger(__name__).warning(
+        "Go %s is not in _GO_ATTR; installing go%s via GOTOOLCHAIN", ver, full
+    )
+    return (
+        f"\n        # Go {ver} is not in nixpkgs pin; installed via GOTOOLCHAIN.\n"
+        f'        GOTOOLCHAIN = "go{full}";'
+    )
+
+
+def _installed_python_hook(py_ver: object, py_pkgs: list[str]) -> str:
+    """shellHook that installs a Python the pin does not carry, via uv."""
+    ver = _checked_version("python", py_ver)
+    bad = [p for p in py_pkgs if not _PIP_NAME_RE.fullmatch(p)]
+    if bad:
+        raise ProvisionError(f"python package names not installable via uv: {bad}")
+    logging.getLogger(__name__).warning(
+        "Python %s is not in _PY_ATTR; installing via uv in shellHook", ver
+    )
+    install = f"\n          uv pip install {' '.join(py_pkgs)}" if py_pkgs else ""
+    return (
+        f"\n        # Python {ver} is not in nixpkgs pin; installed via uv.\n"
+        "        shellHook = ''\n"
+        '          export VIRTUAL_ENV="$PWD/.factory-venv"\n'
+        f'          uv venv --python {ver} "$PWD/.factory-venv" --allow-existing'
+        f"{install}\n"
+        '          export PATH="$PWD/.factory-venv/bin:$PATH"\n'
+        "        '';"
+    )
+
+
 def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=None) -> str:
     """Render a reproducible `flake.nix` from an RFC-0005 environment manifest.
 
@@ -558,19 +593,7 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
         # Go has no withPackages set — the toolchain is one attr; test/coverage
         # tools (gotestsum, gocover-cobertura) ride in as system_packages.
         pkg_lines.append(f"pkgs.{_go_attr(m)}")
-        go_ver = m.toolchain.get("go")
-        if go_ver and go_ver not in _GO_ATTR:
-            go_ver = _checked_version("go", go_ver)
-            norm_go = f"{go_ver}.0" if go_ver.count(".") == 1 else go_ver
-            logging.getLogger(__name__).warning(
-                "Go %s is not in _GO_ATTR; installing go%s via GOTOOLCHAIN",
-                go_ver,
-                norm_go,
-            )
-            env_lines += (
-                f"\n        # Go {go_ver} is not in nixpkgs pin; installed via GOTOOLCHAIN.\n"
-                f'        GOTOOLCHAIN = "go{norm_go}";'
-            )
+        env_lines += _installed_go_env(m.toolchain.get("go"))
     elif lang in _LANG_ATTRS:
         # Fixed attr list, no withPackages set — the language's own package
         # manager (cargo, maven, nuget, npm) installs libraries at lane setup,
@@ -587,29 +610,8 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
         py_ver = m.toolchain.get("python")
         py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m, project_dir=project_dir)]
         if py_ver and py_ver not in _PY_ATTR:
-            py_ver = _checked_version("python", py_ver)
-            bad = [p for p in py_pkgs if not _PIP_NAME_RE.fullmatch(p)]
-            if bad:
-                raise ProvisionError(f"python package names not installable via uv: {bad}")
-            logging.getLogger(__name__).warning(
-                "Python %s is not in _PY_ATTR; installing via uv in shellHook",
-                py_ver,
-            )
             pkg_lines.append("pkgs.uv")
-            q_ver = shlex.quote(str(py_ver))
-            install_line = ""
-            if py_pkgs:
-                q_pkgs = " ".join(shlex.quote(p) for p in py_pkgs)
-                install_line = f"\n          uv pip install {q_pkgs}"
-            env_lines += (
-                f"\n        # Python {py_ver} is not in nixpkgs pin; installed via uv.\n"
-                "        shellHook = ''\n"
-                '          export VIRTUAL_ENV="$PWD/.factory-venv"\n'
-                f'          uv venv --python {q_ver} "$PWD/.factory-venv" --allow-existing'
-                f"{install_line}\n"
-                '          export PATH="$PWD/.factory-venv/bin:$PATH"\n'
-                "        '';"
-            )
+            env_lines += _installed_python_hook(py_ver, py_pkgs)
         else:
             py = _python_attr(m)
             if py_pkgs:
