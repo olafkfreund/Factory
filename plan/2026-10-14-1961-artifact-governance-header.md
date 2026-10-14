@@ -143,7 +143,7 @@ Coder: **Codex**. Same worktree.
   | `system_gates` contains `human-approval`, or human approval is approved | `change-mgmt-sod` |
   | `production_classification == "production"` | `change-mgmt-sod`, `runtime-isolation` |
   | personal-data class present | `data-governance` |
-  | `injection_scan` verdict is not `"not-run"` (and not missing) | `agentic-ai-governance` |
+  | `injection_scan` verdict is `"pass"` or `"flagged"` | `agentic-ai-governance` |
 
   - The result is sorted and has no duplicates.
   - If the catalog is `None`, return `None`.
@@ -249,3 +249,9 @@ Done by the session.
   test passes, and fails when an entry is removed.
 - Step 5 (hub half): the pointer line in `control-matrix.md` lands in step 1's PR,
   so the hub needs only one PR.
+- Step 3's injection rule was corrected before handoff. The live schema-1
+  signature shows `injection_scan: "skipped"`, and `service._scan_intake_text`
+  returns `skipped`, `pass` or `flagged`. The scan engaged only on `pass` or
+  `flagged`; the old rule "not `not-run`" would have counted `skipped`.
+- The schema-1 fixture is a byte copy of the live PVC file `004-...run.json`
+  (2026-09-04, 0.6.18). The PVC now holds 5 signatures, not 1.
