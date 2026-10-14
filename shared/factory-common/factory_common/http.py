@@ -221,7 +221,8 @@ class HttpClient:
                     self._sleep(self.backoff_seconds * (attempt + 1))
                     continue
                 return HttpResponse(exc.code, {"error": exc.read().decode()[:300]})
-            except urllib.error.URLError as exc:
+            # A timeout while reading the response is raised bare, not wrapped in URLError (#3554).
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
                 last_error = str(exc)
                 if attempt < self.max_attempts - 1:
                     self._sleep(self.backoff_seconds * (attempt + 1))
