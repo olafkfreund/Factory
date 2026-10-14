@@ -160,6 +160,18 @@ def test_network_error_returns_status_zero(monkeypatch: pytest.MonkeyPatch) -> N
     assert "dns" in resp.json["error"]
 
 
+def test_read_timeout_and_reset_return_status_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    transport = _Transport(
+        [TimeoutError("The read operation timed out"), ConnectionResetError("reset")]
+    )
+    _install(monkeypatch, transport)
+    client = http.HttpClient(base_url="http://t", max_attempts=2, _sleep=lambda _s: None)
+    resp = client.get("/slow")
+    assert resp.status == 0
+    assert len(transport.requests) == 2
+    assert "reset" in resp.json["error"]
+
+
 def test_non_json_body_wrapped_as_raw(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = _Transport([_FakeResponse(200, "plain text")])
     _install(monkeypatch, transport)
