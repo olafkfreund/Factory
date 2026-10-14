@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 971
 spec: spec/2026-10-14-971-terminal-status-audit.md
 ---
