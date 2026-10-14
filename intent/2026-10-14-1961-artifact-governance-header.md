@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1961
 author: olafkfreund
 ---
@@ -92,3 +92,11 @@ has no control catalog.
 5. **Where the artifacts live.** The intent, spec and plan go here in Factory,
    where the issue lives. Most of the code PRs go to PFactory and link back.
    *Recommend this.*
+
+## Decisions at approval (2026-10-14)
+
+1. Scope: the independent stages now (catalog, already-known fields, `controls[]`, query CLI); `originator` waits for #1960's actor format.
+2. `controls[]` means control domains this run's gates engaged.
+3. Flat keys.
+4. Portal ingest auth deferred with stage 3.
+5. Artifacts in Factory; code PRs in PFactory link back.
