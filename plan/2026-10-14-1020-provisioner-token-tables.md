@@ -84,3 +84,32 @@ and the in-file self-test with `python3 scripts/nix_provisioner.py` (or however
 ## Rollback
 
 Revert the PR. Vendored copies are unaffected until their next pin bump.
+
+## Execution
+
+- Step 1: Codex. The session restored the provenance comments on both tables,
+  which the step had cut down.
+- Step 2: agy. Its own deviation: the hook exports `VIRTUAL_ENV` and passes
+  `--allow-existing`, so `uv pip install` targets `.factory-venv` and a second
+  `nix develop` does not stop at a prompt. Session fix: a version or package
+  name reaches the flake verbatim, so versions must match `\d+(\.\d+){0,2}`
+  and uv package names are allow-listed. Anything else is a `ProvisionError`.
+- Step 3: the session. Checked live:
+  - rust + `python` gives cargo 1.95.0 and Python 3.13.13;
+  - `python 3.9` installs 3.9.25 with pytest;
+  - `go 1.22` installs go1.22.0 through the lane's own `nix_develop_argv`.
+- **Deviations from the Opus review:**
+  - The lookup order is now python/pip, drop, **alias**, language. `typescript`
+    and `nodejs` are real attributes at the pin, so as system packages they keep
+    their own meaning.
+  - A numeric version is refused (`3.10` would parse as `3.1`).
+  - GOTOOLCHAIN is used only for Go 1.21 or later.
+  - The eval test also covers `playwright-driver.browsers`, every library the
+    Python harness can request for each `_PY_ATTR` version, and descriptor
+    packages.
+- **Found by the wider eval test:** `python311`'s package set cannot build pip,
+  fastapi or httpx at the pin, so 3.11 leaves `_PY_ATTR` and installs through
+  uv (decision 1).
+- `generate_flake`'s Python branch and the install code moved into helpers
+  (`_python_toolchain`, `_installed_python_hook`, `_installed_go_env`) to stay
+  under the ratchet's branch and statement limits.
