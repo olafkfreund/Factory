@@ -50,6 +50,20 @@ Who does what:
      already qualified and passes through untouched (`"/" in image`). Step 3
      normalises it back to the bare tag once the prefix changes.
 2. **Release and verify vitest live** (session).
+   - *Deviation (2026-10-14, while executing):* the deployed PFactory pod has
+     no Docker daemon, socket or CLI. `DockerRunner` lanes cannot run in the
+     cluster, so a release would have nothing to observe, and Kyverno never
+     sees these images. Releases are dropped from steps 2 and 6, and the
+     change ships with the next normal release. The check is instead run
+     locally through PFactory's own code:
+     - `resolve_runner_image(descriptor image)` resolves it;
+     - `docker pull` and `docker run --network none <img> npx --no-install vitest --version`
+       run it;
+     - `cosign verify` with the TFactory GitHub OIDC identity checks the
+       signature Kyverno would check.
+   - Done for vitest: `ghcr.io/olafkfreund/tfactory-runner-vitest@sha256:bcf1b48b…`,
+     `vitest/3.2.7`, cosign claims validated.
+   - Originally planned:
    - Merge PR 1, then release:
      `node scripts/bump-version.js patch` on `dev`, a promote PR from `dev`
      to `main` merged with `--merge`, then `release.yml` and `deploy.yml`
@@ -112,7 +126,7 @@ Who does what:
    - Trap: don't touch `SECURITY_REFRESH` or any other line.
 5. **Merge PR 2 and the TFactory PR** once green (pre-approved), checking
    each is MERGED before any cleanup.
-6. **Release PFactory and verify one Python lane live** (session), the same
+6. **Verify one Python lane** (session). *Deviation:* this is the local check from step 2, run against pytest. Originally: the same
    way as step 2 but with pytest: the image is
    `ghcr.io/olafkfreund/tfactory-runner-pytest:latest` and the lane
    completes. Then close #1003 with the evidence.
