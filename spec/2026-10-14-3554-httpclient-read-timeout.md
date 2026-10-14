@@ -58,7 +58,9 @@ Decisions on the intent's open questions:
 ## Risks
 
 - A caller that relied on `TimeoutError` escaping would now get status 0
-  instead. A grep of the 6 non-test `HttpClient` users found no caller catching
+  instead. The 3 non-test `HttpClient` users (`parr_regression.py`, `sync_labels.py`,
+  `benchmarks/run_pipeline_task.py`; the intent's count of 6 included a stale
+  `.claude/worktrees` copy) have no handler catching
   it around an `HttpClient` call.
 - Worst-case latency rises to 3 attempts × the timeout plus backoff, as it
   already does for connect failures. For the CFactory seam that is about 75s,
