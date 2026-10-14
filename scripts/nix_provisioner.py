@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
+import shlex
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -412,8 +414,8 @@ _SYSTEM_PKG_ALIASES = {
 def _system_pkg_attrs(m: Manifest, lang: str) -> list[str]:
     """One lookup per token, lower-cased (#1020): python/pip, drop, language, alias."""
     attrs: list[str] = []
-    for package in m.system_packages:
-        package = package.lower()
+    for raw in m.system_packages:
+        package = raw.lower()
         if package in ("python", "pip"):
             if lang != "python":
                 attrs.append("python313")
@@ -507,6 +509,20 @@ def _descriptor_for_language(lang: str) -> LanguageDescriptor | None:
     return descriptor
 
 
+# A toolchain version or package name that reaches the generated flake verbatim
+# (a comment, a Nix string, a shellHook) must not be able to end that context:
+# a newline, `"`, `''` or `${` in a manifest value would otherwise become Nix code.
+_VERSION_RE = re.compile(r"\d+(\.\d+){0,2}")
+_PIP_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _checked_version(tool: str, ver: object) -> str:
+    text = str(ver)
+    if not _VERSION_RE.fullmatch(text):
+        raise ProvisionError(f"toolchain.{tool} {text!r} is not a version like 3.12 or 1.22.3")
+    return text
+
+
 def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=None) -> str:
     """Render a reproducible `flake.nix` from an RFC-0005 environment manifest.
 
@@ -530,6 +546,7 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
 
     descriptor_env: dict[str, str] = {}
     pkg_lines: list[str] = []
+    env_lines = ""
     if descriptor is not None:
         # Same contract as _LANG_ATTRS: a fixed attr list, prepended so it flows
         # through the dedupe; libraries come from the language's own package
@@ -541,6 +558,19 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
         # Go has no withPackages set — the toolchain is one attr; test/coverage
         # tools (gotestsum, gocover-cobertura) ride in as system_packages.
         pkg_lines.append(f"pkgs.{_go_attr(m)}")
+        go_ver = m.toolchain.get("go")
+        if go_ver and go_ver not in _GO_ATTR:
+            go_ver = _checked_version("go", go_ver)
+            norm_go = f"{go_ver}.0" if go_ver.count(".") == 1 else go_ver
+            logging.getLogger(__name__).warning(
+                "Go %s is not in _GO_ATTR; installing go%s via GOTOOLCHAIN",
+                go_ver,
+                norm_go,
+            )
+            env_lines += (
+                f"\n        # Go {go_ver} is not in nixpkgs pin; installed via GOTOOLCHAIN.\n"
+                f'        GOTOOLCHAIN = "go{norm_go}";'
+            )
     elif lang in _LANG_ATTRS:
         # Fixed attr list, no withPackages set — the language's own package
         # manager (cargo, maven, nuget, npm) installs libraries at lane setup,
@@ -554,16 +584,42 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
         # python's is a `withPackages` expression, not a bare attr name.)
         sys_attrs = _LANG_ATTRS[lang] + sys_attrs
     elif lang == "python":
-        py = _python_attr(m)
+        py_ver = m.toolchain.get("python")
         py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m, project_dir=project_dir)]
-        if py_pkgs:
-            # Reference each attr as ``p."name"`` (quoted) rather than
-            # ``with p; [ name ]`` so hyphenated attrs (pytest-cov,
-            # scikit-learn) don't parse as Nix subtraction.
-            joined = " ".join(f'p."{name}"' for name in py_pkgs)
-            pkg_lines.append(f"(pkgs.{py}.withPackages (p: [ {joined} ]))")
+        if py_ver and py_ver not in _PY_ATTR:
+            py_ver = _checked_version("python", py_ver)
+            bad = [p for p in py_pkgs if not _PIP_NAME_RE.fullmatch(p)]
+            if bad:
+                raise ProvisionError(f"python package names not installable via uv: {bad}")
+            logging.getLogger(__name__).warning(
+                "Python %s is not in _PY_ATTR; installing via uv in shellHook",
+                py_ver,
+            )
+            pkg_lines.append("pkgs.uv")
+            q_ver = shlex.quote(str(py_ver))
+            install_line = ""
+            if py_pkgs:
+                q_pkgs = " ".join(shlex.quote(p) for p in py_pkgs)
+                install_line = f"\n          uv pip install {q_pkgs}"
+            env_lines += (
+                f"\n        # Python {py_ver} is not in nixpkgs pin; installed via uv.\n"
+                "        shellHook = ''\n"
+                '          export VIRTUAL_ENV="$PWD/.factory-venv"\n'
+                f'          uv venv --python {q_ver} "$PWD/.factory-venv" --allow-existing'
+                f"{install_line}\n"
+                '          export PATH="$PWD/.factory-venv/bin:$PATH"\n'
+                "        '';"
+            )
         else:
-            pkg_lines.append(f"pkgs.{py}")
+            py = _python_attr(m)
+            if py_pkgs:
+                # Reference each attr as ``p."name"`` (quoted) rather than
+                # ``with p; [ name ]`` so hyphenated attrs (pytest-cov,
+                # scikit-learn) don't parse as Nix subtraction.
+                joined = " ".join(f'p."{name}"' for name in py_pkgs)
+                pkg_lines.append(f"(pkgs.{py}.withPackages (p: [ {joined} ]))")
+            else:
+                pkg_lines.append(f"pkgs.{py}")
     else:
         # FAIL CLOSED. Emitting the Python shell here is what #1012 was: the
         # generated flake builds, the lane starts, and the declared command dies
@@ -629,7 +685,6 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
     packages = "\n          ".join(pkg_lines)
 
     let_lines = ""
-    env_lines = ""
     for var, value in descriptor_env.items():
         # Values are Nix string expressions from the descriptor ("${pkgs...}"
         # interpolation included), emitted verbatim into the devShell.

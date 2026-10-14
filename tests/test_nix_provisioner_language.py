@@ -142,12 +142,29 @@ def test_an_unpinnable_go_minor_falls_back_to_a_working_toolchain() -> None:
     """Better a newer Go than a shell that cannot be realised.
 
     Naming `go_1_22` gave an eval error, which surfaces as a runner failure and
-    reads as flakiness. The default `go` attr always exists.
+    reads as flakiness. The default `go` attr always exists, and GOTOOLCHAIN
+    selects the requested minor.
     """
     f = _flake(language="go", toolchain={"go": "1.22"})
 
     assert _has_attr(f, "go"), "an unpinnable minor must still get a Go toolchain"
     assert not _has_attr(f, "go_1_22"), "must not name an attr that does not exist"
+    assert 'GOTOOLCHAIN = "go1.22.0"' in f
+
+
+def test_unknown_python_version_installs_via_uv() -> None:
+    f = _flake(language="python", toolchain={"python": "3.9"})
+
+    assert _has_attr(f, "uv")
+    assert "uv venv --python 3.9" in f
+    assert "python313" not in f
+
+
+def test_known_python_version_uses_nix_interpreter() -> None:
+    f = _flake(language="python", toolchain={"python": "3.12"})
+
+    assert _has_attr(f, "python312")
+    assert not _has_attr(f, "uv")
 
 
 # ── the refusal ─────────────────────────────────────────────────────────────
@@ -240,3 +257,18 @@ def test_a_rust_browser_lane_does_not_buy_the_python_web_stack() -> None:
     assert _has_attr(f, "playwright-test")
     assert "fastapi" not in f
     assert not _has_attr(f, "python313")
+
+
+@pytest.mark.parametrize(
+    "toolchain",
+    [
+        {"python": "3.9\n}; evil = 1; #"},
+        {"python": "3.9${builtins.currentTime}"},
+        {"go": '1.22"; x = "'},
+    ],
+)
+def test_an_installed_version_cannot_inject_nix(toolchain: dict[str, str]) -> None:
+    """The version reaches a comment, a Nix string and a shellHook verbatim."""
+    lang = "go" if "go" in toolchain else "python"
+    with pytest.raises(ProvisionError):
+        _flake(language=lang, toolchain=toolchain, verify_commands=["true"])
