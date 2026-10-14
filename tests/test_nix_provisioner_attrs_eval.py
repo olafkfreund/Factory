@@ -24,8 +24,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 import nix_provisioner as np
 
-# Attrs generate_flake adds itself, outside the tables.
-_FIXED_ATTRS = {"nodejs_22", "playwright-test", "dejavu_fonts", "uv", "go", "python313"}
+# Attrs generate_flake adds itself, outside the tables. Dotted paths are
+# followed attr by attr (playwright-driver.browsers is read in the browser env).
+_FIXED_ATTRS = {
+    "nodejs_22",
+    "playwright-test",
+    "playwright-driver.browsers",
+    "dejavu_fonts",
+    "uv",
+    "go",
+    "python313",
+}
+# Libs the Python harness can put in withPackages, besides _PYPROJECT_DEP_MAP.
+_HARNESS_LIBS = {"pytest", "pytest-cov", "requests", "fastapi", "uvicorn", "httpx", "pip"}
 
 
 def _reachable_attrs() -> set[str]:
@@ -36,12 +47,22 @@ def _reachable_attrs() -> set[str]:
         attrs.update([alias] if isinstance(alias, str) else alias)
     attrs.update(np._PY_ATTR.values())
     attrs.update(np._GO_ATTR.values())
+    libs = _HARNESS_LIBS | set(np._PYPROJECT_DEP_MAP.values())
+    libs = {np._PY_PKG_ALIASES.get(lib, lib) for lib in libs}
+    for py in np._PY_ATTR.values():
+        attrs.update(f"{py}.pkgs.{lib}" for lib in libs)
+    if np._resolve_descriptor is not None:
+        from language_descriptors import load_languages  # noqa: PLC0415
+
+        for descriptor in load_languages().values():
+            attrs.update(descriptor.nix_packages)
     return attrs
 
 
 def test_reachable_attrs_cover_every_table() -> None:
     attrs = _reachable_attrs()
-    assert {"rustc", "cargo", "python313", "go_1_25", "dotnet-sdk"} <= attrs
+    assert {"rustc", "cargo", "python313", "go_1_25", "dotnet-sdk", "typescript"} <= attrs
+    assert "python313.pkgs.pytest-cov" in attrs
 
 
 @pytest.mark.skipif(
@@ -52,8 +73,11 @@ def test_every_reachable_attr_evaluates_at_the_pin() -> None:
     names = sorted(_reachable_attrs())
     expr = (
         f'let pkgs = (builtins.getFlake "{np.DEFAULT_NIXPKGS}").legacyPackages.x86_64-linux; '
-        "in builtins.filter (a: !(builtins.hasAttr a pkgs "
-        "&& (builtins.tryEval pkgs.${a}.drvPath).success)) "
+        "get = path: builtins.foldl' (acc: k: if acc != null && builtins.hasAttr k acc "
+        'then acc.${k} else null) pkgs (pkgs.lib.splitString "." path); '
+        "in builtins.filter (a: let v = builtins.tryEval (get a); in "
+        "!(v.success && v.value != null "
+        "&& (builtins.tryEval (v.value.drvPath or v.value.outPath)).success)) "
         f"(builtins.fromJSON {json.dumps(json.dumps(names))})"
     )
     out = subprocess.run(  # noqa: S603 - fixed argv, expr built from repo tables

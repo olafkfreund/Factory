@@ -122,8 +122,11 @@ def generate_lock(nixpkgs: str = DEFAULT_NIXPKGS) -> str | None:
 
 
 # language -> (nix python attr | node attr). Extend as the fleet grows.
+# 3.11 is NOT here (#1020): at the pin its package set cannot build pip,
+# fastapi, httpx and more ("sphinx-9.1.0 not supported for interpreter
+# python3.11"), so a 3.11 lane with those libs got a flake that could not
+# evaluate. It now installs through uv like any version the pin cannot serve.
 _PY_ATTR = {
-    "3.11": "python311",
     "3.12": "python312",
     "3.13": "python313",
     "3.14": "python314",
@@ -407,11 +410,15 @@ _SYSTEM_PKG_ALIASES = {
     "node": "nodejs_22",
     "npm": "nodejs_22",
     "vitest": "nodejs_22",
+    # Real attrs at the pin that are also _LANG_ATTRS keys. As a system_package
+    # they keep their own meaning: `typescript` is tsc, not just node (#1020).
+    "typescript": "typescript",
+    "nodejs": "nodejs",
 }
 
 
 def _system_pkg_attrs(m: Manifest, lang: str) -> list[str]:
-    """One lookup per token, lower-cased (#1020): python/pip, drop, language, alias."""
+    """One lookup per token, lower-cased (#1020): python/pip, drop, alias, language."""
     attrs: list[str] = []
     for raw in m.system_packages:
         package = raw.lower()
@@ -420,10 +427,12 @@ def _system_pkg_attrs(m: Manifest, lang: str) -> list[str]:
                 attrs.append("python313")
         elif package in _DROP_SYSTEM_PKGS:
             continue
+        elif package in _SYSTEM_PKG_ALIASES:
+            attrs.append(_SYSTEM_PKG_ALIASES[package])
         elif package in _LANG_ATTRS:
             attrs.extend(_LANG_ATTRS[package])
         else:
-            attrs.append(_SYSTEM_PKG_ALIASES.get(package, package))
+            attrs.append(package)
     return attrs
 
 
@@ -516,10 +525,13 @@ _PIP_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def _checked_version(tool: str, ver: object) -> str:
-    text = str(ver)
-    if not _VERSION_RE.fullmatch(text):
-        raise ProvisionError(f"toolchain.{tool} {text!r} is not a version like 3.12 or 1.22.3")
-    return text
+    # A YAML/JSON number is refused, not stringified: 3.10 parses as 3.1 and the
+    # lane would get the wrong interpreter with no sign of why.
+    if not isinstance(ver, str) or not _VERSION_RE.fullmatch(ver):
+        raise ProvisionError(
+            f"toolchain.{tool} {ver!r} is not a quoted version string like '3.12' or '1.22.3'"
+        )
+    return ver
 
 
 def _installed_go_env(go_ver: object) -> str:
@@ -527,7 +539,14 @@ def _installed_go_env(go_ver: object) -> str:
     if not go_ver or go_ver in _GO_ATTR:
         return ""
     ver = _checked_version("go", go_ver)
-    full = f"{ver}.0" if ver.count(".") == 1 else ver
+    parts = [int(x) for x in ver.split(".")]
+    # GOTOOLCHAIN can only switch to Go >= 1.21, the first release published as
+    # a downloadable toolchain, and only those name their first patch `X.Y.0`.
+    if len(parts) < 2 or (parts[0], parts[1]) < (1, 21):  # noqa: PLR2004
+        raise ProvisionError(
+            f"toolchain.go {ver!r}: only Go 1.21 or later can be installed via GOTOOLCHAIN"
+        )
+    full = f"{ver}.0" if len(parts) == 2 else ver  # noqa: PLR2004
     logging.getLogger(__name__).warning(
         "Go %s is not in _GO_ATTR; installing go%s via GOTOOLCHAIN", ver, full
     )

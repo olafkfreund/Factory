@@ -272,3 +272,23 @@ def test_an_installed_version_cannot_inject_nix(toolchain: dict[str, str]) -> No
     lang = "go" if "go" in toolchain else "python"
     with pytest.raises(ProvisionError):
         _flake(language=lang, toolchain=toolchain, verify_commands=["true"])
+
+
+def test_a_real_attr_that_is_also_a_language_keeps_its_own_meaning() -> None:
+    """`typescript` is tsc, not just node: it is a real attr at the pin."""
+    f = _flake(system_packages=["typescript", "nodejs"], verify_commands=["tsc --noEmit"])
+    assert _has_attr(f, "typescript")
+    assert _has_attr(f, "nodejs")
+
+
+@pytest.mark.parametrize("toolchain", [{"python": 3.10}, {"go": 1.22}, {"go": "1.20"}, {"go": "1"}])
+def test_an_uninstallable_version_is_refused(toolchain: dict[str, object]) -> None:
+    """A number loses digits (3.10 -> 3.1); Go before 1.21 has no GOTOOLCHAIN download."""
+    lang = "go" if "go" in toolchain else "python"
+    with pytest.raises(ProvisionError):
+        _flake(language=lang, toolchain=toolchain, verify_commands=["true"])
+
+
+def test_a_full_go_patch_version_is_kept() -> None:
+    f = _flake(language="go", toolchain={"go": "1.22.3"}, verify_commands=["go test ./..."])
+    assert 'GOTOOLCHAIN = "go1.22.3";' in f
