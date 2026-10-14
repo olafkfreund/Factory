@@ -255,3 +255,30 @@ Done by the session.
   `flagged`; the old rule "not `not-run`" would have counted `skipped`.
 - The schema-1 fixture is a byte copy of the live PVC file `004-...run.json`
   (2026-09-04, 0.6.18). The PVC now holds 5 signatures, not 1.
+- Step 3: Codex. Its purity test failed under the planned mutation (loading the
+  catalog by a relative path), as required, and passed once the mutation was
+  reverted.
+  - **Deviation, approval rule.** The plan said "used only when `approved` is
+    true". The session's review found that this stamps a stale approval. The
+    Opus review then found that `valid` is never reset when the plan is edited
+    (`approval.revalidate` has no production caller). So `approved_by`,
+    `approved_at` and the approval half of the `change-mgmt-sod` rule now use
+    `plan.review.approval.is_valid`, which also checks that the plan hash
+    matches. The test edits the plan after approval to prove it.
+  - **Deviation, outside the step.** `_routing_verdict` now reads
+    `verdict or ""`, so a `None` verdict renders as empty in the markdown
+    instead of the text "None".
+  - The `dict` annotations were changed to `dict[str, Any]` for `mypy --strict`
+    (the ratchet).
+- Step 4: agy. Fixes from the session and the Opus review:
+  - `signature_file` must be a bare file name.
+  - A missing or corrupt registry exits 2 instead of printing "scanned 0 rows".
+  - A `--since` value that is not a full date (YYYY-MM-DD) is rejected.
+  - Control characters in untrusted fields are replaced before printing, so a
+    title cannot forge a count line.
+  - Against the 5 live signatures, the CLI reports
+    `scanned 5 rows, 5 with a signature, 5 schema-1, 0 without a signature, 0 matched`.
+- Not fixed (low, from the review): the purity test catches the planned
+  mutation and reads of the environment or working directory. It does not
+  catch a read through `Path(__file__)`, a network call, or a clock read that
+  leaves the output unchanged. This matches the plan as written.
