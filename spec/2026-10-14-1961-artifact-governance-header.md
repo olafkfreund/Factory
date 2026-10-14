@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1961
 intent: intent/2026-10-14-1961-artifact-governance-header.md
 ---
