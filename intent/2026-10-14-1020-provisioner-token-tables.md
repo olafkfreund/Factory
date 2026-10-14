@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1020
 author: olafkfreund
 ---
@@ -75,3 +75,15 @@ saying "measured against the pin" was checked by hand. That is how mismatches
    the pinned nixpkgs. It runs where Nix exists (locally, and in
    `factory-runners`' generated-flake gate) and skips loudly elsewhere. Adding
    Nix to hub CI is a separate decision.
+
+## Decisions at approval (2026-10-14)
+
+1. **Unknown toolchain version: install it and set it up.** Neither refuse nor
+   fall back. A Python or Go version the pin does not carry is fetched by the
+   language's own toolchain manager when the shell starts.
+2. **Letter case: lower-case every `system_packages` word**, not only aliases
+   and drops. (A mixed-case nixpkgs attribute such as `SDL2` can then no longer
+   be named this way. The user accepted this.)
+3. **A Nix-gated evaluation test** for every attribute the tables can produce.
+   It skips loudly where Nix is absent. Adding Nix to hub CI is out of scope.
+4. The spec and plan are approved unseen.
