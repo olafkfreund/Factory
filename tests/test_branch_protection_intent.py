@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -55,7 +56,7 @@ def _all_repos() -> set[str]:
     return repos
 
 
-def _emit(repo: str, branch: str) -> dict:
+def _emit(repo: str, branch: str) -> dict[str, Any]:
     # S603/S607: fixed argv, no shell, and the only interpolated values are the
     # literal repo/branch names from _DECLARED in this file. The gate under test
     # is a shell script, so running it is the point.
@@ -65,7 +66,8 @@ def _emit(repo: str, branch: str) -> dict:
         text=True,
         check=True,
     )
-    return json.loads(out.stdout)
+    result: dict[str, Any] = json.loads(out.stdout)
+    return result
 
 
 def _stdin_hook(mode: str, payload: dict[str, object]) -> str:
@@ -85,8 +87,9 @@ def _stdin_hook(mode: str, payload: dict[str, object]) -> str:
     return out.stdout
 
 
-def _normalise(payload: dict) -> dict:
-    return json.loads(_stdin_hook("--normalise-stdin", payload))
+def _normalise(payload: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = json.loads(_stdin_hook("--normalise-stdin", payload))
+    return result
 
 
 # The verification-core drift gate's job display name, identical in all four
@@ -157,9 +160,9 @@ def _live_shaped(
     reviews: int | None,
     code_owner: bool = False,
     conversation_resolution: bool,
-) -> dict:
+) -> dict[str, Any]:
     """A protection object shaped the way the GitHub GET endpoint returns it."""
-    doc: dict = {
+    doc: dict[str, Any] = {
         "url": "https://api.github.com/...",
         "required_signatures": {"enabled": False},
         "enforce_admins": {"enabled": False},
