@@ -51,7 +51,7 @@ def _reachable_attrs() -> set[str]:
     libs = {np._PY_PKG_ALIASES.get(lib, lib) for lib in libs}
     for py in np._PY_ATTR.values():
         attrs.update(f"{py}.pkgs.{lib}" for lib in libs)
-    if np._resolve_descriptor is not None:
+    if getattr(np, "_resolve_descriptor", None) is not None:
         from language_descriptors import load_languages  # noqa: PLC0415
 
         for descriptor in load_languages().values():

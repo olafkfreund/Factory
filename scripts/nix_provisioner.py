@@ -577,7 +577,7 @@ def _installed_python_hook(py_ver: object, py_pkgs: list[str]) -> str:
     )
 
 
-def _python_toolchain(m: Manifest, project_dir=None) -> tuple[str, str]:
+def _python_toolchain(m: Manifest, project_dir: Path | str | None = None) -> tuple[str, str]:
     """(package line, shellHook) for the Python branch.
 
     A version in _PY_ATTR gets the Nix interpreter (with its libs via
