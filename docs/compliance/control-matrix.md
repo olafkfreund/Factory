@@ -5,6 +5,9 @@ framework's requirement, with current status and the child issue that drives it.
 This is the artifact an assessor uses to trace every framework requirement to a
 control and its evidence.
 
+The domains have machine-readable ids in `apis/control-catalog.json`, which the
+PFactory run signature uses for its `controls` field (#1961).
+
 Status legend:
 
 - **Strong** — implemented and evidenced; credit-worthy today.

@@ -241,3 +241,11 @@ Done by the session.
 - Revert the PFactory PR. Schema-2 files already written stay readable, because
   only keys were added.
 - Revert the hub PR only after PFactory's pin no longer points at it.
+
+## Execution
+
+- Step 1: Codex. Its test is stricter than the plan asked: it also checks each
+  domain name and the row order against the matrix. Verified by the session: the
+  test passes, and fails when an entry is removed.
+- Step 5 (hub half): the pointer line in `control-matrix.md` lands in step 1's PR,
+  so the hub needs only one PR.
