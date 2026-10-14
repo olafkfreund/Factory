@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1003
 intent: intent/2026-10-14-1003-shared-runner-images.md
 ---
