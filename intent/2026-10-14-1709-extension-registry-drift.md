@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1709
 author: olafkfreund
 ---
@@ -52,3 +52,8 @@ whole-file comparison that the control catalog has used since #1961
 2. **Is a full intent, spec and plan needed for this?** It is about 15 lines
    in one script plus a test, in a file #1961 just reviewed. *Recommend
    approving the spec and plan unseen together with this intent.*
+
+## Decisions at approval (2026-10-14)
+
+1. PFactory-only pinned check; no hub job reading PFactory `dev`.
+2. Spec and plan approved unseen with this intent.
