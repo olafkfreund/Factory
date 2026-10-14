@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1026
 intent: intent/2026-10-14-1026-blocking-check-names.md
 ---
