@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3554
 intent: intent/2026-10-14-3554-httpclient-read-timeout.md
 ---
