@@ -31,6 +31,12 @@ spec: spec/2026-10-14-1026-blocking-check-names.md
   - exit 2: the input is empty.
 - **Match only the word "blocking"**, case-insensitive. Also matching
   "Gate N" was rejected.
+  - *Deviation (Opus review):* the regex is `(?<!non-)\bblocking\b`, so an
+    advisory job named "(non-blocking)" is not flagged.
+  - *Deviation (Opus review):* the PR is the latest by `mergedAt` among the
+    last 20 merged, because `gh pr list` orders by creation date.
+  - *Deviation (Opus review):* a `MISLABEL` also prints the remedy (rename,
+    or declare it required). `--apply` cannot fix a name.
 - **Out of scope:** CodeQL, security lint, Trivy and `enforce_admins` (#943),
   and rulesets.
 - **Live protection changes only via `--apply --repo R`**, one repo at a time
@@ -174,13 +180,20 @@ does steps 6–7. A fresh Opus agent reviews the hub diff against this plan.
    5. Run `bash scripts/apply_branch_protection.sh --apply --repo <R>`.
    - Order: CFactory, TFactory, PFactory, AIFactory, Factory (smallest blast
      radius first).
+   - *Deviation (Opus review):* apply AIFactory only after the step 1 quote
+     fix has reached AIFactory `main` through a release. Before that, a PR into
+     `main` whose head lacks the fix posts the truncated name and waits forever
+     for the required `... #647)` context.
    - Verify: the next PR in `<R>` lists the new contexts as Required and goes
      green.
    - Traps:
      - an open PR whose head predates a job will wait for that context; push
        or rebase it;
      - never use `--admin`.
-7. **Verify end to end.** Dispatch `branch-protection-drift.yml`
+7. **Verify end to end.** *Deviation (Opus review):* the gate reads each
+   branch's latest merged PR. On each `main` that is a release PR from
+   before steps 1–2, until the next release lands, so `MISLABEL` lines for
+   the old names on `main` are expected until then. Dispatch `branch-protection-drift.yml`
    (`gh workflow run branch-protection-drift.yml`). It must exit 0 with no
    `MISLABEL` and no `DRIFT` lines. Close #1026 with the run link.
 

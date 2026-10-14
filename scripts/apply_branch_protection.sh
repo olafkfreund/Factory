@@ -453,7 +453,7 @@ blocking_verdict() {
   fi
   required="$(build_payload "$repo" "$branch" | jq -c '.required_status_checks.contexts // []')" || return 2
   offenders="$(jq -r --argjson required "$required" \
-    '.[] | select(test("\\bblocking\\b"; "i") and (. as $name | $required | index($name) | not)) | @json' \
+    '.[] | select(test("(?<!non-)\\bblocking\\b"; "i") and (. as $name | $required | index($name) | not)) | @json' \
     <<<"$names")" || return 2
   [ -n "$offenders" ] || return 0
   while IFS= read -r name; do
@@ -543,7 +543,8 @@ check_one() {
 
 check_blocking_names() {
   local repo="$1" branch="$2" sha names rc=0
-  sha="$(gh pr list -R "$OWNER/$repo" --base "$branch" --state merged -L 1 --json headRefOid -q '.[0].headRefOid // empty')" || rc=$?
+  # gh lists by creation date, not merge date: take the latest MERGED of the recent ones.
+  sha="$(gh pr list -R "$OWNER/$repo" --base "$branch" --state merged -L 20 --json headRefOid,mergedAt -q 'sort_by(.mergedAt) | last | .headRefOid // empty')" || rc=$?
   if [ "$rc" != "0" ] || [ -z "$sha" ]; then
     echo "  ERROR: cannot read a merged PR for ${repo}@${branch}." >&2
     UNDETERMINED=1
@@ -558,7 +559,8 @@ check_blocking_names() {
   blocking_verdict "$repo" "$branch" "$names" || rc=$?
   case "$rc" in
     0) echo "ok    ${OWNER}/${repo}@${branch} blocking names" ;;
-    1) DIVERGED=1 ;;
+    1) echo "    rename the job or declare it required in repo_config(); --apply cannot fix a name."
+       DIVERGED=1 ;;
     *) echo "  ERROR: no usable check runs for ${repo}@${branch}." >&2; UNDETERMINED=1 ;;
   esac
 }

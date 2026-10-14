@@ -362,6 +362,7 @@ def test_service_repos_require_the_shared_measured_guards(repo: str, branch: str
         (["optional advisory"], 0, ""),
         (["X (BLOCKING)"], 1, 'MISLABEL Factory@main: "X (BLOCKING)"'),
         (["nonblocking-ish"], 0, ""),
+        (["lint (non-blocking)"], 0, ""),
         ([], 2, ""),
     ],
 )
