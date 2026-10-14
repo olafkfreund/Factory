@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1709
 intent: intent/2026-10-14-1709-extension-registry-drift.md
 ---
