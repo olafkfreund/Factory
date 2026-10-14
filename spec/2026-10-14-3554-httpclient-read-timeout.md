@@ -26,6 +26,12 @@ The body stays the same: record `str(exc)`, back off, retry, and return
   which escapes in the same way and is the same kind of transient failure.
 - `HTTPError` subclasses `URLError` but is caught by the clause above it, so
   4xx and 5xx handling does not change.
+- Only GET and HEAD resend after a bare `TimeoutError` or `ConnectionError`.
+  Any other method returns status 0 at once. urllib wraps errors from before the
+  request is sent in `URLError`, so a bare error means the server may already
+  have acted on it, and resending a POST could create a task twice. `URLError`
+  keeps retrying for every method, as before. (Added after review, option A,
+  approved by the user in session.)
 
 Add one test to `shared/factory-common/tests/test_http.py`, next to
 `test_network_error_returns_status_zero`. It uses the same fake transport, which
@@ -56,6 +62,10 @@ Decisions on the intent's open questions:
   the next slow response, and it hides a real latency signal.
 
 ## Risks
+
+- Superseded by option A: resending every method after a read timeout could
+  run a POST twice (`run_pipeline_task.py:294` `/api/tasks/from-issue`,
+  `parr_regression.py:376` task `/start`).
 
 - A caller that relied on `TimeoutError` escaping would now get status 0
   instead. The 3 non-test `HttpClient` users (`parr_regression.py`, `sync_labels.py`,

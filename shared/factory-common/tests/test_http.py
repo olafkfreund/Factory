@@ -172,6 +172,16 @@ def test_read_timeout_and_reset_return_status_zero(monkeypatch: pytest.MonkeyPat
     assert "reset" in resp.json["error"]
 
 
+def test_read_timeout_on_post_is_not_resent(monkeypatch: pytest.MonkeyPatch) -> None:
+    transport = _Transport([TimeoutError("The read operation timed out"), _FakeResponse(201, "{}")])
+    _install(monkeypatch, transport)
+    client = http.HttpClient(base_url="http://t", max_attempts=3, _sleep=lambda _s: None)
+    resp = client.post("/api/tasks", body={"x": 1})
+    assert resp.status == 0
+    assert len(transport.requests) == 1
+    assert "timed out" in resp.json["error"]
+
+
 def test_non_json_body_wrapped_as_raw(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = _Transport([_FakeResponse(200, "plain text")])
     _install(monkeypatch, transport)

@@ -12,6 +12,9 @@ spec: spec/2026-10-14-3554-httpclient-read-timeout.md
   failures, the same as `urllib.error.URLError`: retry with the existing backoff,
   then return `HttpResponse(0, {"error": str(exc)})`. No new options, and 4xx/5xx
   (`HTTPError`) handling does not change.
+- Only GET and HEAD resend after a bare `TimeoutError` or `ConnectionError`.
+  Any other method breaks out of the loop and returns status 0 (option A,
+  added after review).
 - Do not catch bare `OSError`. It is too broad for a shared client.
 - Fix the hub only. PFactory, TFactory and CFactory each get a follow-up issue
   for their vendored copy.
@@ -60,10 +63,19 @@ spec: spec/2026-10-14-3554-httpclient-read-timeout.md
    → verify by `gh issue view` on each.
    Traps: none. The session does this; it is not a coder step.
 
+4. `http.py`, the same clause: after `last_error`, `break` when the error is not
+   a `URLError` and `method.upper()` is not GET or HEAD. In `test_http.py`, add
+   `test_read_timeout_on_post_is_not_resent`: a POST hits a `TimeoutError` and a
+   201 is queued after it, and the test asserts status 0 and one request.
+   → verify by the pytest command: 21 passed.
+   Traps: the old `if attempt < ...: continue` has no `else`, so the loop goes
+   round again regardless. A non-retryable error needs an explicit `break`.
+   `URLError` keeps retrying for every method.
+
 ## Tests
 
 ```bash
-uvx --with pytest pytest -q shared/factory-common/tests/test_http.py   # 20 passed
+uvx --with pytest pytest -q shared/factory-common/tests/test_http.py   # 21 passed
 ruff check --config standards/ruff.toml shared/factory-common
 ruff format --check shared/factory-common
 ```
@@ -82,4 +94,5 @@ agent reviews the result against this plan and `git diff`.
 
 Deviation: agy did step 1. The Codex handoff for step 2 stalled for about 12
 minutes without editing a file, so the session stopped it and made the step 2
-change itself, exactly as written above.
+change itself, exactly as written above. Step 4 came from the Opus review's
+finding (option A); the session did it.

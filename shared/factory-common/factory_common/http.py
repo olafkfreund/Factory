@@ -224,6 +224,13 @@ class HttpClient:
             # A timeout while reading the response is raised bare, not wrapped in URLError (#3554).
             except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
                 last_error = str(exc)
+                # Raised bare only after the request went out: the server may have acted on
+                # it, so only a read is resent; a POST could create its task twice.
+                if not isinstance(exc, urllib.error.URLError) and method.upper() not in {
+                    "GET",
+                    "HEAD",
+                }:
+                    break
                 if attempt < self.max_attempts - 1:
                     self._sleep(self.backoff_seconds * (attempt + 1))
                     continue
