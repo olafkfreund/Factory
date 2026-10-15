@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1775
 spec: spec/2026-10-15-1775-repo-scoped-correlation-key.md
 ---
