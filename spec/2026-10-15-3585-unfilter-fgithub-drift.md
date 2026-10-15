@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3585
 intent: intent/2026-10-15-3585-unfilter-fgithub-drift.md
 ---
