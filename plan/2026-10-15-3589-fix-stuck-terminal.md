@@ -48,9 +48,9 @@ Per repo `R` in AIFactory, PFactory, TFactory, in a worktree
    `ruff check` and `ruff format --check` on both files.
    Traps: do not reformat other lines (AIFactory's `main()` argparse call is
    multi-line; leave it).
-4. Commit naming the step, push, PR against `dev` with `Closes
-   olafkfreund/Factory#3589` only on the last repo's PR (the others "Refs").
-   Wait for CI.
+4. Commit naming the step, push, PR against `dev` with
+   `Refs olafkfreund/Factory#3589` (a PR into `dev` cannot close a hub
+   issue; the hub PR carries `Closes #3589`). Wait for CI.
 
 Hub: this branch carries only the three artifacts; its PR links the three
 service PRs and `Refs #3589`.
