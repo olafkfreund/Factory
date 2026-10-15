@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3589
 intent: intent/2026-10-15-3589-fix-stuck-terminal.md
 ---
