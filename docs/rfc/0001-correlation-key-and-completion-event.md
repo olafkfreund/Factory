@@ -34,7 +34,17 @@ durable, human-visible artifact every stage already references.
 pfactory.session_id  →  issue#  →  aifactory.task_id  →  branch / PR#  →  tfactory.spec_id
 ```
 
-- **Canonical form:** the integer issue number rendered as a string, e.g. `"142"`.
+- **Canonical form:** `<repo>#<n>`: the issue's repository and its number, e.g.
+  `"olafkfreund/CFactory#142"`. `<repo>` is the repo reference as RFC-0020 §3.5
+  writes it: `owner/repo` for GitHub, `gitlab:group/project`,
+  `azure_devops:org/project/repo`. An issue number alone names an issue only within
+  one repository, so the bare form let issue #142 in two repos collide on one key.
+- **Bare-number fallback (deprecated):** the issue number on its own, e.g. `"142"`,
+  only when the emitter does not know the issue's repository. Consumers accept it
+  during the migration window (see the 1775 artifacts in `spec/`).
+
+  Amended 2026-10-15 (AIFactory#1775 / CFactory#484); before then the canonical
+  form was the bare issue number.
 - **Synthetic fallback:** when no issue exists yet (a plan that is rejected before
   emit, a unit that never reached GitHub), a service MUST emit a synthetic key of the
   form `<prefix>-<local-id>`, where `<prefix>` is the emitting service's short code:
@@ -60,7 +70,7 @@ removed the now-redundant legacy `schema_version`, `event`, `correlation_id`, an
 
 | Field | Type | Description |
 |---|---|---|
-| `correlation_key` | string | The shared key (§2) — issue number, or synthetic fallback. |
+| `correlation_key` | string | The shared key (§2) — `<repo>#<n>`, a bare issue number when the repo is unknown, or a synthetic fallback. |
 | `service` | string | The emitting service: `pfactory` \| `aifactory` \| `tfactory` \| `cfactory`. |
 | `task_id` | string | The emitter's *local* identifier for this unit (PFactory: `session_id`; AIFactory: `task_id`; TFactory: `spec_id`). |
 | `status` | string | The terminal status this service landed on (§5). |
