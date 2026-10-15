@@ -152,6 +152,15 @@ C3. **Row adoption.** `apps/backend/cfactory/store.py`: add a private helper
     - Pass `updated_at` explicitly; `onupdate` would otherwise re-stamp it
       and reset the 24 h pruning clock.
 
+    **Deviation (implemented, CFactory commit `20bfb03`):** the helper also
+    takes the row `_get_row` returned and runs on every write, not only on a
+    miss. When the qualified row already exists (for example PFactory's
+    origin-key row for a hard-tier chain), the bare row's slice for the same
+    task, and that service's timeline entries, move into it. The bare row is
+    deleted if no stage data is left. Without this, `prune_duplicate_stages`
+    clears the bare slice and its usage. A `None` task id never adopts. It
+    still skips when the qualified row's slice belongs to a different task.
+
 C4. **Newest owns the stage.**
     `apps/backend/cfactory/store.py:526` `upsert_snapshot`: add a
     keyword-only `newest: bool = False`, and AND `not newest` into
