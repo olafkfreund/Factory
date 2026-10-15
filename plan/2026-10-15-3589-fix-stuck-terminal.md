@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3589
 spec: spec/2026-10-15-3589-fix-stuck-terminal.md
 ---
