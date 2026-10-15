@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3591
 intent: intent/2026-10-15-3591-rejected-designs-note.md
 ---
