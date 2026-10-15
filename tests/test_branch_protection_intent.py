@@ -133,6 +133,8 @@ _SINKS = "security sinks (whole repo)"
 _AUTONOMY = "autonomy matrix matches the policy (--check, blocking)"
 _COLLECTED = "every test file is inside a collected path"
 _FCOMMON = "vendored factory_common matches the hub canonical"
+# The factory-github vendoring gate, required since Factory#3585 unfiltered it.
+_FGITHUB = "factory-github canonical drift"
 _GATE5 = "Gate 5 — banned constructs (blocking, Factory#786)"
 _GATE5_AI = "Gate 5 — banned constructs (blocking, Factory#718)"
 _CF_NEW = [
@@ -274,6 +276,7 @@ def test_check_contexts_are_per_repo() -> None:
             _VCORE,
             _COLLECTED,
             _FCOMMON,
+            _FGITHUB,
             *_CF_NEW,
             *_CODEQL,
             _SINKS,
@@ -287,6 +290,7 @@ def test_check_contexts_are_per_repo() -> None:
             _VCORE,
             _COLLECTED,
             _FCOMMON,
+            _FGITHUB,
             *_TF_NEW,
             _TF_FORMAT,
             *_CODEQL,
@@ -300,6 +304,7 @@ def test_check_contexts_are_per_repo() -> None:
             _VCORE,
             _COLLECTED,
             _FCOMMON,
+            _FGITHUB,
             *_PF_NEW,
             _GITLEAKS_PF,
             *_CODEQL,
@@ -313,6 +318,7 @@ def test_check_contexts_are_per_repo() -> None:
             _VCORE,
             _COLLECTED,
             _FCOMMON,
+            _FGITHUB,
             *_AI_NEW,
             "shared-baseline drift gate (blocking)",
             *_CODEQL_LC,
@@ -325,6 +331,7 @@ def test_check_contexts_are_per_repo() -> None:
     # workflow exists can never report, which is the Factory#529 wedge.
     for repo in ("Factory", "factory-gitops"):
         assert _VCORE not in _emit(repo, "main")["required_status_checks"]["contexts"]
+        assert _FGITHUB not in _emit(repo, "main")["required_status_checks"]["contexts"]
     assert _emit("Factory", "main")["required_status_checks"]["contexts"] == sorted(
         [
             "ruff + mypy ratchet (diff-scoped, blocking)",
@@ -344,6 +351,7 @@ def test_service_repos_require_the_shared_measured_guards(repo: str, branch: str
     contexts = _emit(repo, branch)["required_status_checks"]["contexts"]
     assert _COLLECTED in contexts
     assert _FCOMMON in contexts
+    assert _FGITHUB in contexts
     assert set(
         {
             "CFactory": _CF_NEW,
@@ -465,6 +473,7 @@ def test_matching_live_response_compares_equal() -> None:
                 _VCORE,
                 _COLLECTED,
                 _FCOMMON,
+                _FGITHUB,
                 *_TF_NEW,
                 _GITLEAKS,
                 _TF_FORMAT,
@@ -487,6 +496,7 @@ def test_matching_live_response_compares_equal() -> None:
                 _VCORE,
                 _COLLECTED,
                 _FCOMMON,
+                _FGITHUB,
                 *_TF_NEW,
                 *_CODEQL,
                 _SINKS,
@@ -504,6 +514,7 @@ def test_matching_live_response_compares_equal() -> None:
                 _VCORE,
                 _COLLECTED,
                 _FCOMMON,
+                _FGITHUB,
                 *_CF_NEW,
                 _GITLEAKS,
                 *_CODEQL,
@@ -525,6 +536,7 @@ def test_matching_live_response_compares_equal() -> None:
                 _VCORE,
                 _COLLECTED,
                 _FCOMMON,
+                _FGITHUB,
                 *_AI_NEW,
                 "ratchet (ruff + mypy on changed Python)",
                 "ruff format --check (every Python directory)",
@@ -574,6 +586,7 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             _VCORE,
             _COLLECTED,
             _FCOMMON,
+            _FGITHUB,
             *_AI_NEW,
             *_CODEQL_LC,
             _SINKS,
@@ -601,6 +614,7 @@ def test_unordered_contexts_compare_equal() -> None:
             _VCORE,
             _COLLECTED,
             _FCOMMON,
+            _FGITHUB,
             *_TF_NEW,
             _GITLEAKS,
             _ACCEPT,
@@ -690,6 +704,7 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
             _VCORE,
             _COLLECTED,
             _FCOMMON,
+            _FGITHUB,
             *_TF_NEW,
             _GITLEAKS,
             *_CODEQL,
