@@ -7,6 +7,7 @@ permalink: /rfc/verification-assurance/
 # RFC-0006 — Verification Assurance Levels & Honest Reporting
 
 > **Status:** Implemented · **Created:** 2026-06-15 · **Updated:** 2026-06-17 · **Extends:** [RFC-0001a](./0001a-completion-evidence-gates.md) (evidence gates), [RFC-0005](./0005-environment-manifest-and-toolchain-provisioning.md) (provisioning) · **Extended by:** [RFC-0007](./0007-access-and-credential-provisioning.md) (access discovery for VAL-3) · **Affects:** PFactory, AIFactory, TFactory, CFactory
+> **See also:** [RFC-0024](./0024-package-owned-runtime-invariants.md) — runtime invariants of the factories themselves; VAL levels grade a task's output, a different axis.
 > RFC-0001a said *no green without proof*. This RFC says *declare **how much** was
 > proven, and **never** present a lower assurance level as a higher one.* The
 > single rule: **we never tell the user something is tested when it isn't.**

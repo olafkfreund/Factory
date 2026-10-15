@@ -129,3 +129,11 @@ it edits two files and needs no coder handoff.
 
 Revert the squash commit. No runtime is affected. Close the follow-up issues
 as not planned if the RFC is withdrawn.
+
+## Deviations
+
+- Step 1: rerunning the counts with one definition (both `apps/backend` and
+  `apps/web-server`) gives TFactory 31 and AIFactory 30, not 29 and 28. The
+  spec's figures counted `apps/backend` only. The RFC uses 31 and 30.
+- Step 3: the issues filed are PFactory#864 and #865, factory-gitops#283 and
+  Factory#3591.
