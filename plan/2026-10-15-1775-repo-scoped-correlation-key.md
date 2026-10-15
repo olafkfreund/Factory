@@ -345,6 +345,24 @@ A5. **The TFactory handoff carries the build key** (added after review).
     - It is not sent as `repo`: TFactory uses `repo` for the target repo and
       provider (PR comments), which can differ from the issue's repo.
 
+    **Correction (third review round).** The premise "TFactory already
+    prefers the contract key" held only for contracts TFactory stores.
+    TFactory writes `task_contract.json` only when the contract carries an
+    RFC-0002 marker (`tfactory` or `contract_version`;
+    `task_control.py:458`, `task_contract.py:90`). A build-only AIFactory
+    contract (`provenance` plus `correlation_key`) has neither, so the key
+    was dropped and the task was keyed on the bare issue. Two fixes:
+
+    - **TFactory (#1377):** ingest records a string contract
+      `correlation_key` in `source.json`, and `triager._correlation_key` and
+      `handback/send._correlation_key_for` check it right after the stored
+      contract key and before the issue fallback.
+    - **AIFactory (#1777):** `_thread_issue` sets the key whenever
+      `_event_correlation_key(req)` returns one. It is no longer gated on the
+      #964 `_issue_from_requirements` integer check, which missed
+      `metadata.githubIssueNumber` (`routes/tasks.py`, the auto-fix path)
+      and string numbers.
+
     Verify: `PYTHONPATH=apps/backend pytest apps/backend/pfactory/test_tfactory_client_issue.py -q -o asyncio_mode=auto`
     and `pytest apps/web-server/tests/test_completion_emitter.py -q`.
 
