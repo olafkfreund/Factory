@@ -64,16 +64,20 @@ Closes olafkfreund/AIFactory#1775 and olafkfreund/CFactory#484 (via the hub PR).
 
 ## Merge and deploy order (required)
 
-1. **Hub PR** (this one: artifacts and the RFC-0001 §2 amendment). It merges
-   **last**, after the four service PRs, so its `Closes` lines close the
-   issues only once the code has landed. The service PRs link to the hub
-   branch until then.
-2. **CFactory PR** merges and deploys first among the code PRs (the
-   consumer accepts both formats).
-3. **AIFactory, TFactory and PFactory PRs**, in any order among themselves,
-   but each only after the CFactory PR is **deployed**, not just merged.
-4. Then the hub PR.
-5. The window runs. The follow-up CFactory issue removes the legacy paths.
+1. **CFactory PR** (the consumer accepts both formats) merges into `dev`
+   first. It then ships to production through the CFactory dev→main sync
+   PR, and that release is deployed.
+2. **AIFactory, TFactory and PFactory PRs**, in any order among themselves.
+   The release of each producer that contains its change ships to
+   production only after the CFactory dev→main sync containing #487 is
+   deployed to production. The producer PRs do not merge into `dev` before
+   that either, so no producer release cut in between can carry the new
+   key.
+3. **Hub PR** (this one: artifacts and the RFC-0001 §2 amendment) merges
+   **last**, so its `Closes` lines close the issues only once the code has
+   landed. The service PRs link to the hub branch until then.
+4. The window runs. The follow-up CFactory issue (#486) removes the legacy
+   paths.
 
 ## Environment and traps (all steps)
 
