@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 818
 author: olafkfreund
 ---
@@ -98,3 +98,9 @@ A small separate issue will propose recording rejected designs, as the
    alternative is that every failure stops startup.
 3. **Merge approval in advance.** May I merge this task's docs PR (intent,
    spec, plan and RFC) once CI is green?
+
+## Decisions (approved 2026-10-15)
+
+1. Per service, full coverage within each service, PFactory first.
+2. Critical invariants fail readiness; the rest log at error level and emit a metric.
+3. The docs PR may merge once CI is green.
