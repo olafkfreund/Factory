@@ -125,6 +125,14 @@ C2. **Card lookup fallback.** `apps/backend/cfactory/cards.py:813-826`
       passing the values through `sanitize_log` as nearby code does.
     - Return the updated card.
 
+    **Deviation (review of CFactory#487):** a bare-keyed card is adopted only
+    when `_issue_project(card.issue_ref)` (`cards.py:142`) equals the key's
+    repo. The oldest card that matches wins. A card with no `issue_ref` is
+    skipped, not guessed, because a bare `7` is ambiguous and taking the
+    oldest card let any repo's issue #7 steal and re-key another repo's card.
+    So a legacy card with no `issue_ref` does not settle from a
+    qualified-key event during the window.
+
     Verify: `pytest tests/test_card_intake.py tests/test_cards_api.py -q`.
     Traps: the card store uses `self._session()` (a sessionmaker context, not
     `begin()`), so commit explicitly. Keep tenant scoping by using
@@ -161,6 +169,12 @@ C3. **Row adoption.** `apps/backend/cfactory/store.py`: add a private helper
     clears the bare slice and its usage. A `None` task id never adopts. It
     still skips when the qualified row's slice belongs to a different task.
 
+    **Deviation 2 (review of CFactory#487):** when the qualified row already
+    holds the **same** task, only the timeline entries move (merged and
+    ordered by `updated_at`). The qualified slice is kept, because it is the
+    newer one: during a rolling producer deploy a late old-format event must
+    not roll `reviewing` back to `coding`, or usage from 10 to 3.
+
 C4. **Newest owns the stage.**
     `apps/backend/cfactory/store.py:526` `upsert_snapshot`: add a
     keyword-only `newest: bool = False`, and AND `not newest` into
@@ -181,6 +195,12 @@ C4. **Newest owns the stage.**
       `live`.
 
     The hub feed loop (`:114-119`) is unchanged.
+
+    **Deviation (review of CFactory#487):** "newest" is known only among one
+    poll's tasks. An owner gets `newest=True` only when the row's current
+    task for that service is in the same group (`_current_task`). Otherwise
+    a lone dead task would skip #483's guard and replace a finished re-run
+    that is not listed upstream (event-only).
 
     Verify: `pytest tests/test_progress.py tests/test_store.py -q`.
     Traps:
