@@ -19,9 +19,19 @@ Closes olafkfreund/AIFactory#1775 and olafkfreund/CFactory#484 (via the hub PR).
      `githubIssue.repo`, then `owner/repo` parsed from `githubIssue.url`
      when it matches `^/([^/]+/[^/]+)/issues/\d+$`.
    - TFactory: `source.json` `repo_slug`, prefixed with `<provider>:` when
-     `provider` is not `github`.
-   - PFactory: `session.repo`, filled from the emit target on GitHub emit
-     if empty.
+     `provider` is not `github`, else `source.json` `repo` as given (the
+     PFactory pickup path writes `repo`). For AIFactory handoffs the key
+     arrives on the contract instead (step A5).
+   - PFactory: for an issue-born plan, `session.repo` (unchanged). For the
+     emitted-epic fallback, the new `session.emit_repo`: the repo the epic
+     was emitted to, stored at emit. **Amended after review of PFactory#878:**
+     the draft filled `session.repo` from the emit target, which keys an epic
+     to the analysed repo when that differs from the emit repo (analysed
+     `o/code`, emitted to `o/plans`, keyed `o/code#101`). That collides with
+     a real `o/code#101`. `session.repo` is now never changed by emit.
+   - PFactory events use the persisted `session.correlation_key` first, so a
+     session keeps one key for life. Its poll row already sends the persisted
+     key; recomputing in the event re-keyed sessions emitted before #1775.
 3. **Producers declare their key** and CFactory uses it as given:
    - AIFactory adds `correlationKey` to `/api/tasks` rows and
      `correlation_key` to the from-issue response.
@@ -305,6 +315,33 @@ A4. **Tests.** In `apps/web-server/tests/test_completion_emitter.py` add:
     Prove failure on `origin/dev`. Run `ruff check`/`ruff format --check` on
     changed files.
 
+A5. **The TFactory handoff carries the build key** (added after review).
+
+    *Question:* when AIFactory hands a build to TFactory, which repo does it
+    send as `repo`? *Answer:* none. `pfactory/tfactory_client.py`
+    `build_ingest_payload` sends `git_url`, `source_branch` and the contract,
+    and TFactory's `/api/specs/ingest` reads `req.repo` (`routes/specs.py`)
+    into `source.json` `repo_slug`. That is empty for an AIFactory handoff,
+    so without a contract key TFactory keyed the verify task on a bare `7`
+    while AIFactory emitted `owner/repo#7`. Real, so fixed:
+
+    - `build_ingest_payload` sets `contract.correlation_key` (`setdefault`,
+      so a PFactory contract key wins) to the key AIFactory's own events
+      carry. TFactory already prefers the contract key
+      (`triager._correlation_key`, `handback/send._correlation_key_for`).
+    - The key comes from `_event_correlation_key(req)`, which mirrors
+      `server/services/completion.py` `read_issue_number`, `read_issue_repo`
+      and `correlation_key`. That module is stdlib-only, so the backend
+      cannot import it. A web-server test pins the two readers together.
+    - The existing #964 `provenance.github_issue` block moves into
+      `_thread_issue`, because `build_ingest_payload` is at its statement
+      ceiling.
+    - It is not sent as `repo`: TFactory uses `repo` for the target repo and
+      provider (PR comments), which can differ from the issue's repo.
+
+    Verify: `PYTHONPATH=apps/backend pytest apps/backend/pfactory/test_tfactory_client_issue.py -q -o asyncio_mode=auto`
+    and `pytest apps/web-server/tests/test_completion_emitter.py -q`.
+
 ### TFactory (`fix/1775-repo-scoped-correlation-key`)
 
 T1. **Qualified fallback key.** `apps/backend/agents/triager.py:728-739`
@@ -321,6 +358,13 @@ T1. **Qualified fallback key.** `apps/backend/agents/triager.py:728-739`
     Verify: `pytest tests/test_handback_send.py tests/test_correlation_sync.py -q`
     plus whatever `git grep -ln "_correlation_key" tests/` lists.
     Traps: `_correlation_issue_number` still `int()`s a separate field; leave it.
+
+    **Deviation (review of TFactory#1377):** `_source_repo` falls back to
+    `source.get("repo")` when `repo_slug` is absent, as the completion
+    envelope's `repo` field already does (`triager.py:832`). The PFactory
+    pickup path (`integrations/pfactory/run.py:123-135`) writes `repo`, so a
+    PFactory-originated task emitted a bare `7` while PFactory keys it
+    `o/r#7`.
 
 T2. **Issue number from a qualified contract key.**
     `apps/backend/agents/tools_pkg/tools/task_control.py:517-522`: replace
@@ -353,12 +397,17 @@ T4. **Tests.** Add:
 
 ### PFactory (`fix/1775-repo-scoped-correlation-key`)
 
-P1. **Qualified emitted-epic key.** `apps/backend/plan/completion.py:86-89`:
-    `return origin_key(session.repo, session.emitted_issue_number)`.
-    `apps/backend/plan/service.py` `emit` (around `:2040-2045`): before
-    `session.correlation_key = correlation_key_for(session)`, add
-    `if not session.repo: session.repo = repo`, with a one-line comment
-    "the epic lives in the emit target; name it in the key (#1775)".
+P1. **Qualified emitted-epic key** (as amended after review of PFactory#878).
+    - `apps/backend/plan/service.py` `PlanSession`: add
+      `emit_repo: str | None = None`. In `_emit`, set
+      `session.emit_repo = repo` wherever `emitted_issue_number` is set:
+      the `_save_progress` callback and the post-emit block.
+    - `apps/backend/plan/completion.py` `correlation_key_for`: the
+      emitted-epic branch returns
+      `origin_key(session.emit_repo, session.emitted_issue_number)`.
+    - `build_completion_event` uses
+      `session.correlation_key or correlation_key_for(session)`.
+    - `session.repo` is not touched by emit.
 
     Verify: `pytest tests/test_plan_completion.py -q`.
     Traps:
@@ -369,9 +418,13 @@ P1. **Qualified emitted-epic key.** `apps/backend/plan/completion.py:86-89`:
       in-flight sessions. That is intended (the CFactory window handles
       them).
 
-P2. **Test.** In `tests/test_plan_completion.py`: a session with no origin
-    issue, `repo="o/r"` and `emitted_issue_number=12` gives `o/r#12`, and
-    with `repo=None` gives `"12"`. Prove failure on `origin/dev`. Run ruff on
+P2. **Test.** In `tests/test_plan_completion.py`:
+    - a session with no origin issue, `emit_repo="o/r"` and
+      `emitted_issue_number=12` gives `o/r#12`, and with `emit_repo=None`
+      gives `"12"`;
+    - a session analysed in `o/code` and emitted to `o/plans` gets
+      `o/plans#101`, with `session.repo` still `o/code`;
+    - a session with a persisted key `"101"` gets an event keyed `"101"`. Prove failure on `origin/dev`. Run ruff on
     changed files.
 
 ### Hub (this branch)
