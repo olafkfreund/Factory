@@ -16,7 +16,7 @@ README does not mention them today) that says:
 - a rejected design is recorded in the `## Alternatives rejected` section
   of the spec (or RFC) that rejected it, with the reason;
 - before proposing a design, search those sections, with the command
-  `git grep -n -A15 '^## .*Alternatives' spec docs/rfc`;
+  `git grep -n -A40 '^## .*Alternatives' spec docs/rfc`;
 - re-proposing a rejected design needs new evidence, cited in the new spec.
 
 The spec's `## Alternatives rejected` heading is already the stable,

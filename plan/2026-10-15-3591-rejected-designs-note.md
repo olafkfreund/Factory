@@ -22,7 +22,7 @@ re-proposal needs new evidence.
      rejected is recorded, with the reason, in the `## Alternatives rejected`
      section of the spec (or RFC in `docs/rfc/`) that rejected it; there is no
      separate `rejected/` index (#3591). Search them before proposing a design:
-     `git grep -n -A15 '^## .*Alternatives' spec docs/rfc`. Proposing a
+     `git grep -n -A40 '^## .*Alternatives' spec docs/rfc`. Proposing a
      rejected design again needs new evidence, cited in the new spec.
    ```
    → verify `git grep -c '^## .*Alternatives' spec docs/rfc | wc -l` > 0 and
