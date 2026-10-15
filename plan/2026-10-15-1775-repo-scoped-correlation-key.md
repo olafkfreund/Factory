@@ -146,6 +146,12 @@ C2. **Card lookup fallback.** `apps/backend/cfactory/cards.py:813-826`
     oldest card let any repo's issue #7 steal and re-key another repo's card.
     So a legacy card with no `issue_ref` does not settle from a
     qualified-key event during the window.
+    The comparison uses the project part of the key's repo
+    (`parse_repo_ref(...)[1]`, `git_config.py:375`), because `issue_ref`
+    holds the bare project (`grp/app#7`, and imported refs cannot contain
+    `:`) while a GitLab or Azure DevOps key carries `qualify_repo`'s prefix
+    (`gitlab:grp/app#7`). Without that, those cards were never adopted
+    (second review round).
 
     Verify: `pytest tests/test_card_intake.py tests/test_cards_api.py -q`.
     Traps: the card store uses `self._session()` (a sessionmaker context, not
