@@ -49,11 +49,11 @@ Per repo `R` in AIFactory, PFactory, TFactory, in a worktree
    Traps: do not reformat other lines (AIFactory's `main()` argparse call is
    multi-line; leave it).
 4. Commit naming the step, push, PR against `dev` with
-   `Refs olafkfreund/Factory#3589` (a PR into `dev` cannot close a hub
-   issue; the hub PR carries `Closes #3589`). Wait for CI.
+   `Refs olafkfreund/Factory#3589`: one closer, in the hub, after all
+   three service PRs merge (the hub PR carries `Closes #3589`). Wait for CI.
 
 Hub: this branch carries only the three artifacts; its PR links the three
-service PRs and `Refs #3589`.
+service PRs and `Closes #3589`.
 
 ## Tests
 
