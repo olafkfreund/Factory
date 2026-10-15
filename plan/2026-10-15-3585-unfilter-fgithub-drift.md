@@ -14,7 +14,12 @@ Approved decisions (from the spec):
   `main` and `dev` of CFactory, PFactory, TFactory, AIFactory; never on
   Factory or factory-gitops. Tests lock it in.
 - Order: service PRs merge, gate observed posting on an unrelated PR in each,
-  then the hub PR merges, then the lead runs `--apply`. No live change here.
+  then the hub PR merges; `dev` promoted to `main` in each repo (no `paths:`
+  under `pull_request` in `origin/main`'s workflow); then the lead runs
+  `--apply`; then open PRs get a push, close/reopen or `@dependabot rebase`.
+  No live change here.
+- Trade-off: the checker comes from hub `main` (Factory#405), so a broken
+  `check_factory_github_drift.py --self-test` there blocks every service PR.
 
 ## Steps
 
@@ -46,8 +51,8 @@ Approved decisions (from the spec):
    `"'"$FCOMMON_CTX"'",` in CFactory `CHECKS`, PFactory `CHECKS` and
    `CHECKS_DEV`, TFactory `CHECKS` and `CHECKS_DEV`, AIFactory `CHECKS` and
    `CHECKS_DEV` (7 insertions).
-   → verify `grep -c 'FGITHUB_CTX"' scripts/apply_branch_protection.sh` is 7
-   (the definition line uses `FGITHUB_CTX=`).
+   → verify `grep -o 'FGITHUB_CTX"' scripts/apply_branch_protection.sh | wc -l`
+   is 7 (`grep -c` counts lines: 4; the definition line uses `FGITHUB_CTX=`).
    Traps: the quoting is `'"$X"'` inside single-quoted JSON; one missing
    quote breaks every repo's payload. Do NOT run `--apply`.
 3. `tests/test_branch_protection_intent.py`: add
@@ -64,7 +69,8 @@ Approved decisions (from the spec):
 4. Commit, then `ruff check`, `ruff format --check` on the test, and the
    ratchet (`ratchet_lint.py --base origin/main --package scripts,tests`,
    plus `--tool mypy`). Push, PR `Closes #3585`, body lists the merge
-   order and the live `--apply` step for the lead.
+   order (including the `main`-promotion check), the live `--apply` step,
+   the reopen-after-apply note and the Factory#405 trade-off.
 
 ## Tests
 

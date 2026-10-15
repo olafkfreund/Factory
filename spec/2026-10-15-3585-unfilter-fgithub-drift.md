@@ -33,8 +33,13 @@ and keep it out of Factory and factory-gitops.
 
 The hub PR is merged only after the four service PRs are merged and the
 gate has been seen posting on a PR in each repo whose diff touches no
-vendored path. Then the lead runs `scripts/apply_branch_protection.sh
---apply` for the four repos. This lane makes no live change.
+vendored path. Before `--apply`, `dev` must also have been promoted to
+`main` in each repo: `git show origin/main:.github/workflows/factory-github-drift.yml`
+has no `paths:` under `pull_request`. Otherwise a hotfix PR into `main`
+waits forever on a check that never posts. Then the lead runs
+`scripts/apply_branch_protection.sh --apply` for the four repos. PRs
+already open at that point need a push, a close/reopen or
+`@dependabot rebase` to get the check. This lane makes no live change.
 
 ## Alternatives rejected
 
@@ -59,6 +64,10 @@ vendored path. Then the lead runs `scripts/apply_branch_protection.sh
   the intended "intent changed, apply it" signal.
 - The gate fetches from the hub; a hub outage now fails every PR instead of
   a few. Same exposure the verification-core gate already has.
+- The gate runs the hub's checker from hub `main` (`HUB_CHECKER_REF`,
+  Factory#405), so a broken `check_factory_github_drift.py --self-test` on
+  hub `main` blocks every PR in all four service repos, not a few.
+  Accepted, as for the verification-core gate; fix forward in the hub.
 
 ## Verification
 
