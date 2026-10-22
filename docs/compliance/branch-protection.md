@@ -121,7 +121,8 @@ authority and this table is stale.
 | CFactory / dev | same two | no | none | - | no |
 | factory-gitops / main | none | - | none | - | yes |
 
-`enforce_admins` is `false` everywhere, force-pushes and branch deletion are
+`enforce_admins` was `false` everywhere when this table was taken (see the
+#943 decision below for the declared intent), force-pushes and branch deletion are
 blocked everywhere, no repo has push restrictions, and no repo uses rulesets.
 `Factory` and `factory-gitops` have no `dev` branch, so none is declared for
 them; a declared branch that does not exist is an error in check mode, not a
@@ -170,7 +171,8 @@ already flows through feature branches and pull requests.
 We use classic branch protection rather than a ruleset. With classic protection,
 `enforce_admins=false` means anyone with the admin role - and any token they own
 - bypasses the pull-request and review requirements and can push directly to
-`main`. The plan sets `enforce_admins=false` everywhere, which:
+`main`. The plan set `enforce_admins=false` everywhere (since #943 it is `true`
+on the five code repos' `main`; see Phase 4), which:
 
 - lets the `factory-gitops` CD bot keep pushing bump commits, and
 - lets the PARR auto-merge loop merge with an admin token even if a required
@@ -270,10 +272,18 @@ service repos, verified green by check mode on 2026-07-30. Remaining phases:
   AIFactory and TFactory). Still off: a required status blocks any PR that never
   receives it. Applies to `main` only - the script does not add it to `dev`,
   because a verification status that has not run yet would stall integration.
-- **Phase 4 - tighten `enforce_admins` to `true`** per repo, only after
-  confirming no automation relies on the admin bypass for that repo, and after
-  adding `CODEOWNERS` to Factory and CFactory so code-owner review can be
-  required there too.
+- **Phase 4 - tighten `enforce_admins` to `true`: decided 2026-10-22 (#943,
+  option 2).** The intent table declares it ON for `main` of AIFactory,
+  PFactory, TFactory, CFactory and Factory (`ENFORCE_ADMINS_MAIN=1`). It stays
+  OFF on every `dev`, so an incident fix can still land there, and on
+  factory-gitops `main`, because the CD bot pushes there directly (see above).
+  The audit found nothing that relies on admin bypass into those mains:
+  `release.yml` pushes tags only, `deploy.yml` writes to gitops, dev to main
+  promotion is a `release/*` PR merged on green, and the auto-merge loop never
+  passes `--admin`. Live protection changes only when `--apply` runs; until
+  then check mode reports the five mains as drift. Break glass: set the repo's
+  `ENFORCE_ADMINS_MAIN=0`, run `--apply --repo <R>`, merge, then restore and
+  re-apply. Details are in `spec/2026-10-22-943-enforce-admins-main.md`.
 
 When a phase lands, change the intent table and let check mode confirm; do not
 apply a change and leave the table describing the old world. That gap is the

@@ -107,13 +107,25 @@ VERIFY_CTX="tfactory/suite"
 #   REVIEWS        : 1 = require a PR with >=1 approving review on main; 0 = none
 #   CODE_OWNER     : 1 = require_code_owner_reviews (only where CODEOWNERS exists)
 #   ENFORCE_ADMINS : 0 = admins (and admin-owned automation tokens) bypass
+#   ENFORCE_ADMINS_MAIN : per-repo main override; unset = ENFORCE_ADMINS
 #   VERIFY         : 1 = eligible to also require $VERIFY_CTX when WITH_VERIFY=1
 #   BRANCHES       : every branch that MUST be protected in this repo. A declared
 #                    branch that does not exist is an error, not a skip.
 #   DEFAULT_BRANCH : the repo's default branch. NOT cosmetic - see Factory#467.
 #
-# enforce_admins is 0 across the baseline so the factory's own auto-merge loop
-# (admin token running `gh pr merge`) and the gitops CD bot keep working.
+# enforce_admins (owner decision, #943 option 2, 2026-10-22): ON for main of the
+# five code repos, so a red required check binds admins too. Before this it was
+# 0 by default, and the "red check cannot merge" floor held only because every
+# client calls `gh pr merge` without --admin; a plain REST merge by an admin went
+# straight past it (measured on #943, 2026-10-07). Nothing relies on admin bypass
+# into those mains: release.yml pushes tags only, deploy.yml pushes to gitops,
+# dev->main promotion is a release/* PR merged on green, and the auto-merge loop
+# never passes --admin. It stays 0 on every dev, so an incident fix can still
+# land there, and on factory-gitops main, whose CD bot pushes `cd(...) [skip ci]`
+# commits straight to main and needs the bypass.
+# Break glass (incident merge into a code repo's main): set that repo's
+# ENFORCE_ADMINS_MAIN=0 here, run `--apply --repo <R>`, merge, then restore 1 and
+# re-apply. The nightly check reports drift until it is restored.
 #
 # CHECKS are per-repo because the repos' CI job names genuinely differ (CFactory
 # names them "Backend pytest"/"Frontend typecheck + build"; the Python services
@@ -210,14 +222,17 @@ SINKS_CTX="security sinks (whole repo)"
 
 
 repo_config() {
-  # Reset the per-branch override FIRST. These are globals set by a case arm,
-  # and only one repo sets CHECKS_DEV -- without this it would leak from
+  # Reset the per-branch overrides FIRST. These are globals set by a case arm,
+  # and only some repos set CHECKS_DEV -- without this it would leak from
   # AIFactory to whichever repo the loop visits next and apply AIFactory's job
   # names to it, which is the same class of bug as #691 pointing the other way.
+  # ENFORCE_ADMINS_MAIN is reset for the same reason: factory-gitops must never
+  # inherit a code repo's 1.
   CHECKS_DEV=""
+  ENFORCE_ADMINS_MAIN=""
   case "$1" in
-    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend lint + format + unit tests (blocking)","ruff check (apps/backend/cfactory + scripts, blocking)","ruff format --check (apps/backend/cfactory + scripts, blocking)","ruff + mypy ratchet (diff-scoped, blocking)","card models match the hub contract"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","hub test suite + generated package self-test (pytest)","'"$SECRET_CTX_HUB"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","committed output matches inputs (--check, blocking)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
+    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend lint + format + unit tests (blocking)","ruff check (apps/backend/cfactory + scripts, blocking)","ruff format --check (apps/backend/cfactory + scripts, blocking)","ruff + mypy ratchet (diff-scoped, blocking)","card models match the hub contract"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","hub test suite + generated package self-test (pytest)","'"$SECRET_CTX_HUB"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","committed output matches inputs (--check, blocking)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     # PFactory's dev carries `docker (P0 acceptance)` and main does not.
     # PFactory#586 shipped a container that could not start: the gate caught it
     # on the causing PR (red at 12:53Z and 13:01Z on that PR's own branch) and
@@ -226,8 +241,8 @@ repo_config() {
     # override rather than a single CHECKS -- the same shape AIFactory uses
     # below, and for the same reason (#691): one CHECKS would PUT main's set
     # over dev and strip it again.
-    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)","ratchet ruff + mypy (changed files, blocking)","ruff format --check (apps/backend + apps/web-server + scripts, blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)","ratchet ruff + mypy (changed files, blocking)","ruff format --check (apps/backend + apps/web-server + scripts, blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)","ratchet ruff + mypy (changed files, blocking)","ruff format --check (apps/backend + apps/web-server + scripts, blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)","ratchet ruff + mypy (changed files, blocking)","ruff format --check (apps/backend + apps/web-server + scripts, blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # AIFactory's dev is its DEFAULT branch and carries the ratchet and format
     # check beyond main. A single per-repo CHECKS could not express that (#691).
     # CHECKS_DEV is the per-branch override; unset means "same as CHECKS".
@@ -237,7 +252,7 @@ repo_config() {
     # and a stale one is a governance document that lies. Its workflow has no
     # `paths:` filter, so it reports on every PR -- dev's and main's release/*
     # PRs alike -- and cannot leave a PR waiting on a check that never runs.
-    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)","Gate 5 — banned constructs (blocking, Factory#718)","frontend lint + format (blocking, #647)","shared-baseline drift gate (blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)","Gate 5 — banned constructs (blocking, Factory#718)","frontend lint + format (blocking, #647)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)","Gate 5 — banned constructs (blocking, Factory#718)","frontend lint + format (blocking, #647)","shared-baseline drift gate (blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)","Gate 5 — banned constructs (blocking, Factory#718)","frontend lint + format (blocking, #647)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs
@@ -337,9 +352,10 @@ build_payload() {
   local repo="$1" branch="$2"
   repo_config "$repo"
 
-  local checks="$CHECKS" strict reviews convres
+  local checks="$CHECKS" ea="$ENFORCE_ADMINS" strict reviews convres
   case "$branch" in
-    main) strict=true;  reviews="$REVIEWS"; convres=true ;;
+    main) strict=true;  reviews="$REVIEWS"; convres=true
+          ea="${ENFORCE_ADMINS_MAIN:-$ENFORCE_ADMINS}" ;;
     dev)  strict=true;  reviews=0;          convres=false
           # Per-branch checks (#691): dev may be gated MORE than main, and is
           # for AIFactory, where dev is the default branch.
@@ -367,7 +383,7 @@ build_payload() {
   jq -cn \
     --argjson rsc "$rsc" \
     --argjson rpr "$rpr" \
-    --argjson ea "$ENFORCE_ADMINS" \
+    --argjson ea "$ea" \
     --argjson cr "$convres" \
     '{
       required_status_checks: $rsc,

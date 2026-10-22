@@ -573,7 +573,19 @@ def test_matching_live_response_compares_equal() -> None:
             code_owner=code_owner,
             conversation_resolution=convres,
         )
+        # Admins are bound on the code repos' main (#943 option 2).
+        live["enforce_admins"] = {"enabled": branch == "main" and repo != "factory-gitops"}
         assert _normalise(live) == _emit(repo, branch), f"{repo}@{branch}"
+
+
+@pytest.mark.parametrize(("repo", "branch"), _DECLARED)
+def test_enforce_admins_on_code_repo_main_only(repo: str, branch: str) -> None:
+    """Owner decision on #943 (option 2): admins are bound on the five code
+    repos' main. dev stays bypassable for incidents, and factory-gitops main
+    stays bypassable because its CD bot pushes there directly.
+    """
+    want = branch == "main" and repo != "factory-gitops"
+    assert _emit(repo, branch)["enforce_admins"] is want
 
 
 def test_contexts_read_from_checks_when_contexts_absent() -> None:
