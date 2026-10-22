@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 943
 spec: spec/2026-10-22-943-enforce-admins-main.md
 ---
