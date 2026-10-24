@@ -53,10 +53,10 @@ Receiving side (AIFactory):
 - `execution.py:1553-1557`: `apply-correction` needs task `member` access.
 - `apps/backend/qa/correction.py:260-285`: a typed `triage` report is schema-validated and a malformed one stops the QA Fixer.
 - `correction.py:110` (`check_fix_cycle_assertions`): after the fix cycle, flags tests that lost assertions, against a baseline taken at receipt.
-- The `confirm` flag (`execution.py:112`) keeps a preview from writing.
+- The `confirm` flag (`execution.py:113`) keeps a preview from writing.
 
 Verdict: partial. Validation happens only when `triage` is present; a request with just `fix_request_md` reaches the fixer unvalidated. Filed as AIFactory#1858.
 
 ## The merge decision
 
-Not a handoff, but the consumer of handoff 3's verdict: `apps/backend/merge/merge_policy.py:304-309` (`decide_merge`) auto-merges only when host CI, the TFactory verdict, the VAL floor and CI parity are all true. A permissive verdict cannot lift a red floor, because the checks are conjunctive. The mutation test #1963 asks for is not part of this survey.
+Not a handoff, but the consumer of handoff 3's verdict: `apps/backend/merge/merge_policy.py:305-311` (`decide_merge`, low tier; medium and hard tiers always hold) auto-merges only when host CI, the TFactory verdict, the VAL floor and CI parity are all true. A permissive verdict cannot lift a red floor, because the checks are conjunctive. The mutation test #1963 asks for is not part of this survey.
