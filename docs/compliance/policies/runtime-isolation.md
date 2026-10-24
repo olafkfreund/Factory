@@ -55,7 +55,7 @@ A `sandbox.gvisor.enabled` Helm toggle exists for the AIFactory control-plane De
 
 The Job NetworkPolicy and securityContext items from the original epic entry are now remediated (above). The residual gaps are the harder isolation boundary and configuration-baseline items.
 
-1. **No microVM / gVisor syscall boundary on per-task Jobs (deliberate defer, documented).** Per-task isolation today is Linux namespaces + non-root + NetworkPolicy + seccomp RuntimeDefault — not a syscall or VM boundary. Evidence-backed reason (`sandbox-runtime-class.md` s3.2): Nix local builds — the substrate of 100% of per-task Jobs — fail to initialize their builder child under gVisor; Kata is blocked by the k3d (k3s-in-docker) substrate lacking `/dev/kvm`. The deploy lane (`tofu init` running input-selected provider binaries) is the strongest exposure and remains under container isolation only. Re-evaluation triggers are recorded (gVisor fixes Nix builder init; move off k3d to bare-metal/VM nodes; a non-Nix Job type appears). Frameworks: SC-39 process isolation, CC6.8, ISO A.8.22.
+1. **No microVM / gVisor syscall boundary on per-task Jobs (ACCEPTED RISK AR-001, decided by lead and user-approved 2026-10-24, review 2027-04-24; see risk-register.md).** Per-task isolation today is Linux namespaces + non-root + NetworkPolicy + seccomp RuntimeDefault — not a syscall or VM boundary. Evidence-backed reason (`sandbox-runtime-class.md` s3.2): Nix local builds — the substrate of 100% of per-task Jobs — fail to initialize their builder child under gVisor; Kata is blocked by the k3d (k3s-in-docker) substrate lacking `/dev/kvm`. The deploy lane (`tofu init` running input-selected provider binaries) is the strongest exposure and remains under container isolation only. Re-evaluation triggers are recorded (gVisor fixes Nix builder init; move off k3d to bare-metal/VM nodes; a non-Nix Job type appears). Frameworks: SC-39 process isolation, CC6.8, ISO A.8.22.
 
 2. **No `readOnlyRootFilesystem` on per-task build/verify Jobs.** Omitted because nix writes `/nix/var` (builder DB) and tasks write `$HOME` on the rootfs (`job_dispatch.py`, `core/kube_sandbox.py`). The capability exists and is used elsewhere with an immutable rootfs (`factory_sandbox.py`, `docker_runner.py` `read_only_rootfs=True`, e.g. `equivalence_lane.py` with `network=none`), but not on the k8s nix Jobs. Frameworks: CM-6, CC6.8.
 
@@ -67,7 +67,7 @@ The Job NetworkPolicy and securityContext items from the original epic entry are
 
 6. **No PodSecurity Admission backstop on factory namespaces.** Hardening is enforced by the dispatchers writing correct pod specs, not by a cluster admission gate. Only the KEDA namespace carries a PSA label (`factory-gitops/apps/keda/manifests/namespace.yaml`, `enforce: baseline`); the AIFactory/TFactory task namespaces have no `pod-security.kubernetes.io/enforce: restricted`. A dispatcher regression would not be caught at admission. Frameworks: CM-6, CC6.8.
 
-7. **No CIS-benchmark hardening baseline for nodes/cluster.** No evidenced CIS Kubernetes / node-OS benchmark run. Frameworks: CM-6, PCI Req. 2.
+7. **No CIS-benchmark hardening baseline for nodes/cluster (not assessed; a kube-bench run is the revisit action, AR-001).** No evidenced CIS Kubernetes / node-OS benchmark run. Frameworks: CM-6, PCI Req. 2.
 
 8. **Minor: referenced gVisor guide missing.** AIFactory `values.yaml` points at `guides/security/gvisor.md`, which does not exist; the gVisor caveats (no `strict` bwrap mode, no Nix builds under runsc) should live there.
 
@@ -104,7 +104,7 @@ Phased, cheapest-and-highest-value first. None of Phase 1 requires the deferred 
 - [ ] `readOnlyRootFilesystem` (with scoped writable mounts) on build/verify Jobs.
 - [ ] TFactory verify-lane root privilege reduced or justified in the threat model.
 - [ ] CIS Kubernetes / node benchmark baseline established and evidenced.
-- [ ] A syscall/VM isolation boundary (gVisor or Kata) on the untrusted-code Jobs — pending a Section-3 re-evaluation trigger.
+- [x] A syscall/VM isolation boundary on the untrusted-code Jobs — accepted as risk AR-001 (baseline is the control); revisit on multi-tenant untrusted workloads or runsc nix support.
 
 ## Evidence artifacts
 

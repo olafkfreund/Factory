@@ -33,7 +33,7 @@ maps to a NIST 800-53 family it is noted for future ConMon.
 | Incident response (#319) | A.5.24-.28 | CC7.3-.5 | - | 500.17 (72h) | Item 1.05 (4-day) | IR | Gap |
 | Data governance & PII (#320) | A.5.9-.14, A.8.10-.12 | C1, P-series | - | 500.13 | - | MP, SC | Gap |
 | Business continuity / DR (#321) | A.5.29-.30, A.8.13-.14 | A1.2-.3 | Backup/recovery | - | - | CP | Gap |
-| Runtime isolation (#322) | A.8.22, A.8.9 | CC6.6, CC6.8 | - | - | - | SC-7/-39, CM-6 | Partial |
+| Runtime isolation (#322) | A.8.22, A.8.9 | CC6.6, CC6.8 | - | - | - | SC-7/-39, CM-6 | Accepted risk (AR-001, review 2027-04-24) |
 | Agentic-AI governance (#323) | A.5.23 | CC-series | - | - | - | SA, RA | Strong (partial) |
 | Evidence & audit-readiness (#324) | Cl. 9.1, A.5.36 | CC4.1 | Evidence | 500.2 | - | CA-2, CA-7 | Gap |
 
@@ -56,7 +56,7 @@ as separate columns here.
 | Incident response | SECURITY.md disclosure; audit chain for forensics | No IR runbook wired to alerting; untested; no paging | #319 |
 | Data governance | Redactor `llm_pii_redactor.py`; local-Ollama egress option | PII egress to LLM providers default-on; no classification/retention | #320 |
 | Business continuity / DR | Cred-broker CronJob only | Zero backups for Postgres/MinIO; no tested restore; RPO unbounded | #321 |
-| Runtime isolation | bwrap sandbox (#363), Job NetworkPolicy + non-root (default-on) | No microVM; coarse 443-to-any egress; no PodSecurity Admission | #322 |
+| Runtime isolation | bwrap sandbox (#363), Job NetworkPolicy + non-root (default-on) | No microVM (accepted, AR-001); coarse 443 egress; no PodSecurity Admission; CIS baseline not assessed (kube-bench is the revisit action) | #322 |
 | Agentic-AI governance | Signed contracts, injection/egress guards, RFC-0001a/0006/0012 gates; merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | No model registry/eval gate; no output DLP; trusted-plan key no rotation | #323 |
 | Evidence & audit-readiness | This directory (Wave 0) | No automated evidence collection; no per-framework gap sign-off | #324 |
 
