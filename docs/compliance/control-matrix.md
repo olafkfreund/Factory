@@ -25,7 +25,7 @@ maps to a NIST 800-53 family it is noted for future ConMon.
 | Governance / ISMS (#311) | Cl. 4-10, A.5.1-.4 | CC1-CC5 | Control env. | 500.2-.4 | Risk-mgmt disclosure | PM, CA | Gap |
 | IAM & access control (#312) | A.5.15-.18, A.8.2-.5 | CC6.1-.3 | Access to programs/data | 500.7, 500.12 | - | AC, IA | Partial |
 | Audit logging & retention (#313) | A.8.15-.16 | CC7.2-.3 | Monitoring | 500.6 | - | AU | Partial |
-| Encryption at rest & KMS (#314) | A.8.24 | CC6.1 | - | 500.15 | - | SC-12/-13/-28 | Gap |
+| Encryption at rest & KMS (#314) | A.8.24 | CC6.1 | - | 500.15 | - | SC-12/-13/-28 | Partial (MinIO SSE-S3; Postgres risk-accepted R-014) |
 | Secrets management (#315) | A.8.24, A.5.17 | CC6.1 | Access to programs | 500.15 | - | IA-5 | Partial |
 | Change mgmt & SoD (#316) | A.8.32 | CC8.1 | Change mgmt, SoD | 500.3 | - | CM | Partial |
 | Vuln & patch mgmt (#317) | A.8.8 | CC7.1 | - | 500.5 | - | RA-5, SI-2 | Partial |
@@ -48,7 +48,7 @@ as separate columns here.
 | Governance / ISMS | RFCs, SECURITY.md, CODEOWNERS (uneven) | No ISMS: no policy set, risk register, SoA, or named CISO/owners | #311 |
 | IAM & access control | Scoped `acw_` keys, org RBAC, `access_review.py`, cred-broker (#292) | Shared wildcard `APP_API_TOKEN` grants `is_service=True` fleet-admin bypass | #312 |
 | Audit logging | Hash-chain + daily signed anchor + air-gapped verifier | Background/WS events unchained; no SIEM forward; no security alerting | #313 |
-| Encryption at rest | TLS at Cloudflare edge; agenix host key | No at-rest encryption on DB/MinIO; no KMS; cluster-internal cleartext | #314 |
+| Encryption at rest | TLS at Cloudflare edge; agenix host key | Postgres PV not encrypted (R-014, accepted to 2027-04-24); no KMS; cluster-internal cleartext | #314 |
 | Secrets management | agenix + cred-broker rotation; `scan_secrets.py` | Rotation one credential deep; no inventory; SOPS claim not real | #315 |
 | Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built); merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | Direct-to-main gitops auto-deploy; branch protection with required checks on all four service repos (and factory-gitops), but `enforce_admins` off, so an admin can merge past a red check via the API (#943); Fides unwired | #316 |
 | Vuln & patch mgmt | CodeQL x5, Trivy P0 gate, Dependabot base-image updates x4; remediation SLA + vulnerability register documented | CFactory even-coverage in flight (CFactory#191); external pen test not yet run; factory-gitops agent-CLI pins unmanaged (#436 gap #7) | #317 |
