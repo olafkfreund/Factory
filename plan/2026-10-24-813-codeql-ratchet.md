@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 813
 spec: spec/2026-10-24-813-codeql-ratchet.md
 ---
