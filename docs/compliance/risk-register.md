@@ -43,12 +43,21 @@ score once the cited treatment wave completes; it does not yet reflect a closed 
 | R-009 | Detection and response capability | No alerting or paging and no security detection layer beyond a pipeline heuristic; incidents may go unnoticed; the IR runbook is untested | 4 | 4 | 16 High | Audit chain + air-gapped verifier for forensics; `SECURITY.md` disclosure (3/6 repos) | Mitigate — alerting on anchor-failure/chain-break/auth-spikes; paging; tabletop the runbook (IR owner, Wave 1) | 6 (L2 x I3) | In progress (Factory#313/#319) |
 | R-010 | Human and admin accounts | MFA not enforced at the IdP; a phished/leaked credential grants access without a second factor | 3 | 4 | 12 Medium | Keycloak SSO with GitHub upstream; org RBAC | Mitigate — enforce TOTP/WebAuthn required-action; export realm to gitops (IAM owner, Wave 2) | 4 (L1 x I4) | Open (Factory#312) |
 | R-011 | Audit trail completeness | Background/WebSocket events write NULL `prev_hash` (unchained); negative events (auth/authz failures) not first-class; a gap weakens tamper-evidence and forensics | 3 | 3 | 9 Medium | Foreground hash-chain + daily signed anchor + verifier | Mitigate — chain background events; enumerate negative `ACTION_*`; forward to a SIEM (audit-logging owner, Wave 2) | 3 (L1 x I3) | Open (Factory#313) |
-| R-012 | Per-task untrusted-code Jobs | No microVM/syscall boundary and coarse `443 -> 0.0.0.0/0` egress; a sandbox escape or data-exfil path is not fully contained | 2 | 4 | 8 Medium | bwrap sandbox (#363, default-on); per-task NetworkPolicy + non-root securityContext (default-on); gVisor wired but deferred | Mitigate — per-destination egress allowlist; PodSecurity Admission on task namespaces; evaluate microVM where substrate allows (runtime owner, Wave 3) | 4 (L2 x I2) | Partially mitigated (Factory#322) |
+| R-012 | Per-task untrusted-code Jobs | No microVM/syscall boundary and coarse `443 -> 0.0.0.0/0` egress; a sandbox escape or data-exfil path is not fully contained | 2 | 4 | 8 Medium | bwrap sandbox (#363, default-on); per-task NetworkPolicy + non-root securityContext (default-on); gVisor wired but deferred | Mitigate — per-destination egress allowlist; PodSecurity Admission on task namespaces; evaluate microVM where substrate allows (runtime owner, Wave 3) | 4 (L2 x I2) | Accepted risk AR-001 until 2027-04-24 (Factory#322) |
 | R-013 | Trusted-plan signing keys | HMAC plan-signing keys have no key ID, expiry, or rotation; a leaked key cannot be cleanly rotated/revoked | 2 | 4 | 8 Medium | Signed task contracts (RFC-0002); injection/egress guards; independent verification | Mitigate — add `kid`, expiry, rotation; approved-model registry with eval gate; output DLP (agentic-AI owner, Wave 3) | 4 (L2 x I2) | Open (Factory#323) |
 
 ## Risk-acceptance log
 
-No residual risk above the Medium band has been formally accepted. Any acceptance (for
-example, deferring HA Postgres and accepting R-007's single-instance risk for a defined
-period) is recorded here with the Security Owner's sign-off, a compensating control, and
-an expiry date, and is revisited at the next management review.
+| ID | Risk | Accepted | Review by | Decided |
+|---|---|---|---|---|
+| AR-001 | R-012 runtime isolation: no gVisor/microVM boundary on per-task Jobs; CIS baseline not assessed | 2026-10-24 | 2027-04-24 (six months) | Decided (lead, user-approved 2026-10-24) |
+
+**AR-001 compensating controls (live, with evidence).**
+- NetworkPolicy `factory-sandbox-jobs-egress`, selector `factory.io/kind: task`, Ingress+Egress: `factory-gitops apps/factory-namespace/manifests/networkpolicy-sandbox-jobs.yaml:100,131`. Known residual: 3-5 s unconfined window at pod start (Factory#517); egress is 443 to public, not per-destination.
+- Job seccomp `RuntimeDefault`, `runAsNonRoot`: `AIFactory apps/backend/core/job_dispatch.py:633-635`. TFactory nix lanes run root with capability add-backs (runtime-isolation.md gap 3).
+- Kyverno image-signature enforcement, `validationFailureAction: Enforce`: `factory-gitops apps/kyverno-policies/manifests/verify-factory-image-signatures.yaml:206`.
+- bwrap sandbox (#363), default-on.
+
+**Revisit triggers (either reopens R-012):** untrusted multi-tenant workloads arrive; or runsc supports nix builds (gVisor deferred by #274 because nix local builds fail under runsc). Microvm/Kata likewise.
+**CIS baseline:** not assessed; a kube-bench run is the revisit action (due before the review date).
+**Not accepted:** nothing else. Any other residual above Medium still needs its own entry with Security Owner sign-off, compensating control and expiry.
