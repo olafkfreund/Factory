@@ -3,7 +3,7 @@
 - **Domain:** Supply-chain integrity (Factory#318)
 - **Frameworks addressed:** ISO/IEC 27001 A.8.30 (outsourced development) and A.5.19–A.5.23 (supplier relationships, addressing security in supplier agreements, managing supplier services, ICT supply-chain, cloud services); SOC 2 CC7 (change/vulnerability monitoring) and CC9 (risk mitigation / vendor and business-partner risk); SLSA (build provenance and levels); PCI DSS Req. 6.3.2 (inventory of bespoke and third-party software components); FedRAMP SR family (SR-3 supply-chain controls, SR-4 provenance, SR-11 component authenticity); SEC cyber rules (material supply-chain / third-party risk in the risk-management disclosure).
 - **Parent epic:** Factory#310 (audit-readiness), top gap #8.
-- **Status:** Draft. Partially implemented. Build-side signing and SBOM attestation cover all four service repos, and a Kyverno policy in Enforce mode rejects unsigned first-party images at admission. Target: SLSA Build L2 (no L3 claim). Signed commits, SHA-pinned actions and explicit provenance on three `deploy.yml` paths remain open. This document states the honest current posture and the remediation plan.
+- **Status:** Draft. Partially implemented. Build-side signing and SBOM attestation cover all four service repos, and a Kyverno policy in Enforce mode verifies first-party image signatures at admission, but with `failurePolicy: Ignore` (a Kyverno outage admits unverified images) and tag-based admission (`verifyDigest`/`mutateDigest` false). Target: SLSA Build L2 (no L3 claim). Signed commits, SHA-pinned actions and an explicit provenance mode on three `deploy.yml` paths remain open. This document states the honest current posture and the remediation plan.
 
 ## Purpose
 
@@ -32,14 +32,14 @@ Level met per image repo, from the workflows on each default branch at the pinne
 
 | Repo (commit) | Release path (`release.yml`, version tags) | Deploy path (`deploy.yml`, `sha-` tags the cluster runs) | Level met |
 |---|---|---|---|
-| AIFactory (`1864519`) | `provenance: mode=max` at 196, 219, 252; `cosign sign` at 267-269 | build-push at 180, 273 with no `provenance:` input; `cosign sign` by digest at 214, 295 | Release path L2; deploy path signed but not L2 until provenance is explicit |
-| PFactory (`d9f0974`) | `provenance: mode=max` at 176, 198; `cosign sign` at 212-213 | build-push at 73 with no `provenance:` input; `cosign sign` by digest at 103 | Release path L2; deploy path signed but not L2 until provenance is explicit |
-| TFactory (`17bc01d`) | `provenance: mode=max` at 176, 198; `cosign sign` at 212-213 | build-push at 89 with no `provenance:` input; `cosign sign` by digest at 120 | Release path L2; deploy path signed but not L2 until provenance is explicit |
+| AIFactory (`1864519`) | `provenance: mode=max` at 196, 219, 252; `cosign sign` at 267-269 | build-push at 180, 273 with no explicit `provenance:` input (BuildKit attaches provenance by default; present on the `sha-` tag, checked with `docker buildx imagetools inspect --format '{{json .Provenance}}'`); `cosign sign` by digest at 214, 295 | Release path L2; deploy path L2 (provenance implicit by default, not pinned in the workflow) |
+| PFactory (`d9f0974`) | `provenance: mode=max` at 176, 198; `cosign sign` at 212-213 | build-push at 73 with no explicit `provenance:` input (BuildKit attaches provenance by default; present on the `sha-` tag, checked with `docker buildx imagetools inspect --format '{{json .Provenance}}'`); `cosign sign` by digest at 103 | Release path L2; deploy path L2 (provenance implicit by default, not pinned in the workflow) |
+| TFactory (`17bc01d`) | `provenance: mode=max` at 176, 198; `cosign sign` at 212-213 | build-push at 89 with no explicit `provenance:` input (BuildKit attaches provenance by default; present on the `sha-` tag, checked with `docker buildx imagetools inspect --format '{{json .Provenance}}'`); `cosign sign` by digest at 120 | Release path L2; deploy path L2 (provenance implicit by default, not pinned in the workflow) |
 | CFactory (`a5dbcb5`) | none (no release workflow) | `provenance: mode=max` at 112, 134; `cosign sign` by digest at 242-243; `cosign attest` SBOMs at 276-282 | L2 on the only path it has |
 
 Deploy-side enforcement: `factory-gitops` `apps/kyverno-policies/manifests/verify-factory-image-signatures.yaml` (commit `e66d682`) sets `validationFailureAction: Enforce` at line 206 and carries one keyless rule per image repo, each pinning the OIDC issuer and an anchored workflow subject (`verify-aifactory-signature` line 233, `verify-pfactory-signature` 268, `verify-tfactory-signature` 297, `verify-cfactory-signature` 351).
 
-Open for L2 on the deploy path: add `provenance: mode=max` to the AIFactory, PFactory and TFactory `deploy.yml` build steps (CFactory already has it).
+Hardening, not a level gap: set `provenance: mode=max` explicitly in the AIFactory, PFactory and TFactory `deploy.yml` build steps so the mode does not depend on the action's default (CFactory already does).
 
 ### Per-repo coverage
 
@@ -68,7 +68,7 @@ No repo enforces signed commits, and there is no branch-protection-as-code (no `
 ## Gaps
 
 1. **RESOLVED (CFactory#191). CFactory had no supply-chain controls.** Its two images ship unsigned, unscanned, and without an SBOM, and deploy straight off `main` with no version-gated release pipeline. This breaks the "every deployed image is signed + SBOM-attested" assertion outright.
-2. **RESOLVED (Kyverno Enforce, `verify-factory-image-signatures.yaml:206`). No signature-verification admission gate.** The cluster admits images by tag; it does not verify cosign signatures, attestations, or provenance at admission. Signing without enforcement is evidence without a control.
+2. **RESOLVED WITH RESIDUALS (Kyverno Enforce, `verify-factory-image-signatures.yaml:206`; `failurePolicy: Ignore` at 209, `verifyDigest: false` and `mutateDigest: false` per rule). No signature-verification admission gate.** The cluster admits images by tag; it does not verify cosign signatures, attestations, or provenance at admission. Signing without enforcement is evidence without a control.
 3. **No signed commits / no branch-protection-as-code.** The source side of the chain is unauthenticated, and protection settings are click-ops rather than declared and reviewable.
 4. **RESOLVED (Build L2 targeted, per-repo table above). SLSA level was neither targeted nor documented.** BuildKit `provenance: mode=max` plus keyless signing puts three repos near SLSA Build L2, but there is no written target level, no per-repo attestation of the level met, and no provenance policy an assessor can check against.
 5. **RESOLVED for uniform coverage (CFactory attests SBOMs); an aggregate fleet inventory is still open. SBOM-in-release was not uniform.** Three repos publish SBOMs on the GitHub Release; CFactory publishes none. There is no single fleet inventory of components (PCI 6.3.2) aggregating the four services.
@@ -105,7 +105,8 @@ Phased, smallest-first, closing the honest gaps in priority order.
 
 - [ ] Every image deployed to the cluster (AIFactory, PFactory, TFactory, CFactory, plus any future service image) is cosign-signed and carries an SPDX + CycloneDX SBOM attestation.
 - [ ] CFactory's `release.yml` runs the full P0 supply-chain block (sign + dual SBOM attest + self-verify) and its CI runs Trivy; CFactory images ship only behind a version-bump release gate.
-- [x] A signature-verification admission policy is deployed via `factory-gitops` and is in `enforce` mode: the cluster rejects any image that is unsigned, signed by an unexpected identity, or lacking the required SBOM attestation.
+- [x] A signature-verification admission policy is deployed via `factory-gitops` and is in `enforce` mode: the cluster rejects any image that is unsigned or signed by an unexpected identity (while Kyverno is reachable; `failurePolicy: Ignore`).
+- [ ] The admission policy also requires the SBOM attestation (no `attestations:` block in any rule today) and fails closed.
 - [ ] Deployed images are referenced by digest, not mutable tag.
 - [ ] Signed commits are required and branch protection is codified (or explicitly delegated to the change-management control with a cross-reference).
 - [x] A target SLSA build level is documented, and each service repo records the level it meets with linked evidence.
