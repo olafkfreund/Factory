@@ -105,12 +105,65 @@ Retention is real but per-store and uneven, not policy-driven:
 Tenant/org isolation exists (tear-down on `Organization.deleted_at`), which is the closest
 thing to an erasure mechanism today.
 
+### Sub-processors
+
+Source of truth: the provider registries in `AIFactory/apps/backend/providers/factory.py`
+(`_AGENTIC_REGISTRY`, `_TEXT_REGISTRY`) at AIFactory `1864519`, and the key names in the
+`factory-secrets` Secret as referenced from `factory-gitops/apps/*/manifests/manifests.yaml`
+at `e66d682`. Key names only; no values are recorded here. A provider is active only when
+a project or phase selects it and its credential is set.
+
+| Sub-processor | Registry name | Receives | Credential key name | Residency |
+|---|---|---|---|---|
+| Anthropic | `claude` | prompts, context, responses | `CLAUDE_CODE_OAUTH_TOKEN` | Provider terms; not enforced or recorded by the fleet |
+| OpenAI | `codex` | prompts, context, responses | `OPENAI_API_KEY` | Provider terms; not enforced or recorded by the fleet |
+| Google (Gemini, Antigravity) | `antigravity` | prompts, context, responses | `GEMINI_API_KEY` | Provider terms; not enforced or recorded by the fleet |
+| GitHub (Copilot, GitHub Models) | `copilot`, `github-models` | prompts, context, responses; also repository content and issues | `GITHUB_TOKEN` | Provider terms; not enforced or recorded by the fleet |
+| OpenAI-compatible endpoint | `openai-compatible` (default base URL is the OpenAI API) | prompts, context, responses | `OPENAI_COMPATIBLE_API_KEY` | Wherever the operator points the base URL, optionally through the `LITELLM_GATEWAY_URL` gateway |
+| OpenCode | `opencode` | prompts, context, responses, forwarded to the provider OpenCode is configured for | provider-specific | Follows the configured provider |
+| Ollama, local | `ollama` | prompts, context, responses | none | On the host running the model; no third party |
+| Ollama cloud | `ollama-cloud` | prompts, context, responses | `OLLAMA_API_KEY` | Provider terms; not enforced or recorded by the fleet |
+| Memory embedders and graph LLMs (Graphiti) | `integrations/graphiti/providers_pkg/` | memory text | provider-specific (OpenAI, Google, Azure OpenAI, Voyage, OpenRouter, Ollama) | Per provider, as above |
+| LangChain tracing | n/a | trace data, when enabled | `LANGCHAIN_API_KEY` | Provider terms; not enforced or recorded by the fleet |
+| Identity provider (OIDC) | n/a | email, display name, subject, login time | `AIFACTORY_OIDC_CLIENT_SECRET`, `PFACTORY_OIDC_CLIENT_SECRET`, `TFACTORY_OIDC_CLIENT_SECRET` | Operator's IdP |
+| GitHub (source hosting, registry) | n/a | repository content, issues, pull requests, images | `GITHUB_TOKEN` | Provider terms |
+
+Residency: the fleet does not route by region. The cluster holds all in-cluster state where
+the operator runs it, and each hosted provider holds data where its own terms say. The
+DPIA (`AIFactory/guides/compliance/dpia-data-flow.md`, "Cross-region") tells operators to pin
+a provider region in the endpoint configuration. Choosing the local `ollama` provider keeps
+prompt data on the host. Whether PII is scrubbed before egress is a separate, owner-level
+decision (R-004), not changed here.
+
+### Postgres retention schedule
+
+What the code applies per table group, at AIFactory `1864519`, PFactory `0b6651d`,
+TFactory `17bc01d` and CFactory `a5dbcb5`. Paths are under `apps/web-server/server/` unless
+stated.
+
+| Table group | Retention in code | Evidence |
+|---|---|---|
+| `audit_logs` (AIFactory, PFactory, TFactory) | 395 days, stamped in `retention_until` at write; rows deleted by the retention job | `services/audit_service.py:138` (AIFactory), `:194` (PFactory), `:215` (TFactory); `jobs/audit_retention.py:44-55` |
+| `audit_entries` (CFactory) | None in code: kept until deleted | `apps/backend/cfactory/audit.py:200` |
+| `task_log_entries`, `task_log_phases`, `task_board_states` (PFactory) | 90 days by default, `PFACTORY_TASK_LOG_RETENTION_DAYS`, 0 disables | `services/task_log_store.py:29-34`, `:200-215` |
+| `oauth_connect_states` (PFactory) | Deleted once expired, on the next connect | `routes/email.py:123` |
+| `run_leases` (PFactory) | Deleted on release | `services/run_leases.py:158` |
+| `oidc_refresh_sessions` | Deleted on logout or rotation, otherwise kept until deleted | `routes/oidc_routes.py:411` (AIFactory) |
+| `users`, `organizations`, `org_members`, `projects`, `tasks`, `api_keys`, `git_credentials`, `email_accounts`, `llm_endpoints`, `test_target_credentials` | Kept until deleted; an organization delete removes its members; `services/gdpr.py` removes external accounts | `routes/organizations.py:483-486`, `services/gdpr.py:145` |
+| `job_states`, `plan_sessions`, `trusted_contracts`, `handback_receipts`, `tenant_states` | Kept until deleted; only a queued job can be removed | `services/job_state_store.py:576`, `jobstore/plan_session_store.py:311` |
+| `kms_data_keys`, `audit_signing_keys`, `audit_anchors` | Kept until deleted | no delete path found |
+
+Two things an assessor will ask. First, the 395-day audit window is applied by a job that is
+run by hand or as a CronJob (`jobs/audit_retention.py:6-12`); no manifest in `factory-gitops`
+at `e66d682` schedules it, so rows are stamped but not yet removed automatically. Second,
+every row marked "kept until deleted" has no age limit. This page records that as it is and
+proposes no number; setting one is an owner decision tracked under Factory#320.
+
 ### What is missing
 
 There is **no data-classification scheme** anywhere in the fleet (no tiers, no labels, no
-asset inventory tied to classes), **no retention policy for the Postgres durable job-state**
-(only logs/evidence/audit rows have retention; the operational databases that hold specs,
-task records, and prompt history do not), **no data-residency statement**, and **no
+asset inventory tied to classes), **no age limit on most Postgres durable state**
+(the per-table schedule above records which tables have one and which keep rows until deleted), **no enforced data residency** (recorded per provider above, but not routed by the fleet), and **no
 DSAR/right-to-erasure tooling** beyond whole-tenant tear-down.
 
 ## Data classification scheme
