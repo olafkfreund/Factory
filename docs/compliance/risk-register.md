@@ -45,6 +45,7 @@ score once the cited treatment wave completes; it does not yet reflect a closed 
 | R-011 | Audit trail completeness | Background/WebSocket events write NULL `prev_hash` (unchained); negative events (auth/authz failures) not first-class; a gap weakens tamper-evidence and forensics | 3 | 3 | 9 Medium | Foreground hash-chain + daily signed anchor + verifier | Mitigate — chain background events; enumerate negative `ACTION_*`; forward to a SIEM (audit-logging owner, Wave 2) | 3 (L1 x I3) | Open (Factory#313) |
 | R-012 | Per-task untrusted-code Jobs | No microVM/syscall boundary and coarse `443 -> 0.0.0.0/0` egress; a sandbox escape or data-exfil path is not fully contained | 2 | 4 | 8 Medium | bwrap sandbox (#363, default-on); per-task NetworkPolicy + non-root securityContext (default-on); gVisor wired but deferred | Mitigate — per-destination egress allowlist; PodSecurity Admission on task namespaces; evaluate microVM where substrate allows (runtime owner, Wave 3) | 4 (L2 x I2) | Partially mitigated (Factory#322) |
 | R-013 | Trusted-plan signing keys | HMAC plan-signing keys have no key ID, expiry, or rotation; a leaked key cannot be cleanly rotated/revoked | 2 | 4 | 8 Medium | Signed task contracts (RFC-0002); injection/egress guards; independent verification | Mitigate — add `kid`, expiry, rotation; approved-model registry with eval gate; output DLP (agentic-AI owner, Wave 3) | 4 (L2 x I2) | Open (Factory#323) |
+| R-014 | Postgres (data-postgres-0) | Postgres at rest unencrypted, accepted until a regulated tenant: PV is a plain local-path dir on p620 `/dev/sdb1` ext4, no LUKS/dm-crypt in the chain (verified 2026-10-24) | 2 | 3 | 6 Low | Physical host access control; scram-sha-256 auth; MinIO SSE-S3 on (factory-gitops#71, #310) | Accept — until a regulated tenant onboards; then LUKS-backed PV or pgcrypto (Security Owner) | 6 | Accepted (Factory#314), review 2027-04-24 |
 
 ## Risk-acceptance log
 
@@ -52,3 +53,5 @@ No residual risk above the Medium band has been formally accepted. Any acceptanc
 example, deferring HA Postgres and accepting R-007's single-instance risk for a defined
 period) is recorded here with the Security Owner's sign-off, a compensating control, and
 an expiry date, and is revisited at the next management review.
+
+- **2026-10-24 — R-014, Postgres at rest unencrypted.** Decided (lead, user-approved 2026-10-24). Evidence: on p620, `lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT` shows no crypt/LUKS device; `findmnt -T /mnt/code/k3d/storage` = `/dev/sdb1` ext4 (the local-path PV dir, mounted at `/var/lib/rancher/k3s/storage` in `k3d-factory-server-0`). Accepted until a regulated tenant; compensating: host access control, scram-sha-256. Expiry/review: 2027-04-24 (six months).
