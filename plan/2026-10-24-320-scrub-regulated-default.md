@@ -142,3 +142,11 @@ at those commits.
 
 Revert the AIFactory PR: the setting key becomes inert (unknown to the resolver), stored
 values stay harmless in the store. Revert the Factory PR for the doc text.
+
+## Deviations
+
+- Review round 1: `create_simple_client` / `wrap_client_outbound_scrub` gained a
+  `classification` argument; GitHub issue analysis (`routes/github.py`) and both merge
+  paths (`conflict_service.py`) pass `project_settings_store.data_classification(...)`,
+  because they run in the web-server process where the env class is unset. Test:
+  `TestExplicitClassification`. Policy cites AIFactory#1862, not a commit hash (squash-safe).

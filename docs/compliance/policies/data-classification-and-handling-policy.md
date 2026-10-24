@@ -38,7 +38,7 @@ where it flows.
    `LITELLM_AUDIT_SCRUB_OUTBOUND=false` disables it, except for projects with
    `dataClassification: regulated` (an AIFactory project setting, default `internal`):
    those always scrub, and neither the kill-switch nor a per-adapter setting overrides
-   it (AIFactory Factory#320 PR, commit `63a89e21`). Do not set
+   it (AIFactory#1862; the in-process web-server paths pass the project class explicitly). Do not set
    `AIFACTORY_DATA_CLASSIFICATION` deployment-wide except to `regulated`. Known exception:
    the two direct `claude --print` spawns in the web-server are not scrubbed at any tier
    (AIFactory#1860). Where data
