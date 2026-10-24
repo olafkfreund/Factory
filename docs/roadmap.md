@@ -206,6 +206,13 @@ the silent-fallback sweep described above.
   rather than discovered when a dispatch silently does nothing. GitHub first,
   with the account-scope seam shaped so GitLab's nested groups and Azure
   DevOps's mandatory project level are not retrofits.
+- **Planning from observed infrastructure**
+  ([RFC-0025](rfc/0025-planning-from-observed-infrastructure.md)) — RFC-0013 made
+  planning deployment-aware from IaC FILES; this reads the account itself, so a
+  plan can cite the queue that already exists instead of proposing a new one. The
+  credential broker already exists in PFactory (`pfactory_secrets`), used by the
+  sandbox runner, but no planning agent reads the account with it. Strictly
+  read-only, denied by IAM rather than by code, egress off by default.
 - **Jira and Bitbucket** ([RFC-0022](rfc/0022-work-item-and-code-seams.md),
   epic #392) — splitting the *work-item* seam from the *code* seam, so the
   factory can plan against a Jira board while coding against a different host.
