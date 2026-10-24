@@ -22,3 +22,5 @@ Pre-commit hooks pass; every cited file:line resolves at its pinned commit.
 ## Rollback
 
 Revert the commit.
+
+Deviation (review round 1): added Context7 and RapidAPI rows (CONTEXT7_KEY, RAPIDAPI_KEY injected from factory-secrets).

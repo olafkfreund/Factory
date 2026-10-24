@@ -124,6 +124,8 @@ a project or phase selects it and its credential is set.
 | Ollama, local | `ollama` | prompts, context, responses | none | On the host running the model; no third party |
 | Ollama cloud | `ollama-cloud` | prompts, context, responses | `OLLAMA_API_KEY` | Provider terms; not enforced or recorded by the fleet |
 | Memory embedders and graph LLMs (Graphiti) | `integrations/graphiti/providers_pkg/` | memory text | provider-specific (OpenAI, Google, Azure OpenAI, Voyage, OpenRouter, Ollama) | Per provider, as above |
+| Context7 (Upstash) | n/a | library queries and code context from agent runs | `CONTEXT7_KEY` | Provider terms; not enforced or recorded by the fleet |
+| RapidAPI | n/a | agent tool-call request content | `RAPIDAPI_KEY` | Provider terms; not enforced or recorded by the fleet |
 | LangChain tracing | n/a | trace data, when enabled | `LANGCHAIN_API_KEY` | Provider terms; not enforced or recorded by the fleet |
 | Identity provider (OIDC) | n/a | email, display name, subject, login time | `AIFACTORY_OIDC_CLIENT_SECRET`, `PFACTORY_OIDC_CLIENT_SECRET`, `TFACTORY_OIDC_CLIENT_SECRET` | Operator's IdP |
 | GitHub (source hosting, registry) | n/a | repository content, issues, pull requests, images | `GITHUB_TOKEN` | Provider terms |
