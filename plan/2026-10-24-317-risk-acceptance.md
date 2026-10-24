@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 317
 spec: spec/2026-10-24-317-risk-acceptance.md
 ---
