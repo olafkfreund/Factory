@@ -30,6 +30,10 @@ runs it; each of PFactory, AIFactory, TFactory, CFactory gets a weekly caller
    → verify by running the script with `GH_TOKEN` against that repo and seeing exit 0
    Traps: baseline is the live count at PR time; caller PRs link to these files.
 
+Review round 1 (step 1, 3): hub checkout is sparse (`scripts`); the baseline is
+validated as a JSON object of integers before `compare` (else CANNOT VERIFY);
+self-test uses a `check()` helper instead of asserts, as check_deploy_drift.py does.
+
 ## Tests
 
 `python3 scripts/codeql_ratchet.py --self-test` and `pytest tests/test_codeql_ratchet.py`: pass.

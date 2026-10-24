@@ -23,11 +23,13 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
+from typing import Any
 
 TRACKED = ("critical", "high", "error", "medium")
 
 
-def count(alerts: list[dict]) -> dict[str, int]:
+def count(alerts: list[dict[str, Any]]) -> dict[str, int]:
     counts = dict.fromkeys(TRACKED, 0)
     for alert in alerts:
         rule = alert.get("rule") or {}
@@ -49,28 +51,58 @@ def compare(current: dict[str, int], baseline: dict[str, int]) -> tuple[bool, li
     return ok, lines
 
 
-def fetch(repo: str) -> list[dict]:
-    out = subprocess.run(
-        ["gh", "api", "--paginate", "--slurp", f"repos/{repo}/code-scanning/alerts?state=open&per_page=100"],
-        check=True, capture_output=True, text=True,
+def _valid_baseline(b: object) -> bool:
+    return isinstance(b, dict) and all(isinstance(v, int) for v in b.values())
+
+
+def fetch(repo: str) -> list[dict[str, Any]]:
+    url = f"repos/{repo}/code-scanning/alerts?state=open&per_page=100"
+    out = subprocess.run(  # noqa: S603
+        ["gh", "api", "--paginate", "--slurp", url],  # noqa: S607
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     return [a for page in json.loads(out) for a in page]
 
 
 def _self_test() -> int:
-    def alert(sec: str | None, sev: str) -> dict:
+    def alert(sec: str | None, sev: str) -> dict[str, Any]:
         return {"rule": {"security_severity_level": sec, "severity": sev}}
 
-    got = count([alert("high", "error"), alert(None, "error"), alert("medium", "warning"),
-                 alert("critical", "error"), alert("low", "warning"), alert(None, "note"), {}])
-    assert got == {"critical": 1, "high": 1, "error": 1, "medium": 1}, got
-    ok, _ = compare(got, {"critical": 1, "high": 1, "error": 1, "medium": 1})
-    assert ok
+    failed: list[str] = []
+
+    def check(label: str, cond: bool) -> None:
+        if not cond:
+            failed.append(label)
+
+    got = count(
+        [
+            alert("high", "error"),
+            alert(None, "error"),
+            alert("medium", "warning"),
+            alert("critical", "error"),
+            alert("low", "warning"),
+            alert(None, "note"),
+            {},
+        ]
+    )
+    check("count", got == {"critical": 1, "high": 1, "error": 1, "medium": 1})
+    check("equal ok", compare(got, dict(got))[0])
     ok, lines = compare(got, {"critical": 1, "high": 0})  # missing keys are 0
-    assert not ok and "high: 1 / baseline 0 (+1)" in lines
+    check("above", not ok and "high: 1 / baseline 0 (+1)" in lines)
     ok, lines = compare(dict.fromkeys(TRACKED, 0), {"high": 2})
-    assert ok and any("below baseline" in line for line in lines)
-    print("self-test ok")
+    check("below", ok and any("below baseline" in line for line in lines))
+    check(
+        "baseline shape",
+        not _valid_baseline([])
+        and not _valid_baseline({"high": "2"})
+        and _valid_baseline({"high": 2}),
+    )
+    if failed:
+        print(f"self-test FAILED: {failed}")  # noqa: T201
+        return 1
+    print("self-test ok")  # noqa: T201
     return 0
 
 
@@ -85,14 +117,15 @@ def main() -> int:
     if not args.repo:
         ap.error("--repo is required")
     try:
-        with open(args.baseline, encoding="utf-8") as f:
-            baseline = json.load(f)
+        baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        if not _valid_baseline(baseline):
+            raise ValueError(f"{args.baseline} must be a JSON object of integer counts")
         current = count(fetch(args.repo))
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
-        print(f"CANNOT VERIFY: {exc}")  # no answer must not read as success
+        print(f"CANNOT VERIFY: {exc}")  # noqa: T201  # no answer must not read as success
         return 1
     ok, lines = compare(current, baseline)
-    print("\n".join(lines))
+    print("\n".join(lines))  # noqa: T201
     return 0 if ok else 1
 
 

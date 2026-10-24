@@ -23,6 +23,7 @@ jobs:
         with:
           repository: olafkfreund/Factory
           path: hub
+          sparse-checkout: scripts
       - name: Self-test
         run: python3 hub/scripts/codeql_ratchet.py --self-test
       - name: Compare with baseline
