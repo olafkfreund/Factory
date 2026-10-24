@@ -155,17 +155,56 @@ def _describe(repo: Path, sha: str) -> Commit:
     return Commit(sha=sha, subject=subject, epoch=int(epoch))
 
 
-def unmatched(repo: Path, upstream: str, head: str) -> list[Commit]:
-    """Commits on *head* with no patch-equivalent on *upstream*.
+def _touched_files(repo: Path, sha: str) -> list[str]:
+    """Paths a commit changed (empty for a merge, which has no single diff)."""
+    out = _run(["git", "-C", str(repo), "show", "--name-only", "--format=", sha])
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
-    ``git cherry`` marks these ``+``; commits whose diff already exists upstream
-    under a different sha are marked ``-`` and are not divergence. Merge commits
+
+def content_landed(repo: Path, upstream: str, head: str, sha: str) -> bool:
+    """True when every file *sha* touched is already identical on *upstream*.
+
+    ``git cherry`` compares PATCH-IDS, which match only when a diff is
+    byte-identical AND stands alone. A change that reached the other branch
+    squashed together with other commits, or rebased with different context,
+    gets a different patch-id and is reported as missing though its content is
+    there. That is how work normally moves in this fleet, so the patch-id test
+    alone accuses branches of losing work they already carry (Factory#2940:
+    four CFactory commits reported as backflow while every file they touched
+    was byte-identical on both branches).
+
+    Comparing the touched files answers the question the verdict actually
+    makes: would promoting revert something. It stays conservative in the
+    honest direction -- if a touched file differs for ANY reason, including
+    later edits on one side, the commit is still reported.
+    """
+    files = _touched_files(repo, sha)
+    if not files:
+        return True  # nothing to compare; not evidence of divergence
+    code = subprocess.run(  # noqa: S603
+        ["git", "-C", str(repo), "diff", "--quiet", upstream, head, "--", *files],  # noqa: S607
+        capture_output=True,
+        check=False,
+    ).returncode
+    return code == 0
+
+
+def unmatched(repo: Path, upstream: str, head: str) -> list[Commit]:
+    """Commits on *head* whose CONTENT is not on *upstream*.
+
+    ``git cherry`` marks patch-id candidates ``+``; commits whose diff already
+    exists upstream under a different sha are marked ``-``, and merge commits
     have no patch-id and are omitted entirely, which is what makes a fleet full
     of dev->main promotion merges read as clean.
+
+    Every ``+`` is then re-checked against the files it touched, because a
+    patch-id miss is not evidence that the work is missing -- see
+    :func:`content_landed`. Only commits whose content genuinely differs are
+    returned.
     """
     out = _run(["git", "-C", str(repo), "cherry", upstream, head])
     shas = [line[1:].strip() for line in out.splitlines() if line.startswith("+")]
-    return [_describe(repo, sha) for sha in shas]
+    return [_describe(repo, sha) for sha in shas if not content_landed(repo, upstream, head, sha)]
 
 
 def _hours(now: int, epoch: int) -> float:
@@ -366,8 +405,44 @@ def _build_backflow(root: Path, now: int) -> Path:
     return repo
 
 
+def _build_squashed(root: Path, now: int) -> Path:
+    """Factory#2940: main's fix is on dev too, but squashed with another change.
+
+    The patch-ids differ (dev's commit carries two files, main's carries one),
+    so ``git cherry`` calls main's commit unmatched. Every file it touched is
+    byte-identical on both branches, so nothing is missing and a promotion
+    cannot revert anything.
+    """
+    repo = _build_benign(root, now, "Squashed")
+    fix = "raw_entry = entry.strip()\n"
+
+    _run(["git", "-C", str(repo), "checkout", "--quiet", "main"])
+    _commit(repo, "auth.py", fix, "fix(auth): rename the loop variable (#429)", now - 40 * _DAY)
+
+    # dev got the same fix, squashed together with an unrelated file.
+    _run(["git", "-C", str(repo), "checkout", "--quiet", "dev"])
+    (repo / "auth.py").write_text(fix)
+    (repo / "notes.md").write_text("unrelated\n")
+    _run(["git", "-C", str(repo), "add", "-A"])
+    _run(
+        _authored(repo, "commit", "--quiet", "-m", "fix(auth): rename loop var + notes (#430)"),
+        # Recent, so this case grades ONLY the backflow question: an old dev-side
+        # commit would trip the unpromoted budget and mask what is being tested.
+        env={"GIT_COMMITTER_DATE": f"{now - 3600} +0000"},
+    )
+    return repo
+
+
 def _self_test_cases(root: Path, now: int, failures: list[str]) -> None:
     budget = 24.0
+
+    code, block = check_repo(_build_squashed(root, now), ("dev", "main"), now, budget)
+    expect(
+        failures,
+        code == 0 and "backflow (on main, no equivalent on dev): none" in block,
+        "a squash-merged fix whose files are identical on both branches is not "
+        f"divergence, but the gate reported:\n{block}",
+    )
 
     code, block = check_repo(_build_benign(root, now), ("dev", "main"), now, budget)
     expect(

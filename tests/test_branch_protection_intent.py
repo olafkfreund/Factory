@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -55,7 +56,7 @@ def _all_repos() -> set[str]:
     return repos
 
 
-def _emit(repo: str, branch: str) -> dict:
+def _emit(repo: str, branch: str) -> dict[str, Any]:
     # S603/S607: fixed argv, no shell, and the only interpolated values are the
     # literal repo/branch names from _DECLARED in this file. The gate under test
     # is a shell script, so running it is the point.
@@ -65,7 +66,8 @@ def _emit(repo: str, branch: str) -> dict:
         text=True,
         check=True,
     )
-    return json.loads(out.stdout)
+    result: dict[str, Any] = json.loads(out.stdout)
+    return result
 
 
 def _stdin_hook(mode: str, payload: dict[str, object]) -> str:
@@ -85,8 +87,9 @@ def _stdin_hook(mode: str, payload: dict[str, object]) -> str:
     return out.stdout
 
 
-def _normalise(payload: dict) -> dict:
-    return json.loads(_stdin_hook("--normalise-stdin", payload))
+def _normalise(payload: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = json.loads(_stdin_hook("--normalise-stdin", payload))
+    return result
 
 
 # The verification-core drift gate's job display name, identical in all four
@@ -115,6 +118,42 @@ _GITLEAKS_GITOPS = "pr-diff-scan"
 # on dev, so requiring it there adds a wedge risk and buys nothing.
 _ACCEPT = "docker (P0 acceptance)"
 
+# TFactory's ruff-format job, required since Factory#2943: it ran on every PR
+# and blocked nothing, which is how TFactory#1322 merged red.
+_TF_FORMAT = "ruff format --check (apps/backend + apps/web-server + scripts + tests)"
+
+# CodeQL and the whole-repo security sink lint (Factory#2943). These were live
+# on every branch while the declared intent omitted them, so an `--apply` would
+# have dropped them. AIFactory lower-cases its Analyze jobs and a required
+# context matches verbatim, hence two spellings.
+_CODEQL = ["Analyze (actions)", "Analyze (javascript-typescript)", "Analyze (python)"]
+_CODEQL_LC = ["analyze (actions)", "analyze (javascript-typescript)", "analyze (python)"]
+_SINKS = "security sinks (whole repo)"
+# AIFactory only (Factory#1962): the generated autonomy matrix staleness gate.
+_AUTONOMY = "autonomy matrix matches the policy (--check, blocking)"
+_COLLECTED = "every test file is inside a collected path"
+_FCOMMON = "vendored factory_common matches the hub canonical"
+# The factory-github vendoring gate, required since Factory#3585 unfiltered it.
+_FGITHUB = "factory-github canonical drift"
+_GATE5 = "Gate 5 — banned constructs (blocking, Factory#786)"
+_GATE5_AI = "Gate 5 — banned constructs (blocking, Factory#718)"
+_CF_NEW = [
+    _GATE5,
+    "frontend lint + format + unit tests (blocking)",
+    "ruff check (apps/backend/cfactory + scripts, blocking)",
+    "ruff format --check (apps/backend/cfactory + scripts, blocking)",
+    "ruff + mypy ratchet (diff-scoped, blocking)",
+    "card models match the hub contract",
+]
+_PF_NEW = [
+    _GATE5,
+    "frontend (eslint, blocking)",
+    "ratchet ruff + mypy (changed files, blocking)",
+    "ruff format --check (apps/backend + apps/web-server + scripts, blocking)",
+]
+_TF_NEW = [_GATE5, "frontend (eslint, blocking)"]
+_AI_NEW = [_GATE5_AI, "frontend lint + format (blocking, #647)"]
+
 
 def _live_shaped(
     *,
@@ -123,9 +162,9 @@ def _live_shaped(
     reviews: int | None,
     code_owner: bool = False,
     conversation_resolution: bool,
-) -> dict:
+) -> dict[str, Any]:
     """A protection object shaped the way the GitHub GET endpoint returns it."""
-    doc: dict = {
+    doc: dict[str, Any] = {
         "url": "https://api.github.com/...",
         "required_signatures": {"enabled": False},
         "enforce_admins": {"enabled": False},
@@ -213,8 +252,8 @@ def test_dev_is_deliberately_looser_than_main(repo: str) -> None:
     assert dev["required_conversation_resolution"] is False
 
     # dev is looser about PROCESS, never about CI. It may be gated MORE:
-    # AIFactory's dev is its default branch and carries three checks main
-    # does not (#691). The invariant is therefore a superset, not equality --
+    # AIFactory's dev is its default branch and carries extra checks (#691).
+    # The invariant is therefore a superset, not equality --
     # equality would have to be relaxed the first time any repo gates its
     # default branch properly, and relaxing it to "no constraint" is how the
     # stripping in #691 would have gone unnoticed.
@@ -229,29 +268,122 @@ def test_check_contexts_are_per_repo() -> None:
     The bug in Factory#468 was one repo's check names hardcoded into a script
     vendored to repos whose jobs are named differently. Lock the distinction.
     """
-    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == [
-        "Backend pytest",
-        "Frontend typecheck + build",
-        _GITLEAKS,
-        _VCORE,
-    ]
-    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == [
-        "backend (ruff + pytest)",
-        "critical (fast PR gate)",
-        _GITLEAKS,
-        _VCORE,
-    ]
-    # AIFactory has no required frontend check, despite having a frontend suite.
-    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == [
-        "backend (ruff + pytest)",
-        _GITLEAKS,
-        _VCORE,
-    ]
+    assert _emit("CFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "Backend pytest",
+            "Frontend typecheck + build",
+            _GITLEAKS,
+            _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            _FGITHUB,
+            *_CF_NEW,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
+    assert _emit("TFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            "critical (fast PR gate)",
+            _GITLEAKS,
+            _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            _FGITHUB,
+            *_TF_NEW,
+            _TF_FORMAT,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
+    assert _emit("PFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            "critical (fast PR gate)",
+            _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            _FGITHUB,
+            *_PF_NEW,
+            _GITLEAKS_PF,
+            *_CODEQL,
+            _SINKS,
+        ]
+    )
+    assert _emit("AIFactory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "backend (ruff + pytest)",
+            _GITLEAKS,
+            _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            _FGITHUB,
+            *_AI_NEW,
+            "shared-baseline drift gate (blocking)",
+            *_CODEQL_LC,
+            _SINKS,
+            _AUTONOMY,
+        ]
+    )
     # ...but the hub and gitops do NOT carry it: Factory IS the canonical, and
     # factory-gitops vendors none of it. A context required where no such
     # workflow exists can never report, which is the Factory#529 wedge.
     for repo in ("Factory", "factory-gitops"):
         assert _VCORE not in _emit(repo, "main")["required_status_checks"]["contexts"]
+        assert _FGITHUB not in _emit(repo, "main")["required_status_checks"]["contexts"]
+    assert _emit("Factory", "main")["required_status_checks"]["contexts"] == sorted(
+        [
+            "ruff + mypy ratchet (diff-scoped, blocking)",
+            "ruff format --check (scripts + tests, blocking)",
+            "hub test suite + generated package self-test (pytest)",
+            _GITLEAKS_HUB,
+            *_CODEQL,
+            _SINKS,
+            "committed output matches inputs (--check, blocking)",
+        ]
+    )
+
+
+@pytest.mark.parametrize("repo", ["CFactory", "PFactory", "TFactory", "AIFactory"])
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_service_repos_require_the_shared_measured_guards(repo: str, branch: str) -> None:
+    contexts = _emit(repo, branch)["required_status_checks"]["contexts"]
+    assert _COLLECTED in contexts
+    assert _FCOMMON in contexts
+    assert _FGITHUB in contexts
+    assert set(
+        {
+            "CFactory": _CF_NEW,
+            "PFactory": _PF_NEW,
+            "TFactory": _TF_NEW,
+            "AIFactory": _AI_NEW,
+        }[repo]
+    ) <= set(contexts)
+
+
+@pytest.mark.parametrize(
+    ("names", "expected_rc", "mislabel"),
+    [
+        (["x (blocking)"], 1, 'MISLABEL Factory@main: "x (blocking)"'),
+        (["committed output matches inputs (--check, blocking)"], 0, ""),
+        (["optional advisory"], 0, ""),
+        (["X (BLOCKING)"], 1, 'MISLABEL Factory@main: "X (BLOCKING)"'),
+        (["nonblocking-ish"], 0, ""),
+        (["lint (non-blocking)"], 0, ""),
+        ([], 2, ""),
+    ],
+)
+def test_blocking_stdin(names: list[str], expected_rc: int, mislabel: str) -> None:
+    out = subprocess.run(  # noqa: S603
+        ["bash", str(_SCRIPT), "--blocking-stdin", "Factory", "main"],  # noqa: S607
+        input=json.dumps(names),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == expected_rc
+    assert mislabel in out.stdout if mislabel else not out.stdout
 
 
 def test_every_repo_requires_its_own_secret_scan() -> None:
@@ -335,7 +467,19 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "TFactory",
             "main",
-            ["backend (ruff + pytest)", "critical (fast PR gate)", _VCORE, _GITLEAKS],
+            [
+                "backend (ruff + pytest)",
+                "critical (fast PR gate)",
+                _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                _FGITHUB,
+                *_TF_NEW,
+                _GITLEAKS,
+                _TF_FORMAT,
+                *_CODEQL,
+                _SINKS,
+            ],
             True,
             None,
             True,
@@ -347,8 +491,15 @@ def test_matching_live_response_compares_equal() -> None:
                 "backend (ruff + pytest)",
                 "critical (fast PR gate)",
                 _ACCEPT,
+                _TF_FORMAT,
                 _GITLEAKS,
                 _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                _FGITHUB,
+                *_TF_NEW,
+                *_CODEQL,
+                _SINKS,
             ],
             True,
             None,
@@ -357,13 +508,24 @@ def test_matching_live_response_compares_equal() -> None:
         (
             "CFactory",
             "main",
-            ["Backend pytest", "Frontend typecheck + build", _VCORE, _GITLEAKS],
+            [
+                "Backend pytest",
+                "Frontend typecheck + build",
+                _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                _FGITHUB,
+                *_CF_NEW,
+                _GITLEAKS,
+                *_CODEQL,
+                _SINKS,
+            ],
             True,
             None,
             True,
         ),
         # AIFactory@dev is gated MORE than main: it is the default branch and
-        # carries the ratchet, the format check and the shared-baseline gate
+        # carries the ratchet and the format check beyond main
         # (#691). A single per-repo CHECKS could not express that.
         (
             "AIFactory",
@@ -372,10 +534,17 @@ def test_matching_live_response_compares_equal() -> None:
                 "backend (ruff + pytest)",
                 _ACCEPT,
                 _VCORE,
+                _COLLECTED,
+                _FCOMMON,
+                _FGITHUB,
+                *_AI_NEW,
                 "ratchet (ruff + mypy on changed Python)",
                 "ruff format --check (every Python directory)",
                 "shared-baseline drift gate (blocking)",
                 _GITLEAKS,
+                *_CODEQL_LC,
+                _SINKS,
+                _AUTONOMY,
             ],
             True,
             None,
@@ -404,7 +573,19 @@ def test_matching_live_response_compares_equal() -> None:
             code_owner=code_owner,
             conversation_resolution=convres,
         )
+        # Admins are bound on the code repos' main (#943 option 2).
+        live["enforce_admins"] = {"enabled": branch == "main" and repo != "factory-gitops"}
         assert _normalise(live) == _emit(repo, branch), f"{repo}@{branch}"
+
+
+@pytest.mark.parametrize(("repo", "branch"), _DECLARED)
+def test_enforce_admins_on_code_repo_main_only(repo: str, branch: str) -> None:
+    """Owner decision on #943 (option 2): admins are bound on the five code
+    repos' main. dev stays bypassable for incidents, and factory-gitops main
+    stays bypassable because its CD bot pushes there directly.
+    """
+    want = branch == "main" and repo != "factory-gitops"
+    assert _emit(repo, branch)["enforce_admins"] is want
 
 
 def test_contexts_read_from_checks_when_contexts_absent() -> None:
@@ -415,6 +596,13 @@ def test_contexts_read_from_checks_when_contexts_absent() -> None:
             "backend (ruff + pytest)",
             _ACCEPT,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            _FGITHUB,
+            *_AI_NEW,
+            *_CODEQL_LC,
+            _SINKS,
+            _AUTONOMY,
             "ratchet (ruff + mypy on changed Python)",
             "ruff format --check (every Python directory)",
             "shared-baseline drift gate (blocking)",
@@ -433,9 +621,16 @@ def test_unordered_contexts_compare_equal() -> None:
     # ignore the gate.
     live = _live_shaped(
         contexts=[
+            _SINKS,
+            *_CODEQL,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            _FGITHUB,
+            *_TF_NEW,
             _GITLEAKS,
             _ACCEPT,
+            _TF_FORMAT,
             "critical (fast PR gate)",
             "backend (ruff + pytest)",
         ],
@@ -517,8 +712,15 @@ def test_one_field_of_divergence_is_detected(mutate) -> None:
             "backend (ruff + pytest)",
             "critical (fast PR gate)",
             _ACCEPT,
+            _TF_FORMAT,
             _VCORE,
+            _COLLECTED,
+            _FCOMMON,
+            _FGITHUB,
+            *_TF_NEW,
             _GITLEAKS,
+            *_CODEQL,
+            _SINKS,
         ],
         strict=True,  # dev is strict since Factory#834
         reviews=None,
@@ -565,14 +767,37 @@ def test_missing_token_fails_rather_than_reports_clean() -> None:
 
 
 def _workflow_job_names() -> set[str]:
-    """Every `name:` a job in .github/workflows/ can report as a status context."""
+    """Every `name:` a job in .github/workflows/ can report as a status context.
+
+    A matrix job reports one context PER combination, named by substituting the
+    matrix value into the job name: `name: Analyze (${{ matrix.language }})`
+    over three languages reports `Analyze (python)`, `Analyze (actions)` and
+    `Analyze (javascript-typescript)`. Without expanding those, this guard
+    cannot see any matrix-produced context and would call a perfectly real
+    required check unproducible (Factory#2943).
+    """
     names: set[str] = set()
     for wf in (_REPO_ROOT / ".github" / "workflows").glob("*.yml"):
-        for line in wf.read_text(encoding="utf-8").splitlines():
+        text = wf.read_text(encoding="utf-8")
+        raw_names: set[str] = set()
+        for line in text.splitlines():
             stripped = line.strip()
             # Job-level `name:` is indented; a workflow-level one is not.
             if stripped.startswith("name:") and line.startswith(" "):
-                names.add(stripped[len("name:") :].strip().strip("\"'"))
+                raw_names.add(stripped[len("name:") :].strip().strip("\"'"))
+        for raw in raw_names:
+            match = re.search(r"\$\{\{\s*matrix\.(\w+)\s*\}\}", raw)
+            if not match:
+                names.add(raw)
+                continue
+            # Expand `key: [a, b, c]` from the same workflow.
+            key = match.group(1)
+            values = re.search(rf"^\s*{re.escape(key)}:\s*\[(.+?)\]\s*$", text, re.M)
+            if not values:
+                names.add(raw)  # cannot expand: keep it visible rather than drop it
+                continue
+            for value in (v.strip().strip("\"'") for v in values.group(1).split(",")):
+                names.add(re.sub(r"\$\{\{\s*matrix\.\w+\s*\}\}", value, raw))
     return names
 
 

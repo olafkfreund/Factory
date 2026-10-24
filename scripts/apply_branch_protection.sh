@@ -52,12 +52,16 @@
 # A check that cannot read what it compares against FAILS - it never reports
 # green (standards/coding-standards.md rule 4.7).
 #
+# BLOCKING NAME GATE (Factory#1026): on each branch's latest merged PR, a job
+# calling itself "blocking" must appear in that branch's declared contexts.
+# Missing PRs or check runs are undetermined, never a clean pass.
+#
 # Requires: gh (authenticated with ADMIN on the repos - reading branch
 # protection is an admin-only endpoint) and jq.
 set -euo pipefail
 
 OWNER="olafkfreund"
-MODE="check"                      # check | apply | plan | emit | normalise-stdin
+MODE="check"                      # check | apply | plan | emit | normalise-stdin | blocking-stdin
 ONLY_REPO=""
 EMIT_BRANCH=""
 SIGNATURES=0                      # 1 = act on required_signatures (opt-in; see --signatures)
@@ -76,12 +80,13 @@ while [ $# -gt 0 ]; do
     # must agree for a live response that matches intent, and disagree when one
     # field is changed (tests/test_branch_protection_intent.py, rule 4.9).
     --emit) MODE="emit"; ONLY_REPO="${2:-}"; EMIT_BRANCH="${3:-}"; shift 2 ;;
+    --blocking-stdin) MODE="blocking-stdin"; ONLY_REPO="${2:-}"; EMIT_BRANCH="${3:-}"; shift 2 ;;
     --normalise-stdin) MODE="normalise-stdin" ;;
     # Same idea for the CODEOWNERS verdict: prints the verdict for a
     # /codeowners/errors payload read from stdin, so both directions are testable
     # without a token (tests/test_branch_protection_intent.py, rule 4.9).
     --codeowners-stdin) MODE="codeowners-stdin" ;;
-    -h|--help) sed -n '2,56p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,60p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -102,13 +107,25 @@ VERIFY_CTX="tfactory/suite"
 #   REVIEWS        : 1 = require a PR with >=1 approving review on main; 0 = none
 #   CODE_OWNER     : 1 = require_code_owner_reviews (only where CODEOWNERS exists)
 #   ENFORCE_ADMINS : 0 = admins (and admin-owned automation tokens) bypass
+#   ENFORCE_ADMINS_MAIN : per-repo main override; unset = ENFORCE_ADMINS
 #   VERIFY         : 1 = eligible to also require $VERIFY_CTX when WITH_VERIFY=1
 #   BRANCHES       : every branch that MUST be protected in this repo. A declared
 #                    branch that does not exist is an error, not a skip.
 #   DEFAULT_BRANCH : the repo's default branch. NOT cosmetic - see Factory#467.
 #
-# enforce_admins is 0 across the baseline so the factory's own auto-merge loop
-# (admin token running `gh pr merge`) and the gitops CD bot keep working.
+# enforce_admins (owner decision, #943 option 2, 2026-10-22): ON for main of the
+# five code repos, so a red required check binds admins too. Before this it was
+# 0 by default, and the "red check cannot merge" floor held only because every
+# client calls `gh pr merge` without --admin; a plain REST merge by an admin went
+# straight past it (measured on #943, 2026-10-07). Nothing relies on admin bypass
+# into those mains: release.yml pushes tags only, deploy.yml pushes to gitops,
+# dev->main promotion is a release/* PR merged on green, and the auto-merge loop
+# never passes --admin. It stays 0 on every dev, so an incident fix can still
+# land there, and on factory-gitops main, whose CD bot pushes `cd(...) [skip ci]`
+# commits straight to main and needs the bypass.
+# Break glass (incident merge into a code repo's main): set that repo's
+# ENFORCE_ADMINS_MAIN=0 here, run `--apply --repo <R>`, merge, then restore 1 and
+# re-apply. The nightly check reports drift until it is restored.
 #
 # CHECKS are per-repo because the repos' CI job names genuinely differ (CFactory
 # names them "Backend pytest"/"Frontend typecheck + build"; the Python services
@@ -130,6 +147,15 @@ VERIFY_CTX="tfactory/suite"
 # it was OBSERVED posting on a PR whose whole diff was an unmapped path
 # (CFactory#298). Order mattered; this is the second half.
 VCORE_CTX="vendored copies match the hub canonical (byte-exact)"
+# These two guards use the same posted names in all four service repos (#1026).
+COLLECTED_CTX="every test file is inside a collected path"
+FCOMMON_CTX="vendored factory_common matches the hub canonical"
+# The factory-github vendoring gate, same name in all four. Its pull_request
+# trigger was path-filtered and it posted on 1-2 PRs in 20, so it could not be
+# required. Factory#3585 dropped the filter; this entry merges only after the
+# gate was seen posting on a PR touching no vendored path in each repo -- the
+# $VCORE_CTX order, for the same reason.
+FGITHUB_CTX="factory-github canonical drift"
 
 # The PR-diff secret scan, required fleet-wide as of Factory#814. Not one
 # repository required any security gate; the scans ran and advised. #805 records
@@ -180,16 +206,33 @@ SECRET_CTX_GITOPS="pr-diff-scan"
 # in AIFactory, zero failures. A flaky required check wedges every PR.
 ACCEPT_CTX="docker (P0 acceptance)"
 
+# TFactory's ruff-format job. It ran on every PR and blocked nothing, so #1322
+# merged with it RED and dev went red until #1323 repaired it (Factory#2943).
+# AIFactory has required its equivalent since #814; TFactory was the outlier.
+TF_FORMAT_CTX="ruff format --check (apps/backend + apps/web-server + scripts + tests)"
+
+# CodeQL + the whole-repo security sink lint. These were live on every branch
+# but absent from the declared intent below, so `--apply` would have PUT a list
+# without them and silently dropped CodeQL as a required check (#2943). The job
+# NAMES differ in case: AIFactory's workflow lower-cases them, and a required
+# context is matched verbatim, so the two spellings cannot share one variable.
+CODEQL_CTXS='"Analyze (actions)","Analyze (javascript-typescript)","Analyze (python)"'
+CODEQL_CTXS_LC='"analyze (actions)","analyze (javascript-typescript)","analyze (python)"'
+SINKS_CTX="security sinks (whole repo)"
+
 
 repo_config() {
-  # Reset the per-branch override FIRST. These are globals set by a case arm,
-  # and only one repo sets CHECKS_DEV -- without this it would leak from
+  # Reset the per-branch overrides FIRST. These are globals set by a case arm,
+  # and only some repos set CHECKS_DEV -- without this it would leak from
   # AIFactory to whichever repo the loop visits next and apply AIFactory's job
   # names to it, which is the same class of bug as #691 pointing the other way.
+  # ENFORCE_ADMINS_MAIN is reset for the same reason: factory-gitops must never
+  # inherit a code repo's 1.
   CHECKS_DEV=""
+  ENFORCE_ADMINS_MAIN=""
   case "$1" in
-    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","hub test suite + generated package self-test (pytest)","'"$SECRET_CTX_HUB"'"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
+    CFactory)      CHECKS='["Backend pytest","Frontend typecheck + build","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend lint + format + unit tests (blocking)","ruff check (apps/backend/cfactory + scripts, blocking)","ruff format --check (apps/backend/cfactory + scripts, blocking)","ruff + mypy ratchet (diff-scoped, blocking)","card models match the hub contract"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    Factory)       CHECKS='["ruff + mypy ratchet (diff-scoped, blocking)","ruff format --check (scripts + tests, blocking)","hub test suite + generated package self-test (pytest)","'"$SECRET_CTX_HUB"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","committed output matches inputs (--check, blocking)"]'; REVIEWS=0; CODE_OWNER=0; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=0; BRANCHES="main"; DEFAULT_BRANCH="main" ;;
     # PFactory's dev carries `docker (P0 acceptance)` and main does not.
     # PFactory#586 shipped a container that could not start: the gate caught it
     # on the causing PR (red at 12:53Z and 13:01Z on that PR's own branch) and
@@ -198,14 +241,18 @@ repo_config() {
     # override rather than a single CHECKS -- the same shape AIFactory uses
     # below, and for the same reason (#691): one CHECKS would PUT main's set
     # over dev and strip it again.
-    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX_PF"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
-    # AIFactory's dev is its DEFAULT branch and carries three gates main does
-    # not: the ratchet, the format check and the shared-baseline drift gate.
-    # A single per-repo CHECKS could not express that, so `--apply` would have
-    # PUT the two-check main set over dev and stripped all three (#691).
+    PFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)","ratchet ruff + mypy (changed files, blocking)","ruff format --check (apps/backend + apps/web-server + scripts, blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","docker (P0 acceptance)","'"$SECRET_CTX_PF"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)","ratchet ruff + mypy (changed files, blocking)","ruff format --check (apps/backend + apps/web-server + scripts, blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=0; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    TFactory)      CHECKS='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","critical (fast PR gate)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'","'"$TF_FORMAT_CTX"'",'"$CODEQL_CTXS"',"'"$SINKS_CTX"'","Gate 5 — banned constructs (blocking, Factory#786)","frontend (eslint, blocking)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    # AIFactory's dev is its DEFAULT branch and carries the ratchet and format
+    # check beyond main. A single per-repo CHECKS could not express that (#691).
     # CHECKS_DEV is the per-branch override; unset means "same as CHECKS".
-    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$SECRET_CTX"'"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
+    #
+    # `autonomy matrix matches the policy` (Factory#1962) is required on both
+    # branches: the published autonomy matrix is generated from merge_policy.py
+    # and a stale one is a governance document that lies. Its workflow has no
+    # `paths:` filter, so it reports on every PR -- dev's and main's release/*
+    # PRs alike -- and cannot leave a PR waiting on a check that never runs.
+    AIFactory)     CHECKS='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)","Gate 5 — banned constructs (blocking, Factory#718)","frontend lint + format (blocking, #647)","shared-baseline drift gate (blocking)"]'; CHECKS_DEV='["backend (ruff + pytest)","'"$VCORE_CTX"'","'"$COLLECTED_CTX"'","'"$FCOMMON_CTX"'","'"$FGITHUB_CTX"'","ratchet (ruff + mypy on changed Python)","ruff format --check (every Python directory)","shared-baseline drift gate (blocking)","'"$ACCEPT_CTX"'","'"$SECRET_CTX"'",'"$CODEQL_CTXS_LC"',"'"$SINKS_CTX"'","autonomy matrix matches the policy (--check, blocking)","Gate 5 — banned constructs (blocking, Factory#718)","frontend lint + format (blocking, #647)"]'; REVIEWS=0; CODE_OWNER=1; ENFORCE_ADMINS=0; ENFORCE_ADMINS_MAIN=1; VERIFY=1; BRANCHES="main dev"; DEFAULT_BRANCH="dev" ;;
     # gitops is bot-driven CD. Its manifests reach the live cluster through
     # ArgoCD, so until factory-gitops#95 it was the least gated repo in the
     # fleet with the highest blast radius; `kustomize build + schema` now runs
@@ -305,9 +352,10 @@ build_payload() {
   local repo="$1" branch="$2"
   repo_config "$repo"
 
-  local checks="$CHECKS" strict reviews convres
+  local checks="$CHECKS" ea="$ENFORCE_ADMINS" strict reviews convres
   case "$branch" in
-    main) strict=true;  reviews="$REVIEWS"; convres=true ;;
+    main) strict=true;  reviews="$REVIEWS"; convres=true
+          ea="${ENFORCE_ADMINS_MAIN:-$ENFORCE_ADMINS}" ;;
     dev)  strict=true;  reviews=0;          convres=false
           # Per-branch checks (#691): dev may be gated MORE than main, and is
           # for AIFactory, where dev is the default branch.
@@ -335,7 +383,7 @@ build_payload() {
   jq -cn \
     --argjson rsc "$rsc" \
     --argjson rpr "$rpr" \
-    --argjson ea "$ENFORCE_ADMINS" \
+    --argjson ea "$ea" \
     --argjson cr "$convres" \
     '{
       required_status_checks: $rsc,
@@ -420,11 +468,31 @@ codeowners_verdict() {
          end'
 }
 
+blocking_verdict() {
+  local repo="$1" branch="$2" names="$3" required offenders name
+  if ! jq -e 'type == "array" and all(.[]; type == "string") and length > 0' <<<"$names" >/dev/null; then
+    return 2
+  fi
+  required="$(build_payload "$repo" "$branch" | jq -c '.required_status_checks.contexts // []')" || return 2
+  offenders="$(jq -r --argjson required "$required" \
+    '.[] | select(test("(?<!non-)\\bblocking\\b"; "i") and (. as $name | $required | index($name) | not)) | @json' \
+    <<<"$names")" || return 2
+  [ -n "$offenders" ] || return 0
+  while IFS= read -r name; do
+    echo "MISLABEL ${repo}@${branch}: ${name} claims blocking but is not required"
+  done <<<"$offenders"
+  return 1
+}
+
 # Offline introspection: no network, no token. Handled before anything reaches gh.
 case "$MODE" in
   codeowners-stdin)
     codeowners_verdict
     exit 0 ;;
+  blocking-stdin)
+    [ -n "$ONLY_REPO" ] && [ -n "$EMIT_BRANCH" ] || { echo "--blocking-stdin needs REPO and BRANCH" >&2; exit 2; }
+    blocking_verdict "$ONLY_REPO" "$EMIT_BRANCH" "$(cat)"
+    exit $? ;;
   emit)
     [ -n "$ONLY_REPO" ] && [ -n "$EMIT_BRANCH" ] || { echo "--emit needs REPO and BRANCH" >&2; exit 2; }
     build_payload "$ONLY_REPO" "$EMIT_BRANCH" | normalise
@@ -493,6 +561,30 @@ check_one() {
   diff <(jq -S . <<<"$intent") <(jq -S . <<<"$livenorm") \
     | sed -e 's/^</    want:/' -e 's/^>/    live:/' -e '/^---$/d' || true
   DIVERGED=1
+}
+
+check_blocking_names() {
+  local repo="$1" branch="$2" sha names rc=0
+  # gh lists by creation date, not merge date: take the latest MERGED of the recent ones.
+  sha="$(gh pr list -R "$OWNER/$repo" --base "$branch" --state merged -L 20 --json headRefOid,mergedAt -q 'sort_by(.mergedAt) | last | .headRefOid // empty')" || rc=$?
+  if [ "$rc" != "0" ] || [ -z "$sha" ]; then
+    echo "  ERROR: cannot read a merged PR for ${repo}@${branch}." >&2
+    UNDETERMINED=1
+    return
+  fi
+  names="$(gh api --paginate "repos/$OWNER/$repo/commits/$sha/check-runs?per_page=100" -q '[.check_runs[].name]' | jq -s 'add|unique')" || rc=$?
+  if [ "$rc" != "0" ]; then
+    echo "  ERROR: cannot read check runs for ${repo}@${branch}." >&2
+    UNDETERMINED=1
+    return
+  fi
+  blocking_verdict "$repo" "$branch" "$names" || rc=$?
+  case "$rc" in
+    0) echo "ok    ${OWNER}/${repo}@${branch} blocking names" ;;
+    1) echo "    rename the job or declare it required in repo_config(); --apply cannot fix a name."
+       DIVERGED=1 ;;
+    *) echo "  ERROR: no usable check runs for ${repo}@${branch}." >&2; UNDETERMINED=1 ;;
+  esac
 }
 
 # Refuse to weaken a branch (#691).
@@ -669,6 +761,7 @@ run_repo() {
   for branch in $BRANCHES; do
     if [ "$MODE" = "check" ]; then
       check_one "$repo" "$branch"
+      check_blocking_names "$repo" "$branch"
     else
       apply_one "$repo" "$branch"
     fi

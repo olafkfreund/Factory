@@ -1,10 +1,10 @@
 ---
 layout: default
-title: "RFC-0024: Planning from Observed Infrastructure — read the account, not just the repo"
+title: "RFC-0025: Planning from Observed Infrastructure — read the account, not just the repo"
 permalink: /rfc/planning-from-observed-infrastructure/
 ---
 
-# RFC-0024 — Planning from Observed Infrastructure
+# RFC-0025 — Planning from Observed Infrastructure
 
 > **Status:** Proposed · **Created:** 2026-08-25 · **Owner:** PFactory (`apps/backend/pfactory_secrets/`), consumed by the planner ·
 > **Extends:**
@@ -39,9 +39,11 @@ gate is looking for.
 `CredentialBroker` with `resolve_cloud(provider)` for `gcp` / `aws` / `azure` /
 `kubernetes`, vault and AWS Secrets Manager backends, an egress gate, and a CLI.
 
-Every importer of it lives **inside `pfactory_secrets/` itself**. A grep across
-`agents/` and `planner_lib/` for `CredentialBroker`, `resolve_cloud` or
-`pfactory_secrets` returns nothing. The planner never touches it.
+Its importers are the sandbox runner (`tools/runners/sandbox_credentials.py`,
+which resolves cloud credentials for the coding sandbox), `core/client.py`
+(task credential injection) and `plan/service.py` (an existence probe only). A
+grep across `agents/` and `planner_lib/` for `CredentialBroker`, `resolve_cloud`
+or `pfactory_secrets` returns nothing. No planning agent reads the account.
 
 So this RFC is not "build cloud access for PFactory". It is "connect two things
 that already exist, under a permission model that makes it safe". That is a much

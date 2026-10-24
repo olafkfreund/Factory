@@ -18,6 +18,7 @@
   ],
   "output": "reports/jscpd",
   "ignore": [
+    "scripts/languages/**",
     "**/node_modules/**",
     "**/.git/**",
     "**/.ruff_cache/**",

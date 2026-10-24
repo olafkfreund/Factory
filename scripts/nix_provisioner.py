@@ -28,10 +28,50 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # only for annotations; the runtime import is the shim below
+    from language_descriptors import LanguageDescriptor
+
+
+# The declarative language descriptors (contracts/languages/*.yaml at the hub,
+# vendored beside this module in every consumer). They EXTEND the hardcoded
+# tables below: a language a descriptor declares gets its nix attrs + shell env
+# from the descriptor, so onboarding a language is a YAML drop, not an edit to
+# this file (RFC-0005 paved road). The dual import covers both contexts this
+# module is vendored into: a package (apps.backend.core / tools.runners) and a
+# flat scripts/ directory. A missing sibling module fails CLOSED at use time —
+# generate_flake's unknown-language refusal below names it — never silently.
+class _MissingDescriptorError(Exception):
+    """Stand-in for DescriptorError when language_descriptors is not vendored
+    beside this module. Never raised and never caught in practice: the
+    ``_resolve_descriptor is None`` guard in _descriptor_for_language returns
+    before the except clause referencing it can be reached. It exists so the
+    except clause always names a real exception type (a ``None`` there is a
+    TypeError waiting behind an unreachable branch, and CodeQL rightly flags
+    it - py/useless-except, AIFactory alert 2433).
+    """
+
+
+try:  # package context
+    from .language_descriptors import (
+        DescriptorError as _DescriptorError,
+        resolve_language as _resolve_descriptor,
+    )
+except ImportError:
+    try:  # flat context (hub scripts/, direct execution)
+        from language_descriptors import (
+            DescriptorError as _DescriptorError,
+            resolve_language as _resolve_descriptor,
+        )
+    except ImportError:  # mis-vendored: module without its sibling
+        _resolve_descriptor = None
+        _DescriptorError = _MissingDescriptorError
 
 # nixpkgs pin for generated flakes. A FULL commit rev (not a branch) keeps
 # generated flakes reproducible AND avoids a GitHub API call to resolve the
@@ -82,8 +122,11 @@ def generate_lock(nixpkgs: str = DEFAULT_NIXPKGS) -> str | None:
 
 
 # language -> (nix python attr | node attr). Extend as the fleet grows.
+# 3.11 is NOT here (#1020): at the pin its package set cannot build pip,
+# fastapi, httpx and more ("sphinx-9.1.0 not supported for interpreter
+# python3.11"), so a 3.11 lane with those libs got a flake that could not
+# evaluate. It now installs through uv like any version the pin cannot serve.
 _PY_ATTR = {
-    "3.11": "python311",
     "3.12": "python312",
     "3.13": "python313",
     "3.14": "python314",
@@ -252,6 +295,22 @@ def _needs_browser(m: Manifest) -> bool:
     return any(t in hay for t in ("playwright", "chromium", "browser"))
 
 
+def _needs_jest(m: Manifest) -> bool:
+    """A jest lane is implied by a jest reference in the packages or commands.
+
+    TFactory#1165: the jest lane was the only unit-capable lane with no
+    in-cluster path -- its runner was DockerRunner-only, and TFactory pods have
+    no container runtime, so EVERY JavaScript/TypeScript unit test errored
+    before it started. It read as flakiness; it was total.
+
+    Mirrors :func:`_needs_browser` deliberately: same detection shape, same
+    "one token buys the toolchain" contract, so the two node lanes stay
+    symmetrical rather than growing separate conventions.
+    """
+    hay = " ".join(m.system_packages + m.verify_commands + m.proof_verify).lower()
+    return "jest" in hay
+
+
 def _python_attr(m: Manifest) -> str:
     ver = m.toolchain.get("python")
     return _PY_ATTR.get(ver or "", "python313")
@@ -261,10 +320,24 @@ def _python_attr(m: Manifest) -> str:
 # default Go (always present); a requested minor only maps to an explicit
 # attr for versions we know exist in the pin, else degrades to `go` rather
 # than emitting a non-existent attr (which would fail the flake eval).
+# Go minors that EXIST at DEFAULT_NIXPKGS. Verified against the pin, not assumed:
+# go_1_21 and go_1_22 are gone ("Did you mean go_1_23, go_1_25 or go_1_26?") and
+# go_1_23 throws outright ("Go 1.23 is end-of-life and 'go_1_23' has been
+# removed"). Mapping to any of the three produced a flake that could not
+# EVALUATE, so a manifest naming a Go minor got a runner failure rather than a
+# test result -- the same defect as Factory#1007 and #1012, in a fourth table.
+#
+# It stayed invisible because two assertions PINNED the broken output: a text
+# check for `pkgs.go_1_22` in the test module and another in this file's own
+# self-test. Both asserted the attribute was emitted; neither evaluated it.
+#
+# An unpinnable minor now falls back to the default `go` rather than naming an
+# attribute that does not exist. That is a deliberate widening, not a silent
+# one: the alternative is a dead shell, and refusing would break manifests that
+# work today on a Go the pin no longer carries.
 _GO_ATTR = {
-    "1.21": "go_1_21",
-    "1.22": "go_1_22",
-    "1.23": "go_1_23",
+    "1.25": "go_1_25",
+    "1.26": "go_1_26",
 }
 
 
@@ -276,11 +349,252 @@ def _go_attr(m: Manifest) -> str:
 # nixpkgs top-level attrs we know how to map system_packages onto. Browser libs
 # come bundled with playwright-driver.browsers, so a bare 'chromium' is dropped
 # in favour of the playwright stack (added separately) to avoid version skew.
-_DROP_SYSTEM_PKGS = {"chromium", "playwright", "browser", "playwright-driver"}
+# `python`/`pip` are not here (#1020): dropping them is right only on the Python
+# branch, whose harness supplies them, so _system_pkg_attrs decides per language.
+_DROP_SYSTEM_PKGS = {
+    "chromium",
+    "playwright",
+    "browser",
+    "playwright-driver",
+    # Same reason as the browser attrs above: `jest` is the TRIGGER token, not a
+    # top-level nixpkgs attr. It is dropped here and buys nodejs below; the
+    # runner itself comes from npm at lane setup, because nixpkgs has no jest
+    # attribute to name (see the jest block in generate_flake).
+    "jest",
+    # The Python harness already supplies pytest via `withPackages` a few
+    # lines below, and it is not a top-level nixpkgs attr -- `pkgs.pytest`
+    # does not exist (nixpkgs suggests "btest, cpptest, evtest"), so emitting it
+    # failed the WHOLE flake eval, not just that package. A manifest naming
+    # `pytest` in system_packages is the most obvious thing a planner writes for
+    # a Python lane, and it produced a dev shell that could not be realised.
+    #
+    # Found by the generated-flake evaluation gate in factory-runners, on its
+    # first run. Same defect class as the `nodePackages.jest` emission
+    # (Factory#1007) and invisible for the same reason: the unit tests assert on
+    # the flake's TEXT, and nothing evaluated one.
+    "pytest",
+    # `selenium` is a PyPI/npm package, not a nixpkgs top-level attr — the same
+    # shape as `jest` above. Unlike `jest` it does NOT name a toolchain we can
+    # infer: selenium bindings exist for Python and for node, and the manifest's
+    # `language` already decides which harness runs, so buying node here would
+    # be a guess that is wrong half the time (and a ~200MB one). Drop it and let
+    # the lane's own package manager install the bindings, exactly as it does
+    # for the driver itself.
+    "selenium",
+}
+
+# Common name a planner writes -> the nixpkgs attr that actually exists at the
+# pinned rev (Factory#1009). These differ from _DROP_SYSTEM_PKGS: they name a
+# REAL toolchain, so dropping them would silently take the toolchain away rather
+# than fix the flake. Each token below was measured against nixpkgs 567a49d1 —
+# `pkgs.node`, `pkgs.npm` and `pkgs.vitest` do not exist, and a missing attr
+# fails the WHOLE devShell eval, so the lane reports a runner failure instead of
+# a test result (reads as flakiness, is not).
+#
+#   node/npm -> nodejs_22, the same attr the jest and browser blocks add; npm
+#               ships inside the nodejs derivation, so it needs no attr of its own.
+#   vitest   -> nodejs_22 too: no nixpkgs attr exists, but unlike selenium it is
+#               unambiguously a node runner, so the token buys node and the
+#               runner comes from npm at lane setup (the jest contract).
+#
+# `rust` and `dotnet` left this table (#1020): as a system_package `rust` meant
+# rustc alone while `language: rust` meant rustc + cargo, so `cargo test` died.
+# _system_pkg_attrs now reads _LANG_ATTRS for any language token, one meaning.
+#
+# Aliasing makes collisions routine — `node` + `npm` is the likeliest pair a
+# planner writes, and `vitest` beside a browser lane is another — so
+# generate_flake dedupes the final attr list. Measured: a duplicate is NOT an
+# eval or build failure (both forms realise and run `node --version`), so this
+# is tidiness in a committed deliverable, not correctness.
+_SYSTEM_PKG_ALIASES = {
+    "node": "nodejs_22",
+    "npm": "nodejs_22",
+    "vitest": "nodejs_22",
+    # Real attrs at the pin that are also _LANG_ATTRS keys. As a system_package
+    # they keep their own meaning: `typescript` is tsc, not just node (#1020).
+    "typescript": "typescript",
+    "nodejs": "nodejs",
+}
 
 
-def _system_pkg_attrs(m: Manifest) -> list[str]:
-    return [p for p in m.system_packages if p.lower() not in _DROP_SYSTEM_PKGS]
+def _system_pkg_attrs(m: Manifest, lang: str) -> list[str]:
+    """One lookup per token, lower-cased (#1020): python/pip, drop, alias, language."""
+    attrs: list[str] = []
+    for raw in m.system_packages:
+        package = raw.lower()
+        if package in ("python", "pip"):
+            if lang != "python":
+                attrs.append("python313")
+        elif package in _DROP_SYSTEM_PKGS:
+            continue
+        elif package in _SYSTEM_PKG_ALIASES:
+            attrs.append(_SYSTEM_PKG_ALIASES[package])
+        elif package in _LANG_ATTRS:
+            attrs.extend(_LANG_ATTRS[package])
+        else:
+            attrs.append(package)
+    return attrs
+
+
+# Declared `language` -> the nixpkgs attrs that put its toolchain on PATH
+# (Factory#1012). Third sibling of _DROP_SYSTEM_PKGS / _SYSTEM_PKG_ALIASES, and
+# the same contract as those two: a token in, real attrs out, every attr
+# measured against the pinned rev 567a49d1 (rustc-1.95.0, cargo-1.95.0,
+# openjdk-21.0.12, maven-3.9.12, dotnet-sdk-8.0.422, nodejs-22.22.3) because a
+# missing attr fails the WHOLE devShell eval, not just that package.
+#
+# Why a table and a refusal rather than only one of them. generate_flake used to
+# branch on `go` and let EVERYTHING else fall through to the Python harness, so
+# `language: rust` got a shell whose entire package list was `pkgs.python313`.
+# That fails OPEN, into a plausible-but-wrong toolchain: the flake evaluates,
+# the shell realises, and the defect only surfaces later as `cargo: command not
+# found`, at which point it reads as a flaky environment rather than a
+# provisioning bug (the #1007 / #1009 symptom class). The table makes the four
+# languages a planner actually emits work; the `else: raise` below makes the
+# fifth one FAIL CLOSED, loudly, at generation time.
+#
+# The distinction that has to survive: `(m.language or "python")` for an ABSENT
+# language stays deliberate and correct -- a manifest that omits `language` gets
+# the pytest harness, as it always has. Only a language that was DECLARED and is
+# unrecognised is refused. Absent is a default; declared-but-unknown is a
+# statement the generator cannot honour.
+#
+# Aliases are spelled out rather than normalised because the planner's spelling
+# is not ours to predict: `dotnet` / `csharp` / `c#` all name one SDK, and
+# `node` / `javascript` / `typescript` / `js` / `ts` all name one runtime. A
+# missing alias here costs a false refusal, which is loud and cheap to fix; the
+# alternative (falling back) is the bug this table exists to kill.
+#
+# Not in the table: `go` and `python`, which keep their own version-aware
+# resolvers below (_go_attr, _python_attr + the withPackages set) -- they map to
+# an attr computed from `toolchain`, not to a fixed list.
+_LANG_ATTRS = {
+    # rustc alone has no cargo; every Rust verify command in practice is
+    # `cargo test`, so the pair ships together.
+    "rust": ["rustc", "cargo"],
+    # maven rides along for the same reason cargo does: `mvn test` is the
+    # declared command far more often than a bare `javac`. gradle is NOT
+    # included -- a project that wants it names it in system_packages, and
+    # buying both build tools unasked is ~200MB of store for nothing.
+    "java": ["jdk21", "maven"],
+    "dotnet": ["dotnet-sdk"],
+    "csharp": ["dotnet-sdk"],
+    "c#": ["dotnet-sdk"],
+    # Same attr the jest and browser blocks add, so the dedupe in generate_flake
+    # collapses the overlap when a node project also has one of those lanes.
+    "node": ["nodejs_22"],
+    "nodejs": ["nodejs_22"],
+    "javascript": ["nodejs_22"],
+    "typescript": ["nodejs_22"],
+    "js": ["nodejs_22"],
+    "ts": ["nodejs_22"],
+}
+
+
+def _descriptor_for_language(lang: str) -> LanguageDescriptor | None:
+    """The language descriptor to provision from, or None.
+
+    None when the builtin branches own the language (go/python and everything in
+    _LANG_ATTRS stay authoritative — the descriptor path EXTENDS the generator,
+    it never shadows a version-aware resolver), and None when the token matches
+    no descriptor (the caller's fail-closed refusal then stands).
+    """
+    if _resolve_descriptor is None:
+        return None
+    if lang in ("go", "python") or lang in _LANG_ATTRS:
+        return None
+    try:
+        descriptor: LanguageDescriptor | None = _resolve_descriptor(lang)
+    except _DescriptorError as exc:
+        # This module's documented failure type is ProvisionError; a caller
+        # catching that to fail a provisioning cleanly must not be surprised by
+        # a DescriptorError (a ValueError subclass it has never heard of)
+        # escaping from a broken or missing languages/ vendoring — exactly the
+        # state a consumer is in before its descriptors land.
+        raise ProvisionError(
+            f"language descriptors could not be loaded while resolving {lang!r}: {exc}"
+        ) from exc
+    return descriptor
+
+
+# A toolchain version or package name that reaches the generated flake verbatim
+# (a comment, a Nix string, a shellHook) must not be able to end that context:
+# a newline, `"`, `''` or `${` in a manifest value would otherwise become Nix code.
+_VERSION_RE = re.compile(r"\d+(\.\d+){0,2}")
+_PIP_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _checked_version(tool: str, ver: object) -> str:
+    # A YAML/JSON number is refused, not stringified: 3.10 parses as 3.1 and the
+    # lane would get the wrong interpreter with no sign of why.
+    if not isinstance(ver, str) or not _VERSION_RE.fullmatch(ver):
+        raise ProvisionError(
+            f"toolchain.{tool} {ver!r} is not a quoted version string like '3.12' or '1.22.3'"
+        )
+    return ver
+
+
+def _installed_go_env(go_ver: object) -> str:
+    """GOTOOLCHAIN env for a Go version the pin does not carry, else ''."""
+    if not go_ver or go_ver in _GO_ATTR:
+        return ""
+    ver = _checked_version("go", go_ver)
+    parts = [int(x) for x in ver.split(".")]
+    # GOTOOLCHAIN can only switch to Go >= 1.21, the first release published as
+    # a downloadable toolchain, and only those name their first patch `X.Y.0`.
+    if len(parts) < 2 or (parts[0], parts[1]) < (1, 21):  # noqa: PLR2004
+        raise ProvisionError(
+            f"toolchain.go {ver!r}: only Go 1.21 or later can be installed via GOTOOLCHAIN"
+        )
+    full = f"{ver}.0" if len(parts) == 2 else ver  # noqa: PLR2004
+    logging.getLogger(__name__).warning(
+        "Go %s is not in _GO_ATTR; installing go%s via GOTOOLCHAIN", ver, full
+    )
+    return (
+        f"\n        # Go {ver} is not in nixpkgs pin; installed via GOTOOLCHAIN.\n"
+        f'        GOTOOLCHAIN = "go{full}";'
+    )
+
+
+def _installed_python_hook(py_ver: object, py_pkgs: list[str]) -> str:
+    """shellHook that installs a Python the pin does not carry, via uv."""
+    ver = _checked_version("python", py_ver)
+    bad = [p for p in py_pkgs if not _PIP_NAME_RE.fullmatch(p)]
+    if bad:
+        raise ProvisionError(f"python package names not installable via uv: {bad}")
+    logging.getLogger(__name__).warning(
+        "Python %s is not in _PY_ATTR; installing via uv in shellHook", ver
+    )
+    install = f"\n          uv pip install {' '.join(py_pkgs)}" if py_pkgs else ""
+    return (
+        f"\n        # Python {ver} is not in nixpkgs pin; installed via uv.\n"
+        "        shellHook = ''\n"
+        '          export VIRTUAL_ENV="$PWD/.factory-venv"\n'
+        f'          uv venv --python {ver} "$PWD/.factory-venv" --allow-existing'
+        f"{install}\n"
+        '          export PATH="$PWD/.factory-venv/bin:$PATH"\n'
+        "        '';"
+    )
+
+
+def _python_toolchain(m: Manifest, project_dir: Path | str | None = None) -> tuple[str, str]:
+    """(package line, shellHook) for the Python branch.
+
+    A version in _PY_ATTR gets the Nix interpreter (with its libs via
+    withPackages); one the pin does not carry gets uv and an install hook.
+    """
+    py_ver = m.toolchain.get("python")
+    py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m, project_dir=project_dir)]
+    if py_ver and py_ver not in _PY_ATTR:
+        return "pkgs.uv", _installed_python_hook(py_ver, py_pkgs)
+    py = _python_attr(m)
+    if not py_pkgs:
+        return f"pkgs.{py}", ""
+    # Reference each attr as ``p."name"`` (quoted) rather than
+    # ``with p; [ name ]`` so hyphenated attrs (pytest-cov,
+    # scikit-learn) don't parse as Nix subtraction.
+    joined = " ".join(f'p."{name}"' for name in py_pkgs)
+    return f"(pkgs.{py}.withPackages (p: [ {joined} ]))", ""
 
 
 def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=None) -> str:
@@ -290,27 +604,72 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
     system packages, and (when a browser lane is implied) version-matched
     playwright-test + browsers wired via env. The shell's tools are on PATH so
     consumers call the Nix binaries directly.
+
+    Raises ProvisionError when `language` is DECLARED but unrecognised — see
+    _LANG_ATTRS for why that is not the same as an absent one.
     """
     m = Manifest.from_contract(env)
     lang = (m.language or "python").lower()
-    sys_attrs = _system_pkg_attrs(m)
+    sys_attrs = _system_pkg_attrs(m, lang)
 
+    # Descriptor-declared languages (swift, kotlin, ...): resolved FIRST so the
+    # paved road extends the generator without touching it, but only for
+    # languages the builtin branches below do not already own — the builtin
+    # tables stay authoritative for go/python/node/rust/java/dotnet.
+    descriptor = _descriptor_for_language(lang)
+
+    descriptor_env: dict[str, str] = {}
     pkg_lines: list[str] = []
-    if lang == "go":
+    env_lines = ""
+    if descriptor is not None:
+        # Same contract as _LANG_ATTRS: a fixed attr list, prepended so it flows
+        # through the dedupe; libraries come from the language's own package
+        # manager at lane setup. The descriptor may also demand devShell env
+        # (Swift's corelibs on LD_LIBRARY_PATH), emitted verbatim below.
+        sys_attrs = list(descriptor.nix_packages) + sys_attrs
+        descriptor_env = dict(descriptor.nix_shell_env)
+    elif lang == "go":
         # Go has no withPackages set — the toolchain is one attr; test/coverage
         # tools (gotestsum, gocover-cobertura) ride in as system_packages.
         pkg_lines.append(f"pkgs.{_go_attr(m)}")
+        env_lines += _installed_go_env(m.toolchain.get("go"))
+    elif lang in _LANG_ATTRS:
+        # Fixed attr list, no withPackages set — the language's own package
+        # manager (cargo, maven, nuget, npm) installs libraries at lane setup,
+        # exactly as the jest lane does.
+        #
+        # PREPENDED to sys_attrs rather than emitted into pkg_lines, so it flows
+        # through the same dedupe the alias table needs. `language: typescript`
+        # beside a jest or browser lane is the obvious collision — both name
+        # nodejs_22 — and emitting the toolchain separately doubled the line.
+        # (The go and python branches cannot do this: their attr is computed, and
+        # python's is a `withPackages` expression, not a bare attr name.)
+        sys_attrs = _LANG_ATTRS[lang] + sys_attrs
+    elif lang == "python":
+        py_line, py_hook = _python_toolchain(m, project_dir)
+        pkg_lines.append(py_line)
+        env_lines += py_hook
     else:
-        py = _python_attr(m)
-        py_pkgs = [_PY_PKG_ALIASES.get(p, p) for p in _python_libs(m, project_dir=project_dir)]
-        if py_pkgs:
-            # Reference each attr as ``p."name"`` (quoted) rather than
-            # ``with p; [ name ]`` so hyphenated attrs (pytest-cov,
-            # scikit-learn) don't parse as Nix subtraction.
-            joined = " ".join(f'p."{name}"' for name in py_pkgs)
-            pkg_lines.append(f"(pkgs.{py}.withPackages (p: [ {joined} ]))")
-        else:
-            pkg_lines.append(f"pkgs.{py}")
+        # FAIL CLOSED. Emitting the Python shell here is what #1012 was: the
+        # generated flake builds, the lane starts, and the declared command dies
+        # with "command not found" hours downstream where it reads as a flaky
+        # environment. Refusing costs one loud error at generation time, names
+        # the exact fix (add the language to _LANG_ATTRS, or drop the field to
+        # get the pytest default on purpose), and cannot be mistaken for
+        # anything else.
+        hint = (
+            "Add a descriptor under contracts/languages/ (the paved road; see "
+            "language_descriptors.py)"
+            if _resolve_descriptor is not None
+            else "language_descriptors is NOT importable beside this module — the "
+            "vendoring is broken (module without its sibling); fix that first"
+        )
+        raise ProvisionError(
+            f"unsupported environment.language {m.language!r}: no toolchain mapping. "
+            f"Known: go, python, {', '.join(sorted(_LANG_ATTRS))}, plus any "
+            f"contracts/languages/ descriptor. {hint}, or omit `language` to get "
+            "the default Python harness."
+        )
     sys_attrs_with_node = list(sys_attrs)
     browser = _needs_browser(m)
     if browser:
@@ -318,18 +677,52 @@ def generate_flake(env: dict, *, nixpkgs: str = DEFAULT_NIXPKGS, project_dir=Non
         # text in a minimal Nix container (without it, screenshots come out
         # textless — proven in-container 2026-06-17).
         sys_attrs_with_node += ["nodejs_22", "playwright-test", "dejavu_fonts"]
-    for a in sys_attrs_with_node:
+    jest = _needs_jest(m)
+    # NODE ONLY -- there is no jest attribute, because nixpkgs has none to give.
+    #
+    # This used to emit `pkgs.nodePackages.jest`. nixpkgs removed the whole
+    # `nodePackages` set on 2026-03-03, and it did not degrade to a no-op: the
+    # attribute now THROWS, so a manifest naming jest produced a flake that
+    # failed to EVALUATE -- taking the entire dev shell down with it, not just
+    # jest. The lane then reported a runner failure rather than a test result,
+    # which is the same shape as TFactory#1165 and reads as flakiness rather
+    # than a missing package. Measured against nixpkgs 567a49d1: forcing the
+    # devShell derivation errored with "nodePackages has been removed" before
+    # this change and resolves to a .drv after it. Note `nix eval` of the shell
+    # NAME passes either way -- the package list is lazy, so a check that does
+    # not force the derivation reports a healthy flake that cannot build.
+    #
+    # The runner comes from npm instead: nix_env.py installs jest/ts-jest/
+    # typescript locally, once per lane, and exits 127 loudly if the install or
+    # the binary check fails. So node is all the flake owes this lane, and only
+    # when the browser block has not already added it. (This guard used to be
+    # justified as avoiding a "duplicate-package eval error" -- measured
+    # 2026-08-28 against nixpkgs 567a49d1, that is not true: a doubled attr
+    # evaluates and realises fine. It is kept because it is still the clearest
+    # way to say "the browser block already brought node", and the dedupe below
+    # now covers the collisions the alias table makes routine.)
+    if jest and not browser:
+        sys_attrs_with_node.append("nodejs_22")
+    # dict.fromkeys = order-preserving dedupe (see _SYSTEM_PKG_ALIASES): two
+    # manifest tokens can alias to the same attr, and the browser and jest
+    # blocks add nodejs_22 too. Cosmetic, not load-bearing — a duplicate still
+    # evaluates and realises — but the flake is a committed deliverable and a
+    # doubled line reads as a bug to the next person.
+    for a in dict.fromkeys(sys_attrs_with_node):
         pkg_lines.append(f"pkgs.{a}")
 
     packages = "\n          ".join(pkg_lines)
 
     let_lines = ""
-    env_lines = ""
+    for var, value in descriptor_env.items():
+        # Values are Nix string expressions from the descriptor ("${pkgs...}"
+        # interpolation included), emitted verbatim into the devShell.
+        env_lines += "\n        " + var + ' = "' + value + '";'
     if browser:
         let_lines = (
             "\n      fontsConf = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };"
         )
-        env_lines = (
+        env_lines += (
             "\n        # Nix-provided, version-matched browsers — no network "
             "download.\n"
             '        PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";\n'
@@ -386,7 +779,11 @@ def _python_libs(m: Manifest, project_dir=None) -> list[str]:
     manifest."""
     libs: list[str] = []
     hay = " ".join(m.verify_commands + m.build_commands + m.proof_verify).lower()
-    if (m.language or "").lower() in ("", "python") or "pytest" in hay:
+    # Does this project run a PYTHON harness at all? Reused below: a browser
+    # lane only implies a Python web stack when there is Python here to serve
+    # with.
+    py_harness = (m.language or "").lower() in ("", "python") or "pytest" in hay
+    if py_harness:
         # `requests` is HARNESS surface, not app surface, so it rides with pytest
         # rather than waiting on the SUT to declare it. TFactory's pytest
         # descriptor instructs Gen-Functional to drive the api lane with
@@ -396,7 +793,31 @@ def _python_libs(m: Manifest, project_dir=None) -> list[str]:
         # `import requests`, i.e. at collection, and every HTTP-level acceptance
         # criterion came back unverifiable against correct code (TFactory#892).
         libs += ["pytest", "pytest-cov", "requests"]
-    if "uvicorn" in hay or "fastapi" in hay or "httpx" in hay or _needs_browser(m):
+    # `_needs_browser` alone is NOT enough. A static HTML/JS page has a browser
+    # lane and no Python whatsoever, and this clause was handing it fastapi +
+    # uvicorn + httpx purely to serve a static file. That derivation misses the
+    # binary cache, builds inside the verify Job's cgroup, and gets OOM-killed:
+    # TFactory spec 190/192 each lost a jest verdict to
+    #     builder failed due to signal 9 (Killed)
+    # on a `python313.withPackages` env the project never needed. The browser
+    # lane serves static targets without it (see detect_serve_command).
+    #
+    # An explicit mention in the commands still pulls the stack in, so a project
+    # that really uses it is unaffected -- as is any Python project with a
+    # browser lane, which is what this clause was for.
+    # The browser clause needs a POSITIVE python signal, not merely "language
+    # unset". `py_harness` treats an unset language as python so the pytest
+    # harness still lands for manifests that omit it -- correct there, wrong
+    # here: a JS spec that declares no language was still buying fastapi +
+    # uvicorn + httpx off the back of its browser lane, which is the build that
+    # OOM-killed the verify Job (TFactory specs 190/192).
+    py_explicit = (m.language or "").lower() == "python" or "pytest" in hay
+    if (
+        "uvicorn" in hay
+        or "fastapi" in hay
+        or "httpx" in hay
+        or (_needs_browser(m) and py_explicit)
+    ):
         libs += ["fastapi", "uvicorn", "httpx"]
     if project_dir is not None:
         libs += _deps_from_pyproject(project_dir)
@@ -509,6 +930,104 @@ def _test_npx_strip() -> None:
     assert bare[-1] == "npx && playwright test", bare  # noqa: S101
 
 
+def _test_go_manifest() -> None:
+    """A go env gets the go toolchain and no python at all."""
+    # 3b. go manifest -> go toolchain + test/coverage tools, no python/withPackages.
+    env_go = {
+        "language": "go",
+        # 1.25 is an explicitly mapped minor in _GO_ATTR. This said "1.22" while
+        # the assert below demanded go_1_25 — Factory#1019 moved the table but
+        # not this env, so `python3 scripts/nix_provisioner.py` failed on a
+        # clean main and nothing in CI noticed (CI runs pytest, not this
+        # module's __main__). The unmapped-minor fallback keeps its own case
+        # below (fg2 asserts bare `pkgs.go`).
+        "toolchain": {"go": "1.25"},
+        "system_packages": ["gotestsum", "gocover-cobertura"],
+        "verify_commands": ["go test ./..."],
+        "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
+    }
+    fg = generate_flake(env_go)
+    assert "pkgs.go_1_25" in fg, fg  # noqa: S101
+    assert "pkgs.gotestsum" in fg and "pkgs.gocover-cobertura" in fg, fg  # noqa: S101
+    assert "withPackages" not in fg and "python" not in fg, fg  # noqa: S101
+    assert "pytest" not in fg, fg  # noqa: S101 — no python libs inferred for a go env
+    assert "requests" not in fg, fg  # noqa: S101 — harness libs are python-lane only
+
+
+def _test_browser_lane_deps() -> None:
+    """A browser lane implies a python web stack ONLY for a python project."""
+    # 3c. javascript + a BROWSER lane -> node, and no python web stack.
+    # A static HTML/JS page has a browser lane and no python at all. This clause
+    # used to hand it fastapi + uvicorn + httpx purely to serve a static file;
+    # that env missed the binary cache, built inside the verify Job's cgroup and
+    # was OOM-killed, costing a jest verdict per run (TFactory spec 190/192).
+    env_js_browser = {
+        "language": "javascript",
+        "toolchain": {"node": "22"},
+        "system_packages": ["playwright"],
+        "verify_commands": ["npx playwright test"],
+        "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
+    }
+    fjb = generate_flake(env_js_browser)
+    assert "nodejs" in fjb, fjb  # noqa: S101
+    assert "fastapi" not in fjb, fjb  # noqa: S101 — nothing here to serve with python
+    assert "uvicorn" not in fjb, fjb  # noqa: S101
+    assert "withPackages" not in fjb, fjb  # noqa: S101
+
+    # 3d. a PYTHON project with a browser lane still gets the web stack -- that
+    # is what the clause was for, and narrowing it must not take that away.
+    env_py_browser = {
+        "language": "python",
+        "toolchain": {"python": "3.13"},
+        "system_packages": ["playwright"],
+        "verify_commands": ["pytest -q"],
+        "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
+    }
+    fpb = generate_flake(env_py_browser)
+    assert "fastapi" in fpb, fpb  # noqa: S101
+    assert "uvicorn" in fpb, fpb  # noqa: S101
+
+
+def _test_descriptor_languages() -> None:
+    """Descriptor-declared languages provision via the paved road (RFC-0005).
+
+    These assert against the REAL vendored descriptors, deliberately: a
+    descriptor that fails to load, or a languages/ directory missing from the
+    vendoring, must fail this self-test rather than silently narrow the
+    generator back to its hardcoded tables.
+    """
+    assert _resolve_descriptor is not None, (  # noqa: S101
+        "language_descriptors must be importable beside this module — "
+        "vendor them together (see the verification-core drift gate)"
+    )
+    env_swift = {
+        "language": "swift",
+        "verify_commands": ["swift test"],
+        "provisioning": {"method": "nix", "generated": True},
+    }
+    fs = generate_flake(env_swift)
+    assert "pkgs.swiftpm" in fs and "pkgs.swiftPackages.XCTest" in fs, fs  # noqa: S101
+    # Swift's corelibs must land on LD_LIBRARY_PATH or swiftpm dies at manifest
+    # compile ("libdispatch.so: cannot open shared object file") — proven on
+    # this substrate 2026-09-03.
+    assert 'LD_LIBRARY_PATH = "${pkgs.swiftPackages.Dispatch}/lib' in fs, fs  # noqa: S101
+    assert "withPackages" not in fs and "pytest" not in fs, fs  # noqa: S101
+
+    fk = generate_flake({"language": "kotlin", "verify_commands": ["gradle test --no-daemon"]})
+    assert "pkgs.kotlin" in fk and "pkgs.gradle" in fk and "pkgs.jdk21" in fk, fk  # noqa: S101
+
+    # Aliases resolve to the same descriptor (`spm` names the Swift toolchain).
+    fa = generate_flake({"language": "spm", "verify_commands": ["swift test"]})
+    assert "pkgs.swiftpm" in fa, fa  # noqa: S101
+
+    # A language neither the tables nor a descriptor declares still FAILS CLOSED.
+    try:
+        generate_flake({"language": "elixir", "verify_commands": ["mix test"]})
+        raise AssertionError("expected ProvisionError for an undeclared language")
+    except ProvisionError:
+        pass
+
+
 def _test() -> None:
     # 1. browser manifest -> flake has playwright + browsers env, drops bare chromium.
     env_browser = {
@@ -555,20 +1074,11 @@ def _test() -> None:
     f3 = generate_flake(env_sys)
     assert "pkgs.pkg-config" in f3 and "pkgs.openssl" in f3, f3
 
-    # 3b. go manifest -> go toolchain + test/coverage tools, no python/withPackages.
-    env_go = {
-        "language": "go",
-        "toolchain": {"go": "1.22"},
-        "system_packages": ["gotestsum", "gocover-cobertura"],
-        "verify_commands": ["go test ./..."],
-        "provisioning": {"method": "nix", "ref": "flake.nix", "generated": True},
-    }
-    fg = generate_flake(env_go)
-    assert "pkgs.go_1_22" in fg, fg  # noqa: S101
-    assert "pkgs.gotestsum" in fg and "pkgs.gocover-cobertura" in fg, fg  # noqa: S101
-    assert "withPackages" not in fg and "python" not in fg, fg  # noqa: S101
-    assert "pytest" not in fg, fg  # noqa: S101 — no python libs inferred for a go env
-    assert "requests" not in fg, fg  # noqa: S101 — harness libs are python-lane only
+    _test_go_manifest()
+
+    _test_descriptor_languages()
+
+    _test_browser_lane_deps()
     # unknown/unset go version degrades to bare `pkgs.go` (no system pkgs here,
     # so `pkgs.go` is the sole package line — no false match on gocover etc.).
     fg2 = generate_flake({"language": "go", "verify_commands": ["go test ./..."]})

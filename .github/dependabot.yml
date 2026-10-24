@@ -22,3 +22,9 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    # One PR for all action bumps: codeql-action's init, autobuild, analyze and
+    # upload-sarif must move together, or CodeQL fails on a version mismatch
+    # (#3598-#3601). Same fix as factory-gitops#304.
+    groups:
+      github-actions:
+        patterns: ["*"]

@@ -78,6 +78,13 @@ integration story: **[factory.freundcloud.com/why](https://factory.freundcloud.c
 - `scripts/` — hub canonicals (branch-protection-as-code, the lint ratchet, gate
   preflights). Several are vendored into the service repos, so fix them here
   rather than in a copy.
+- `intent/`, `spec/`, `plan/` — the why, what and how of each task, one
+  `YYYY-MM-DD-<issue>-<slug>.md` per task. A design that was considered and
+  rejected is recorded, with the reason, in the `## Alternatives rejected`
+  section of the spec (or RFC in `docs/rfc/`) that rejected it; there is no
+  separate `rejected/` index (#3591). Search them before proposing a design:
+  `git grep -n -A40 '^## .*Alternatives' spec docs/rfc`. Proposing a
+  rejected design again needs new evidence, cited in the new spec.
 - Program planning & cross-cutting epics — see [Issues](https://github.com/olafkfreund/Factory/issues)
   and the [Factory Program board](https://github.com/users/olafkfreund/projects/1)
 

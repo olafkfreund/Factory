@@ -138,6 +138,17 @@ CANONICAL_MODULES: tuple[str, ...] = (
     # pins, per the standing ordering rule and because _unmapped_modules below
     # rejects a canonical module no service maps.
     "job_tracing.py",
+    # Added 2026-09-03 (RFC-0005 paved road, Factory#1707). The declarative
+    # language-descriptor loader and the descriptors it globs. The loader is a
+    # flat module like the others; the descriptors are DATA vendored beside it
+    # (each consumer carries a languages/ directory next to its copy), named
+    # here by their path under scripts/ (scripts/languages is a symlink to the
+    # canonical contracts/languages/). Registered only AFTER AIFactory, TFactory
+    # and PFactory vendored all three and bumped their pins, per the standing
+    # ordering rule.
+    "language_descriptors.py",
+    "languages/swift.yaml",
+    "languages/kotlin.yaml",
 )
 # Removed 2026-07-28 (Factory#401): verification_profiles.py (397L) and
 # verification_runner.py (120L) were listed here but mapped by NO service, so
@@ -163,6 +174,12 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         "ratchet_helpers.py": "scripts/ratchet_helpers.py",
         "artifact_store.py": "apps/backend/runners/artifact_store.py",
         "cost_router_core.py": "apps/backend/plan/emit/cost_router_core.py",
+        # RFC-0005 paved road: the planning sites (target_classifier,
+        # tfactory_block, environment_block) read the descriptors; PFactory does
+        # not vendor nix_provisioner (it provisions nothing itself).
+        "language_descriptors.py": "apps/backend/plan/language_descriptors.py",
+        "languages/swift.yaml": "apps/backend/plan/languages/swift.yaml",
+        "languages/kotlin.yaml": "apps/backend/plan/languages/kotlin.yaml",
     },
     "aifactory": {
         "ratchet_helpers.py": "scripts/ratchet_helpers.py",
@@ -183,6 +200,11 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         # old path is gone rather than left as a shim, because a shim is a second
         # name for shared code that this gate cannot see.
         "job_tracing.py": "apps/backend/core/job_tracing.py",
+        # RFC-0005 paved road: nix_provisioner's sibling — generate_flake reads
+        # the descriptors for languages its builtin tables do not own.
+        "language_descriptors.py": "apps/backend/core/language_descriptors.py",
+        "languages/swift.yaml": "apps/backend/core/languages/swift.yaml",
+        "languages/kotlin.yaml": "apps/backend/core/languages/kotlin.yaml",
     },
     # CFactory vendors exactly one canonical module and nothing else. It was
     # deliberately left unregistered when ratchet_helpers.py was gated
@@ -212,6 +234,11 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
         # emitter inside the Job — and the emitter had to be this shared file
         # rather than a copy, or the two would have diverged from the first fix.
         "job_tracing.py": "apps/backend/tools/runners/job_tracing.py",
+        # RFC-0005 paved road: read by nix_provisioner (generate_flake) and by
+        # lang_registry (descriptor-declared lane rows + unavailable reasons).
+        "language_descriptors.py": "apps/backend/tools/runners/language_descriptors.py",
+        "languages/swift.yaml": "apps/backend/tools/runners/languages/swift.yaml",
+        "languages/kotlin.yaml": "apps/backend/tools/runners/languages/kotlin.yaml",
     },
 }
 
@@ -316,7 +343,10 @@ def _stray_vendored_copies(service_root: Path, layout: dict[str, str]) -> list[s
     condition too (AIFactory carried ``job_dispatch.py`` for months with no
     mapping registered anywhere).
     """
-    canonical_names = set(CANONICAL_MODULES)
+    # Basenames, because a canonical entry may be a PATH under scripts/ (the
+    # languages/*.yaml descriptors). The scan walks the service tree by
+    # filename, so the comparison key must be the filename.
+    canonical_names = {Path(m).name for m in CANONICAL_MODULES}
     mapped = {(service_root / rel).resolve() for rel in layout.values()}
     strays: list[str] = []
     for dirpath, dirnames, filenames in os.walk(service_root):
@@ -784,6 +814,7 @@ def _self_test() -> int:
         canonical = root / "canonical"
         canonical.mkdir(parents=True)
         for module in CANONICAL_MODULES:
+            (canonical / module).parent.mkdir(parents=True, exist_ok=True)
             (canonical / module).write_text(f"# canonical {module}\nVALUE = 1\n")
 
         # A representative two-module layout vendored at nested service paths.
