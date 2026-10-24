@@ -28,6 +28,7 @@ Define how the Factory fleet protects data using cryptography: what is encrypted
 - Postgres — the durable control-plane state store (job_states and per-service tables, RFC-0016) — is a single-replica StatefulSet on an RWO `local-path` PVC (`factory-gitops/apps/postgres/manifests/manifests.yaml`). The k3s `local-path` provisioner writes to a plain host directory on the node's filesystem. No LUKS/dm-crypt, no encrypted StorageClass, no `pgcrypto` / column encryption, no TDE.
 - MinIO — the object store for PARR artifacts and evidence — runs with `args: ["server", "/data", …]` on an RWO `local-path` PVC (`factory-gitops/apps/minio/manifests/manifests.yaml`). It is started with no server-side encryption (SSE-S3 / SSE-KMS) and no `MINIO_KMS_*` configuration. Objects, including audit evidence, are stored unencrypted on the host disk.
 - Redis (`factory-gitops/apps/redis/manifests/manifests.yaml`) and Keycloak (`factory-gitops/infra/keycloak/keycloak.yaml`) are likewise on `local-path` with no at-rest encryption.
+- Update 2026-10-24: MinIO SSE-S3 is on (factory-gitops#71, #310). Host check on p620: no crypt/LUKS in `lsblk`; the Postgres PV dir `/mnt/code/k3d/storage` is on `/dev/sdb1` ext4, so Postgres stays unencrypted and is risk-accepted as R-014 (review 2027-04-24).
 - Net: no data-at-rest encryption exists on any store. This is the state the epic flags as gap #3.
 
 ### Key management posture
@@ -108,7 +109,7 @@ Phased; each phase is independently shippable and leaves evidence behind.
 
 ## Secret rotation runbook (accepted manual control, Factory#315)
 
-Decided (lead, user-approved 2026-10-24): manual rotation with agenix is the accepted control for `factory-secrets` and `minio-creds`. Risk entry: R-014 in [risk-register.md](../risk-register.md). Secret inventory and per-secret mechanism: factory-gitops `docs/secrets-management.md` (the `factory-secrets` row reads "Manual (agenix)").
+Decided (lead, user-approved 2026-10-24): manual rotation with agenix is the accepted control for `factory-secrets` and `minio-creds`. Risk entry: R-015 in [risk-register.md](../risk-register.md). Secret inventory and per-secret mechanism: factory-gitops `docs/secrets-management.md` (the `factory-secrets` row reads "Manual (agenix)").
 
 - **Who:** the platform operator (Security Owner delegate) on p510. Another maintainer reviews the rotation PR/log entry (four-eyes).
 - **Cadence:** API tokens (provider keys, `GITHUB_TOKEN`, `APP_API_TOKEN`, OIDC client secrets) every 90 days. Keys (`JWT_SECRET`, `POSTGRES_PASSWORD`, MinIO keys, HMAC/signing keys) every 365 days. Immediately on suspected exposure, including any gitleaks finding on a real secret.
