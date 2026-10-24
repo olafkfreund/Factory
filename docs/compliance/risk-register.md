@@ -45,6 +45,7 @@ score once the cited treatment wave completes; it does not yet reflect a closed 
 | R-011 | Audit trail completeness | Background/WebSocket events write NULL `prev_hash` (unchained); negative events (auth/authz failures) not first-class; a gap weakens tamper-evidence and forensics | 3 | 3 | 9 Medium | Foreground hash-chain + daily signed anchor + verifier | Mitigate — chain background events; enumerate negative `ACTION_*`; forward to a SIEM (audit-logging owner, Wave 2) | 3 (L1 x I3) | Open (Factory#313) |
 | R-012 | Per-task untrusted-code Jobs | No microVM/syscall boundary and coarse `443 -> 0.0.0.0/0` egress; a sandbox escape or data-exfil path is not fully contained | 2 | 4 | 8 Medium | bwrap sandbox (#363, default-on); per-task NetworkPolicy + non-root securityContext (default-on); gVisor wired but deferred | Mitigate — per-destination egress allowlist; PodSecurity Admission on task namespaces; evaluate microVM where substrate allows (runtime owner, Wave 3) | 4 (L2 x I2) | Partially mitigated (Factory#322) |
 | R-013 | Trusted-plan signing keys | HMAC plan-signing keys have no key ID, expiry, or rotation; a leaked key cannot be cleanly rotated/revoked | 2 | 4 | 8 Medium | Signed task contracts (RFC-0002); injection/egress guards; independent verification | Mitigate — add `kid`, expiry, rotation; approved-model registry with eval gate; output DLP (agentic-AI owner, Wave 3) | 4 (L2 x I2) | Open (Factory#323) |
+| R-014 | Deployed fleet, agent attack surface | No independent external penetration test; unfound logic, prompt-injection or egress flaws that scanners cannot see | 2 | 4 | 8 Medium | Trivy P0 required gate (VR-0001/VR-0002 closures); CodeQL ratchet (`.github/workflows/codeql-ratchet.yml`, Factory#813); Dependabot (`.github/dependabot.yml`); gitleaks (`.github/workflows/secret-scan.yml:13`) | Accept — until a customer contract or certification audit requires a test (Security Owner); review 2027-04-24 | 8 (L2 x I4) | Accepted (Factory#317) |
 
 ## Risk-acceptance log
 
@@ -52,3 +53,11 @@ No residual risk above the Medium band has been formally accepted. Any acceptanc
 example, deferring HA Postgres and accepting R-007's single-instance risk for a defined
 period) is recorded here with the Security Owner's sign-off, a compensating control, and
 an expiry date, and is revisited at the next management review.
+
+### AR-001 — R-014 no external penetration test (Factory#317)
+
+- **Decided (lead, user-approved 2026-10-24):** no external pen test until a customer contract or certification audit requires one.
+- **Sign-off:** Security Owner via the lead, 2026-10-24. Residual is Medium (8), within the band that needs no extra sign-off.
+- **Compensating controls:** Trivy P0 required gate; CodeQL at 0 actionable with a weekly ratchet (Factory#813); Dependabot; gitleaks. Their file evidence is in the R-014 row.
+- **Expiry / review date:** 2027-04-24 (six months), or immediately when a contract or audit requires a test.
+- **Not covered:** logic flaws and the agent surface (prompt injection, egress, untrusted-code Jobs) that automated scanners do not model.

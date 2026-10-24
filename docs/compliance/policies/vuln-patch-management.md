@@ -42,7 +42,7 @@ Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron
 
 1. **Uneven supply-chain coverage — CFactory.** CFactory has CodeQL and Dependabot base-image updates but no Trivy image scan, no SBOM, and no cosign signing. Its container image ships to the cluster unscanned and unsigned, which makes a current base image the only supply-chain control it actually has. (Epic #310 gap #8.)
 2. **No documented remediation SLA.** Trivy gates fixable HIGH/CRITICAL at build, but there is no written, tracked time-to-fix per severity for vulnerabilities found *outside* the build gate (already-deployed images, GitHub security alerts, newly-disclosed CVEs against pinned deps). Assessors (PCI 6.3.3, FedRAMP RA-5/SI-2) require defined and *met* timelines.
-3. **No penetration testing.** Coverage is automated scanning plus internal adversarial review (the TFactory security audit, the CodeQL barrier work). There is no scheduled independent/external penetration test with a remediation record. PCI 11.3 and FedRAMP require at least annual; NYDFS 500.5 requires annual pen test + biannual vulnerability assessment.
+3. **No penetration testing.** Coverage is automated scanning plus internal adversarial review (the TFactory security audit, the CodeQL barrier work). There is no scheduled independent/external penetration test with a remediation record. **Accepted as risk R-014 (AR-001 in [risk-register.md](../risk-register.md)), decided 2026-10-24: none until a customer contract or certification audit requires one; review 2027-04-24.** PCI 11.3 and FedRAMP require at least annual; NYDFS 500.5 requires annual pen test + biannual vulnerability assessment.
 4. **No vulnerability register / management process.** Findings live as transient scan output and ad-hoc issues; there is no single tracked register (finding -> severity -> owner -> due date -> status) that proves the loop closes within SLA.
 5. **Known Trivy blind spot — bundled frontend deps.** Frontend assets bundled into the image (e.g. Monaco, served via CDN under CSP) do not reach a layer Trivy scans. A partial mitigation exists (`test_p0_supply_chain.py::test_frontend_lockfile_no_high_critical` scans the lockfile with `trivy fs`), but this is not applied uniformly (CFactory has no Trivy at all) and lockfile scanning misses vendored/bundled copies.
 6. **No patch-cadence policy.** Base-image updates now open as PRs, but the merge/review cadence is not policy-bound, so "current" is best-effort rather than an auditable target. Until 2026-07-30 this gap was worse than recorded: nothing opened those PRs at all, and every base-image digest bump in fleet history — including the Chainguard Python moves for CVE-2026-45447 — was done by hand.
@@ -75,7 +75,7 @@ Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron
 - Stand up a single register (GitHub issues with a `vuln` label + due-date field, or the Fides evidence store) mapping finding -> severity -> owner -> SLA due date -> status -> evidence.
 - Monthly review of open findings vs SLA; breaches escalate.
 
-**Phase 4 — Penetration testing program.**
+**Phase 4 — Penetration testing program.** *Deferred by accepted risk R-014 (review 2027-04-24); triggers below apply when a contract or certification audit requires a test. Compensating controls: Trivy P0 gate, CodeQL ratchet, Dependabot, gitleaks.*
 - Schedule annual external/independent penetration test (network + application, including the autonomous-agent attack surface: prompt injection, egress, untrusted-code Jobs).
 - Add biannual internal vulnerability assessment (formalise the existing adversarial reviews into a repeatable, evidenced exercise).
 - Track findings in the same register under the same SLAs; retain the report + remediation evidence.
@@ -93,7 +93,7 @@ Sources: `.github/workflows/codeql.yml` (all five code repos; weekly Monday cron
 - [x] The agent-CLI pins are tracked by something, and something proposes the bump (gap #7): `cli-freshness.yml` alerts on staleness and opens a weekly bump PR per service repo. Evidenced by PR history, not by config: AIFactory#1198, PFactory#483, TFactory#978 (2026-08-07).
 - [ ] Remediation SLAs by severity are documented, adopted, and demonstrably met (evidence of on-time closure).
 - [ ] A vulnerability register exists and is reviewed monthly; no finding is past its SLA due date without a documented, approved exception.
-- [ ] An annual independent penetration test is scheduled and completed, with a report and remediation evidence retained.
+- [ ] An annual independent penetration test is scheduled and completed, with a report and remediation evidence retained. *Waived by accepted risk R-014 until a contract or audit requires it; review 2027-04-24.*
 - [ ] The bundled-frontend-dependency blind spot is covered on every image-shipping repo (lockfile scan + SBOM review).
 - [ ] `.trivyignore` allow-lists remain per-CVE with documented rationale; no blanket skips.
 
