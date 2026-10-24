@@ -29,7 +29,7 @@ maps to a NIST 800-53 family it is noted for future ConMon.
 | Secrets management (#315) | A.8.24, A.5.17 | CC6.1 | Access to programs | 500.15 | - | IA-5 | Partial |
 | Change mgmt & SoD (#316) | A.8.32 | CC8.1 | Change mgmt, SoD | 500.3 | - | CM | Partial |
 | Vuln & patch mgmt (#317) | A.8.8 | CC7.1 | - | 500.5 | - | RA-5, SI-2 | Partial |
-| Supply-chain integrity (#318) | A.5.19-.23, A.8.30 | CC7, CC9 | - | 500.11 | Supply-chain risk | SR | Partial |
+| Supply-chain integrity (#318) | A.5.19-.23, A.8.30 | CC7, CC9 | - | 500.11 | Supply-chain risk | SR | Partial (SLSA Build L2 target) |
 | Incident response (#319) | A.5.24-.28 | CC7.3-.5 | - | 500.17 (72h) | Item 1.05 (4-day) | IR | Gap |
 | Data governance & PII (#320) | A.5.9-.14, A.8.10-.12 | C1, P-series | - | 500.13 | - | MP, SC | Gap |
 | Business continuity / DR (#321) | A.5.29-.30, A.8.13-.14 | A1.2-.3 | Backup/recovery | - | - | CP | Gap |
@@ -52,7 +52,7 @@ as separate columns here.
 | Secrets management | agenix + cred-broker rotation; `scan_secrets.py` | Rotation one credential deep; no inventory; SOPS claim not real | #315 |
 | Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built); merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | Direct-to-main gitops auto-deploy; branch protection with required checks on all four service repos (and factory-gitops), but `enforce_admins` off, so an admin can merge past a red check via the API (#943); Fides unwired | #316 |
 | Vuln & patch mgmt | CodeQL x5, Trivy P0 gate, Dependabot base-image updates x4; remediation SLA + vulnerability register documented | CFactory even-coverage in flight (CFactory#191); external pen test not yet run; factory-gitops agent-CLI pins unmanaged (#436 gap #7) | #317 |
-| Supply-chain integrity | Cosign + dual SBOM on PFactory/AIFactory/TFactory | CFactory unsigned; no signature-verification admission gate | #318 |
+| Supply-chain integrity | Cosign + dual SBOM on all four image repos; Kyverno Enforce admission gate; SLSA Build L2 target | Deploy-path provenance not explicit on AIFactory/PFactory/TFactory; signed commits; no L3 claim | #318 |
 | Incident response | SECURITY.md disclosure; audit chain for forensics | No IR runbook wired to alerting; untested; no paging | #319 |
 | Data governance | Redactor `llm_pii_redactor.py`; local-Ollama egress option | PII egress to LLM providers default-on; no classification/retention | #320 |
 | Business continuity / DR | Cred-broker CronJob only | Zero backups for Postgres/MinIO; no tested restore; RPO unbounded | #321 |
