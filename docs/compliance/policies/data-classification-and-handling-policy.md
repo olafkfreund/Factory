@@ -45,7 +45,8 @@ where it flows.
    days); verification evidence is intended to be retained to a 90-day/13-month floor.
    The MinIO ILM rule currently expires objects at 30 days, which can purge evidence
    before its claim closes — this durability bug is risk R-006 and Wave 1 remediation.
-   Durable Postgres state has no retention policy yet (tracked, Factory#320).
+   Durable Postgres state: the per-table schedule and the sub-processor list are in
+   `data-governance.md`; most tables keep rows until deleted (tracked, Factory#320).
 5. **Encrypt confidential and regulated data at rest.** At-rest encryption for Postgres,
    MinIO, and Redis is not yet implemented (risk R-003); until it is, access to the
    underlying volumes is a compensating control and the gap is tracked (Factory#314).
