@@ -109,7 +109,7 @@ Phased; each phase is independently shippable and leaves evidence behind.
 
 ## Secret rotation runbook (accepted manual control, Factory#315)
 
-Decided (lead, user-approved 2026-10-24): manual rotation with agenix is the accepted control for `factory-secrets` and `minio-creds`. Risk entry: R-015 in [risk-register.md](../risk-register.md). Secret inventory and per-secret mechanism: factory-gitops `docs/secrets-management.md` (the `factory-secrets` row reads "Manual (agenix)").
+Decided (lead, user-approved 2026-10-24): manual rotation with agenix is the accepted control for `factory-secrets` and `minio-creds`. Risk entry: R-016 in [risk-register.md](../risk-register.md). Secret inventory and per-secret mechanism: factory-gitops `docs/secrets-management.md` (the `factory-secrets` row reads "Manual (agenix)").
 
 - **Who:** the platform operator (Security Owner delegate) on p510. Another maintainer reviews the rotation PR/log entry (four-eyes).
 - **Cadence:** API tokens (provider keys, `GITHUB_TOKEN`, `APP_API_TOKEN`, OIDC client secrets) every 90 days. Keys (`JWT_SECRET`, `POSTGRES_PASSWORD`, MinIO keys, HMAC/signing keys) every 365 days. Immediately on suspected exposure, including any gitleaks finding on a real secret.
