@@ -21,3 +21,5 @@ Pre-commit hooks pass.
 ## Rollback
 
 Revert the commit.
+
+Deviation (review round 1): baseline-drift gate narrowed to its real condition.

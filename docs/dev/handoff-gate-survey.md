@@ -9,7 +9,7 @@ Line numbers are at these default-branch commits and will drift: AIFactory
 
 | Handoff | Verdict | Deterministic gate | Not covered |
 |---|---|---|---|
-| PFactory to AIFactory | Gated | Review gates, signed approval, signature + completeness + baseline checks | Key custody is per authority, not per plan |
+| PFactory to AIFactory | Gated | Review gates, signed approval, signature + completeness + baseline checks (baseline drift rejects only inside the blast radius, see below) | Key custody is per authority, not per plan |
 | AIFactory to TFactory | Partial | Empty-build check on send, service token on receive | Contract signature and schema are never verified by TFactory (TFactory#1427) |
 | TFactory to AIFactory | Partial | Member access, triage schema, confirm flag, assertion guard | A markdown-only handback skips schema validation (AIFactory#1858) |
 
@@ -25,7 +25,7 @@ Receiving side (AIFactory):
 
 - `apps/web-server/server/routes/execution.py:1383`: `verify_trusted_plan` runs before any allocation and returns 422 on failure.
 - `apps/backend/trusted_plan.py:257` (`verify_plan_signature`), `:319` (`check_plan_completeness`), `:417` (both combined).
-- `execution.py:1400`: baseline-drift gate refuses a plan approved against a different commit.
+- `execution.py:1305` (`_gate_baseline_drift`): refuses a plan approved against a different commit only when `baseline_drift_rejects()` (`trusted_plan.py:697-704`) is true, i.e. policy `blast-radius` (the default) and the drifted files overlap the plan's blast radius. Policy `warn` or `off`, or drift outside the blast radius, only logs a warning, so a plan approved at commit A can run against commit B.
 
 Verdict: gated, and refused at the boundary, before a spec directory exists.
 
