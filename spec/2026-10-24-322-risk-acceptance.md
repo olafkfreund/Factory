@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 322
 intent: intent/2026-10-24-322-risk-acceptance.md
 ---
