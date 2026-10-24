@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 320
 spec: spec/2026-10-24-320-scrub-regulated-default.md
 ---
