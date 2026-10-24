@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 320
 intent: intent/2026-10-24-320-subprocessors-retention.md
 ---
