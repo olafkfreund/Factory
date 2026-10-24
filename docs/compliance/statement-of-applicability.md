@@ -63,7 +63,7 @@ matrix draw evidence from the same [domain documents](policies/). Owner tags map
 | A.5.31 | Legal, statutory, regulatory and contractual requirements | Implemented | Notification obligations mapped in the IR runbook's breach-notification matrix; GDPR ROPA `AIFactory/guides/compliance/dpia-data-flow.md`. | Security Owner |
 | A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. **Executable evidence** — see [the note below this table](#executable-evidence-a532) for what it does and does not prove. | Supply-chain |
 | A.5.33 | Protection of records | Implemented | Audit records are tamper-evident and retained 13 months (`audit_retention.py`); note evidence ILM bug (R-006). | Audit |
-| A.5.34 | Privacy and protection of PII | Planned | Redactor + DPIA exist; PII-egress-by-default and DSAR gaps open (R-004, Factory#320). | Data |
+| A.5.34 | Privacy and protection of PII | Planned | Redactor + DPIA exist; DSAR deferred by decision 2026-10-24; CLI-spawn scrub gap open (R-004, Factory#320). | Data |
 | A.5.35 | Independent review of information security | Planned | Annual independent review scheduled but not yet performed (governance domain, Factory#311). | Security Owner |
 | A.5.36 | Compliance with policies, rules and standards | Implemented | CI gates enforce SDLC policy; management review checks control effectiveness ([roles.md](roles.md)). | Security Owner |
 | A.5.37 | Documented operating procedures | Implemented | Runbooks and RFCs (`Factory/docs/rfc/`, IR runbook, BC/DR remediation, bootstrap-flow docs). | Security Owner |
@@ -150,7 +150,7 @@ Applicable to the fleet's own operation, justified per control below.
 | A.8.8 | Management of technical vulnerabilities | Partial | CodeQL (5 repos), Trivy P0 gate (`test_p0_supply_chain.py`), Dependabot. Partial: no remediation SLA, CFactory unscanned (Factory#317). Status corrected from Implemented 2026-07-30: the Renovate leg of this control had never operated in any repo (Factory#436), and the row already listed two partials while claiming Implemented. | Vuln |
 | A.8.9 | Configuration management | Implemented | Declarative gitops (`factory-gitops/`), pinned inputs, per-task securityContext in manifests. | Change-mgmt |
 | A.8.10 | Information deletion | Implemented | Retention jobs (`audit_retention.py`, evidence `retention.py`) and MinIO ILM delete data; note ILM misconfig (R-006). Partial: DSAR erasure (R-004). | Data |
-| A.8.11 | Data masking | Implemented | PII redactor (`llm_pii_redactor.py`) masks SSN/email/phone/card. Partial: outbound off-by-default (R-004). | Data |
+| A.8.11 | Data masking | Implemented | PII redactor (`llm_pii_redactor.py`) masks SSN/email/phone/card. Outbound scrub on by default, mandatory for regulated projects; partial: two direct CLI spawns unscrubbed (R-004). | Data |
 | A.8.12 | Data leakage prevention | Planned | Egress guards + secret scanners exist but are target-level, not content DLP; output DLP pending (Factory#320/#323). | Data |
 | A.8.13 | Information backup | Planned | No backups of Postgres/MinIO today; off-cluster encrypted backup is Wave 2 (R-001, Factory#321). | BC/DR |
 | A.8.14 | Redundancy of information processing facilities | Planned | Single-instance data stores on node-local storage; HA/redundancy is Wave 3 (R-007, Factory#321). | BC/DR |

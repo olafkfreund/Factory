@@ -56,16 +56,13 @@ built-in regex patterns plus operator-supplied custom patterns:
   Luhn are left unchanged, which removes the false-positive problem that dropped CC
   detection from v1.1)
 
-The critical posture fact: by default the redactor runs on the **audit row only**, not on
-the outbound request. The module's own docstring states it plainly: "A high-sensitivity
-tenant whose prompt contains PII still sends that PII to the LLM provider." The
-`scrubBeforeSend` mode (`scrub_outbound=True`) that would redact the outbound prompt is
-opt-in, gated on `LITELLM_AUDIT_SCRUB_OUTBOUND=true`, and defaults to `False`
-(`_env_scrub_outbound_default()` in
-`AIFactory/apps/backend/providers/openai_compatible.py`). The redactor is also
-failure-safe in a way that widens exposure: if the web-server's PYTHONPATH cannot import
-the redactor, the audit hook proceeds **without redaction** rather than failing
-(`llm_audit_hook.py` `_build_redactor` -> `_PassthroughRedactor`).
+The critical posture fact: the outbound prompt is scrubbed by default on every AIFactory
+LLM path and fails closed (AIFactory#1128). `LITELLM_AUDIT_SCRUB_OUTBOUND=false` disables
+it deployment-wide, except for projects with `dataClassification: regulated` (default
+`internal`), which always scrub; see the data classification policy. The audit-row
+redactor is still failure-safe in a way that widens exposure: if the web-server's
+PYTHONPATH cannot import the redactor, the audit hook proceeds **without redaction**
+rather than failing (`llm_audit_hook.py` `_build_redactor` -> `_PassthroughRedactor`).
 
 Two egress guards exist but are command-layer/broker-layer, not data-content DLP, and both
 default off:
@@ -134,8 +131,8 @@ Residency: the fleet does not route by region. The cluster holds all in-cluster 
 the operator runs it, and each hosted provider holds data where its own terms say. The
 DPIA (`AIFactory/guides/compliance/dpia-data-flow.md`, "Cross-region") tells operators to pin
 a provider region in the endpoint configuration. Choosing the local `ollama` provider keeps
-prompt data on the host. Whether PII is scrubbed before egress is a separate, owner-level
-decision (R-004), not changed here.
+prompt data on the host. Scrubbing before egress is governed by
+the data classification policy (statement 2).
 
 ### Postgres retention schedule
 
@@ -178,7 +175,7 @@ tier (the highest tier of any element it contains), and handling rules follow fr
 | **Public** | Intended for or already in the public domain; disclosure causes no harm. | Published docs, blog posts, open-source code, public API schemas, aggregated/anonymised metrics. | No restriction. May leave the boundary freely. |
 | **Internal** | Non-public operational data; disclosure is undesirable but low-impact. | Task metadata, build logs, non-PII spec text, tokens/cost counts, Prometheus series. | Access limited to authenticated fleet users. 30-90 day retention per store. No third-party egress except the LLM call where required. |
 | **Confidential** | Sensitive business or security data; disclosure causes material harm. | Prompt/spec bodies, LLM request/response content, workspace artifacts, audit rows, credentials/secrets (which also fall under Factory#316 secrets policy). | Encrypt in transit and at rest. Access on least-privilege. Redact before any third-party egress. Retention bounded and documented. Erasure on tenant tear-down. |
-| **Regulated** | Data whose handling is dictated by law/contract: PII, cardholder data (PCI), or customer data under a DPA. | Any prompt/artifact/audit content containing PII (SSN, email, phone, PAN); auth identity data; customer data pasted under a B2B DPA. | All Confidential rules PLUS: **must not be sent to a third-party (MANAGED_CLOUD) LLM in the clear** — either scrubbed (`scrub_outbound`) or routed to a LOCAL/SELF_HOSTED model. Data-residency honoured. DSAR/erasure supported. Sub-processor disclosed. Retention set to the minimum necessary. |
+| **Regulated** | Data whose handling is dictated by law/contract: PII, cardholder data (PCI), or customer data under a DPA. | Any prompt/artifact/audit content containing PII (SSN, email, phone, PAN); auth identity data; customer data pasted under a B2B DPA. | All Confidential rules PLUS: **must not be sent to a third-party (MANAGED_CLOUD) LLM in the clear** — either scrubbed (`scrub_outbound`) or routed to a LOCAL/SELF_HOSTED model. Data-residency honoured. DSAR/erasure out of scope until the policy trigger (policy statement 6). Sub-processor disclosed. Retention set to the minimum necessary. |
 
 Labelling: because the primary ingress (free-form prompt text) is user-authored and cannot
 be reliably classified at rest, the scheme classifies by **store and flow** (a store that
@@ -200,7 +197,7 @@ treated as Regulated-by-default, which is what forces `scrub_outbound` on (see R
 4. **No data-residency statement** and **no documented sub-processor list** at the fleet
    level (the DPIA names the categories but the operator-facing register is not published).
 5. **No DSAR / right-to-erasure tooling** for individual data subjects; only whole-tenant
-   tear-down exists (GDPR Art. 17).
+   tear-down exists (GDPR Art. 17). Deferred by decision 2026-10-24 (policy statement 6).
 6. **Egress guards are command/target-level, not content DLP.** No output-side DLP inspects
    payload content leaving the boundary (overlaps Factory#313 agentic-AI governance).
 
@@ -231,7 +228,7 @@ Phased so the highest-exposure gap (default PII egress) closes first.
 
 - Define retention for every Postgres store keyed by tier, and automate pruning the same way
   logs/evidence/audit rows are already pruned (reuse the `audit_retention` job pattern).
-- Build a DSAR/erasure path for an individual data subject (search + tombstone across
+- Deferred (decision 2026-10-24, see policy statement 6): build a DSAR/erasure path for an individual data subject (search + tombstone across
   Postgres audit rows and workspace artifacts), not only whole-tenant tear-down.
 - Add output-side content DLP on the egress path (coordinate with Factory#313).
 
@@ -250,7 +247,7 @@ Phased so the highest-exposure gap (default PII egress) closes first.
       logs/evidence/audit rows).
 - [ ] Data-residency statement published.
 - [ ] Sub-processor list published with DPA references.
-- [ ] DSAR / right-to-erasure path exists for an individual data subject (beyond tenant
+- [ ] (Deferred, decision 2026-10-24) DSAR / right-to-erasure path exists for an individual data subject (beyond tenant
       tear-down).
 
 ## Evidence artifacts
