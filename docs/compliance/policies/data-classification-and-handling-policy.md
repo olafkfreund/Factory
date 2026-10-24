@@ -33,9 +33,15 @@ where it flows.
    the higher class. Regulated data is minimized — do not introduce real PII where
    synthetic data suffices.
 2. **PII egress is controlled.** Personal data sent to third-party LLM providers must be
-   redacted. The redactor (`llm_pii_redactor.py`) currently runs on the audit row by
-   default, not on the outbound request; enabling outbound scrubbing by default
-   (`scrubBeforeSend`) is Wave 1 remediation and is recorded as risk R-004. Where data
+   redacted. The redactor (`llm_pii_redactor.py`) scrubs the outbound prompt by default on
+   every AIFactory LLM path and fails closed (AIFactory#1128). The deployment-wide kill-switch
+   `LITELLM_AUDIT_SCRUB_OUTBOUND=false` disables it, except for projects with
+   `dataClassification: regulated` (an AIFactory project setting, default `internal`):
+   those always scrub, and neither the kill-switch nor a per-adapter setting overrides
+   it (AIFactory#1862; the in-process web-server paths pass the project class explicitly). Do not set
+   `AIFACTORY_DATA_CLASSIFICATION` deployment-wide except to `regulated`. Known exception:
+   the two direct `claude --print` spawns in the web-server are not scrubbed at any tier
+   (AIFactory#1860). Where data
    must not leave the boundary at all, route to a local model (the `EgressClass=LOCAL`
    lever, p510 Ollama) rather than a managed cloud provider.
 3. **Redaction must not fail silently.** A redactor that fails open (passes content
@@ -51,9 +57,11 @@ where it flows.
    MinIO, and Redis is not yet implemented (risk R-003); until it is, access to the
    underlying volumes is a compensating control and the gap is tracked (Factory#314).
 6. **Data-subject obligations.** Regulated data carries retention, sub-processor
-   disclosure, and erasure obligations. A per-record DSAR/erasure path (beyond
-   whole-tenant tear-down) is a tracked gap; the DPIA/ROPA reference is
-   `AIFactory/guides/compliance/dpia-data-flow.md`.
+   disclosure, and erasure obligations. Decision 2026-10-24: DSAR / per-record erasure
+   (beyond whole-tenant tear-down) is out of scope, because no PII is in scope today.
+   Trigger to bring it back: the first project classified `regulated`, a feature that
+   stores personal data on purpose, or a data-subject request received. The DPIA/ROPA
+   reference is `AIFactory/guides/compliance/dpia-data-flow.md`.
 
 ## Roles and responsibilities
 
