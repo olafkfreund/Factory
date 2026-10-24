@@ -39,9 +39,8 @@ where it flows.
    `dataClassification: regulated` (an AIFactory project setting, default `internal`):
    those always scrub, and neither the kill-switch nor a per-adapter setting overrides
    it (AIFactory#1862; the in-process web-server paths pass the project class explicitly). Do not set
-   `AIFACTORY_DATA_CLASSIFICATION` deployment-wide except to `regulated`. Known exception:
-   the two direct `claude --print` spawns in the web-server are not scrubbed at any tier
-   (AIFactory#1860). Where data
+   `AIFACTORY_DATA_CLASSIFICATION` deployment-wide except to `regulated`. The two direct `claude --print`
+   spawns in the web-server scrub the prompt the same way (AIFactory#1860). Where data
    must not leave the boundary at all, route to a local model (the `EgressClass=LOCAL`
    lever, p510 Ollama) rather than a managed cloud provider.
 3. **Redaction must not fail silently.** A redactor that fails open (passes content
