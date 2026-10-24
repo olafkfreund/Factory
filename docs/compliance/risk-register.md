@@ -45,6 +45,7 @@ score once the cited treatment wave completes; it does not yet reflect a closed 
 | R-011 | Audit trail completeness | Background/WebSocket events write NULL `prev_hash` (unchained); negative events (auth/authz failures) not first-class; a gap weakens tamper-evidence and forensics | 3 | 3 | 9 Medium | Foreground hash-chain + daily signed anchor + verifier | Mitigate — chain background events; enumerate negative `ACTION_*`; forward to a SIEM (audit-logging owner, Wave 2) | 3 (L1 x I3) | Open (Factory#313) |
 | R-012 | Per-task untrusted-code Jobs | No microVM/syscall boundary and coarse `443 -> 0.0.0.0/0` egress; a sandbox escape or data-exfil path is not fully contained | 2 | 4 | 8 Medium | bwrap sandbox (#363, default-on); per-task NetworkPolicy + non-root securityContext (default-on); gVisor wired but deferred | Mitigate — per-destination egress allowlist; PodSecurity Admission on task namespaces; evaluate microVM where substrate allows (runtime owner, Wave 3) | 4 (L2 x I2) | Partially mitigated (Factory#322) |
 | R-013 | Trusted-plan signing keys | HMAC plan-signing keys have no key ID, expiry, or rotation; a leaked key cannot be cleanly rotated/revoked | 2 | 4 | 8 Medium | Signed task contracts (RFC-0002); injection/egress guards; independent verification | Mitigate — add `kid`, expiry, rotation; approved-model registry with eval gate; output DLP (agentic-AI owner, Wave 3) | 4 (L2 x I2) | Open (Factory#323) |
+| R-014 | `factory-secrets`, `minio-creds` and other long-lived secrets | Rotation is manual (agenix); a missed rotation or undetected leak leaves a stale credential valid | 3 | 3 | 9 Medium | agenix custody on p510; gitleaks required check on 5 code repos (`.github/workflows/secret-scan.yml`); factory-gitops "no literal secrets in manifests" check; rotation runbook in [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | Accept — manual rotation, 90d tokens / 365d keys / immediate on exposure (Security Owner, review 2027-04-24) | 9 (accepted) | Accepted (Factory#315) |
 
 ## Risk-acceptance log
 
@@ -52,3 +53,7 @@ No residual risk above the Medium band has been formally accepted. Any acceptanc
 example, deferring HA Postgres and accepting R-007's single-instance risk for a defined
 period) is recorded here with the Security Owner's sign-off, a compensating control, and
 an expiry date, and is revisited at the next management review.
+
+| ID | Decision | Compensating control | Expiry / review |
+|---|---|---|---|
+| R-014 | Decided (lead, user-approved 2026-10-24): accept manual agenix rotation of `factory-secrets` and `minio-creds` (Factory#315). Plan: [plan/2026-10-24-315-risk-acceptance.md](../../plan/2026-10-24-315-risk-acceptance.md) | Runbook and cadence in [encryption-key-mgmt.md](policies/encryption-key-mgmt.md); gitleaks required check; factory-gitops `docs/secrets-management.md` inventory | Review 2027-04-24 |

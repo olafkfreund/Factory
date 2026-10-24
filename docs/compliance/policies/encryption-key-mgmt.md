@@ -105,3 +105,14 @@ Phased; each phase is independently shippable and leaves evidence behind.
 - `factory-gitops/apps/cred-broker/manifests/manifests.yaml` — the one existing automated key/token rotation (pattern to extend).
 - `Factory/docs/dev/secrets-and-tokens.md` — current manual, rotate-on-leak secret procedures; the SOPS reference to be made real.
 - To be produced by remediation: `EncryptionConfiguration` manifest; `.sops.yaml` / sealed-secrets controller manifest; `mc encrypt info` output; StorageClass/LUKS evidence; KMS key policy + rotation config; key-custody register; rotation runbook and dated rotation audit entries; CMVP certificates (FedRAMP).
+
+## Secret rotation runbook (accepted manual control, Factory#315)
+
+Decided (lead, user-approved 2026-10-24): manual rotation with agenix is the accepted control for `factory-secrets` and `minio-creds`. Risk entry: R-014 in [risk-register.md](../risk-register.md). Secret inventory and per-secret mechanism: factory-gitops `docs/secrets-management.md` (the `factory-secrets` row reads "Manual (agenix)").
+
+- **Who:** the platform operator (Security Owner delegate) on p510. Another maintainer reviews the rotation PR/log entry (four-eyes).
+- **Cadence:** API tokens (provider keys, `GITHUB_TOKEN`, `APP_API_TOKEN`, OIDC client secrets) every 90 days. Keys (`JWT_SECRET`, `POSTGRES_PASSWORD`, MinIO keys, HMAC/signing keys) every 365 days. Immediately on suspected exposure, including any gitleaks finding on a real secret.
+- **How:** (1) edit the value in agenix with `scripts/manage-secrets.sh edit <name>` in nixos_config; (2) re-run the p510 bootstrap script that decrypts and recreates the Kubernetes Secret; (3) restart every consumer listed for that secret in `secrets-management.md` (MinIO: recreate and bounce minio plus all consumers); (4) revoke the old value at the issuer.
+- **Verification:** consumers report ready after the bounce; the old credential is rejected at the issuer; record date, secret name (never the value) and operator in the issue/PR for that rotation.
+- **Evidence for detection of leaked secrets:** gitleaks is a required status check on Factory, PFactory, AIFactory, TFactory and CFactory (branch-protection API, checked 2026-10-24; workflow `.github/workflows/secret-scan.yml`), and factory-gitops requires "no literal secrets in manifests".
+- **Review:** this acceptance expires 2027-04-24 (six months); revisit automation (ESO/Vault/sealed-secrets) then.
