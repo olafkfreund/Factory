@@ -91,7 +91,11 @@ a stub.
   `apps/web-server/server/jobs/audit_retention.py` deletes rows past
   `retention_until`. Object-store logs are lifecycled in
   `factory-gitops/apps/minio/manifests/manifests.yaml` — `role=log` prefixes
-  expire at 30 days, evidence at 90 days. Anchor-row pruning is documented at
+  expire at 30 days, evidence at 90 days. OpenObserve keeps ingested audit
+  records for 3650 days, pinned explicitly with `ZO_COMPACT_DATA_RETENTION_DAYS` in
+  `factory-gitops/apps/observe/manifests/manifests.yaml` (Factory#313; the value is
+  the upstream v0.90.3 default, chosen so the 10-year backfill is not deleted).
+  Anchor-row pruning is documented at
   `audit.anchor.perTenantOptions.retentionDays: 1825` (5 years) but the pruning
   job is not shipped.
 - **Observability backend** — `factory-gitops/apps/observe` deploys OpenObserve
@@ -133,6 +137,16 @@ a stub.
    - NYDFS 500.6 — 5 years (normal-operations records) / 3 years
      (cybersecurity-event records).
    - SOX ITGC — financial-reporting change trails commonly retained 7 years.
+   Windows that exist today:
+
+   | Store | Window | Source | PCI 10.5.1 (12m, 3m hot) | AU-11 (90d online) |
+   |---|---|---|---|---|
+   | Postgres `audit_logs` | 395 days | `retention_until` stamped at write | Meets | Meets |
+   | OpenObserve audit stream | 3650 days | `ZO_COMPACT_DATA_RETENTION_DAYS` in factory-gitops `apps/observe` | Meets | Meets |
+   | MinIO `role=log` objects | 30 days | ILM rule in factory-gitops `apps/minio` | Below | Meets the online window only |
+
+   The OpenObserve row holds once the factory-gitops change that pins it has synced.
+
    The policy must state one window per data class that meets the strictest
    applicable framework, and the code defaults and ILM rules must be reconciled to
    it. The retention deletion job is also not evidenced as running fleet-wide
