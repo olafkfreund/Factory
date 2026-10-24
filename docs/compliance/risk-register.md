@@ -47,6 +47,7 @@ score once the cited treatment wave completes; it does not yet reflect a closed 
 | R-013 | Trusted-plan signing keys | HMAC plan-signing keys have no key ID, expiry, or rotation; a leaked key cannot be cleanly rotated/revoked | 2 | 4 | 8 Medium | Signed task contracts (RFC-0002); injection/egress guards; independent verification | Mitigate — add `kid`, expiry, rotation; approved-model registry with eval gate; output DLP (agentic-AI owner, Wave 3) | 4 (L2 x I2) | Open (Factory#323) |
 | R-014 | Postgres (data-postgres-0) | Postgres at rest unencrypted, accepted until a regulated tenant: PV is a plain local-path dir on p620 `/dev/sdb1` ext4, no LUKS/dm-crypt in the chain (verified 2026-10-24) | 2 | 3 | 6 Low | Physical host access control; scram-sha-256 auth; MinIO SSE-S3 on (factory-gitops#71, #310) | Accept — until a regulated tenant onboards; then LUKS-backed PV or pgcrypto (Security Owner) | 6 | Accepted (Factory#314), review 2027-04-24 |
 | R-015 | Deployed fleet, agent attack surface | No independent external penetration test; unfound logic, prompt-injection or egress flaws that scanners cannot see | 2 | 4 | 8 Medium | Trivy P0 required gate (VR-0001/VR-0002 closures); CodeQL ratchet (`.github/workflows/codeql-ratchet.yml`, Factory#813); Dependabot (`.github/dependabot.yml`); gitleaks (`.github/workflows/secret-scan.yml:13`) | Accept — until a customer contract or certification audit requires a test (Security Owner); review 2027-04-24 | 8 (L2 x I4) | Accepted (Factory#317) |
+| R-016 | `factory-secrets`, `minio-creds` and other long-lived secrets | Rotation is manual (agenix); a missed rotation or undetected leak leaves a stale credential valid | 3 | 3 | 9 Medium | agenix custody on p510; gitleaks required check on 5 code repos (`.github/workflows/secret-scan.yml`); factory-gitops "no literal secrets in manifests" check; rotation runbook in [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | Accept — manual rotation, 90d tokens / 365d keys / immediate on exposure (Security Owner, review 2027-04-24) | 9 (accepted) | Accepted (Factory#315) |
 
 ## Risk-acceptance log
 
@@ -76,3 +77,8 @@ an expiry date, and is revisited at the next management review.
 - **Compensating controls:** Trivy P0 required gate; CodeQL at 0 actionable with a weekly ratchet (Factory#813); Dependabot; gitleaks. Their file evidence is in the R-015 row.
 - **Expiry / review date:** 2027-04-24 (six months), or immediately when a contract or audit requires a test.
 - **Not covered:** logic flaws and the agent surface (prompt injection, egress, untrusted-code Jobs) that automated scanners do not model.
+
+
+| ID | Decision | Compensating control | Expiry / review |
+|---|---|---|---|
+| R-016 | Decided (lead, user-approved 2026-10-24): accept manual agenix rotation of `factory-secrets` and `minio-creds` (Factory#315). Plan: [plan/2026-10-24-315-risk-acceptance.md](../../plan/2026-10-24-315-risk-acceptance.md) | Runbook and cadence in [encryption-key-mgmt.md](policies/encryption-key-mgmt.md); gitleaks required check; factory-gitops `docs/secrets-management.md` inventory | Review 2027-04-24 |
