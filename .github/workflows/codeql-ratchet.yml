@@ -1,0 +1,31 @@
+name: CodeQL ratchet (reusable)
+
+# Fail when a repo's open critical/high/error/medium CodeQL alerts exceed its
+# committed baseline (Factory#813). GITHUB_TOKEN reads only its own repo's
+# alerts, so each code repo calls this with its own token; the logic lives here
+# once (see scripts/codeql_ratchet.py).
+
+on:
+  workflow_call: {}
+
+permissions:
+  security-events: read
+  contents: read
+
+jobs:
+  ratchet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller (baseline)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout hub (script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: olafkfreund/Factory
+          path: hub
+      - name: Self-test
+        run: python3 hub/scripts/codeql_ratchet.py --self-test
+      - name: Compare with baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 hub/scripts/codeql_ratchet.py --repo "$GITHUB_REPOSITORY"
