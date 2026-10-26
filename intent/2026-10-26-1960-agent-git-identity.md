@@ -41,12 +41,13 @@ The requested slice was: a distinct agent git author on factory commits, behind 
 
 ## Remaining slices, in order
 
-1. **Stage 2: autonomy tier on `acw_` keys.** Additive, needs no GitHub identity, and has a clear test. **Recommended as the first code slice.** Extend `mcp_stdio/auth.py` keys with an autonomy tier and adopt `key_id` as the `agent_identity` string (`agent:aifactory/<key_id>`).
+1. **Stage 2: autonomy ceiling on `acw_` keys. Chosen as the first code slice (decision 2026-10-26).** Additive, needs no GitHub identity, and has a clear test. Add a nullable autonomy ceiling to the `ApiKey` model (`apps/web-server/server/database/models.py`, with an alembic migration), give each key `agent_identity = agent:aifactory/<key_id>`, and add a pure helper in `merge_policy.py` that returns the effective tier: the stricter of the key's ceiling and the merge decision. A key without a ceiling records null and leaves the decision unchanged. `mcp_stdio/auth.py` is left alone: AIFactory #1885 is changing it. Wiring the ceiling into the live merge path comes after slice 2, which tells the merge path which key started the run.
 2. **Stage 3: capture the originator at intake.** MCP/CLI first, since `require_acw_scope` already resolves the key owner. From-issue second (cross-repo, changes the `FromIssueBody` contract). Portal last or never; that depends on the owner's auth decision.
 3. **Git trailers on branch commits** (no GitHub identity needed): `Agent-Identity: agent:aifactory/<key_id>` and `Originator: human:github/<login>`. Write them only once slices 1 and 2 supply real values. Inject them where the factory commits: the agent subprocess env (`core/client.py` `sdk_env`), `core/worktree.py` `commit_in_worktree`, and the safety-net commit in `agents/utils.py`. Behind a flag that defaults to off.
 4. **Default-branch attribution.** Owner decision: (a) a GitHub App or bot identity opens and merges factory PRs, or (b) switch the factory merge method from `squash` to `merge`/`rebase`. Option (a) also gives stage 5 an identity to exclude from approval.
 5. **Stage 1: required reviews in branch protection** on all four repos, after the auto-merge path has an approving identity. Otherwise it stops `watch_and_finish` (plan, unknown 2).
 6. **Revocation and expiry** for agent identities.
+   - **6b.** Once an agent identity is issued, stop agents overriding `GIT_AUTHOR_*`/`GIT_COMMITTER_*` (`security/ast_parser.py` `_SAFE_GIT_KEYS`). Decided yes on 2026-10-26; not changed now.
 
 ## How the autonomy tier is carried later
 
@@ -67,8 +68,11 @@ AIFactory (container git identity, commit paths, merge provider, `acw_` keys), P
 - Write no plausible-looking placeholder identity into a governance field. Write null instead.
 - Agents may set `GIT_AUTHOR_*`/`GIT_COMMITTER_*` in their own commands (`security/ast_parser.py` `_SAFE_GIT_KEYS`). Git authorship is therefore attribution, not proof. Proof needs a credential the agent cannot set, which slice 4(a) provides.
 
+## Decisions (2026-10-26)
+
+- First code slice: the autonomy ceiling on `acw_` keys (slice 1).
+- `_SAFE_GIT_KEYS`: lock agents out of setting their own author once an agent identity exists (slice 6b), not now.
+
 ## Open questions
 
-1. Is slice 1 (the autonomy tier on `acw_` keys) the right first code slice instead of git attribution?
-2. For default-branch attribution: a GitHub App/bot identity, or a change of merge method?
-3. Should `_SAFE_GIT_KEYS` stop agents overriding their author once an agent identity is issued?
+1. For default-branch attribution (slice 4): a GitHub App/bot identity, or a change of merge method? This is with the owner and does not block slice 1.
