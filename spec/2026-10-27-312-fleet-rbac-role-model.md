@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 312
 intent: intent/2026-10-27-312-fleet-rbac-role-model.md
 ---
