@@ -1,5 +1,5 @@
 ---
-status: approved
+status: draft
 issue: 312
 spec: spec/2026-10-27-312-fleet-rbac-role-model.md
 ---
@@ -43,7 +43,7 @@ Owner answers to the spec's seven open questions (approved 2026-10-27):
 Still open:
 
 - **PF #939, TF #1450**: no role or org check on task/plan routes, so a `viewer`'s JWT can start, stop, approve or merge any task in any org. These are the first slices.
-- **PF/TF remote MCP** proxies tool calls with `settings.API_TOKEN` (`mcp_remote/tools.py:96` PF, `:100` TF), the AIF #1910 defect. Off by default and not enabled in `factory-gitops` (no `*_MCP_REMOTE_ENABLED` on main). No issue exists yet.
+- **PF/TF remote MCP** proxies tool calls with `settings.API_TOKEN` (`mcp_remote/tools.py:96` PF, `:100` TF), the AIF #1910 defect. Off by default and not enabled in `factory-gitops` (no `*_MCP_REMOTE_ENABLED` on main). Tracked as PFactory #946 and TFactory #1456.
 - **Admin revoke** (all three): `revoke_api_key` matches `ApiKey.user_id == current_user.id`, so an admin cannot revoke another member's key.
 - **Key inventory per org and access-review routes in PF/TF** (spec slice 3).
 
@@ -94,7 +94,7 @@ Traps: the policy's gap 5 text ("Org RBAC exists in AIFactory only") is wrong si
 
 - **S3. Evidence tooling (read-only, additive).** AIF, PF, TF: admin-only per-org key inventory (id, owner, scopes, ceiling, `last_used_at`, `expires_at`, no secret). PF, TF: `GET /api/admin/access-review` ported from AIF **after** #1916 (streams `membership.org_id`, takes only `?org_id`).
 - **S4. Admin revoke.** AIF, PF, TF `revoke_api_key`: an org `admin` may revoke any key in the org; the key's creator keeps self-revoke.
-- **S5. PF/TF remote MCP authz.** Port AIF #1917 before anyone sets `PFACTORY_MCP_REMOTE_ENABLED` or `TFACTORY_MCP_REMOTE_ENABLED`. Open the issues first (none exist).
+- **S5. PF/TF remote MCP authz.** Port AIF #1917 before anyone sets `PFACTORY_MCP_REMOTE_ENABLED` or `TFACTORY_MCP_REMOTE_ENABLED`. Issues: PFactory #946, TFactory #1456. Needs the `project_authz` helper from S1/S2, so it lands after them.
 - **S6. Project ownership backfill and flag flip.** Give every PF/TF project an `org_id` (the WS3 `PROJECTS_BACKEND="db"` cutover or a one-off backfill), check no human loses a task they use, then set `RBAC_ENFORCE_TASK_ROUTES=true` in `factory-gitops`. Needs owner approval (gitops and a login-affecting change).
 - **S7. First review**, Q4 2026, due 2027-01-15, signed and stored at `factory-evidence/control-plane-push/access-review/2026-Q4/`. This is the epic's acceptance criterion for the RBAC checkbox.
 - **S8. Enforcement follow-ups.** Null ceiling counts as `hard` (#1960 gate). Keycloak role mapper (decision 3), only after S1, S2 and S6 are live. CFactory human roles from the IdP.
