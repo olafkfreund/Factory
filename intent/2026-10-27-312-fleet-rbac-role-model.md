@@ -1,5 +1,5 @@
 ---
-status: approved
+status: draft
 issue: 312
 author: olafkfreund
 ---
@@ -16,13 +16,13 @@ Each factory has some access control, but nothing ties the pieces into one model
 
 | Plane | What exists | Source |
 |---|---|---|
-| AIFactory, PFactory, TFactory | Org roles `viewer < member < admin < owner` (`ROLE_LEVELS`), enforced by `require_org_role(...)` | `apps/web-server/server/routes/organizations.py:38` in each repo |
+| AIFactory, PFactory, TFactory | Org roles `viewer < member < admin < owner` (`ROLE_LEVELS`), enforced by `require_org_role(...)` | `apps/web-server/server/routes/organizations.py:38` (AIFactory, TFactory), `:39` (PFactory) |
 | AIFactory, PFactory, TFactory | `acw_` keys: per user and per org, scopes `mcp:read` / `mcp:write`, optional expiry | `routes/api_keys.py`, `mcp_remote/auth.py` |
 | AIFactory | `acw_` key `autonomy_ceiling` (`low`/`medium`/`hard`, nullable, set by org admin only), `agent_identity = agent:aifactory/<key_id>`, `cap_disposition` takes the stricter of ceiling and merge decision. Not wired into the merge path yet. An `acw_` key cannot mint keys. | AIFactory #1887; `database/models.py:399-406`, `routes/api_keys.py:170-186` |
 | AIFactory only | Access-review NDJSON export of one org's members (email, role, `last_login_at`, active), admin or owner only | `routes/access_review.py` |
 | CFactory | `CFACTORY_API_KEYS` keystore with bare `read` / `write` scopes; empty store denies (CFactory #500). MCP: legacy `CFACTORY_MCP_SECRET` still grants read and write by default; use is now counted (CFactory #504). Audit actor is a hash of the key, never the key. | `apps/backend/cfactory/auth.py`, `mcp.py` |
 | Keycloak | One `factory` realm, GitHub-brokered logins, one group per tenant emitted as a `tenant` claim. No role mapper, configured imperatively with `kcadm.sh`. | `factory-gitops/docs/keycloak-sso.md` §2b |
-| Cluster | Workload service accounts are least-privilege: `aifactory-sandbox` (jobs, pods read), `cred-broker` (get/patch one Secret), evidence collector, deploy dry-run (create only). No human RoleBindings are in gitops. | `factory-gitops/apps/*/manifests/manifests.yaml` |
+| Cluster | Some workload service accounts are narrowly scoped: `aifactory-sandbox` (jobs, pods read), `cred-broker` (get/patch one Secret), evidence collector, deploy dry-run (create only). Others are not: `odin-dashboard-role` grants cluster-wide `update, patch` on deployments and Argo applications, and job-watchdog, argocd-drift, nfs-provisioner and keda hold ClusterRoleBindings. None has been reviewed. No human RoleBindings are in gitops. | `factory-gitops/apps/*/manifests/manifests.yaml` |
 
 The gaps:
 

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: draft
 issue: 312
 intent: intent/2026-10-27-312-fleet-rbac-role-model.md
 ---
@@ -41,7 +41,7 @@ The minimum role for each action. **Enforced by** names the check that exists to
 | Factory | Action | Min role | Enforced by |
 |---|---|---|---|
 | All three web servers | Read org resources | `viewer` | `require_org_role` / `check_project_access` where routes use them |
-| AIFactory | Create, start, stop or recover a task; approve a plan | `member` | `require_project_access("member")` (e.g. `routes/execution.py:1188,1357`, `routes/projects.py:702`) |
+| AIFactory | Create, start, stop or recover a task; approve a plan | `member` | `require_project_access("member")` (`routes/execution.py:1188,1357`); `require_task_access("member")` (`routes/execution.py:962` stop, `:1022` recover, `routes/plan_approval.py:57` approve) |
 | AIFactory | Merge a PR the merge policy holds (`HOLD_ASYNC` / `HOLD_BLOCKING`) | `member`, never the agent that wrote it | Not enforced per role. The merge policy decides the tier. |
 | AIFactory | Set an `autonomy_ceiling` on a key | `admin` | `routes/api_keys.py:179` |
 | AIFactory | Export the access review | `admin` | `routes/access_review.py` (`require_org_role("admin")`) |
@@ -69,7 +69,7 @@ One credential per M2M edge, taken from the edge table in `AIFactory/docs/compli
 | `svc:cfactory-cockpit->*` | `APP_API_TOKEN` (`CFACTORY_UPSTREAM_TOKEN`) | `acw_` key per sibling, `mcp:read` only |
 | MCP clients -> CFactory | `CFACTORY_MCP_SECRET` | `CFACTORY_API_KEYS` entry, `read` or `write` per client |
 
-Cluster workloads are service principals too. Their Kubernetes RBAC is already least-privilege and stays as it is: `aifactory-sandbox`, `cred-broker`, the evidence collector, and the deploy dry-run SA (create only). The review lists every RoleBinding and ClusterRoleBinding and flags any new one.
+Cluster workloads are service principals too. Their Kubernetes RBAC is not yet least-privilege. `aifactory-sandbox`, `cred-broker`, the evidence collector and the deploy dry-run SA (create only) are narrowly scoped, but `odin-dashboard-role` (`factory-gitops/apps/odin/manifests/manifests.yaml:213-220`) grants cluster-wide `update, patch` on deployments, `deployments/rollback` and Argo applications, and job-watchdog, argocd-drift, nfs-provisioner and keda hold ClusterRoleBindings. Nothing is grandfathered: the first review assesses every existing RoleBinding and ClusterRoleBinding, and later reviews also flag any new one.
 
 ### 5. Agents
 
@@ -100,14 +100,14 @@ An agent is a principal of its own, never a stand-in for a person.
 | Keycloak users, groups (`tenant`), enabled flag, linked IdP | `kcadm.sh get users` / `groups` | Manual until the realm is declarative |
 | Cluster bindings | `RoleBinding` / `ClusterRoleBinding` in `factory-gitops`, and the live cluster | gitops readable; live listing manual |
 
-- **Checks per review:** every key's scopes are no wider than its owner's current role (a `viewer` holding `mcp:write` is a finding). Every human maps to exactly one role per org and one tenant group. No account inactive for more than 90 days keeps a role above `viewer`. No key is unused for more than 90 days or lacks an expiry without a recorded reason. No agent key has a null ceiling (until #1960's gate lands). No new ClusterRoleBinding to a human. The legacy wildcard counters are recorded.
+- **Checks per review:** every key's scopes are no wider than its owner's current role (a `viewer` holding `mcp:write` is a finding). Every human maps to exactly one role per org and one tenant group. No account inactive for more than 90 days keeps a role above `viewer`. No key is unused for more than 90 days or lacks an expiry without a recorded reason. No agent key has a null ceiling (until #1960's gate lands). Every RoleBinding and ClusterRoleBinding has a recorded justification, and none binds a human. The legacy wildcard counters are recorded.
 - **Output:** `review.md` with the date, the reviewer, every finding, and the action taken for each (keep / revoke / downgrade, with a reason), plus the raw exports. Stored at `factory-evidence/control-plane-push/access-review/<YYYY>-Q<n>/`, the drop point the evidence collector already watches for freshness. Exports contain no credential values.
 - **Remediation:** revocations within five working days of signing. Anything slower is recorded as an exception with an owner and a date.
 - **Accepted exceptions are listed in every review** until they close: the shared `APP_API_TOKEN`, `CFACTORY_MCP_SECRET` in `allow` mode, and MFA not enforced (open questions 4 and 5).
 
 ## Alternatives rejected
 
-- **New role names (viewer / operator / maintainer / owner, as sketched in `iam-access-control.md` Phase 3).** That would put a mapping layer on top of `ROLE_LEVELS` in three services and change nothing about who may do what. Slice 2 updates the policy to the existing names.
+- **New role names (viewer / operator / maintainer / owner, as sketched in `iam-access-control.md` Phase 3).** That would put a mapping layer on top of `ROLE_LEVELS` in three services and change nothing about who may do what. Slice 2 updates the policy to the existing names, and corrects its gap 5 ("Org RBAC exists in AIFactory only"): PFactory and TFactory now have `ROLE_LEVELS` too.
 - **Roles from Keycloak now (a role mapper emitting `role`).** It would centralise roles, but `role == "admin"` is an authz bypass today. It is unsafe until slice 5 removes that branch.
 - **Agents inherit the invoking human's role.** That is the simplest to wire, but an owner's run would give the agent admin rights. It contradicts #1960 and turns a prompt injection into an org takeover.
 - **One fleet-wide service role for all M2M callers.** That is the shared wildcard again, with a new name.
