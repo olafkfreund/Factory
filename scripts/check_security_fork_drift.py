@@ -156,7 +156,7 @@ FORK_DIVERGENCES: list[dict[str, object]] = [
         "name": "skills_service.py (skills cache + suggestion service)",
         "digests": {
             "PFactory": "b544a0d31da89df68ecbe8e66efe6c2048d3413ebf628d3eed2444a7a6deee28",
-            "AIFactory": "ee07b54e4c906513957b644289c09b40808d324bfcd241dcdac7cb0f61bf6fb5",
+            "AIFactory": "b01123ad0dab51a8e3be4ad8c39c205161bcc01ff8f87a940ce9290f1e34a0a5",
         },
         "reason": (
             "Re-derived from origin/dev (git show origin/dev:<path> | sha256sum) "
@@ -180,7 +180,9 @@ FORK_DIVERGENCES: list[dict[str, object]] = [
             "the skills cache, and a bare except around a scandir loop. That "
             "second one is what Factory#753 caught, and it is the whole point "
             "of this registry: one fork taking a security fix while the other "
-            "does not."
+            "does not. "
+            "AIFactory re-registered 2026-10-30 (Factory#3667): AIFactory#1937 "
+            "changed only the suggest_selected_skills docstring."
         ),
         "issue": "Factory#727",
     },
