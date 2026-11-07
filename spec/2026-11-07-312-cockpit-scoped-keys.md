@@ -33,7 +33,7 @@ There are four code PRs, one per repo, each on the branch `feat/312-cockpit-scop
 
 ### B. Factories: accept an `acw_` key on WebSocket (AIFactory, PFactory, TFactory)
 
-In `apps/web-server/server/auth.py` `authenticate_websocket`, a new branch goes after the JWT and legacy checks and before the final reject:
+In `apps/web-server/server/auth.py` `authenticate_websocket`, a new branch goes after the JWT and legacy checks and before the final reject. `authenticate_websocket` has two callers in each factory: `websockets/events.py` (`/ws/events`) and `rmux/bridge.py` (agent-console WS). The rmux bridge then runs the same per-project viewer check REST runs on that principal (`_authorize_console`, `authorize_project`, `ProjectAccessChecker`), and typing still needs a REST `POST /attach`. `verify_websocket_token` (logs, progress, PTY terminal) is a separate function and stays unchanged, so `acw_` keys get no PTY access.
 
 ```python
 if token.startswith("acw_"):
@@ -48,13 +48,13 @@ if token.startswith("acw_"):
 
 | Factory | REST validator reused | Returns |
 |---|---|---|
-| AIFactory | `mcp_remote.auth.authenticate_rest` (owner active, org active, `api` scope for owned keys) | `{"id": key.user_id, "email": None, "role": "user", "org_id": key.org_id, "api_key_id": key.key_id}`; **`None` when `key.user_id is None`** (see below) |
+| AIFactory | `mcp_remote.auth.authenticate_rest` (owner active, org active, `api` scope for owned keys) | the REST builder `_acw_principal(key, scoped_service_tokens_enabled=settings.SCOPED_SERVICE_TOKENS_ENABLED)`, so the principal is byte-identical to REST; **`None` when `key.user_id is None`** (see below) |
 | PFactory | `_try_authenticate_api_key` (unexpired, `api` scope capped by owner role, owner active) | its dict, unchanged (`id`, `email`, `role`, `api_key_id`, `org_id`) |
-| TFactory | `mcp_remote.auth.authenticate` plus `key.has_scope(REST_API_SCOPE)` (`api:full`) | `{"id": key.user_id, "email": None, "role": "user", "org_id": key.org_id, "api_key_id": key.key_id}`; `None` when the scope is missing or `user_id` is `None` |
+| TFactory | `mcp_remote.auth.authenticate` plus `key.has_scope(REST_API_SCOPE)` (`api:full`) | the same dict the REST middleware builds (`auth.py:277-283`): `{"id", "email": None, "role": "user", "api_key_id", "org_id"}`; `None` when the scope is missing or `user_id` is `None` |
 
-Any exception from the validator is caught and treated as `None`, so the request is rejected, as on REST. The token is never logged.
+WS exception policy: any exception from the validator (`except Exception`) means the socket is closed with 4001. This holds on its own terms; the REST callers differ (TFactory catches only `MCPAuthError`, PFactory catches none), and failing closed is the stricter choice. The token is never logged. With `DISABLE_AUTH` the function still returns `None` before reading any credential, as it does today. That is out of scope, and the guarantees here hold only with auth enabled.
 
-**Ownerless (service) keys are rejected on WS.** The `/ws/events` routing gives a client with `user_id is None` every org's events (AIFactory `websockets/event_bus.py:289`, PFactory `websockets/events.py:324`). TFactory has no org routing: `broadcast_event` sends every event to every client, JWT users included, so an `acw_` key there gets exactly what a logged-in user gets. TFactory rejects ownerless keys anyway, for one rule across the fleet. That is the wildcard's see-everything routing. On REST, an AIFactory service key is `is_service` and bypasses project authorization, so WS see-all would technically match REST. The approved intent still forbids it. Rejecting the key keeps the change from adding a new see-everything credential. The cockpit's keys are therefore user-owned: minted by a service-account user who belongs to the orgs the cockpit should watch. That works the same way in all three factories, since PFactory and TFactory keys are user-owned anyway. The rejection is commented as `shortcut: ownerless keys rejected on WS; revisit with Phase 4 scope enforcement`.
+**Ownerless (service) keys are rejected on WS, on both callers.** On rmux an AIFactory service key would be `is_service` and bypass the project check. The `/ws/events` routing gives a client with `user_id is None` every org's events (AIFactory `websockets/event_bus.py:289`, PFactory `websockets/events.py:324`). TFactory has no org routing: `broadcast_event` sends every event to every client, JWT users included, so an `acw_` key there gets exactly what a logged-in user gets. TFactory rejects ownerless keys anyway, for one rule across the fleet. That is the wildcard's see-everything routing. On REST, an AIFactory service key is `is_service` and bypasses project authorization, so WS see-all would technically match REST. The approved intent still forbids it. Rejecting the key keeps the change from adding a new see-everything credential. The cockpit's keys are therefore user-owned: minted by a service-account user who belongs to the orgs the cockpit should watch. That works the same way in all three factories, since PFactory and TFactory keys are user-owned anyway. The rejection is commented as `shortcut: ownerless keys rejected on WS; revisit with Phase 4 scope enforcement`.
 
 **Org-bound keys stay in their org.** In the AIFactory and PFactory `/ws/events` endpoints (`websockets/events.py`; TFactory never reads `org_ids`, so it gets no change), the org-membership lookup fills `client.org_ids` from the owner's memberships. Right after that assignment comes one added line:
 
@@ -63,7 +63,9 @@ if user_info.get("org_id"):  # an org-bound acw_ key must not widen to the owner
     client.org_ids &= {user_info["org_id"]}
 ```
 
-If the lookup fails, `org_ids` stays empty, so the client fails closed. JWT principals have no `org_id`, so they are unaffected. `update_client_orgs` has no callers in any of the three repos today; the risks below cover it.
+If the lookup fails, `org_ids` stays empty, so `OrgScope` delivery fails closed. JWT principals have no `org_id`, so they are unaffected. `update_client_orgs` has no callers in any of the three repos (grep on 2026-11-07, `apps/` excluding tests); the risks below cover it.
+
+**What this does not filter (intent's "known gap").** AIFactory `BroadcastScope`/`UserScope` (`event_bus.py:271-284`), PFactory's broadcast/user paths, and all of TFactory's feed ignore `org_ids` for every principal. An `acw_` key therefore receives exactly what its owner's JWT session receives there, never more. The PR body records the follow-up issue.
 
 ## Alternatives rejected
 
@@ -84,5 +86,5 @@ If the lookup fails, `org_ids` stays empty, so the client fails closed. JWT prin
 ## Verification
 
 - CFactory: unit tests for `token_for` (own token wins, fallback to `upstream_token`, unknown service falls back), for the adapters getting per-service tokens, for the action chain header per target, and for the per-service WS headers. Run `just test` (or the repo's pytest) plus ruff, and keep the existing `test_pydantic_credential_repr` green, since the new fields must be `repr=False`.
-- Each factory: WS auth tests. A valid owned `acw_` key returns a principal. An unknown, expired or under-scoped key is closed with 4001. An ownerless key is closed with 4001 (AIFactory/TFactory). JWT and legacy paths are unchanged. An org-bound key's `client.org_ids` is narrowed to the key's org (AIFactory, PFactory). Run each repo's pytest for the touched test files plus ruff.
+- Each factory: WS auth tests. A valid owned `acw_` key returns the same principal REST builds (AIFactory: equal to `_acw_principal(...)`). An unknown, expired or under-scoped key is closed with 4001. An ownerless key is closed with 4001 (AIFactory/TFactory). JWT and legacy paths are unchanged. A validator that raises is closed with 4001. In AIFactory and PFactory, a delivery test: owner in orgs A and B, key bound to A, then `send_to_org(A)` arrives and `send_to_org(B)` does not. A failed membership lookup leaves the client getting no org events. Run each repo's pytest for the touched test files plus ruff.
 - Grep: no remaining `settings.upstream_token` read in CFactory outside `config.py`'s `token_for`.
