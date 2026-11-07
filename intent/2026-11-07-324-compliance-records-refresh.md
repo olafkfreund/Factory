@@ -60,7 +60,8 @@ records also hide which gaps still remain (no off-cluster backup copy, no paging
 
 - Files: `docs/compliance/risk-register.md`,
   `docs/compliance/statement-of-applicability.md`,
-  `docs/compliance/soc2-gap-assessment.md`, `docs/compliance/dr-runbook.md`
+  `docs/compliance/soc2-gap-assessment.md`, `docs/compliance/dr-runbook.md`,
+  `docs/compliance/control-matrix.md`
   in Factory.
 - People: the Security Owner, who signs the residual-risk table.
 - Systems are read, never changed: the k3d `factory` cluster on p620,
