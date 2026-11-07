@@ -22,7 +22,7 @@ Until both gaps are closed, the cockpit cannot stop sending the wildcard.
 ## Proposed outcome
 
 - CFactory can be given a separate token for each factory. Each one falls back to `upstream_token` when it is unset, so if no new setting is set, nothing changes. Every adapter call, action chain and upstream WS subscription to a factory uses that factory's token.
-- AIFactory, PFactory and TFactory accept a valid `acw_` key on `/ws/events` and the other WS endpoints that use `authenticate_websocket`, under exactly the rules each factory's REST path applies to that key: active, not expired, owner active, and that factory's own scope requirement (for example `api` in PFactory, `api:full` in TFactory, and AIFactory's `_acw_principal` semantics). The connection is then scoped to that key's principal, not treated as the wildcard.
+- AIFactory, PFactory and TFactory accept a valid `acw_` key on `/ws/events` and the rmux agent-console WS (the endpoints that use `authenticate_websocket`; `verify_websocket_token` endpoints are unchanged), under exactly the rules each factory's REST path applies to that key: active, not expired, owner active, and that factory's own scope requirement (for example `api` in PFactory, `api:full` in TFactory, and AIFactory's `_acw_principal` semantics). The connection is then scoped to that key's principal, not treated as the wildcard.
 - With both changes deployed, an operator can mint one key per factory and set the three CFactory settings, and none of the cockpit's outbound calls to the factories (adapters, action chains, WS subscriptions, live-agents proxy) carries `APP_API_TOKEN`. Rollback is unsetting a setting. CFactory's own inbound `CFACTORY_MCP_SECRET` is a separate edge and is not covered here.
 
 ## Affected users and systems
@@ -35,7 +35,8 @@ Until both gaps are closed, the cockpit cannot stop sending the wildcard.
 ## Constraints
 
 - Additive and default-preserving. A deploy with no new settings behaves exactly as today.
-- An `acw_` key on a WS must never get more than the same key gets on REST. Most importantly, it must never get the wildcard's unfiltered, see-everything routing, and a key bound to one org must not receive events from the owner's other orgs through the owner-membership lookup in `events.py`. A revoked, expired, unknown or under-scoped key is rejected.
+- An `acw_` key on a WS gets the same principal REST builds for it, so every per-project check (the rmux bridge) applies exactly as on REST. On `/ws/events` it gets no more than its owner's own logged-in session gets, and never the wildcard's unfiltered routing (`user_id is None`). Where the feed routes by org (`OrgScope`), a key bound to one org does not receive events from the owner's other orgs. A revoked, expired, unknown or under-scoped key is rejected.
+- Known gap, not widened here: `/ws/events` broadcast and user-scoped events, and all of TFactory's feed, are not filtered by org for any principal, JWT sessions included. Closing that is a follow-up.
 - Never log a token.
 - The three factories' WS auth has the same structure but different REST key rules. The change must give the same security outcome in each factory while keeping that factory's own key semantics.
 - No minting, rotation or deploy. The user does not touch a secret.
