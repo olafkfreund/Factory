@@ -177,13 +177,13 @@ Applicable to the fleet's own operation, justified per control below.
 
 ## Summary
 
-| Theme | Controls | Implemented | Planned | Not Applicable |
-|---|---|---|---|---|
-| A.5 Organizational | 37 | 26 | 10 | 1 |
-| A.6 People | 8 | 4 | 1 | 3 |
-| A.7 Physical | 14 | 0 | 2 | 12 |
-| A.8 Technological | 34 | 28 | 5 | 1 |
-| **Total** | **93** | **58** | **18** | **17** |
+| Theme | Controls | Implemented | Partial | Planned | Not Applicable |
+|---|---|---|---|---|---|
+| A.5 Organizational | 37 | 25 | 1 | 10 | 1 |
+| A.6 People | 8 | 4 | 0 | 1 | 3 |
+| A.7 Physical | 14 | 0 | 0 | 2 | 12 |
+| A.8 Technological | 34 | 25 | 3 | 5 | 1 |
+| **Total** | **93** | **54** | **4** | **18** | **17** |
 
 Not-Applicable controls are concentrated in A.7 (physical, provider-inherited for a
 cloud-only fleet) and the employment-specific A.6 controls, each justified above. Planned

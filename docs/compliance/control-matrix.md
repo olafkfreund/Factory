@@ -35,7 +35,7 @@ maps to a NIST 800-53 family it is noted for future ConMon.
 | Business continuity / DR (#321) | A.5.29-.30, A.8.13-.14 | A1.2-.3 | Backup/recovery | - | - | CP | Gap |
 | Runtime isolation (#322) | A.8.22, A.8.9 | CC6.6, CC6.8 | - | - | - | SC-7/-39, CM-6 | Accepted risk (AR-001, review 2027-04-24) |
 | Agentic-AI governance (#323) | A.5.23 | CC-series | - | - | - | SA, RA | Strong (partial) |
-| Evidence & audit-readiness (#324) | Cl. 9.1, A.5.36 | CC4.1 | Evidence | 500.2 | - | CA-2, CA-7 | Gap |
+| Evidence & audit-readiness (#324) | Cl. 9.1, A.5.36 | CC4.1 | Evidence | 500.2 | - | CA-2, CA-7 | Partial |
 
 Note: ISO/IEC 42001, the NIST AI RMF, and the EU AI Act also apply to the
 agentic-AI domain (#323); they are tracked in that domain document rather than
@@ -58,7 +58,7 @@ as separate columns here.
 | Business continuity / DR | Cred-broker CronJob only | Zero backups for Postgres/MinIO; no tested restore; RPO unbounded | #321 |
 | Runtime isolation | bwrap sandbox (#363), Job NetworkPolicy + non-root (default-on) | No microVM (accepted, AR-001); coarse 443 egress; no PodSecurity Admission; CIS baseline not assessed (kube-bench is the revisit action) | #322 |
 | Agentic-AI governance | Signed contracts, injection/egress guards, RFC-0001a/0006/0012 gates; merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | No model registry/eval gate; no output DLP; trusted-plan key no rotation | #323 |
-| Evidence & audit-readiness | This directory (Wave 0) | No automated evidence collection; no per-framework gap sign-off | #324 |
+| Evidence & audit-readiness | This directory; daily evidence-collector CronJob (factory-gitops#74) snapshots audit anchor, running-image digests and backups index to `factory-evidence/<date>/`; access-review NDJSON push (AIFactory#1018); [SOC 2 gap assessment](soc2-gap-assessment.md) | Code-scanning snapshot blocked on a new `evidence-github-token` secret (security_events:read); per-framework residual-risk sign-off not yet given | #324 |
 
 ## Statement of Applicability
 
@@ -69,11 +69,16 @@ the governance domain — see
 cross-framework view; the SoA is the ISO-specific control-by-control view. Both
 draw evidence from the same domain documents.
 
-## Automated evidence collection (planned)
+## Automated evidence collection
 
-Per Factory#324, evidence collection will be automated as scheduled jobs that
-snapshot into the existing tamper-evident evidence store: access-review exports
-(`access_review.py`), scan results (Trivy/CodeQL), backup-success and
-restore-test logs, config baselines, and the audit-anchor verifier output. Until
-then, evidence is collected on demand per the "Evidence artifacts" section of
-each domain document.
+A daily CronJob (`apps/evidence-collector` in factory-gitops, 03:00 UTC)
+snapshots what the cluster can produce on its own into the versioned
+`factory-evidence` MinIO bucket, one dated prefix per run: the audit-chain
+head and verdict, the image digests actually running, and the Postgres
+backup objects present. A control-plane job pushes the fleet access review
+as NDJSON to `factory-evidence/control-plane-push/access-review/<date>.ndjson`
+(AIFactory#1018). The operator and assessor guide is
+`factory-gitops/docs/evidence-collection.md`. Still missing: the
+code-scanning (CodeQL) snapshot, which needs a read token the collector does
+not have (#324). Until then, each repo's weekly CodeQL ratchet job reports
+its alert count.
