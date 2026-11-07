@@ -27,7 +27,7 @@ Scope: owner decisions 1 and 3 to 6 in the intent. The multi-org cockpit key is 
 
 ## Design
 
-The rule matches REST: **an event reaches a client only if the client may read the event's project over REST.** It is applied in each factory's `websockets/events.py` (AIF also touches `event_bus.py`).
+The rule matches REST: **an event reaches a client only if the client may read the event's project over REST**, in the mode REST is running in (user decision, below). It is applied in each factory's `websockets/events.py` (AIF also touches `event_bus.py`).
 
 1. **`_event_org(payload) -> str | None`** (new, module-private in `events.py`):
    - project id = `payload["projectId"]`; failing that, the part of `payload["taskId"]` before `:` (only if it contains `:`); failing that, `None`;
@@ -38,8 +38,11 @@ The rule matches REST: **an event reaches a client only if the client may read t
 2. **One delivery predicate, `_may_receive(client, org) -> bool`**, used by every local delivery path (org, user, and the legacy broadcast path):
    - `client.user_id is None` (a service client: legacy token or `DISABLE_AUTH`): `True`.
    - `client.key_org_id` set (an `acw_` socket): `org is not None and org == client.key_org_id`. This holds even if `org_ids` were later widened by `update_client_orgs`, which has no callers today.
-   - Otherwise (a JWT socket): `org is not None and org in client.org_ids`, subject to the REST-mode rule in "Owner decision pending" below.
-3. **`broadcast_event(event_type, payload)` becomes org-routed.** Its body is `await send_to_org(_event_org(payload) or SERVICE_ONLY_ORG, event_type, payload)`, where `SERVICE_ONLY_ORG = ""`. The org delivery predicate is already `client.user_id is None or org in client.org_ids`, and no client's `org_ids` contains `""`. So an unresolvable event reaches only user-less service clients (fail closed), across replicas, with no envelope change. None of the ~170 call sites change. The old broadcast scope and its relay kind stay, because a pod running the old version may still send them during a rolling deploy. Their local delivery (AIF `deliver_local` `BroadcastScope`, PF `_deliver_local_broadcast`) now applies `_may_receive(client, None)`, so an old emitter cannot leak through a new receiver.
+   - Otherwise (a JWT socket):
+     - If `_jwt_strict()` is true: `org is not None and org in client.org_ids`.
+     - Otherwise: `True`, with a `logger.debug` "would drop" line when the strict rule would have said no.
+     `_jwt_strict()` is `True` in AIF. In PF and TF it is `get_settings().RBAC_ENFORCE_TASK_ROUTES`, the flag REST's `project_authz._enforcing()` reads (PF :61, TF :53). It is read per call, so flipping the flag makes REST and WS strict together.
+3. **`broadcast_event(event_type, payload)` becomes org-routed.** Its body is `await send_to_org(_event_org(payload) or SERVICE_ONLY_ORG, event_type, payload)`, where `SERVICE_ONLY_ORG = ""`. The org delivery predicate is already `client.user_id is None or org in client.org_ids`, and no client's `org_ids` contains `""`. So an unresolvable event reaches service clients, plus JWT sockets in PF/TF shadow mode, and never an `acw_` socket or a strict JWT socket. It works across replicas with no envelope change. None of the ~170 call sites change. The old broadcast scope and its relay kind stay, because a pod running the old version may still send them during a rolling deploy. Their local delivery (AIF `deliver_local` `BroadcastScope`, PF `_deliver_local_broadcast`) now applies `_may_receive(client, None)`, so an old emitter cannot leak through a new receiver.
 4. **Org membership per client.** AIF and PF already load `OrgMember` rows into `client.org_ids` and intersect them with an `acw_` key's org (#312). TF loads the rows but does not intersect, so add the same line: `if user_info.get("org_id"): client.org_ids &= {user_info["org_id"]}`. TF gains `send_to_org` and `_deliver_local_to_org`, using `_may_receive` (local only, since TF has no relay). If the membership query fails, `org_ids` stays empty, so the client receives nothing.
 5. **User-scoped events and bound keys.** `ConnectedClient` gains `key_org_id: str | None`, set to `user_info.get("org_id")` at register.
    - User-scoped delivery (AIF `deliver_local` `UserScope`, PF `_deliver_local_to_user`, TF `send_to_user`) still matches `user_id`.
@@ -58,14 +61,21 @@ The rule matches REST: **an event reaches a client only if the client may read t
 - A single-org `acw_` key receives its org's events, which is #312's documented single-org cut-over.
 - Tests in each factory pin both behaviours.
 
-## Owner decision pending: JWT sockets in PF/TF shadow mode
+## User decision: JWT sockets follow REST's mode (user, 2026-11-07, option A)
 
-PF and TF REST run project authz in shadow mode by default (`RBAC_ENFORCE_TASK_ROUTES` off; `project_authz.py` header, PF :7-9, TF :15-16). The live `factory` namespace runs them with OIDC and without the flag. No code in PF or TF writes `org_id` into `projects.json`. Strict JWT filtering would therefore stop every live PF/TF update for browser users, while REST still serves them the same data. The question was put to the owner on 2026-11-07, with option A recommended:
+**Why it came up.**
+- PF and TF REST run project authz in shadow mode by default (`RBAC_ENFORCE_TASK_ROUTES` off; `project_authz.py` header, PF :7-9, TF :15-16).
+- The live `factory` namespace runs them with OIDC and without the flag.
+- No code in PF or TF writes `org_id` into `projects.json`.
 
-- **Option A.** Key and service rules as above. JWT sockets apply the org rule in AIF always, and in PF/TF only when `RBAC_ENFORCE_TASK_ROUTES` is on. In shadow mode a JWT socket receives what it receives today, with a debug "would drop" log.
-- **Option B.** Strict for JWT everywhere now.
+So strict JWT filtering would have stopped every live PF/TF update for browser users, while REST still serves them the same data.
 
-This section is replaced by the owner's answer before the spec is approved.
+**The user chose option A**, which replaces intent decision 5 ("fail closed for everyone") for JWT sockets:
+- `acw_` key sockets are always strictly confined to their key's org.
+- Service clients get everything.
+- JWT sockets are strict in AIF always, and in PF/TF only when `RBAC_ENFORCE_TASK_ROUTES` is on. In shadow mode they get today's delivery, with a debug "would drop" log.
+
+**Known residual (accepted by the user):** in PF/TF shadow mode, a JWT user receives events for other orgs and for unresolvable projects, exactly as REST lets them read those projects today. This closes when the operator turns on `RBAC_ENFORCE_TASK_ROUTES`.
 
 ## Alternatives rejected
 
@@ -92,7 +102,8 @@ Per factory: a new `tests/test_ws_org_routing.py`, driven through the real `/ws/
 - A JWT member of A receives A's `task:status` (from a `taskId`) and A's `insights:chunk` (from a `projectId`), and does not receive B's.
 - A legacy or user-less client receives A's, B's and unresolvable events.
 - An `acw_` key bound to A, whose owner is in {A, B}, receives A's events only. This exercises TF's new narrowing.
-- An event for a project with no `org_id`, an unknown project or a bare spec id reaches only the user-less client.
+- An event for a project with no `org_id`, an unknown project or a bare spec id reaches the user-less client. It does not reach a key socket or a strict JWT socket.
+- **Flag test (PF and TF):** with `RBAC_ENFORCE_TASK_ROUTES` off, a JWT member of A receives B's event, and REST `check_project_access` for B is logged but allowed. Turn the flag on in the same test (patched settings) and the same JWT socket stops receiving B's event, while REST for B raises 403. One switch makes both strict.
 - `notification:new` with `data.org_id = B` does not reach the A-bound key socket of the same user, and does reach that user's JWT socket. An org-less user event does not reach a key socket.
 - An `acw_` socket bound to A whose `org_ids` is then widened to {A, B} by `update_client_orgs` still receives no B events.
 - A legacy `BroadcastScope` (AIF Redis envelope) or `ws:broadcast` (PF relay) arriving from an old pod reaches service clients only, and JWT sockets only as the owner decision allows.
@@ -102,8 +113,8 @@ Per factory: a new `tests/test_ws_org_routing.py`, driven through the real `/ws/
 - A service-initiated login completion reaches the service client.
 - `cli-account-auth` reaches the initiating user only.
 - `task-logs:stream` carrying `projectId` A reaches the A member only.
-- A raising `load_projects` means the event reaches user-less clients only.
-- Cross-replica: AIF serialises `OrgScope("")` and delivers it to user-less clients only; PF dispatches `ws:org` with `org_id=""` the same way.
+- A raising `load_projects` means the event is treated as unresolvable.
+- Cross-replica: AIF serialises `OrgScope("")` and delivers it through `_may_receive(client, None)`. PF dispatches `ws:org` with `org_id=""` the same way.
 - Revocation: a key that validates at connect and then returns `None` is closed with 4001 after the re-check interval, which the test patches to 0.
 
 Run each repo's existing WS and event tests, plus ruff, using the repo's own CI ratchet (`factory-seclint`/strict baseline), locally before pushing.
