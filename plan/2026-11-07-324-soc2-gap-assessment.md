@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 324
 spec: spec/2026-11-07-324-soc2-gap-assessment.md
 coders:
