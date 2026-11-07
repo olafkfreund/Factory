@@ -22,22 +22,22 @@ Until both gaps are closed, the cockpit cannot stop sending the wildcard.
 ## Proposed outcome
 
 - CFactory can be given a separate token for each factory. Each one falls back to `upstream_token` when it is unset, so if no new setting is set, nothing changes. Every adapter call, action chain and upstream WS subscription to a factory uses that factory's token.
-- AIFactory, PFactory and TFactory accept a valid `acw_` key on `/ws/events` and the other WS endpoints that use `authenticate_websocket`, under the same validation as their REST path (active, not expired, owner active). The connection is then scoped to that key's principal, not treated as the wildcard.
-- With both changes deployed, an operator can mint one key per factory and set the three CFactory settings, and the cockpit no longer sends `APP_API_TOKEN` anywhere. Rollback is unsetting a setting.
+- AIFactory, PFactory and TFactory accept a valid `acw_` key on `/ws/events` and the other WS endpoints that use `authenticate_websocket`, under exactly the rules each factory's REST path applies to that key: active, not expired, owner active, and that factory's own scope requirement (for example `api` in PFactory, `api:full` in TFactory, and AIFactory's `_acw_principal` semantics). The connection is then scoped to that key's principal, not treated as the wildcard.
+- With both changes deployed, an operator can mint one key per factory and set the three CFactory settings, and none of the cockpit's outbound calls to the factories (adapters, action chains, WS subscriptions, live-agents proxy) carries `APP_API_TOKEN`. Rollback is unsetting a setting. CFactory's own inbound `CFACTORY_MCP_SECRET` is a separate edge and is not covered here.
 
 ## Affected users and systems
 
 - CFactory backend: `config.py`, `adapters/__init__.py`, `actions.py`, `upstream_ws.py`, `live_agent_proxy.py` (fallback order), tests, env docs.
-- AIFactory, PFactory and TFactory web-server: `server/auth.py` `authenticate_websocket`, plus tests.
+- AIFactory, PFactory and TFactory web-server: `server/auth.py` `authenticate_websocket`, and where needed `server/websockets/events.py` org routing, plus tests.
 - Operators of the `cfactory` Deployment. They need no change until they choose to cut over.
 - No gitops, secret or cluster change in this slice.
 
 ## Constraints
 
 - Additive and default-preserving. A deploy with no new settings behaves exactly as today.
-- An `acw_` key on a WS must never get more than the same key gets on REST. Most importantly, it must never get the wildcard's unfiltered, see-everything routing. A revoked, expired or unknown key is rejected.
+- An `acw_` key on a WS must never get more than the same key gets on REST. Most importantly, it must never get the wildcard's unfiltered, see-everything routing, and a key bound to one org must not receive events from the owner's other orgs through the owner-membership lookup in `events.py`. A revoked, expired, unknown or under-scoped key is rejected.
 - Never log a token.
-- The WS change is the same in the three factories, which already share this auth code, and must not make them drift apart.
+- The three factories' WS auth has the same structure but different REST key rules. The change must give the same security outcome in each factory while keeping that factory's own key semantics.
 - No minting, rotation or deploy. The user does not touch a secret.
 
 ## Open questions
