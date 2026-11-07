@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3679
 author: olafkfreund
 predecessor: plan/2026-11-07-312-cockpit-scoped-keys.md
