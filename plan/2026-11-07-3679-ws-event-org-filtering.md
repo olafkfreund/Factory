@@ -204,3 +204,11 @@ Reverting also restores the cross-org leak, including to scoped `acw_` keys. Beh
 - AIF JWT filtering.
 
 In PF/TF shadow mode, JWT behaviour does not change either way.
+
+## Stopping point (2026-11-07, user stop at ~16:01)
+
+- **Done:** intent, spec and plan approved (Factory branch `docs/3679-ws-event-org-filtering`).
+- **Step 3 (PF): partial, WIP.** The codex handoff was stopped mid-run. One commit (`WIP:`) on PFactory `feat/3679-ws-event-org-filtering` holds about 10 lines in `websockets/events.py`. It is unreviewed, untested and incomplete. Review it or discard it and redo.
+- **Steps 1 (AIF) and 5 (TF): not started.** The handoffs were stopped before they edited anything, and no branch was pushed (it would have been identical to `feat/312-cockpit-scoped-keys`).
+- **Steps 2, 4 and 6: pending.**
+- **Next:** create the AIF and TF worktrees from `origin/feat/312-cockpit-scoped-keys`, then re-run the handoffs for steps 1, 3 (continuing from the WIP commit) and 5 in parallel. Handoff prompts were written to this session's scratchpad (`handoff-{AIFactory,PFactory,TFactory}.md`); regenerate them from this plan if the scratchpad is gone.
