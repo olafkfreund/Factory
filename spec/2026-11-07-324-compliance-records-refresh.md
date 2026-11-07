@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 324
 intent: intent/2026-11-07-324-compliance-records-refresh.md
 ---
