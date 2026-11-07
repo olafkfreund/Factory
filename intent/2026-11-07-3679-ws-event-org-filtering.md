@@ -29,7 +29,9 @@ Measured on the #312 branches (`feat/312-cockpit-scoped-keys`: AIFactory `9babbf
 - A `/ws/events` client receives an org's tenant events only if that org is in its `org_ids`. A key bound to org A receives nothing about org B, whatever its owner belongs to. This holds in all three factories and across replicas, whatever the relay (AIFactory: Redis `REDIS_CHANNEL`; PFactory: Postgres LISTEN/NOTIFY `ws:*` envelopes, `relay.py`; TFactory: local delivery only).
 - Legacy-token and `DISABLE_AUTH` clients keep today's behaviour (they are installation admins by definition).
 - An event whose org cannot be resolved is not delivered to an org-confined client (fail closed).
-- A multi-org install can run the cockpit on scoped credentials without the wildcard token, in the shape the owner picks (open question 1).
+- Installation-wide or session events go only to the sockets of the user who started the action.
+- An open socket authenticated by an `acw_` key is re-validated every few minutes and closed with 4001 once the key is revoked or expired.
+- Non-goal: a multi-org cockpit key (deferred; #3679 stays open for it). Single-org cut-over per #312 stands.
 - Tests prove each of the above through the real endpoint, in each factory.
 
 ## Affected users and systems
@@ -48,7 +50,7 @@ Measured on the #312 branches (`feat/312-cockpit-scoped-keys`: AIFactory `9babbf
 - No new dependency. No change to the REST authorization model.
 - Never log tokens or event payload text.
 
-## Open questions (owner decisions; the spec waits on these)
+## Open questions (answered below)
 
 1. **Shape of the multi-org cockpit credential.** Pick one:
    - (a) **A key per org in CFactory.** Config becomes a map org → token per factory, and CFactory opens one WS per org. No factory change; config and connection count grow with orgs.
@@ -58,3 +60,12 @@ Measured on the #312 branches (`feat/312-cockpit-scoped-keys`: AIFactory `9babbf
 2. **Who receives installation-wide events** (`profile:changed`, `cli-account-auth`, `github:auth-complete`): every authenticated client as today, only the user or session that started the action, only org admins of any org, or only unconfined clients (legacy token or `DISABLE_AUTH`)? Note that a JWT user is not unconfined: their sockets load their org memberships.
 3. **Scope of this issue.** Item 1 (fix every tenant broadcast in three factories, about 170 call sites) is security work that does not depend on question 1. Should it ship on its own first, with question 1 split into a separate issue?
 4. **Revocation on an open socket.** Memberships are loaded once at connect. Must a membership removal, key expiry or revocation stop delivery on an already-open socket (and within what time), or is "until reconnect" acceptable for this issue?
+
+## Decisions (answered by the user, 2026-11-07, relayed by the team lead)
+
+1. Ship broadcast filtering first, on its own. Route each event to its task's org in AIFactory, PFactory and TFactory. Add the missing key-org narrowing in TFactory.
+2. Multi-org cockpit key: **deferred**. Keep the single-org cut-over; it is a non-goal here, and #3679 stays open for it.
+3. Orgless events (auth, profile): deliver only to that user's own sockets, routed by user id.
+4. Revocation: re-validate an open socket's key periodically (every few minutes) and close with 4001 once revoked. No immediate fan-out.
+5. Fail closed: an event whose org cannot be determined must not go to everyone.
+6. Cover the frontend consumers and CFactory's upstream subscriber, so filtering does not break the cockpit's single-org feed.
