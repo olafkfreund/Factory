@@ -35,20 +35,37 @@ The rule matches REST: **an event reaches a client only if the client may read t
    - results (including `None`) are cached per project id for 30 s in a module dict of `(monotonic time, org)`;
    - any exception means `None`.
    The cache bounds the file reads on the `task:log` hot path. A project re-assigned to another org is honoured within 30 s.
-2. **`broadcast_event(event_type, payload)` becomes org-routed.** Its body is `await send_to_org(_event_org(payload) or SERVICE_ONLY_ORG, event_type, payload)`, where `SERVICE_ONLY_ORG = ""`. The org delivery predicate is already `client.user_id is None or org in client.org_ids`, and no client's `org_ids` contains `""`. So an unresolvable event reaches only user-less service clients (fail closed), across replicas, with no envelope change. None of the ~170 call sites change. The old broadcast scope, its relay kind and its delivery code stay, unused: a pod running the old version during a rolling deploy can still send them.
-3. **Org membership per client.** AIF and PF already load `OrgMember` rows into `client.org_ids` and intersect them with an `acw_` key's org (#312). TF loads the rows but does not intersect, so add the same line: `if user_info.get("org_id"): client.org_ids &= {user_info["org_id"]}`. TF gains `send_to_org` and `_deliver_local_to_org` with PF's predicate (local only, since TF has no relay). If the membership query fails, `org_ids` stays empty, so the client receives nothing.
-4. **User-scoped events and bound keys.** `ConnectedClient` gains `key_org_id: str | None`, set to `user_info.get("org_id")` at register. User-scoped delivery (AIF `deliver_local` `UserScope`, PF `_deliver_local_to_user`, TF `send_to_user`) skips a client when `client.key_org_id` is set and the payload names a different org. The payload's org is `payload.get("org_id")`, or `payload["data"]["org_id"]` for `notification:new`. This needs no registry read on the delivering pod.
-5. **Events with no org** (decision 3):
+2. **One delivery predicate, `_may_receive(client, org) -> bool`**, used by every local delivery path (org, user, and the legacy broadcast path):
+   - `client.user_id is None` (a service client: legacy token or `DISABLE_AUTH`): `True`.
+   - `client.key_org_id` set (an `acw_` socket): `org is not None and org == client.key_org_id`. This holds even if `org_ids` were later widened by `update_client_orgs`, which has no callers today.
+   - Otherwise (a JWT socket): `org is not None and org in client.org_ids`, subject to the REST-mode rule in "Owner decision pending" below.
+3. **`broadcast_event(event_type, payload)` becomes org-routed.** Its body is `await send_to_org(_event_org(payload) or SERVICE_ONLY_ORG, event_type, payload)`, where `SERVICE_ONLY_ORG = ""`. The org delivery predicate is already `client.user_id is None or org in client.org_ids`, and no client's `org_ids` contains `""`. So an unresolvable event reaches only user-less service clients (fail closed), across replicas, with no envelope change. None of the ~170 call sites change. The old broadcast scope and its relay kind stay, because a pod running the old version may still send them during a rolling deploy. Their local delivery (AIF `deliver_local` `BroadcastScope`, PF `_deliver_local_broadcast`) now applies `_may_receive(client, None)`, so an old emitter cannot leak through a new receiver.
+4. **Org membership per client.** AIF and PF already load `OrgMember` rows into `client.org_ids` and intersect them with an `acw_` key's org (#312). TF loads the rows but does not intersect, so add the same line: `if user_info.get("org_id"): client.org_ids &= {user_info["org_id"]}`. TF gains `send_to_org` and `_deliver_local_to_org`, using `_may_receive` (local only, since TF has no relay). If the membership query fails, `org_ids` stays empty, so the client receives nothing.
+5. **User-scoped events and bound keys.** `ConnectedClient` gains `key_org_id: str | None`, set to `user_info.get("org_id")` at register.
+   - User-scoped delivery (AIF `deliver_local` `UserScope`, PF `_deliver_local_to_user`, TF `send_to_user`) still matches `user_id`.
+   - For an `acw_` socket it also requires that the payload's org equals `key_org_id`. The payload's org is `payload.get("org_id")`, or `payload["data"]["org_id"]` for `notification:new`, so no registry read is needed on the delivering pod.
+   - An org-less user event, such as a login completion, therefore never reaches a key socket (fail closed). Key sockets are the cockpit, not an interactive login.
+   - `notify_org` builds `{"org_id": org_id, **(data or {})}` (AIF `notification_service.py:209`, PF/TF `:211`), which lets the caller's `data` override the org. Flip it to `{**(data or {}), "org_id": org_id}`.
+6. **Events with no org** (decision 3):
    - `cli-account-auth` (AIF `cli_accounts.py:610`, PF `:545`, TF `:561`) and `github:auth-complete` (AIF `github.py:585`, PF `:843`, TF `github_auth.py:273`) go to the user who started the login: thread `request.state.user["id"]` from the start route into the background thread or task and call `send_to_user`.
-   - With no user id (a service principal or `DISABLE_AUTH`), use `send_to_org(SERVICE_ONLY_ORG, …)`.
+   - When the starting principal `is_service` (the legacy token or `DISABLE_AUTH`; REST gives it `id="default"` in TF `auth.py:190-196`, while its socket has `user_id=None`), or there is no user, use `send_to_org(SERVICE_ONLY_ORG, …)` instead. Sending to `"default"` would reach no socket.
    - `profile:changed` is triggered automatically and has no user. It stays on `broadcast_event` and therefore reaches service clients only.
-6. **`task-logs:stream` gains `projectId`.** `emit_task_logs_stream(spec_id, chunk, project_id=None)` adds `"projectId": project_id` when it is given. `TaskLogWriter` takes an optional `project_id` and passes it on. The call sites that build the writer pass the project id they already hold (AIF `agent_service.py:1334,1339`, `agent_kubejob.py:719`; PF `agent_service.py:1123,1130`; TF `agent_service.py:~344`). Where a caller has no project id, the event goes to service clients only (fail closed). The payload otherwise stays the same, and frontends ignore the extra key.
-7. **Re-validating an open `acw_` socket** (decision 4). In `events_websocket`, if the token from `_ws_extract_token(websocket)` starts with `acw_`, re-run `_ws_acw_principal(token)` (#312) at most every `_KEY_RECHECK_SECONDS = 300`, inside the existing 30 s receive loop. On `None`, `close(code=4001)` and leave the loop; `finally` unregisters the client. A transient validator error also closes the socket, and the client reconnects. JWT and legacy sockets are unchanged.
+7. **`task-logs:stream` gains `projectId`.** `emit_task_logs_stream(spec_id, chunk, project_id=None)` adds `"projectId": project_id` when it is given. `TaskLogWriter` takes an optional `project_id` and passes it on. The call sites that build the writer pass the project id they already hold (AIF `agent_service.py:1334,1339`, `agent_kubejob.py:719`; PF `agent_service.py:1123,1130`; TF `agent_service.py:~344`). Where a caller has no project id, the event goes to service clients only (fail closed). The payload otherwise stays the same, and frontends ignore the extra key.
+8. **Re-validating an open `acw_` socket** (decision 4). In `events_websocket`, if the token from `_ws_extract_token(websocket)` starts with `acw_`, re-run `_ws_acw_principal(token)` (#312) at most every `_KEY_RECHECK_SECONDS = 300`, inside the existing 30 s receive loop. On `None`, `close(code=4001)` and leave the loop; `finally` unregisters the client. A transient validator error also closes the socket, and the client reconnects. JWT and legacy sockets are unchanged.
 
 **CFactory: no code change.**
 - The legacy wildcard is user-less, so it keeps receiving every org's events plus the service-only ones.
 - A single-org `acw_` key receives its org's events, which is #312's documented single-org cut-over.
 - Tests in each factory pin both behaviours.
+
+## Owner decision pending: JWT sockets in PF/TF shadow mode
+
+PF and TF REST run project authz in shadow mode by default (`RBAC_ENFORCE_TASK_ROUTES` off; `project_authz.py` header, PF :7-9, TF :15-16). The live `factory` namespace runs them with OIDC and without the flag. No code in PF or TF writes `org_id` into `projects.json`. Strict JWT filtering would therefore stop every live PF/TF update for browser users, while REST still serves them the same data. The question was put to the owner on 2026-11-07, with option A recommended:
+
+- **Option A.** Key and service rules as above. JWT sockets apply the org rule in AIF always, and in PF/TF only when `RBAC_ENFORCE_TASK_ROUTES` is on. In shadow mode a JWT socket receives what it receives today, with a debug "would drop" log.
+- **Option B.** Strict for JWT everywhere now.
+
+This section is replaced by the owner's answer before the spec is approved.
 
 ## Alternatives rejected
 
@@ -60,7 +77,8 @@ The rule matches REST: **an event reaches a client only if the client may read t
 
 ## Risks
 
-- **Projects with no `org_id` in `projects.json`.** Their events reach service clients only. REST already returns 403 to JWT users for such projects, so this matches REST, but a JWT user on an install that never set `org_id` (no code path writes it in PF or TF) loses live updates they could not fetch anyway. Operators who see this must assign the project an org. Say so in the PR.
+- **Projects with no `org_id` in `projects.json`.** Their events reach service clients, and JWT sockets as the owner decision allows. An `acw_` key never receives them. AIF enforces REST and backfills a default org (`project_registry.py:109`). In PF and TF, no code writes `org_id`, so a scoped cockpit key receives no PF/TF events until projects carry an org; CFactory's polling adapters still update those items. Say so in the PR.
+- **The frontend log stream drops `projectId`.** Each `api-adapter.ts` passes `(specId, chunk)` only (AIF :889, PF :887, TF :888), so a user authorised for two projects with the same spec number can still see mixed log lines in the UI. This is a pre-existing UI bug, not a cross-org leak, and it is out of scope; file a follow-up issue.
 - **`task:update` and `task:subtask-update` with a bare spec id.** Some callers fall back to a bare spec id (PF `agent_worktree_sync.py:62`, AIF `:381,405`). Those events go to service clients only. Accepted: fail closed.
 - **The 30 s cache.** Re-assigning a project to another org leaks its events to the old org for up to 30 s.
 - **The re-check costs one validator call (a DB lookup) per `acw_` socket every 5 minutes.** This is negligible.
@@ -75,7 +93,13 @@ Per factory: a new `tests/test_ws_org_routing.py`, driven through the real `/ws/
 - A legacy or user-less client receives A's, B's and unresolvable events.
 - An `acw_` key bound to A, whose owner is in {A, B}, receives A's events only. This exercises TF's new narrowing.
 - An event for a project with no `org_id`, an unknown project or a bare spec id reaches only the user-less client.
-- `notification:new` with `data.org_id = B` does not reach the A-bound key socket of the same user, and does reach that user's JWT socket.
+- `notification:new` with `data.org_id = B` does not reach the A-bound key socket of the same user, and does reach that user's JWT socket. An org-less user event does not reach a key socket.
+- An `acw_` socket bound to A whose `org_ids` is then widened to {A, B} by `update_client_orgs` still receives no B events.
+- A legacy `BroadcastScope` (AIF Redis envelope) or `ws:broadcast` (PF relay) arriving from an old pod reaches service clients only, and JWT sockets only as the owner decision allows.
+- Real emitters, not hand-made payloads:
+  - `emit_task_status("<pid>:001-x", "in_progress")` reaches the member of `pid`'s org, and its payload still passes CFactory's `parse_upstream_message` (a status and a task key, checked by asserting the keys).
+  - A `TaskLogWriter` built with `project_id` emits `task-logs:stream` with `projectId`.
+- A service-initiated login completion reaches the service client.
 - `cli-account-auth` reaches the initiating user only.
 - `task-logs:stream` carrying `projectId` A reaches the A member only.
 - A raising `load_projects` means the event reaches user-less clients only.
