@@ -161,6 +161,14 @@ Approved decisions, carried over from the spec:
      returns 1.
    - Traps: none.
 
+## Deviations during implementation
+
+- Step 1: the sign-off section gains one paragraph listing risk-register rows
+  R-001, R-006, R-008, R-009, R-011 and R-013 as stale. The #310 team reported
+  them on 2026-11-07. They must be refreshed before signing, and off-cluster
+  backup stays open under R-001. The register itself is still not edited, so
+  that stays out of scope.
+
 ## Tests
 
 Run these from the repo root, with `F=docs/compliance/soc2-gap-assessment.md`.
