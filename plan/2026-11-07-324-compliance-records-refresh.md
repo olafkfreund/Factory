@@ -20,6 +20,11 @@ No cluster changes. All evidence was measured on 2026-11-07 and is copied below
 as E1 to E12. Cite these items. Do not add any claim that is not in the
 evidence below.
 
+Deviation from the spec (narrowing only, after the codex plan review): three
+negative claims are worded as "not found in factory-gitops" or "not cited" and
+not as absolute. Two High-risk list labels are corrected. CC7.1's CFactory text
+is corrected. The date #321 closed is added to E11.
+
 Repo traps that apply to every step:
 - Markdown tables: each edited row keeps the header's column count. Do not
   use `|` inside cell text.
@@ -91,6 +96,7 @@ items come from `kubectl --context k3d-factory` on p620. Repo items come from
   `kid` when a keyed variable is set. The live `aifactory` and `pfactory`
   Deployments set only the legacy, unkeyed `AIFACTORY_TRUSTED_PLAN_KEY_PFACTORY`.
 - **E11 Issues.** Factory #313, #317, #318, #319, #321 and #323 are CLOSED.
+  #321 closed at 2026-11-07's `gh` read: closedAt 2026-08-10T14:12:59Z.
   #3681 (off-cluster copy of the postgres backups) is OPEN. These open-issue
   searches (`gh search issues --state open`) found no matching issue; the only
   hit was a substring match on epic #310:
@@ -126,9 +132,9 @@ and this spec.
 |---|---|---|---|
 | R-001 | E1 nightly dump; E2 versioning and `backups-14d`; E4 drill. The gap that remains: the dumps share the host and volume class with Postgres and with the evidence store (dr-runbook.md "single-failure-domain"); MinIO itself is not backed up | 10 (L2 x I5) Medium; target 5 | In progress (Factory#3681 off-cluster copy; MinIO backup and scheduled re-drill: no open issue) |
 | R-006 | E2 ILM: evidence 90d and logs 30d, with each rule ID enforced by read-back. The gap that remains: the treatment's 13-month floor is in no ILM rule, and the `factory-evidence` 90-day expiry is shorter than the 12-month SOC 2 window that its own manifest comment names | 6 (L2 x I3) Low; target 3 | In progress (no open issue) |
-| R-007 | Text only: add "versioning on all three buckets (E2), no replication" and keep E3 single instance | unchanged | Open (no open issue; Factory#321 closed) |
+| R-007 | Text only: add "versioning on all three buckets (E2)" and keep "single instance on node-local storage (E3)" | unchanged | Open (no open issue; Factory#321 closed) |
 | R-008 | E5 CFactory Trivy, cosign and dual SBOM; E6 Kyverno `Enforce` with a CFactory rule, running image verifies. The gap that remains: `failurePolicy: Ignore` fails open when Kyverno is unavailable, and some first-party images are not yet fail-closed | 8 (L2 x I4) Medium; target 4 | In progress (Factory#3665) |
-| R-009 | E7 audit-chain integrity alert to OpenObserve `job_health`, trace-silence check; E8 SIEM forward. The gap that remains: no paging destination, no alert rule on auth-failure or egress anomalies, IR runbook never exercised | 12 (L3 x I4) Medium; target 6 | In progress (no open issue; #313/#319 closed) |
+| R-009 | E7 audit-chain integrity alert to OpenObserve `job_health`, trace-silence check; E8 SIEM forward. The gap that remains: no paging destination; no auth-failure or egress-anomaly alert in factory-gitops origin/main (auth failures are only queryable in the `audit_chain` stream, factory-gitops `docs/audit-siem-forwarding.md:84-90`); IR runbook never exercised | 12 (L3 x I4) Medium; target 6 | In progress (no open issue; #313/#319 closed) |
 | R-011 | E9 background writer chained, 0 NULL `prev_hash` live; negative actions `auth.failure`, `authz.denied`; E8 SIEM forward | 3 (L1 x I3) Low | Mitigated 2026-11-07 |
 | R-013 | E10 `kid` keyring and retired-kid revocation in code. The gap that remains: the live deployment uses the legacy unkeyed key, and there is no expiry | 8 (L2 x I4) Medium, unchanged | Open (no open issue; Factory#323 closed) |
 
@@ -148,7 +154,7 @@ Rows R-002 to R-005, R-010, R-012 and R-014 to R-016 are not touched.
 | A.8.13 | Planned | Partial | E1 nightly `pg_dumpall`, E2 versioning and 14-day retention. Partial: no off-cluster copy (Factory#3681); the MinIO object store itself is not backed up |
 | A.8.14 | Planned | Planned | Text: E3; "Factory#321 closed; no open issue" |
 | A.8.15 | Implemented | Implemented | Drop "Partial: background events unchained (R-011)"; cite E9 |
-| A.8.16 | Planned | Partial | E7 and E8 operate. Partial: no paging destination, no auth-failure or egress alert rules (R-009, no open issue) |
+| A.8.16 | Planned | Partial | E7 and E8 operate. Partial: no paging destination; no auth-failure or egress-anomaly alert in factory-gitops (R-009, no open issue) |
 | A.8.8 | Partial | Partial | Replace "CFactory unscanned (Factory#317)" with the E5 CFactory Trivy gate. The other qualifiers are untouched |
 | A.5.33, A.8.10 | Implemented | Implemented | Replace "note evidence ILM bug / ILM misconfig (R-006)" with "E2: ILM keeps evidence 90 days; no 13-month ILM floor (R-006)" |
 | Note at line 98 | — | — | Replace "(and the Kyverno admission rules, which have the same looseness and no `cfactory` rule at all) is Factory#522" with the E6 exact-subject rule; Factory#522 closed. The pipeline's own regexp claim is not re-measured and stays as written |
@@ -166,8 +172,8 @@ which still sums to 93.
 | CC7.5 | A.5.26 I, A.5.29 P, A.5.30 P | Gap | **Partial** | The ceiling is Partial. Recovery from data loss is proven only on-host (E4), and the IR runbook is untested (R-009) |
 | CC9.1 | A.5.29 P, A.5.30 P, A.8.13 P, A.8.14 Planned | Gap | Gap | A.8.14 is still Planned, so the ceiling is Planned. Only the text is updated |
 | A1.2 | same four | Gap | Gap | Same ceiling. The text drops "SoA records no backups" and the "does not yet reflect" note |
-| CC7.2 | A.8.15 I, A.8.16 P | Gap | **Partial** | The ceiling is Partial. The E7 alert produces an operating output in `job_health`. Gaps: no paging, no auth-failure or egress detection |
-| CC7.3 | A.5.25 I, A.8.16 P | Gap | Gap | The ceiling allows Partial, but there is no record that any event was ever triaged and the runbook was never exercised (E7). This follows the CC1.2 precedent (defined, no record = Gap) and rule 5 (round down). Only the text is updated |
+| CC7.2 | A.8.15 I, A.8.16 P | Gap | **Partial** | The ceiling is Partial. The E7 alert produces an operating output in `job_health`. Gaps: no paging; no auth-failure or egress-anomaly alert in factory-gitops |
+| CC7.3 | A.5.25 I, A.8.16 P | Gap | Gap | The ceiling allows Partial, but no triage record is cited in any source, and the runbook was never exercised (E7). This follows the CC1.2 precedent (defined, no record = Gap) and rule 5 (round down). Only the text is updated |
 
 Text-only corrections in rows that cite refreshed risks or SoA rows:
 
@@ -179,6 +185,11 @@ Text-only corrections in rows that cite refreshed risks or SoA rows:
 - CC6.8, CC7.1, CC9.2: R-008 now reads current 8 Medium, without "register
   text outdated".
 - CC7.4: R-009 now reads current 12.
+- CC7.1: also replace "CFactory even-coverage in flight (CFactory#191)" with
+  "CFactory Trivy gate live (E5, CFactory#191 merged)".
+- In the High-risk list, replace the R-001 label "(15, no backups)" with
+  "(15, backups on-host only)" and the R-009 label "(16, no alerting)" with
+  "(16, no paging)", then add the current scores.
 - CC6.5 and C1.2 risk columns: R-006 now reads current 6 Low.
 
 Risk column format for re-measured risks: `R-001 (15 High; current 10 Medium,
@@ -247,9 +258,11 @@ evidence. Its legend uses Strong, Partial and Gap.
 ## Steps
 
 1. **`docs/compliance/risk-register.md`** (coder)
-   - Methodology list (after the "Risk owner" bullet, around line 28): add the
+   - Methodology list, after the bullet that starts "- **Risk owner** is
+     named" (line 25): add the
      **Mitigated** bullet quoted under "Scoring convention".
-   - Line 30 paragraph ("Scores below are the assessment as of 2026-07-24…"):
+   - In the paragraph that starts "Scores below are the assessment as of
+     2026-07-24" (line 28):
      add one sentence. "Rows R-001, R-006, R-007, R-008, R-009, R-011 and R-013
      were re-measured on 2026-11-07
      ([spec](../../spec/2026-11-07-324-compliance-records-refresh.md)). Their L,
@@ -259,15 +272,24 @@ evidence. Its legend uses Strong, Partial and Gap.
      35-47) follow the "Register rows" table:
      - Existing controls: replace the old text with the listed evidence, citing
        file:line, CronJob name and last-success time.
-     - Residual (target): use the `Current N (Lx x Iy) 2026-11-07; target M`
-       form.
+     - Residual (target): use the form `Current N (Lx x Iy) 2026-11-07; target M`.
+       The values are R-001 `Current 10 (L2 x I5) 2026-11-07; target 5`,
+       R-006 `Current 6 (L2 x I3) 2026-11-07; target 3`, R-008
+       `Current 8 (L2 x I4) 2026-11-07; target 4`, R-009
+       `Current 12 (L3 x I4) 2026-11-07; target 6`, R-011
+       `Current 3 (L1 x I3) 2026-11-07; target 3`, and R-013
+       `Current 8 (L2 x I4) 2026-11-07; target 4`. The targets are the
+       register's existing ones. R-007 keeps `6 (L2 x I3)` unchanged.
      - Status: as listed.
      - Threat: append the suffix.
      - Treatment: unchanged, except that R-001, R-006, R-007, R-009 and R-013
        end with the remaining-gap tracker ("Factory#3681" or "no open issue").
    - Verify: every table row has 11 `|`, which you can check with
      `awk -F'|' '/^\| R-0/{print NF}' docs/compliance/risk-register.md | sort -u`
-     (expect `12`). Also check that `grep -c 'Current .* 2026-11-07'` returns 6:
+     (expect `12`, because 10 columns plus the leading and trailing pipes give
+     12 fields). Also check that
+     `grep -c 'Current .* 2026-11-07' docs/compliance/risk-register.md`
+     returns 6:
      R-001, R-006, R-008, R-009, R-011 and R-013. R-007's score is unchanged.
    - Traps: do not change L, I or Inherent. Do not touch the AR-001 / AR-002 /
      R-016 log sections.
@@ -325,14 +347,20 @@ evidence. Its legend uses Strong, Partial and Gap.
    - Verify:
      `for s in Met Partial Gap; do grep -cE "^\| (CC|A1|C1)[0-9.]+ \|[^|]*\| $s \|" docs/compliance/soc2-gap-assessment.md; done`
      must give 0, 27 and 11. Run
-     `grep -nE 'register text outdated|not yet updated|does not yet reflect|Before signing, refresh|SoA records no backups'`,
+     `grep -nE 'register text outdated|not yet updated|does not yet reflect|Before signing, refresh|SoA records no backups|no backups\)|no alerting\)' docs/compliance/soc2-gap-assessment.md`,
      which must print nothing. Every `R-0xx (` citation must agree with
      risk-register.md.
    - Traps: a SOC row is never better than its worst relied-on SoA row. Do
      not move a relied-on SoA control into the Gap column to raise a rating.
 
 5. **Verification and commit** (lead, no edits): run every Verify command
-   above together with the spec's Verification list. Commit each step
+   above, then check these by hand:
+   - For each refreshed SOC row, the status is no better than its worst
+     relied-on SoA row.
+   - Every `R-0xx (` citation in soc2-gap-assessment.md matches the register.
+   - The ISO summary in soc2-gap-assessment.md matches the SoA summary table.
+   - control-matrix.md lines 35, 50, 54, 56 and 58 match the control-matrix
+     subsection. Commit each step
    separately as `docs(compliance): <step> (#324)`.
 
 ## Tests
