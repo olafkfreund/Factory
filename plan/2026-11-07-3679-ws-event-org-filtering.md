@@ -7,7 +7,7 @@ coders:
   2: coder   # AIF plumbing: thread user id / project id through a few call sites + tests; neither large nor tricky
   3: codex   # PF routing core: same tricky logic against the Postgres relay and the REST-mode flag
   4: coder   # PF plumbing: mirror of step 2
-  5: agy     # TF: mechanical mirror of steps 3+4 onto the simplest of the three (local-only delivery)
+  5: agy     # TF: ports steps 3+4 (incl. new org delivery, the missing key narrowing, revocation, login routing) onto local-only delivery; not merely mechanical, so codex and the fresh Opus reviewer check it closely
 reviewers:
   - codex    # authored steps 1 and 3; reviews the cross-repo consistency of the predicate
   - agy      # authored step 5; independent read on tests and fail-closed coverage
@@ -72,7 +72,7 @@ reviewers:
 **Revocation.**
 - Applies when the socket's token (`_ws_extract_token(websocket)`, read once after auth) starts with `acw_`.
 - In the existing receive loop, every `_KEY_RECHECK_SECONDS = 300` (monotonic), re-run `await _ws_acw_principal(token)`.
-- On `None`: `await websocket.close(code=4001)` and break. The existing `finally` unregisters.
+- On `None`: `await websocket.close(code=4001)` and break. The existing `finally` unregisters. `_ws_acw_principal` (#312) already turns any validator exception into `None`, so a raising validator closes the socket too; test it.
 - JWT and legacy sockets are untouched.
 
 **CFactory.** No code change.
@@ -88,6 +88,16 @@ reviewers:
   - Branch: `feat/3679-ws-event-org-filtering`, cut from `origin/feat/312-cockpit-scoped-keys` (#312 adds `_ws_acw_principal` and the AIF/PF narrowing).
 - PRs target `dev`, because PF/TF CI only runs for PRs into `dev`/`main`. They state "merge after #312's PR".
 - No `git stash`, no `git worktree prune`.
+
+## Test rules (all factories)
+
+- Cases that involve connecting, registration, membership narrowing, `key_org_id` binding or revocation go through the real `/ws/events` endpoint (FastAPI `TestClient.websocket_connect`), with auth and the `OrgMember` query stubbed. Pure-delivery cases may call the delivery functions directly.
+- The PF/TF flag test uses one open JWT socket. With the flag off it receives B's event; patch settings to on, emit again, and the same socket does not receive it. REST `check_project_access` for B follows the flag the same way.
+- Every factory also covers:
+  - an org-less user event (for example `cli-account-auth` for the key's owner) not reaching that owner's `acw_` socket;
+  - `notify_org(A, data={"org_id": B})` producing `data.org_id == A`;
+  - `_event_org` caching `None`, re-reading after expiry (patch `time.monotonic`), and honouring a re-assigned project after expiry;
+  - a raising validator closing a key socket with 4001.
 
 ## Steps
 
@@ -111,9 +121,10 @@ reviewers:
      - legacy `BroadcastScope` envelope through `_parse_envelope` + `deliver_local`;
      - `OrgScope("")` round trip through `_serialize_envelope` / `_parse_envelope`;
      - real `emit_task_status("<pid>:001-x", ...)` delivery, with an assertion that the payload has `taskId` and `status`;
-     - revocation with `_KEY_RECHECK_SECONDS` patched to 0 and the validator stubbed to return a principal then `None` → close 4001.
+     - revocation with `_KEY_RECHECK_SECONDS` patched to 0 and the validator stubbed to return a principal then `None` → close 4001;
+     - plus everything under "Test rules".
      Stub `load_projects` via monkeypatch on the events module and the `OrgMember` query in the style of `tests/test_ws_acw_auth.py` (#312) and `tests/test_event_bus.py`. Clear the org cache between tests.
-   - Verify: `cd AIFactory-3679 && /mnt/code/Source-home/GitHub/AIFactory/apps/backend/.venv/bin/pytest tests/test_ws_org_routing.py tests/test_ws_acw_auth.py tests/test_event_bus.py tests/test_auth_hardening.py -q`.
+   - Verify (worktrees have no `.venv`; always use the main checkout's venv by absolute path): `cd AIFactory-3679 && /mnt/code/Source-home/GitHub/AIFactory/apps/backend/.venv/bin/pytest tests/test_ws_org_routing.py tests/test_ws_acw_auth.py tests/test_event_bus.py tests/test_auth_hardening.py -q`.
    - Traps:
      - Tests put `apps/web-server` and `apps/backend` on `sys.path` (`test_auth_hardening.py:24`).
      - Do not reorder the legacy branch in `auth.py` (`_warn_legacy_api_token_once` global).
@@ -167,7 +178,7 @@ reviewers:
    - Traps: TF's lazy-import style for `mcp_remote.auth`; no unused imports (F401).
 
 6. **Lead.**
-   - Per repo, run the step's tests plus the whole `tests/` directory that CI runs, and reproduce CI's lint gates locally against `origin/dev`:
+   - Per repo, run the step's tests plus the whole `tests/` directory that CI runs, and reproduce CI's lint gates locally against `origin/dev`. Worktrees have no `.venv`: put `/mnt/code/Source-home/GitHub/<Repo>/apps/backend/.venv/bin` first on `PATH` and read every `apps/backend/.venv/bin/...` below as that absolute path. Bare `ruff`/`python` means those venv binaries.
      - AIF: `apps/backend/.venv/bin/ruff check apps/backend apps/web-server apps/model-gateway scripts tests`; `python scripts/cq_ratchet.py --base origin/dev --ruff apps/backend/.venv/bin/ruff --config standards/ruff.toml --paths 'apps/backend/*.py' 'apps/web-server/*.py' 'scripts/*.py'`; `ruff format --check apps/backend apps/web-server apps/model-gateway scripts tests`.
      - PF: `PATH=apps/backend/.venv/bin:$PATH apps/backend/.venv/bin/python scripts/ratchet_lint.py --base origin/dev --package apps/backend --package apps/web-server --package scripts`; `ruff format --check`.
      - TF: `ruff check apps/backend tests scripts`; `python scripts/ratchet_lint.py --base origin/dev --package apps/backend --package apps/web-server --package scripts`; `ruff format --check apps/backend apps/web-server scripts tests`.
@@ -184,4 +195,12 @@ The commands are per step above. Expected: every listed test passes, nothing tha
 
 ## Rollback
 
-Revert the factory PRs. The delivery code returns to broadcast-to-all, and no data or schema changes. Operationally, PF/TF JWT behaviour is already unchanged in shadow mode. AIF JWT users who lose events for projects without an org (none should exist, since AIF backfills a default org) are the only user-visible change.
+Revert the factory PRs (`git revert` the merge commits). The delivery code returns to broadcast-to-all, with no data or schema change.
+
+Reverting also restores the cross-org leak, including to scoped `acw_` keys. Behaviour that the revert undoes:
+- key sockets confined to their org;
+- login completions sent to the initiating user only;
+- bare-spec-id and no-org events withheld from key sockets and strict JWT sockets;
+- AIF JWT filtering.
+
+In PF/TF shadow mode, JWT behaviour does not change either way.
