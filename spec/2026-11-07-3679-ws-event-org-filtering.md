@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3679
 intent: intent/2026-11-07-3679-ws-event-org-filtering.md
 ---
