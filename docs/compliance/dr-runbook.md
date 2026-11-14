@@ -37,7 +37,7 @@ From the drill of **2026-08-10** (see Evidence). These are measurements, not tar
 recovery also needs: a Postgres to restore into, services repointed at it, and
 application validation. Those dominate and are not yet measured — the honest
 statement is "data restore is not the bottleneck; standing the platform back up
-is". Measuring the full path is outstanding (#321 closed; no open issue).
+is". Measuring the full path is outstanding (#321 closed; Factory#3691).
 
 ## The single-failure-domain problem (READ THIS FIRST)
 
@@ -174,9 +174,9 @@ reads like a misconfiguration rather than a restore that stopped halfway.
       Needs an infrastructure decision (second machine, NAS, or real S3).
 - [x] **MinIO versioning** — enabled on all three buckets.
 - [ ] **MinIO backup** — versioning is not a backup. The evidence store is not
-      backed up, and it also holds the Postgres backups. No open issue.
-- [ ] **Full-path RTO** — measure standing the platform back up, not just the
+      backed up, and it also holds the Postgres backups. Factory#3691.
+- [ ] **Full-path RTO (Factory#3691)** — measure standing the platform back up, not just the
       data restore.
-- [ ] **HA Postgres**, or a written single-writer risk acceptance.
+- [ ] **HA Postgres (Factory#3690)**, or a written single-writer risk acceptance.
 - [ ] **Scheduled re-drill** — a restore proven once is evidence with an expiry
       date. Assessors ask when it last ran.

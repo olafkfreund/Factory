@@ -47,7 +47,7 @@ as separate columns here.
 |---|---|---|---|
 | Governance / ISMS | RFCs, SECURITY.md, CODEOWNERS (uneven) | No ISMS: no policy set, risk register, SoA, or named CISO/owners | #311 |
 | IAM & access control | Scoped `acw_` keys, org RBAC, `access_review.py`, cred-broker (#292) | Shared wildcard `APP_API_TOKEN` grants `is_service=True` fleet-admin bypass | #312 |
-| Audit logging | Hash-chain + daily signed anchor + air-gapped verifier | no paging; no alert rules for auth-failure or egress anomalies | #313 |
+| Audit logging | Hash-chain + daily signed anchor + air-gapped verifier | No paging; no alert rules for auth-failure or egress anomalies | #313 |
 | Encryption at rest | TLS at Cloudflare edge; agenix host key | Postgres PV not encrypted (R-014, accepted to 2027-04-24); no KMS; cluster-internal cleartext | #314 |
 | Secrets management | agenix + cred-broker rotation; `scan_secrets.py`; gitleaks required check | Manual agenix rotation accepted (R-016, review 2027-04-24); runbook in encryption-key-mgmt.md; inventory in factory-gitops docs/secrets-management.md; SOPS claim not real | #315 |
 | Change mgmt & SoD | PR flow, CI gates, Fides change-gate (built); merge autonomy: [generated autonomy matrix + control mapping](https://aifactory.freundcloud.com/compliance/autonomy-matrix) (#1962) | Direct-to-main gitops auto-deploy; branch protection with required checks on all four service repos (and factory-gitops); `enforce_admins` is on for `main` in the four service repos and Factory since 2026-10-22, but off on every `dev` branch and on factory-gitops `main`, where an admin can still merge past a red check via the API (#943, AIFactory#2014); Fides unwired | #316 |

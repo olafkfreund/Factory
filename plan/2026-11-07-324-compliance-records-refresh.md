@@ -25,6 +25,15 @@ negative claims are worded as "not found in factory-gitops" or "not cited" and
 not as absolute. Two High-risk list labels are corrected. CC7.1's CFactory text
 is corrected. The date #321 closed is added to E11.
 
+Deviation at step 5 (2026-11-14): E11 found no open issue for five remaining
+gaps. Those issues were opened on 2026-11-14, so the records cite them where
+the tables below say "no open issue": Factory#3688 (R-009 paging, alerts,
+tabletop), #3689 (R-013 live `kid` and expiry), #3690 (R-007 HA), #3691
+(R-001 MinIO backup, scheduled re-drill, full-path RTO) and #3692 (R-006
+13-month ILM floor). No score or rating changes. The step-5 review also fixed
+a line reference (SoA lines 13-20), a repeated "no expiry" in R-013 and one
+lowercase cell start in control-matrix.md.
+
 Repo traps that apply to every step:
 - Markdown tables: each edited row keeps the header's column count. Do not
   use `|` inside cell text.

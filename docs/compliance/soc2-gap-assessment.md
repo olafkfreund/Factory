@@ -31,7 +31,7 @@ control domains to criteria, and the [Statement of Applicability](statement-of-a
 ## Status legend
 
 Met, Partial and Gap use the SoA's definitions of Implemented, Partial and Planned
-([statement-of-applicability.md](statement-of-applicability.md), lines 12-19).
+([statement-of-applicability.md](statement-of-applicability.md), lines 13-20).
 
 1. **Met** needs evidence that covers the whole criterion, and the evidence must
    be an operating output, not only a config file or a policy.
