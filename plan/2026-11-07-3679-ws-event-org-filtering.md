@@ -84,6 +84,15 @@ reviewers:
 
 **Accepted residual (user, 2026-11-07).** In PF/TF shadow mode a JWT socket still receives other orgs' and unresolved events, as REST serves them. Turning on `RBAC_ENFORCE_TASK_ROUTES` closes it.
 
+## Deviations found in the step 6 reviews (2026-11-14)
+
+- **User-scoped sends to a key socket** go through `_may_receive(client, _payload_org(payload))`, so the live-membership clause applies there too (codex, agy, fresh reviewer).
+- **Membership refresh.** Membership loading is one helper, `_load_org_ids(client, user_info)`. It runs at connect and again on every key re-check; a failed lookup leaves the socket with no orgs. JWT sockets still read memberships only at connect (follow-up issue).
+- **Revocation scope (PF/TF).** The re-check applies to every key principal (`user_info["api_key_id"]` is set and the token starts with `acw_`), including org-less keys. The token is not read for other sockets.
+- **Legacy `ws:broadcast` (PF)** is filtered with `_may_receive(client, None, shadow=True)`: service clients always, JWT sockets only in shadow mode, key sockets never. This is what the original predicate did for `org=None`.
+- **Project id for `task-logs:stream`.** No `TaskLogWriter` caller holds a project id, so each derives it from the `"<pid>:<spec>"` task id; a bare task id gives none and the stream goes to service clients only.
+- **TF gains `update_client_orgs`**, as AIF and PF have. No production code calls it in any factory.
+
 ## Branches and worktrees
 
 - Per repo `R` in {AIFactory, PFactory, TFactory}:
