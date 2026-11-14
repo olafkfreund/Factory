@@ -4,6 +4,7 @@
 - **Review cadence:** At least annually and at each management review
 - **Framework:** ISO/IEC 27001:2022 Clause 6.1.3(d) — the SoA is a mandatory document
 - **Assessment date:** 2026-07-24
+- **Re-measured 2026-11-07:** A.5.29, A.5.30, A.5.33, A.8.8, A.8.10, A.8.13-A.8.16 ([spec](../../spec/2026-11-07-324-compliance-records-refresh.md))
 
 This is the ISO-specific, control-by-control view of the ISMS. It covers all **93** Annex
 A controls across the four themes (A.5 Organizational 37, A.6 People 8, A.7 Physical 14,
@@ -58,11 +59,11 @@ matrix draw evidence from the same [domain documents](policies/). Owner tags map
 | A.5.26 | Response to information security incidents | Implemented | Runbook containment/eradication/recovery lifecycle. | IR |
 | A.5.27 | Learning from information security incidents | Implemented | Blameless post-incident review within 5 business days; corrective actions feed the risk register. | IR |
 | A.5.28 | Collection of evidence | Implemented | Tamper-evident audit hash-chain + air-gapped `verify-chain` verifier (`AIFactory/apps/web-server/server/audit/__main__.py`). | Audit |
-| A.5.29 | Information security during disruption | Planned | BC policy defined; recovery constrained by the open backup gap (R-001, Factory#321). | BC/DR |
-| A.5.30 | ICT readiness for business continuity | Planned | RTO/RPO proposed; backups, tested restore, and DR runbook pending (Factory#321). | BC/DR |
+| A.5.29 | Information security during disruption | Partial | BC policy defined; [dr-runbook.md](dr-runbook.md); nightly `postgres-backup` CronJob (`15 2 * * *`, `factory-gitops apps/backups/manifests/manifests.yaml`, last success 2026-11-07T02:15:06Z) operates. Partial: everything sits in one failure domain (R-001, Factory#3681). | BC/DR |
+| A.5.30 | ICT readiness for business continuity | Partial | Restore drill 2026-08-10 ([dr-runbook.md](dr-runbook.md), commit 03c87f8, #662) measured data-restore RTO 17s (52/52 tables) and RPO up to 24h. Partial: full-path RTO not measured, no scheduled re-drill (Factory#3691), off-cluster copy missing (Factory#3681). | BC/DR |
 | A.5.31 | Legal, statutory, regulatory and contractual requirements | Implemented | Notification obligations mapped in the IR runbook's breach-notification matrix; GDPR ROPA `AIFactory/guides/compliance/dpia-data-flow.md`. | Security Owner |
 | A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. **Executable evidence** — see [the note below this table](#executable-evidence-a532) for what it does and does not prove. | Supply-chain |
-| A.5.33 | Protection of records | Implemented | Audit records are tamper-evident and retained 13 months (`audit_retention.py`); note evidence ILM bug (R-006). | Audit |
+| A.5.33 | Protection of records | Implemented | Audit records are tamper-evident and retained 13 months (`audit_retention.py`); ILM keeps evidence 90 days (`minio-create-bucket` 2026-10-22, `factory-gitops apps/minio/manifests/manifests.yaml:335-361`); no 13-month ILM floor (R-006). | Audit |
 | A.5.34 | Privacy and protection of PII | Planned | Redactor + DPIA exist; DSAR deferred by decision 2026-10-24; CLI-spawn scrub gap open (R-004, Factory#320). | Data |
 | A.5.35 | Independent review of information security | Planned | Annual independent review scheduled but not yet performed (governance domain, Factory#311). | Security Owner |
 | A.5.36 | Compliance with policies, rules and standards | Implemented | CI gates enforce SDLC policy; management review checks control effectiveness ([roles.md](roles.md)). | Security Owner |
@@ -95,7 +96,7 @@ exit=1
 
 The control was also observed exiting 1 before CFactory#191 added the attestation step. So it has been seen failing with the control absent, failing with the wrong signer, and passing with both correct.
 
-**The command above is stricter than the pipeline's own check.** CFactory's `deploy.yml` verifies with `--certificate-identity-regexp '^https://github\.com/<owner>/CFactory/'`, which is correctly owner- and repo-scoped but accepts *any workflow on any ref* in that repo — a feature branch or a `refs/pull/*` merge ref would satisfy it. The exact identity above is the tight form and is what an assessor should run. Do not read this note as describing what CI enforces; tightening the pipeline (and the Kyverno admission rules, which have the same looseness and no `cfactory` rule at all) is Factory#522.
+**The command above is stricter than the pipeline's own check.** CFactory's `deploy.yml` verifies with `--certificate-identity-regexp '^https://github\.com/<owner>/CFactory/'`, which is correctly owner- and repo-scoped but accepts *any workflow on any ref* in that repo — a feature branch or a `refs/pull/*` merge ref would satisfy it. The exact identity above is the tight form and is what an assessor should run. Do not read this note as describing what CI enforces; tightening the pipeline is Factory#522 (closed). The live Kyverno rule `verify-cfactory-signature` is already exact: it pins subject `^https://github\.com/olafkfreund/CFactory/\.github/workflows/deploy\.yml@refs/heads/main$` (measured 2026-11-07).
 
 Extending this pattern to other rows is tracked in Factory#504. Each row must have its command actually run — and made to fail — before it is cited.
 
@@ -147,15 +148,15 @@ Applicable to the fleet's own operation, justified per control below.
 | A.8.5 | Secure authentication | Implemented | Keycloak OIDC (JWT/cookie validation, `TokenAuthMiddleware`). Partial: MFA enforcement pending (R-010). | IAM |
 | A.8.6 | Capacity management | Implemented | KEDA-driven per-task Job scaling (RFC-0016); Postgres/Redis job-state backpressure. | Runtime |
 | A.8.7 | Protection against malware | Implemented | Untrusted content treated as hostile (`prompt_guard.py`); no execution of untrusted binaries outside the sandbox; image scanning via Trivy. | Runtime |
-| A.8.8 | Management of technical vulnerabilities | Partial | CodeQL (5 repos), Trivy P0 gate (`test_p0_supply_chain.py`), Dependabot. Partial: no remediation SLA, CFactory unscanned (Factory#317). Status corrected from Implemented 2026-07-30: the Renovate leg of this control had never operated in any repo (Factory#436), and the row already listed two partials while claiming Implemented. | Vuln |
+| A.8.8 | Management of technical vulnerabilities | Partial | CodeQL (5 repos), Trivy P0 gate (`test_p0_supply_chain.py`), Dependabot; CFactory Trivy HIGH/CRITICAL gate (`CFactory .github/workflows/image-build.yml:164,199,233`, Factory#317 closed). Partial: no remediation SLA. Status corrected from Implemented 2026-07-30: the Renovate leg of this control had never operated in any repo (Factory#436), and the row already listed two partials while claiming Implemented. | Vuln |
 | A.8.9 | Configuration management | Implemented | Declarative gitops (`factory-gitops/`), pinned inputs, per-task securityContext in manifests. | Change-mgmt |
-| A.8.10 | Information deletion | Implemented | Retention jobs (`audit_retention.py`, evidence `retention.py`) and MinIO ILM delete data; note ILM misconfig (R-006). Partial: DSAR erasure (R-004). | Data |
+| A.8.10 | Information deletion | Implemented | Retention jobs (`audit_retention.py`, evidence `retention.py`) and MinIO ILM delete data; ILM keeps evidence 90 days (`minio-create-bucket` 2026-10-22, `factory-gitops apps/minio/manifests/manifests.yaml:335-361`); no 13-month ILM floor (R-006). Partial: DSAR erasure (R-004). | Data |
 | A.8.11 | Data masking | Implemented | PII redactor (`llm_pii_redactor.py`) masks SSN/email/phone/card. Outbound scrub on by default, mandatory for regulated projects; partial: two direct CLI spawns unscrubbed (R-004). | Data |
 | A.8.12 | Data leakage prevention | Planned | Egress guards + secret scanners exist but are target-level, not content DLP; output DLP pending (Factory#320/#323). | Data |
-| A.8.13 | Information backup | Planned | No backups of Postgres/MinIO today; off-cluster encrypted backup is Wave 2 (R-001, Factory#321). | BC/DR |
-| A.8.14 | Redundancy of information processing facilities | Planned | Single-instance data stores on node-local storage; HA/redundancy is Wave 3 (R-007, Factory#321). | BC/DR |
-| A.8.15 | Logging | Implemented | Tamper-evident hash-chain audit log (`audit_chain.py`, `audit_service.py`). Partial: background events unchained (R-011). | Audit |
-| A.8.16 | Monitoring activities | Planned | OpenObserve telemetry + pipeline anomaly heuristic; security alerting/SIEM forward pending (R-009, Factory#313). | Audit |
+| A.8.13 | Information backup | Partial | Nightly `pg_dumpall` via CronJob `postgres-backup` (`15 2 * * *`, `factory-gitops apps/backups/manifests/manifests.yaml`, last success 2026-11-07T02:15:06Z); MinIO bucket versioning and declared `backups-14d` 14-day retention (`minio-create-bucket` 2026-10-22, `factory-gitops apps/minio/manifests/manifests.yaml:335-361`). Partial: no off-cluster copy (R-001, Factory#3681); the MinIO object store itself is not backed up (Factory#3691). | BC/DR |
+| A.8.14 | Redundancy of information processing facilities | Planned | Single-instance data stores (`postgres` StatefulSet and `minio` Deployment each `replicas: 1`) on node-local storage; HA/redundancy is Wave 3 (R-007; Factory#321 closed; Factory#3690). | BC/DR |
+| A.8.15 | Logging | Implemented | Tamper-evident hash-chain audit log (`audit_chain.py`, `AIFactory apps/web-server/server/services/audit_service.py:113-169,241-258` shares chain helpers between request and background writers; 0 of 29 live `audit_logs` rows have NULL `prev_hash`; negative actions `ACTION_AUTH_FAILURE` at `audit_service.py:91`, `auth.py:159-162` and `ACTION_AUTHZ_DENIED` at `routes/project_authz.py:170-175`; R-011 mitigated). | Audit |
+| A.8.16 | Monitoring activities | Partial | OpenObserve telemetry + pipeline anomaly heuristic; CronJob `audit-anchor-alert` (daily, last success 2026-11-07T06:00:06Z to OpenObserve `job_health`), CronJob `trace-silence-check` (hourly, last success 2026-11-07T14:43:04Z), and CronJob `audit-siem-forward` (every 15 min, last success 2026-11-07T15:15:05Z, `factory-gitops docs/audit-siem-forwarding.md`) operate. Partial: no paging destination (`factory-gitops docs/argocd-sync-honesty.md:230`); no auth-failure or egress-anomaly alert in factory-gitops (R-009, Factory#313 closed, Factory#3688). | Audit |
 | A.8.17 | Clock synchronization | Implemented | Cluster nodes/pods use host NTP; audit anchor stamps at 00:00 UTC daily. | Runtime |
 | A.8.18 | Use of privileged utility programs | Implemented | Auth-disable switches prohibited in prod ([access-control-policy.md](policies/access-control-policy.md)); privileged actions run in hardened, non-root pods. | Runtime |
 | A.8.19 | Installation of software on operational systems | Implemented | Images are built in CI and deployed via gitops; no ad-hoc installation on running systems (immutable containers). | Change-mgmt |
@@ -179,11 +180,11 @@ Applicable to the fleet's own operation, justified per control below.
 
 | Theme | Controls | Implemented | Partial | Planned | Not Applicable |
 |---|---|---|---|---|---|
-| A.5 Organizational | 37 | 25 | 1 | 10 | 1 |
+| A.5 Organizational | 37 | 25 | 3 | 8 | 1 |
 | A.6 People | 8 | 4 | 0 | 1 | 3 |
 | A.7 Physical | 14 | 0 | 0 | 2 | 12 |
-| A.8 Technological | 34 | 25 | 3 | 5 | 1 |
-| **Total** | **93** | **54** | **4** | **18** | **17** |
+| A.8 Technological | 34 | 25 | 5 | 3 | 1 |
+| **Total** | **93** | **54** | **8** | **14** | **17** |
 
 Not-Applicable controls are concentrated in A.7 (physical, provider-inherited for a
 cloud-only fleet) and the employment-specific A.6 controls, each justified above. Planned
