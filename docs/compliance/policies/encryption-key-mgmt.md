@@ -3,13 +3,30 @@
 - **Domain:** Encryption at rest & key management (Factory#314)
 - **Frameworks addressed:** ISO/IEC 27001 A.8.24 (use of cryptography); SOC 2 CC6.1 (logical access / data protection); PCI DSS Req. 3 (stored data) and Req. 4 (data in transit); NYDFS 23 NYCRR 500.15 (encryption of nonpublic information); FedRAMP SC-12 / SC-13 / SC-28 (cryptographic key establishment and management, cryptographic protection, protection of information at rest) with FIPS 140 validation.
 - **Parent epic:** Factory#310 (audit-readiness), top gap #3.
-- **Status:** Draft. Encryption-at-rest controls are NOT yet implemented; this document states the honest current posture and the remediation plan.
+- **Status:** Draft. MinIO SSE-S3 is configured for new writes; volume encryption (Postgres, Redis, Keycloak, MinIO), etcd Secret encryption and a KMS are not implemented.
 
 ## Purpose
 
 Define how the Factory fleet protects data using cryptography: what is encrypted in transit, what is (and is not) encrypted at rest, and how cryptographic keys and secrets are generated, stored, custodied, and rotated. Scope covers the two durable data stores that hold job state and evidence — Postgres and MinIO — plus Redis, Kubernetes Secrets, and the application-level keys (`JWT_SECRET`, `acw_` API keys, database credentials, signing keys, provider tokens). The controlling assertion an assessor tests is: sensitive data is encrypted at rest with evidence, and the keys protecting it are managed under a documented lifecycle.
 
 ## Current state (grounded)
+
+### Status update 2026-11-14
+
+Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-factory`, 2026-11-14. **Repo** is a file in a repo. **Record** is an issue, PR or risk entry that cannot be re-verified from the repo, with its own date. The KEK emergency runbook (added in factory-gitops#334) is untested. Details: [`encryption-at-rest.md`](https://github.com/olafkfreund/factory-gitops/blob/main/docs/encryption-at-rest.md) and [`secrets-management.md`](https://github.com/olafkfreund/factory-gitops/blob/main/docs/secrets-management.md) in factory-gitops.
+
+| Layer | State | Evidence |
+|---|---|---|
+| MinIO SSE-S3 | Configured for new writes on `factory-artifacts`, `factory-backups`, `factory-evidence`. Existing objects and versions not evidenced. | Live: Deployment `minio` takes `MINIO_KMS_SECRET_KEY` from Secret `minio-kms`; Job `minio-create-bucket` succeeded 2026-10-22. Repo: `apps/minio/manifests/manifests.yaml` (`mc encrypt set sse-s3` on the three buckets). |
+| KEK custody | Documented. Agenix copy and offline identity backup unconfirmed. | Record: owner comment on Factory#314, 2026-07-25. Repo: `docs/secrets-management.md`, custody section. |
+| Key-rotation policy and ledger | In place; rotation is manual. | Repo: `docs/secrets-management.md`, `scripts/rotation-ledger-check.py`, `.github/workflows/secret-rotation-due.yml`. |
+| Postgres | Unencrypted, risk accepted. | Record: R-014, review 2027-04-24 (Factory#3653). Live: PVC `data-postgres-0` on `local-path`. |
+| Other `local-path` volumes (Redis, Keycloak, service data) | Unencrypted. | Live: all PVCs on `local-path`. Record: R-003, open. |
+| etcd Secrets | Unencrypted. | Live: server node `k3s.io/node-args` has no `--secrets-encryption`. |
+| Node disk | No LUKS. | Record: owner host check 2026-10-24 (p620, `/mnt/code/k3d/storage` on `/dev/sdb1` ext4). |
+| Application-level keys | `KMS_FERNET_KEY` (aifactory), `CFACTORY_CREDENTIAL_KEY` (cfactory) documented; not checked live. | Repo: rotation policy in `docs/secrets-management.md`. |
+| FIPS 140 | Nothing asserted. Owner decision. | Record: Factory#314 scopes it to FedRAMP. |
+| KES / external KMS | Not deployed. MinIO uses its built-in static single-key mode. | Repo: MinIO manifest. |
 
 ### In transit (partial — external only)
 
@@ -23,29 +40,29 @@ Define how the Factory fleet protects data using cryptography: what is encrypted
 - Sensitive values are created out-of-band with `kubectl create secret` and are NOT committed to git. See the header comments in `factory-gitops/apps/postgres/manifests/manifests.yaml` (`factory-secrets/POSTGRES_PASSWORD`) and `factory-gitops/apps/minio/manifests/manifests.yaml` (`minio-creds`). This keeps plaintext out of the repo but means the secrets live as base64 (not encrypted) in the cluster.
 - No sealed-secrets controller, no External Secrets Operator, and no Vault are deployed (`factory-gitops/apps/` contains none; the only matches for those terms are comments saying "no sealed-secrets / ESO yet"). Kubernetes Secrets therefore sit in etcd, and the k3s default has no `EncryptionConfiguration` (none exists in `factory-gitops/bootstrap/`), so Secrets are effectively plaintext-at-rest in etcd on disk.
 
-### Data at rest (none)
+### Data at rest (partial: MinIO object content only)
 
 - Postgres — the durable control-plane state store (job_states and per-service tables, RFC-0016) — is a single-replica StatefulSet on an RWO `local-path` PVC (`factory-gitops/apps/postgres/manifests/manifests.yaml`). The k3s `local-path` provisioner writes to a plain host directory on the node's filesystem. No LUKS/dm-crypt, no encrypted StorageClass, no `pgcrypto` / column encryption, no TDE.
-- MinIO — the object store for PARR artifacts and evidence — runs with `args: ["server", "/data", …]` on an RWO `local-path` PVC (`factory-gitops/apps/minio/manifests/manifests.yaml`). It is started with no server-side encryption (SSE-S3 / SSE-KMS) and no `MINIO_KMS_*` configuration. Objects, including audit evidence, are stored unencrypted on the host disk.
+- MinIO — the object store for PARR artifacts and evidence — runs with `args: ["server", "/data", …]` on an RWO `local-path` PVC (`factory-gitops/apps/minio/manifests/manifests.yaml`). SSE-S3 is configured on three buckets (`factory-artifacts`, `factory-backups`, `factory-evidence`) using MinIO's built-in static single-key mode (`MINIO_KMS_SECRET_KEY`). New writes are encrypted; existing-object coverage is not evidenced. The volume under MinIO is not encrypted.
 - Redis (`factory-gitops/apps/redis/manifests/manifests.yaml`) and Keycloak (`factory-gitops/infra/keycloak/keycloak.yaml`) are likewise on `local-path` with no at-rest encryption.
 - Update 2026-10-24: MinIO SSE-S3 is on (factory-gitops#71, #310). Host check on p620: no crypt/LUKS in `lsblk`; the Postgres PV dir `/mnt/code/k3d/storage` is on `/dev/sdb1` ext4, so Postgres stays unencrypted and is risk-accepted as R-014 (review 2027-04-24).
-- Net: no data-at-rest encryption exists on any store. This is the state the epic flags as gap #3.
+- Net: object content in MinIO is encrypted for new writes; every volume (Postgres, Redis, Keycloak, MinIO's own) and etcd are not.
 
 ### Key management posture
 
 - The only automated rotation in the fleet is the credential broker for the Claude OAuth token, which refreshes and rolls the refresh/access token forward (`factory-gitops/apps/cred-broker/manifests/manifests.yaml`).
-- No key-management system, no envelope encryption, and no data-encryption keys exist. There is no KMS resource in `factory-gitops`.
+- No key-management system and no envelope encryption exist. There is no KMS service in `factory-gitops`: MinIO's key is a static key in a Kubernetes Secret (`minio-kms`), not a KMS. A rotation policy and an overdue check now exist (factory-gitops#328).
 - Long-lived application secrets have no rotation automation and no documented custody: `JWT_SECRET`, the `acw_` API keys, the shared `POSTGRES_PASSWORD`, the MinIO root access/secret keys, and the runtime GitHub PAT. `Factory/docs/dev/secrets-and-tokens.md` documents manual, operator-driven "rotate on leak" procedures only (for example `acw_` keys are revoked by hand in the factory's key management, and MinIO creds are rotated by recreating the Secret and bouncing consumers).
 
 ## Gaps
 
 1. No encryption at rest for Postgres data (plain `local-path` PVC).
-2. No encryption at rest for MinIO objects, including audit evidence (no SSE, no KMS).
+2. No encryption at rest for MinIO objects, including audit evidence (no SSE, no KMS). Partly addressed 2026-11-14: SSE-S3 configured; existing-object coverage not evidenced; emergency re-encryption untested.
 3. No encryption at rest for Redis and Keycloak volumes.
 4. Kubernetes Secrets are base64-only; etcd has no `EncryptionConfiguration`, and no SOPS/sealed-secrets/ESO/Vault is deployed despite being referenced in docs.
 5. No key-management system or envelope encryption; no defined data-encryption-key hierarchy or key-encryption key.
-6. No key-custody documentation: who holds the master/decryption key, where it lives, and who can access it is not evidenced.
-7. No rotation policy or automation for `JWT_SECRET`, `acw_` keys, DB credentials, MinIO root keys, or signing keys (only the Claude OAuth broker rotates).
+6. No key-custody documentation: who holds the master/decryption key, where it lives, and who can access it is not evidenced. Partly addressed: agenix custody documented in factory-gitops; offline identity backup and bootstrap host unconfirmed; no dual control.
+7. No rotation policy or automation for `JWT_SECRET`, `acw_` keys, DB credentials, MinIO root keys, or signing keys (only the Claude OAuth broker rotates). Partly addressed: rotation policy and overdue check exist; rotation is manual.
 8. In-cluster traffic (app-to-DB, app-to-MinIO, connector-to-Service) is not encrypted in transit.
 9. FedRAMP-specific: no FIPS 140-validated cryptographic modules are asserted for any of the above.
 
@@ -87,13 +104,13 @@ Phased; each phase is independently shippable and leaves evidence behind.
 ## Acceptance criteria
 
 - [ ] Postgres data is encrypted at rest (encrypted volume/StorageClass, cloud-managed CMK, or pgcrypto) with evidence.
-- [ ] MinIO objects — including the evidence prefixes — are encrypted at rest (SSE-S3 or SSE-KMS) with evidence.
+- [ ] MinIO objects — including the evidence prefixes — are encrypted at rest (SSE-S3 or SSE-KMS) with evidence. (2026-11-14: SSE-S3 is configured for new writes; existing-object coverage is not evidenced and the emergency re-encryption runbook is untested.)
 - [ ] Redis and Keycloak volumes are encrypted at rest (covered by Phase 1 substrate encryption) with evidence.
 - [ ] Kubernetes Secrets are encrypted at rest in etcd via a committed `EncryptionConfiguration`.
 - [ ] Git-managed secrets use a real encryption path (SOPS+age or sealed-secrets) that is actually deployed and used, not just referenced in docs.
 - [ ] A key-management system is in place with a documented KEK/DEK hierarchy (envelope encryption).
-- [ ] Key custody is documented: holders, access controls (dual-control on the KEK), and break-glass procedure.
-- [ ] A key-rotation policy with defined intervals exists and is automated for `JWT_SECRET`, `acw_` keys, DB creds, MinIO root keys, and signing keys; at least one rotation is evidenced in the audit log.
+- [ ] Key custody is documented: holders, access controls (dual-control on the KEK), and break-glass procedure. (2026-11-14: agenix custody is documented in factory-gitops; the offline identity backup and the bootstrap host are unconfirmed, and there is no dual control.)
+- [ ] A key-rotation policy with defined intervals exists and is automated for `JWT_SECRET`, `acw_` keys, DB creds, MinIO root keys, and signing keys; at least one rotation is evidenced in the audit log. (2026-11-14: a rotation policy and overdue check exist, but rotation is manual and no rotation is evidenced in the audit log.)
 - [ ] In-transit encryption covers app-to-DB and app-to-MinIO (PCI Req. 4 / SC-8).
 - [ ] FedRAMP scope only: FIPS 140-validated modules asserted with CMVP certificate references.
 
