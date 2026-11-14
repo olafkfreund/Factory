@@ -13,7 +13,7 @@ Define how the Factory fleet protects data using cryptography: what is encrypted
 
 ### Status update 2026-11-14
 
-Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-factory`, 2026-11-14. **Repo** is a file in a repo. **Record** is an issue, PR or risk entry that cannot be re-verified from the repo, with its own date. The KEK emergency runbook (added in factory-gitops#334) is untested. Details: [`encryption-at-rest.md`](https://github.com/olafkfreund/factory-gitops/blob/main/docs/encryption-at-rest.md) and [`secrets-management.md`](https://github.com/olafkfreund/factory-gitops/blob/main/docs/secrets-management.md) in factory-gitops.
+Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-factory`, 2026-11-14. **Repo** is a file in factory-gitops (paths below are relative to that repo). **Record** is an issue, PR or risk entry that cannot be re-verified from the repo, with its own date. The KEK emergency runbook (added in factory-gitops#334) is untested. Details: [`encryption-at-rest.md`](https://github.com/olafkfreund/factory-gitops/blob/main/docs/encryption-at-rest.md) and [`secrets-management.md`](https://github.com/olafkfreund/factory-gitops/blob/main/docs/secrets-management.md) in factory-gitops.
 
 | Layer | State | Evidence |
 |---|---|---|
@@ -43,10 +43,10 @@ Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-
 ### Data at rest (partial: MinIO object content only)
 
 - Postgres — the durable control-plane state store (job_states and per-service tables, RFC-0016) — is a single-replica StatefulSet on an RWO `local-path` PVC (`factory-gitops/apps/postgres/manifests/manifests.yaml`). The k3s `local-path` provisioner writes to a plain host directory on the node's filesystem. No LUKS/dm-crypt, no encrypted StorageClass, no `pgcrypto` / column encryption, no TDE.
-- MinIO — the object store for PARR artifacts and evidence — runs with `args: ["server", "/data", …]` on an RWO `local-path` PVC (`factory-gitops/apps/minio/manifests/manifests.yaml`). SSE-S3 is configured on three buckets (`factory-artifacts`, `factory-backups`, `factory-evidence`) using MinIO's built-in static single-key mode (`MINIO_KMS_SECRET_KEY`). New writes are encrypted; existing-object coverage is not evidenced. The volume under MinIO is not encrypted.
+- MinIO — the object store for PARR artifacts and evidence — runs with `args: ["server", "/data", …]` on an RWO `local-path` PVC (`factory-gitops/apps/minio/manifests/manifests.yaml`). SSE-S3 is configured on three buckets (`factory-artifacts`, `factory-backups`, `factory-evidence`) using MinIO's built-in static single-key mode (`MINIO_KMS_SECRET_KEY`). New writes are configured to be encrypted; existing-object coverage is not evidenced. The volume under MinIO is not encrypted.
 - Redis (`factory-gitops/apps/redis/manifests/manifests.yaml`) and Keycloak (`factory-gitops/infra/keycloak/keycloak.yaml`) are likewise on `local-path` with no at-rest encryption.
-- Update 2026-10-24: MinIO SSE-S3 is on (factory-gitops#71, #310). Host check on p620: no crypt/LUKS in `lsblk`; the Postgres PV dir `/mnt/code/k3d/storage` is on `/dev/sdb1` ext4, so Postgres stays unencrypted and is risk-accepted as R-014 (review 2027-04-24).
-- Net: object content in MinIO is encrypted for new writes; every volume (Postgres, Redis, Keycloak, MinIO's own) and etcd are not.
+- Update 2026-10-24: MinIO SSE-S3 is on for new writes (factory-gitops#71, #310). Host check on p620: no crypt/LUKS in `lsblk`; the Postgres PV dir `/mnt/code/k3d/storage` is on `/dev/sdb1` ext4, so Postgres stays unencrypted and is risk-accepted as R-014 (review 2027-04-24).
+- Net: object content in MinIO is configured to be encrypted for new writes; every volume (Postgres, Redis, Keycloak, MinIO's own) and etcd are not.
 
 ### Key management posture
 
@@ -60,7 +60,7 @@ Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-
 2. No encryption at rest for MinIO objects, including audit evidence (no SSE, no KMS). Partly addressed 2026-11-14: SSE-S3 configured; existing-object coverage not evidenced; emergency re-encryption untested.
 3. No encryption at rest for Redis and Keycloak volumes.
 4. Kubernetes Secrets are base64-only; etcd has no `EncryptionConfiguration`, and no SOPS/sealed-secrets/ESO/Vault is deployed despite being referenced in docs.
-5. No key-management system or envelope encryption; no defined data-encryption-key hierarchy or key-encryption key.
+5. No key-management system or envelope encryption; no defined data-encryption-key hierarchy or key-encryption key. Unchanged 2026-11-14: MinIO's single static key is a KEK in name only; there is no KMS and no hierarchy.
 6. No key-custody documentation: who holds the master/decryption key, where it lives, and who can access it is not evidenced. Partly addressed: agenix custody documented in factory-gitops; offline identity backup and bootstrap host unconfirmed; no dual control.
 7. No rotation policy or automation for `JWT_SECRET`, `acw_` keys, DB credentials, MinIO root keys, or signing keys (only the Claude OAuth broker rotates). Partly addressed: rotation policy and overdue check exist; rotation is manual.
 8. In-cluster traffic (app-to-DB, app-to-MinIO, connector-to-Service) is not encrypted in transit.
@@ -83,7 +83,7 @@ Phased; each phase is independently shippable and leaves evidence behind.
 
 ### Phase 3 — Object-store and database application-layer encryption
 
-- MinIO: enable server-side encryption. Auto-encrypt the `factory-artifacts` bucket with SSE-KMS backed by a KMS/KES service (`MINIO_KMS_KES_*`), or at minimum SSE-S3 with an auto-generated master key held in the (now-encrypted) Secret store. Evidence artifact prefixes must be marked for encryption via a bucket encryption policy in the `minio-create-bucket` Job.
+- MinIO (first part done 2026-11-14: SSE-S3 is configured on three buckets with a static key held in an unencrypted Kubernetes Secret; SSE-KMS/KES is not): enable server-side encryption. Auto-encrypt the `factory-artifacts` bucket with SSE-KMS backed by a KMS/KES service (`MINIO_KMS_KES_*`), or at minimum SSE-S3 with an auto-generated master key held in the (now-encrypted) Secret store. Evidence artifact prefixes must be marked for encryption via a bucket encryption policy in the `minio-create-bucket` Job.
 - Postgres: where Phase 1 volume encryption is not available (or defense-in-depth is required), add `pgcrypto` for column-level encryption of the most sensitive fields, and/or terminate a cloud-managed encrypted Postgres (RDS/Cloud SQL with a customer-managed key).
 - Evidence: `mc encrypt info fac/factory-artifacts` showing the active rule; a read of an object confirming ciphertext on disk; for Postgres, the KMS key ARN/id or the `pgcrypto` schema.
 
@@ -117,7 +117,7 @@ Phased; each phase is independently shippable and leaves evidence behind.
 ## Evidence artifacts
 
 - `factory-gitops/apps/postgres/manifests/manifests.yaml` — current unencrypted `local-path` StatefulSet (baseline).
-- `factory-gitops/apps/minio/manifests/manifests.yaml` — current MinIO Deployment with no SSE/KMS (baseline).
+- `factory-gitops/apps/minio/manifests/manifests.yaml` — MinIO Deployment; SSE-S3 configured since factory-gitops#71 with a static key, no KMS service.
 - `factory-gitops/apps/redis/manifests/manifests.yaml`, `factory-gitops/infra/keycloak/keycloak.yaml` — other `local-path` stores.
 - `factory-gitops/infra/cloudflared/cloudflared.yaml` — external TLS termination; plain-HTTP origins (in-transit baseline).
 - `factory-gitops/apps/cred-broker/manifests/manifests.yaml` — the one existing automated key/token rotation (pattern to extend).
