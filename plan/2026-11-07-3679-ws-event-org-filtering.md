@@ -42,6 +42,7 @@ reviewers:
 
 **Routing.**
 - `SERVICE_ONLY_ORG = ""`.
+- Deviation (2026-11-14, found reviewing step 3), PF/TF only: the shadow-mode leniency for JWT sockets applies only to former broadcasts. `_may_receive(client, org, shadow=False)` is lenient only when `shadow` is true and `_jwt_strict()` is false. `broadcast_event` delivers with `shadow=True` and relays `ws:org` with `"shadow": true`; an explicit `send_to_org` stays members-only in every mode, as it is today. Sending `broadcast_event` through plain `send_to_org` would have let org notifications reach other orgs' JWT sockets in shadow mode. An old pod ignores the `shadow` field and delivers strictly.
 - `broadcast_event(event_type, payload)` body becomes `await send_to_org(_event_org(payload) or SERVICE_ONLY_ORG, event_type, payload)`. None of the ~170 call sites change.
 - Org delivery uses `_may_receive(client, org or None)`, so `""` behaves as "no org".
 - The legacy broadcast delivery path stays (an old pod may still send it during a rolling deploy) but now filters with `_may_receive(client, None)`:
@@ -64,6 +65,7 @@ reviewers:
 - If the principal is a dict with an `id` and not `is_service` → `send_to_user(id, …)`.
 - Otherwise → `send_to_org(SERVICE_ONLY_ORG, …)`. A thread uses the same `run_coroutine_threadsafe`/loop mechanism the call site already uses.
 - `profile:changed` stays on `broadcast_event`.
+- Deviation (2026-11-14, steps 2 and 4): the rule lives in one helper, `emit_org_less(principal, event_type, payload)` in `websockets/events.py`, called by both routes.
 
 **`task-logs:stream`.**
 - `emit_task_logs_stream(spec_id, chunk, project_id: str | None = None)` adds `"projectId": project_id` when it is set.
