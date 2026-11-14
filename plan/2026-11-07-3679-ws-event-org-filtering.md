@@ -29,7 +29,8 @@ reviewers:
 
 **`_may_receive(client, org: str | None) -> bool`**, the single predicate behind every local delivery path:
 - `client.user_id is None` (service client: legacy token or `DISABLE_AUTH`) → `True`.
-- `client.key_org_id` is set (an `acw_` socket) → `org is not None and org == client.key_org_id`.
+- `client.key_org_id` is set (an `acw_` socket) → `org is not None and org == client.key_org_id and org in client.org_ids`.
+  - Deviation (2026-11-14, found reviewing step 1): the `org in client.org_ids` clause was added so a failed membership lookup, or an owner removed from the org, still delivers nothing, as #312's `test_event_endpoint_narrows_key_to_its_org` requires. Without it step 1 had to weaken that test.
 - Otherwise (a JWT socket):
   - Compute `strict_ok = org is not None and org in client.org_ids`.
   - If `_jwt_strict()` is true → return `strict_ok`.
