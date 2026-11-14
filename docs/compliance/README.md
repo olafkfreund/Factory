@@ -40,6 +40,7 @@ evidence. Certification is a separate engagement.
   for commit signing and the Fides SoD change gate: the per-repo signer pre-flight,
   the order that does not freeze deploys, and what is designed versus operating.
   Factory#316, domain 6.
+- [`soc2-gap-assessment.md`](soc2-gap-assessment.md) — the SOC 2 (TSC) criterion-by-criterion gap assessment (Security, Availability, Confidentiality) with current risk, an ISO 27001 gap summary pointing at the SoA, and the unsigned residual-risk sign-off. Factory#324.
 
 ### ISMS policy set
 
