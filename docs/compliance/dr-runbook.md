@@ -19,7 +19,7 @@
 `postgres-backup` is a CronJob at `15 2 * * *` (02:15 UTC): an init container runs
 `pg_dumpall -h postgres -U factory --clean | gzip -9`, and the main container
 uploads it with `mc`. The declared `backups-14d` lifecycle rule expires dumps after 14 days and
-noncurrent versions after 7 (as declared; the Job's read-back checks the rule ID).
+noncurrent versions after 7 (as declared; the `minio-create-bucket` Job's read-back checks the rule ID).
 
 ## Measured RTO and RPO
 

@@ -33,7 +33,7 @@ score once the cited treatment wave completes; it does not yet reflect a closed 
 Rows R-001, R-006, R-007, R-008, R-009, R-011 and R-013 were re-measured on 2026-11-07
 ([spec](../../spec/2026-11-07-324-compliance-records-refresh.md)). Their L, I and
 Inherent stay as assessed, and the Residual column gives the current score with
-its date.
+its date. R-007 changed in text only: its score is unchanged.
 
 ## Register
 
