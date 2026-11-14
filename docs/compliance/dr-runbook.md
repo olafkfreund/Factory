@@ -18,7 +18,8 @@
 
 `postgres-backup` is a CronJob at `15 2 * * *` (02:15 UTC): an init container runs
 `pg_dumpall -h postgres -U factory --clean | gzip -9`, and the main container
-uploads it with `mc`. Retention is whatever MinIO's lifecycle policy allows.
+uploads it with `mc`. The declared `backups-14d` lifecycle rule expires dumps after 14 days and
+noncurrent versions after 7 (as declared; the `minio-create-bucket` Job's read-back checks the rule ID).
 
 ## Measured RTO and RPO
 
@@ -36,7 +37,7 @@ From the drill of **2026-08-10** (see Evidence). These are measurements, not tar
 recovery also needs: a Postgres to restore into, services repointed at it, and
 application validation. Those dominate and are not yet measured — the honest
 statement is "data restore is not the bottleneck; standing the platform back up
-is". Measuring the full path is outstanding work on #321.
+is". Measuring the full path is outstanding (#321 closed; Factory#3691).
 
 ## The single-failure-domain problem (READ THIS FIRST)
 
@@ -60,7 +61,7 @@ is". Measuring the full path is outstanding work on #321.
 So losing that host — or that volume — loses the database, every backup of it,
 and the entire audit-evidence store **in one event**. There is no in-cluster
 target that fixes this; an off-box destination is required and is a decision
-about infrastructure, not code. Tracked on #321.
+about infrastructure, not code. Tracked on Factory#3681.
 
 The `nfs`-is-not-durable half was already recorded in
 [`policies/business-continuity-dr.md`](policies/business-continuity-dr.md)
@@ -167,14 +168,15 @@ reads like a misconfiguration rather than a restore that stopped halfway.
   than hidden: it is the single most useful thing this drill produced, and it
   would have surfaced during a real outage instead.
 
-## Outstanding on #321
+## Outstanding (Factory#321 closed 2026-08-10)
 
-- [ ] **Off-box backup destination** — the single-failure-domain problem above.
+- [ ] **Off-box backup destination (Factory#3681)** — the single-failure-domain problem above.
       Needs an infrastructure decision (second machine, NAS, or real S3).
-- [ ] **MinIO versioning + backup** — the evidence store is not protected at all,
-      and it also holds the Postgres backups.
-- [ ] **Full-path RTO** — measure standing the platform back up, not just the
+- [x] **MinIO versioning** — enabled on all three buckets.
+- [ ] **MinIO backup** — versioning is not a backup. The evidence store is not
+      backed up, and it also holds the Postgres backups. Factory#3691.
+- [ ] **Full-path RTO (Factory#3691)** — measure standing the platform back up, not just the
       data restore.
-- [ ] **HA Postgres**, or a written single-writer risk acceptance.
+- [ ] **HA Postgres (Factory#3690)**, or a written single-writer risk acceptance.
 - [ ] **Scheduled re-drill** — a restore proven once is evidence with an expiry
       date. Assessors ask when it last ran.
