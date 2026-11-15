@@ -99,6 +99,15 @@ Code lives on `feat/312-cockpit-scoped-keys` in each repo, cut from `origin/dev`
 
    File the follow-up issue for the broadcast and TFactory org-routing gap.
 
+## Status and deviations (2026-11-14)
+
+- [x] Step 1: CFactory#510.
+- [x] Step 2: AIFactory#2017.
+- [x] Step 3: PFactory#991. Deviation: the REST validator `_try_authenticate_api_key` is renamed `_try_authenticate_personal_key` (a pure rename in `auth.py`, three existing test files and `guides/api-tokens.md`) to clear a CodeQL name-heuristic alert. `_ws_acw_principal` calls the new name; behaviour is unchanged.
+- [x] Step 4: TFactory#1496.
+- [x] Step 5: final review (fresh reviewer, plan and diffs only) found no blocking code issue. The follow-up issue is Factory#3679.
+- Operator checklist addition (from the final review): AIFactory rmux sessions with no `project_id` stay service-principal-only, so a scoped key gets 4003 where the wildcard token could view them.
+
 ## Tests
 
 The commands are listed per step above. Each must pass with no new failures, and ruff must be clean on the touched files.
