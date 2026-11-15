@@ -93,6 +93,15 @@ reviewers:
 - **Project id for `task-logs:stream`.** No `TaskLogWriter` caller holds a project id, so each derives it from the `"<pid>:<spec>"` task id; a bare task id gives none and the stream goes to service clients only.
 - **TF gains `update_client_orgs`**, as AIF and PF have. No production code calls it in any factory.
 
+## Deviations found in the final review after the dev merge (2026-11-15)
+
+- **Predicate order.** `_may_receive` checks `key_org_id` before the `user_id is None` service shortcut, in all three factories. An org-bound key with no owner would otherwise pass as a service client. No such key can connect today (`_ws_acw_principal` rejects ownerless keys), so this only makes the predicate fail closed if that changes.
+- **Revocation scope (AIF).** AIF now gates the re-check on `user_info["api_key_id"]` as PF/TF do. Gated on the token prefix alone, a legacy or `DISABLE_AUTH` socket whose token starts with `acw_` was closed with 4001 at every re-check.
+- **Tests added.** AIF and PF run `_broadcast_cli_auth_event` and `_monitor_gh_auth` with a user and a service principal (TF already did). PF covers legacy `ws:broadcast` in shadow mode and checks both directions in the org test. AIF's `notify_org` test resolves the service's engine handle at run time; it failed only in the full suite.
+- **Merge of `dev`.** In AIF and PF `websockets/events.py`, `_load_org_ids` was kept over dev's inline membership block; it already holds #312's key narrowing. PF's commit hook autofixes staged files, so the merge commit also rewrites one `else: if` to `elif` in `apps/backend/agents/memory_manager.py` (same behaviour); the hook re-applies it when the file is restored, so it stays in the PR.
+- **Local test runs** need a venv built from the branch's requirements (dev now needs `mcp>=2.0`; the main checkouts' venvs have 1.28) and, for AIF, an environment with no GitHub token in it. The "always use the main checkout's venv" notes in the steps no longer hold.
+- **Left for a follow-up issue:** no test covers the start routes passing `request.state.user`; the key re-check does not refresh `key_org_id`/`user_id` from the fresh principal; AIF `_payload_org` treats a top-level `org_id: ""` differently from PF/TF; AIF inlines `_jwt_strict()`.
+
 ## Branches and worktrees
 
 - Per repo `R` in {AIFactory, PFactory, TFactory}:
