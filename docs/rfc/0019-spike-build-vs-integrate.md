@@ -2,15 +2,16 @@
 layout: default
 title: "RFC-0019 Phase 0 Spike: build the board natively vs integrate utter.ae"
 permalink: /rfc/agent-native-planning-control-plane-spike/
+status: "Decided: build native"
 ---
 
 # RFC-0019 Phase 0 Spike — build native vs integrate utter.ae
 
-> **Status:** Complete, awaiting decision · **Date:** 2026-07-25 · **Owner:** CFactory ·
+> **Status:** Decided: build native (the native board shipped as RFC-0019 phases 1-6) · **Date:** 2026-07-25 · **Updated:** 2026-11-15 · **Owner:** CFactory ·
 > **Decides:** [RFC-0019](./0019-agent-native-planning-control-plane.md) open question 8.1
 > ("Do we build the board natively in CFactory, or adopt utter.ae as the PM layer?") ·
 > **Tracking:** [Factory#302](https://github.com/olafkfreund/Factory/issues/302) ·
-> **Output:** a recommendation. No implementation. Phases 1-6 remain unstarted.
+> **Output:** a recommendation. No implementation here; phases 1-6 were built natively afterwards.
 
 ## 0. Summary
 

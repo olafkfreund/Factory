@@ -36,7 +36,7 @@ flowchart TD
         PF1["ingest: parse ACs,<br/>decompose to epic + child issues"]
         PF1 --> PF2{"Hard readiness checks?<br/>criteria present · AC to child coverage<br/>· deps acyclic · no silent fallback"}
         PF2 -- fail --> PFX["Reject / revise brief"]
-        PF2 -- pass --> PF3["process: governance lenses<br/>security · feasibility · cost · architecture"]
+        PF2 -- pass --> PF3["process: governance lenses<br/>feasibility · architecture · security · compliance<br/>· best-practices · completeness · red-team"]
         PF3 --> PF4{"aggregate over 0.75<br/>AND no blocking findings?"}
         PF4 -- no --> PFX
         PF4 -- yes --> PF5["Human approve<br/>(approver + plan-hash recorded)"]
@@ -128,17 +128,17 @@ flowchart TD
 | # | Guard | Why it exists | How it's enforced |
 |---|-------|---------------|-------------------|
 | G1 | **Acceptance criteria required** | You can't verify what you didn't specify | PFactory hard-fails a brief with no `## Acceptance Criteria`; every AC maps to a child issue |
-| G2 | **Governance lenses** | Catch risk *before* code exists | `process` scores security · feasibility · cost · architecture; aggregate must clear **0.75** with no blocking findings |
+| G2 | **Governance lenses** | Catch risk *before* code exists | `process` runs seven lenses (feasibility, architecture, security, compliance, best-practices, completeness, red-team); aggregate must clear **0.75** with no blocking findings |
 | G3 | **Live-infra / access checks** | Don't promise cloud actions you can't perform | Unverified IAM/cloud actions are flagged (surfaced, not hidden); soft/waivable when air-gapped |
 | G4 | **Human approval** | A person owns the go/no-go | `approve` records approver + plan-hash; nothing is signed until then |
-| G5 | **HMAC-signed contract** | Tamper-proof handover; downstream trusts *content*, not the caller | RFC-0002 v2, signed with a per-authority shared key |
+| G5 | **HMAC-signed contract** | Tamper-proof handover; downstream trusts *content*, not the caller | RFC-0002 v2, signed with a per-authority shared key. PFactory v0.6.35 also emits an optional Ed25519 signature next to it: warn-only, and no key is configured yet ([PFactory#929](https://github.com/olafkfreund/PFactory/pull/929)) |
 | G6 | **Verify or fallback** | A forged/edited contract must not skip planning | Valid signature → trusted fast path; invalid → safe re-plan fallback |
 | G7 | **OAuth-only auth** | Agents must not silently bill a raw API key | API key scrubbed by default; direct-key billing is opt-in (`AIFACTORY_ALLOW_API_KEY`) |
-| G8 | **Agent env scrub** | A prompt-injected agent can't exfiltrate host secrets | Control-plane tokens, DB URLs, cloud creds, provider keys blanked from the agent env |
+| G8 | **Agent env scrub** | A prompt-injected agent can't exfiltrate host secrets | Control-plane tokens, DB URLs, cloud creds, provider keys blanked from the agent env. Released in AIFactory: scrubbed environments for non-Claude agent CLIs in [v3.10.0](https://github.com/olafkfreund/AIFactory/releases/tag/v3.10.0) ([#1692](https://github.com/olafkfreund/AIFactory/issues/1692)) and a private HOME plus allowlist in [v3.10.3](https://github.com/olafkfreund/AIFactory/releases/tag/v3.10.3) ([#1762](https://github.com/olafkfreund/AIFactory/issues/1762)). In PFactory and TFactory the allowlisted child environment is on `dev` only ([PFactory#997](https://github.com/olafkfreund/PFactory/pull/997), [TFactory#1501](https://github.com/olafkfreund/TFactory/pull/1501)) |
 | G9 | **Allowlist + FS jail** | Limit blast radius of generated commands | Per-stack command allowlist; filesystem restricted to the workspace; bash isolated by the pod boundary |
 | G10 | **Worktree isolation** | One build can't corrupt another or your tree | Each spec builds in its own git worktree/branch; merge only on explicit action |
 | G11 | **Declared-AC testing** | Test what was *promised*, not a guess | The contract's `tfactory` block (lanes/frameworks/`ac_to_code_map`) drives test generation |
-| G12 | **Bounded handback** | Self-correction must not loop forever | TFactory→AIFactory correction capped (≤2) → terminal `needs_human` |
+| G12 | **Bounded handback** | Self-correction must not loop forever | TFactory→AIFactory correction capped (≤2) → terminal `needs_human`. Handback sending is off by default (`TFACTORY_HANDBACK_SEND`, `PFACTORY_HANDBACK_SEND`) |
 | G13 | **Reviewer-gated merge** | Nothing merges unreviewed | Merge needs the configured reviewer's verdict; changes-requested → bounded auto-fix |
 | G14 | **Never force-merge** | Protect `main` from unsafe automation | On a true conflict: `update-branch` once, then **human-stop** — never `--force` |
 | G15 | **Full audit trail** | Enterprises need provenance | Every transition emits RFC-0001 events in the CFactory cockpit, keyed by `correlation_key` |
@@ -252,4 +252,4 @@ the tool, not by hope.
 
 ---
 
-*Source: [`AIFactory/guides/parr-pipeline-and-guards.md`](https://github.com/olafkfreund/AIFactory/blob/main/guides/parr-pipeline-and-guards.md). Every guard here is implemented and verified in the running cluster.*
+*Source: [`AIFactory/guides/parr-pipeline-and-guards.md`](https://github.com/olafkfreund/AIFactory/blob/main/guides/parr-pipeline-and-guards.md). Most guards here are implemented and were verified in the running cluster when written; the env-scrub guard (G8) is released in AIFactory and still `dev`-only in PFactory and TFactory, and handback sending is off by default.*

@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0001a: Completion-Event Evidence Gates"
 permalink: /rfc/evidence-gates/
+status: Implemented
 ---
 
 # RFC-0001a — Completion-Event Evidence Gates (addendum to RFC-0001)

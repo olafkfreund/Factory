@@ -81,7 +81,7 @@ The fleet has a genuine data-residency lever for LLM calls. `PFactory/apps/backe
 classifies every model endpoint into an `EgressClass`: `LOCAL` (localhost/LAN — "no data
 egress"), `SELF_HOSTED` (your own routable server), or `MANAGED_CLOUD` (third-party managed
 API). An Ollama endpoint on a local host classifies as `LOCAL`; the fleet runs local
-models on the p510 Ollama host today. Choosing a local or self-hosted model is therefore
+models on the operator host (Ollama) today. Choosing a local or self-hosted model is therefore
 the one control that removes third-party PII egress entirely — but it is an operator
 deployment choice, not a policy default, and it is not yet tied to any data class.
 

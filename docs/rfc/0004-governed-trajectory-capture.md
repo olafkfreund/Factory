@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0004: Governed-Trajectory Capture"
 permalink: /rfc/trajectory-capture/
+status: Proposed
 ---
 
 # RFC-0004 — Governed-Trajectory Capture

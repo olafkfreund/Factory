@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0018: Regression Suite & Continuous Verification — making generated tests live over time"
 permalink: /rfc/regression-suite-and-continuous-verification/
+status: Shipped
 ---
 
 # RFC-0018 — Regression Suite & Continuous Verification

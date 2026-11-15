@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0005: Environment Manifest & Ephemeral Toolchain Provisioning"
 permalink: /rfc/environment-provisioning/
+status: Implemented
 ---
 
 # RFC-0005 — Environment Manifest & Ephemeral Toolchain Provisioning

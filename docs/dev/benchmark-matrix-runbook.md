@@ -143,7 +143,7 @@ A typical build leg is ~20-28 min; verify is ~20-25 min. `BENCH_BUILD_TIMEOUT`
   be honoured at all — the harness sets it whenever pins are present.
 - **Ollama needs the `openai-compatible:` spelling.** The `ollama:` provider is
   hard-pinned to `localhost:11434` and reads no environment, so it cannot reach
-  the p510 host (AIFactory#1099, TFactory#870).
+  the operator host (AIFactory#1099, TFactory#870).
 - The Gemini path runs `antigravity --yolo` (the gemini->antigravity alias) and
   needs `GEMINI_CLI_TRUST_WORKSPACE=true` on the deployment env (already set).
 

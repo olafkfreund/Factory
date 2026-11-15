@@ -23,6 +23,8 @@ title: AIFactory — a guided tour
 **P**repare · **A**ct · **R**eflect · **R**eview — in an isolated git worktree, with you in
 control at every gate. Here's what that looks like in the product.
 
+[Visit AIFactory →](https://aifactory.freundcloud.com/) · [Latest news](https://aifactory.freundcloud.com/blog)
+
 <figure class="tour-hero" markdown="0">
   <img src="{{ '/assets/screenshots/aifactory/board-parr-pipeline.png' | relative_url }}" alt="AIFactory mission control — PARR pipeline over the kanban board">
   <figcaption>Mission control — the PARR pipeline (Plan · Code · Test) sitting above the board</figcaption>
@@ -41,7 +43,7 @@ PARR-stage dots and progress on each card.
 <div class="gallery" markdown="0">
   <figure><img src="{{ '/assets/screenshots/aifactory/board-columns.png' | relative_url }}" alt="Board columns"><figcaption><b>The board</b>Backlog → In Progress → AI Review → Human Review → Done, at a glance.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/aifactory/board-review.png' | relative_url }}" alt="Work flowing into review"><figcaption><b>Flow</b>Runs land in Human Review and Done as they complete.</figcaption></figure>
-  <figure><img src="{{ '/assets/screenshots/aifactory/board-human-review.png' | relative_url }}" alt="Human review column"><figcaption><b>Human review</b>Completed and errored runs wait for your verdict — nothing merges itself.</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/aifactory/board-human-review.png' | relative_url }}" alt="Human review column"><figcaption><b>Human review</b>Completed and errored runs wait for your verdict. Auto-merge happens only when a TFactory verdict and green CI on the head commit agree; otherwise it holds for a human.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/aifactory/task-card-progress.png' | relative_url }}" alt="A task card mid-flight"><figcaption><b>Live progress</b>A card mid-flight: PARR stage dots and a coding progress bar.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/aifactory/board-stuck-recover.png' | relative_url }}" alt="Stuck task recovery"><figcaption><b>Self-healing</b>A stalled run is detected and offered a one-click Recover.</figcaption></figure>
 </div>

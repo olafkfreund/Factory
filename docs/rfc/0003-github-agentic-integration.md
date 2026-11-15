@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0003: GitHub Agentic Integration"
 permalink: /rfc/github-agentic/
+status: Accepted
 ---
 
 # RFC-0003 — GitHub Agentic Integration

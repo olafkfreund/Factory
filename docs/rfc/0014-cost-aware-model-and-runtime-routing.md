@@ -3,6 +3,7 @@ mermaid: true
 layout: default
 title: "RFC-0014: Cost-Aware, Capability-Aware Model & Runtime Routing"
 permalink: /rfc/cost-aware-routing/
+status: Accepted
 ---
 
 # RFC-0014 — Cost-Aware, Capability-Aware Model & Runtime Routing

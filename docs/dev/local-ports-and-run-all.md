@@ -24,7 +24,7 @@ CFactory can reach them all.
 |---|---|---|
 | **AIFactory** | **`3101`** | Act — build/QA web server |
 | **TFactory** | **`3103`** | Verify — already migrated off `3102` to `3103` |
-| **CFactory** | **`3110`** / **`3111`** | Cockpit — API `3110`, realtime/stream `3111` |
+| **CFactory** | **`3110`** / **`3111`** | Cockpit — UI `3110`, API `3111` |
 | **PFactory** | **`3114`** (API) / **`3115`** (frontend) | Plan — moved to its own pair off the `3101–3103` block |
 
 Rules:

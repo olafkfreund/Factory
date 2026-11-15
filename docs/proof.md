@@ -58,7 +58,7 @@ The 2026 data says buyers already have agents — what they lack is a way to tru
   <div class="k"><b>81% / 14.4%</b><span>teams with agents deployed vs teams with security approval for them</span></div>
   <div class="k"><b>53%</b><span>of deployed agents run unmonitored</span></div>
   <div class="k"><b>25–45%</b><span>the gap between SWE-bench scores and real production reliability</span></div>
-  <div class="k"><b>Aug 2 2026</b><span>EU AI Act high-risk rules: logging, human oversight and audit become mandatory</span></div>
+  <div class="k"><b>Aug 2 2026</b><span>EU AI Act high-risk rules: logging, human oversight and audit became mandatory (from 2 Aug 2026)</span></div>
 </div>
 
 Two axes decide the market: **where the code runs** (someone else's cloud vs your

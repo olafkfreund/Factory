@@ -47,7 +47,7 @@ as separate columns here.
 
 | Domain | Implementing control (cited in domain doc) | Top gap | Issue |
 |---|---|---|---|
-| Governance / ISMS | Policy set under [policies/](policies/); [risk register](risk-register.md); [SoA](statement-of-applicability.md); [roles.md](roles.md) names the Security Owner and domain owners | No record of a held management review and no independent review performed (Factory#3694); no recorded awareness cadence (Factory#3693); no documented security objectives or fraud-risk assessment (Factory#3699); deputy owner not named | #311 (closed), #3693, #3694, #3699 |
+| Governance / ISMS | Policy set under [policies/](/compliance/policies/); [risk register](risk-register.md); [SoA](statement-of-applicability.md); [roles.md](roles.md) names the Security Owner and domain owners | No record of a held management review and no independent review performed (Factory#3694); no recorded awareness cadence (Factory#3693); no documented security objectives or fraud-risk assessment (Factory#3699); deputy owner not named | #311 (closed), #3693, #3694, #3699 |
 | IAM & access control | Scoped `acw_` keys, org RBAC, `access_review.py`, cred-broker (#292) | Shared wildcard `APP_API_TOKEN` grants `is_service=True` fleet-admin bypass | #312 |
 | Audit logging | Hash-chain + daily signed anchor + air-gapped verifier | No paging; no alert rules for auth-failure or egress anomalies | #313 |
 | Encryption at rest | TLS at Cloudflare edge; agenix host key | Postgres PV not encrypted (R-014, accepted to 2027-04-24); no KMS; cluster-internal cleartext | #314 |

@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0011: Label-Driven Intake & Difficulty Tiers"
 permalink: /rfc/label-driven-intake/
+status: Implemented
 ---
 
 # RFC-0011 — Label-Driven Intake & Difficulty Tiers across the Fleet

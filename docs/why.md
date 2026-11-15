@@ -58,7 +58,7 @@ The 2026 data is blunt about where the pain is:
   <div class="k"><b>84% / 29%</b><span>developers <em>using</em> AI coding tools vs those who <em>trust</em> their output (trust down from ~70% in 2023)</span></div>
   <div class="k"><b>66%</b><span>frustrated by AI output that's "almost right, but not quite"</span></div>
   <div class="k"><b>45%</b><span>say debugging AI-generated code takes longer than writing it</span></div>
-  <div class="k"><b>Aug 2 2026</b><span>EU AI Act high-risk rules: logging, human oversight &amp; audit become mandatory</span></div>
+  <div class="k"><b>Aug 2 2026</b><span>EU AI Act high-risk rules: logging, human oversight &amp; audit became mandatory (from 2 Aug 2026)</span></div>
 </div>
 
 The bottleneck has moved from writing to **verifying and governing**. That maps
@@ -73,9 +73,9 @@ directly onto the family:
 
 ## Where we're going
 
-**Near term:** finish the **PARR spine** (one shared correlation key — the GitHub
-issue — threading plan→code→test, a normalized event schema, a clean port map),
-then ship the **CFactory cockpit** in phases (read-only board → agentic copilot →
+**Where we got to:** the **PARR spine** (one shared, repo-scoped correlation key,
+`<repo>#<n>`, threading plan→code→test, a normalized event schema, a clean port map)
+and the **CFactory cockpit** have shipped; the cockpit came in phases (read-only board → agentic copilot →
 advise-and-confirm actions → multi-tenant hardening). See the [roadmap](/roadmap/).
 
 **The bet:** code generation will keep commoditizing; the durable advantage is being
@@ -138,7 +138,7 @@ single model:
   or run QA — so you spend tokens where they matter.
 - **Patterns over vibes** — spec-first execution, review gates with citations, and
   TFactory's 5-signal verdict turn raw model output into governed, verified work.
-- **Enterprise controls** — a LiteLLM gateway for per-org budgets, rate limits,
+- **Enterprise controls** — a LiteLLM gateway (the in-house gateway image is published but not deployed yet, and the sub-chart is deprecated but still works) for per-org budgets, rate limits,
   allow-lists and PII-redacted audit logs; **BYO / air-gapped** models with an
   egress-audit badge for sensitive environments.
 

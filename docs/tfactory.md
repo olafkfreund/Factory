@@ -23,6 +23,8 @@ mutation) and grades every generated test on a **5-signal verdict** — coverage
 re-runs, mutation kills, lint, and semantic relevance — then posts a ranked triage report to
 your PR. Meaningful tests, not a green bar.
 
+[Visit TFactory →](https://tfactory.freundcloud.com/) · [Latest news](https://tfactory.freundcloud.com/blog/)
+
 <figure class="tour-hero" markdown="0">
   <img src="{{ '/assets/screenshots/tfactory/python-unit.gif' | relative_url }}" alt="TFactory unit lane — generate, run, grade">
   <figcaption>The unit lane in motion — generate, run, and grade tests on the 5-signal verdict</figcaption>

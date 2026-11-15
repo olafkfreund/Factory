@@ -120,11 +120,11 @@ real adoption scenarios from solo builders to regulated enterprises.
 
 The planning layer that sits **in front of** coding agents. It ingests plans,
 enriches them with **live** organizational context (Kubernetes, AWS/Azure/GCP,
-Backstage, internal wikis), runs architecture / security / feasibility review
-gates **with citations**, records human approval, and emits governed GitHub issues.
+Backstage, internal wikis), reviews them through seven lenses and a hard
+readiness gate, **with citations**, records human approval, and emits governed GitHub issues.
 
 - Context-grounded planning from real cloud + catalog state
-- Hybrid deterministic + LLM review gates, every verdict cited
+- Seven review lenses plus a hard readiness gate, every verdict cited
 - Human-approval gate before any work is emitted
 - Kanban board, feasibility &amp; cost estimates, living templates
 
@@ -153,7 +153,7 @@ touching the governance, verification or observability around it.
 - Spec-first: every run starts from a written, editable spec
 - Isolated worktrees — nothing touches main until you merge
 - Multi-provider, per-phase model selection; MCP control plane
-- Enterprise: SAML/SCIM, tenant isolation, audit, LiteLLM gateway
+- Enterprise: SAML/SCIM, tenant isolation, audit, a LiteLLM gateway (in-house gateway image published, not deployed yet; the LiteLLM sub-chart is deprecated but still works)
 
 <div class="prod-shots">
   <figure><img src="{{ '/assets/screenshots/aifactory/board-parr-pipeline.png' | relative_url }}" alt="AIFactory mission control"><figcaption>mission control — the PARR pipeline over the board</figcaption></figure>
@@ -177,7 +177,7 @@ posts a ranked triage report to your PR.
 
 - Five-signal verdict: meaningful tests, not coverage theatre
 - Modality lanes with real evidence (screenshots, video, HAR, mutants)
-- Bidirectional handback: failures route back to AIFactory's QA fixer
+- Bidirectional handback: failures can route back to AIFactory's QA fixer (sending is off by default, `TFACTORY_HANDBACK_SEND`)
 - Works from any AC source (markdown / Gherkin / EARS) or MCP
 
 <div class="prod-shots">
@@ -196,8 +196,8 @@ posts a ranked triage report to your PR.
 ### CFactory — the control tower over all three
 
 The newest member and the piece that turns the others into a **suite**. CFactory
-threads every unit of work across the three services into one `WorkItem` (keyed by
-GitHub issue), shows it on a single live cockpit, and adds an **agentic copilot**
+threads every unit of work across the three services into one `WorkItem` (keyed by a
+repo-scoped `<repo>#<n>` key), shows it on a single live cockpit, and adds an **agentic copilot**
 that explains pipeline state and proposes human-confirmed actions.
 
 - One pane of glass: where is every feature across plan → code → test
@@ -209,12 +209,12 @@ that explains pipeline state and proposes human-confirmed actions.
   <figure><img src="{{ '/assets/screenshots/cfactory/execution-dag.gif' | relative_url }}" alt="Time-lapse of the CFactory execution DAG for work item 451, from ten queued build subtasks to ten complete"><figcaption>the same graph, time-lapsed as a real build lands</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/pipeline-board.png' | relative_url }}" alt="CFactory three-column pipeline board with running, in-review, queued and failed filters"><figcaption>every work item at its current stage, filterable</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/mission-control.png' | relative_url }}" alt="CFactory mission control"><figcaption>mission control — Plan · Code · Test, live</figcaption></figure>
-  <figure><img src="{{ '/assets/screenshots/cfactory/pipeline.png' | relative_url }}" alt="CFactory pipeline"><figcaption>one work item threaded by GitHub issue</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/cfactory/pipeline.png' | relative_url }}" alt="CFactory pipeline"><figcaption>one work item threaded by its correlation key</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/copilot.png' | relative_url }}" alt="CFactory copilot"><figcaption>agentic copilot — advise &amp; confirm</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/audit.png' | relative_url }}" alt="CFactory audit"><figcaption>HMAC-chained audit of every action</figcaption></figure>
 </div>
 
-[See the full CFactory tour →]({{ '/cfactory/' | relative_url }}) · [CFactory on GitHub →](https://github.com/olafkfreund/CFactory)
+[See the full CFactory tour →]({{ '/cfactory/' | relative_url }}) · [Visit CFactory →](https://cfactory.freundcloud.com/) · [GitHub](https://github.com/olafkfreund/CFactory)
 </div>
 
 ---
@@ -225,21 +225,21 @@ The products are independently useful, but their real power is the **handoff
 chain** — the cooperation we're building out:
 
 1. **PFactory → AIFactory.** PFactory emits governed GitHub issues; AIFactory picks
-   them up and builds, carrying the issue number as provenance.
+   them up and builds, carrying the correlation key as provenance.
 2. **AIFactory → TFactory.** A finished feature on a branch is handed to TFactory,
    which generates and grades a test suite against the acceptance criteria.
 3. **TFactory → AIFactory (handback).** When tests fail, TFactory routes a
-   correction request back to AIFactory's QA fixer — a bounded, closed loop.
-4. **CFactory over everything.** A shared **correlation key — the GitHub issue
-   number** — threads `plan → code → branch/PR → tests`, so CFactory can show and
+   correction request back to AIFactory's QA fixer — a bounded, closed loop. Handback sending is **off by default** (`TFACTORY_HANDBACK_SEND`, `PFACTORY_HANDBACK_SEND`).
+4. **CFactory over everything.** A shared **correlation key — repo-scoped,
+   `<repo>#<n>`, see [RFC-0001](/rfc/correlation-key/)** — threads `plan → code → branch/PR → tests`, so CFactory can show and
    steer the whole pipeline from one place.
 
 <div class="mermaid">
 flowchart LR
-    PF["PFactory"] -- "issue #" --> AF["AIFactory"]
-    AF -- "branch / PR · issue #" --> TF["TFactory"]
+    PF["PFactory"] -- "key" --> AF["AIFactory"]
+    AF -- "branch / PR · key" --> TF["TFactory"]
     TF -. "handback" .-> AF
-    C["CFactory<br/>observes every step ·<br/>threads by issue #"] -.-> PF
+    C["CFactory<br/>observes every step ·<br/>threads by key"] -.-> PF
     C -.-> AF
     C -.-> TF
     classDef pf fill:#2b3a37,stroke:#83a598,stroke-width:2px,color:#cfe6de,font-weight:bold;

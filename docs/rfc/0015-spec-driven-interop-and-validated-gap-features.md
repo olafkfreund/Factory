@@ -3,6 +3,7 @@ mermaid: true
 layout: default
 title: "RFC-0015: Spec-Driven Interop, Adversarial Spec Review, Traceability & a Declarative Extension Registry"
 permalink: /rfc/spec-driven-interop/
+status: Implemented
 ---
 
 # RFC-0015 — Spec-Driven Interop & Validated-Gap Features (SpecKit-informed)

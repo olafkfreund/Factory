@@ -114,7 +114,7 @@ issue. Do not fold product bugs into the validation cell.
 | B4 | Control the TESTING/verify model (TFactory) | [#338](https://github.com/olafkfreund/Factory/issues/338) |
 | C1 | Anthropic (Claude) backend, 3 services | [#339](https://github.com/olafkfreund/Factory/issues/339) |
 | C2 | Gemini online backend, 3 services | [#340](https://github.com/olafkfreund/Factory/issues/340) |
-| C3 | Ollama self-hosted (p510) backend, 3 services | [#341](https://github.com/olafkfreund/Factory/issues/341) |
+| C3 | Ollama self-hosted (the operator host) backend, 3 services | [#341](https://github.com/olafkfreund/Factory/issues/341) |
 | C4 | Ollama online (hosted) backend, 3 services | [#342](https://github.com/olafkfreund/Factory/issues/342) |
 | D1 | Opus swarm, multi-worker wave on Anthropic | [#343](https://github.com/olafkfreund/Factory/issues/343) |
 | D2 | Gemini swarm, same wave shape | [#344](https://github.com/olafkfreund/Factory/issues/344) |
@@ -203,7 +203,7 @@ BENCH_PHASE_MODELS='{"spec":"antigravity-3-pro","planning":"antigravity-3-pro","
 - **Known blocker for the TFactory half:** TFactory#871 — expect the verify leg
   to exit before its first API call until that lands.
 
-### C3 — Ollama self-hosted (p510)
+### C3 — Ollama self-hosted (the operator host)
 
 ```
 BENCH_OLLAMA=1
@@ -211,7 +211,7 @@ BENCH_OLLAMA_CODING_MODEL=openai-compatible:qwen2.5-coder:14b
 BENCH_OLLAMA_GENERAL_MODEL=openai-compatible:gemma4:12b
 ```
 The `openai-compatible:` prefix is mandatory — `ollama:` is hard-pinned to
-localhost and cannot reach p510 (AIFactory#1099, TFactory#870). The two models
+localhost and cannot reach the operator host (AIFactory#1099, TFactory#870). The two models
 above are chosen from what the host actually serves; the harness defaults name
 cloud models that are not present there.
 

@@ -2,11 +2,12 @@
 layout: default
 title: "RFC-0021: Earned Memory and Promotion Gates — a memory has to survive something before it is kept"
 permalink: /rfc/earned-memory-and-promotion-gates/
+status: In progress
 ---
 
 # RFC-0021 — Earned Memory and Promotion Gates
 
-> **Status:** Proposed — **§1 CORRECTED 2026-07-27, see §0** · **Created:** 2026-07-27 · **Owner:** AIFactory (memory subsystem; PFactory and TFactory vendor the same tree) ·
+> **Status:** In progress (epic [#389](https://github.com/olafkfreund/Factory/issues/389) open; Phase 0 project-level memory is released (AIFactory#1035); the Phase 1 exact-repeat gate is merged to `dev` in AIFactory#2019, PFactory#992 and TFactory#1497, not yet released) — **§1 CORRECTED 2026-07-27, see §0** · **Created:** 2026-07-27 · **Updated:** 2026-11-15 · **Owner:** AIFactory (memory subsystem; PFactory and TFactory vendor the same tree) ·
 > **Extends:**
 > [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (code-aware planning — memory is what makes the second pass over a codebase cheaper than the first),
 > [RFC-0012](./0012-external-knowledge-grounding.md) (external grounding — this is the *internal* counterpart: what the fleet learned by doing, rather than what it read),

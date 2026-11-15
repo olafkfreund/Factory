@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0012: External-Knowledge Grounding from Backstage"
 permalink: /rfc/external-knowledge-grounding/
+status: Implemented
 ---
 
 # RFC-0012 — External-Knowledge Grounding from Backstage

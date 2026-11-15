@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0023: Repository Onboarding at Scale — one action, many repos, any provider"
 permalink: /rfc/repository-onboarding-at-scale/
+status: Proposed
 ---
 
 # RFC-0023 — Repository Onboarding at Scale

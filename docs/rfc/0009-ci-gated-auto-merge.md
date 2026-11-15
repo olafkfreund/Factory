@@ -3,6 +3,7 @@ mermaid: true
 layout: default
 title: "RFC-0009: Provider-Agnostic CI-Gated Auto-Merge"
 permalink: /rfc/ci-gated-auto-merge/
+status: Partially implemented
 ---
 
 # RFC-0009 — Provider-Agnostic CI-Gated Auto-Merge

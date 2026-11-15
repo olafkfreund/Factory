@@ -2,11 +2,12 @@
 layout: default
 title: "RFC-0019: Agent-Native Planning Control Plane — one board humans and the factory's agents share"
 permalink: /rfc/agent-native-planning-control-plane/
+status: Implemented
 ---
 
 # RFC-0019 — Agent-Native Planning Control Plane
 
-> **Status:** Proposed · **Created:** 2026-07-19 · **Owner:** CFactory ·
+> **Status:** Implemented (epic [#302](https://github.com/olafkfreund/Factory/issues/302) closed 2026-07-26; phases 1-6 are on CFactory `main`: board REST and views, MCP board tools, board-to-intake dispatch, agent-skills manifests, the parity check and GitHub card sync) · **Created:** 2026-07-19 · **Updated:** 2026-11-15 · **Owner:** CFactory ·
 > **Extends:**
 > [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation key — the board is the human-facing home of a correlation),
 > [RFC-0003](./0003-github-agentic-integration.md) (GitHub integration — the board augments, never replaces, GitHub as the record of truth),
@@ -73,8 +74,8 @@ resource on top of the existing `work_items` correlation store:
   enters the factory it becomes an RFC-0001 correlation and threads the existing
   work-item timeline.
 
-**Contract (shipped):** [`apis/planning-card.md`](../../apis/planning-card.md) +
-[`apis/planning-card.schema.json`](../../apis/planning-card.schema.json), with
+**Contract (shipped):** [`apis/planning-card.md`](https://github.com/olafkfreund/Factory/blob/main/apis/planning-card.md) +
+[`apis/planning-card.schema.json`](https://github.com/olafkfreund/Factory/blob/main/apis/planning-card.schema.json), with
 reference instances under `apis/examples/planning-cards/`. It pins the card
 resource, the `/api/cards` REST surface, tenant scoping, and the two design laws
 Phase 1 turns on: cards are a **separate table** from `work_items` (the cockpit's
@@ -124,8 +125,8 @@ so any agent can enumerate what the Factory can do without prior knowledge:
   metadata — the entry point an external agent (or a partner integration) hits
   first.
 
-**Contract (shipped):** [`apis/agent-skills-manifest.md`](../../apis/agent-skills-manifest.md)
-+ [`apis/agent-skills-manifest.schema.json`](../../apis/agent-skills-manifest.schema.json),
+**Contract (shipped):** [`apis/agent-skills-manifest.md`](https://github.com/olafkfreund/Factory/blob/main/apis/agent-skills-manifest.md)
++ [`apis/agent-skills-manifest.schema.json`](https://github.com/olafkfreund/Factory/blob/main/apis/agent-skills-manifest.schema.json),
 with a reference instance per service and the fleet aggregate under
 `apis/examples/agent-skills/`. Phase 4 is independent of the build-vs-integrate
 question in 8 below, so it lands ahead of the board.
@@ -198,7 +199,7 @@ Each phase ships independently and is useful on its own; 1-3 deliver the core
   before Phase 1.
 - ~~Card id scheme (`FCT-N` global vs per-workspace) and its relationship to the
   existing correlation key.~~ **Settled for Phase 1** in
-  [`apis/planning-card.md`](../../apis/planning-card.md): one `FCT-` sequence per
+  [`apis/planning-card.md`](https://github.com/olafkfreund/Factory/blob/main/apis/planning-card.md): one `FCT-` sequence per
   tenant, no workspace segment (Phase 1 ships a flat backlog), immutable once
   issued, and explicitly *not* the correlation key - `FCT-42` identifies the
   plan, the correlation key identifies the work and only exists once there is

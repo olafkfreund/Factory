@@ -19,9 +19,11 @@ title: CFactory — the cockpit tour
 # CFactory — the cockpit tour
 
 **CFactory** is the control tower over the whole suite. It threads every unit of work across
-**PFactory → AIFactory → TFactory** into one `WorkItem` — keyed by the GitHub issue — and puts
+**PFactory → AIFactory → TFactory** into one `WorkItem` — keyed by a repo-scoped correlation key — and puts
 it on a single live cockpit, with an agentic copilot and an HMAC-chained audit trail. Here's
-the cockpit, tab by tab.
+the cockpit, tab by tab. The cockpit has ten views today: Mission Control, Needs you, Backlog, Planning board, Pipeline, Active tasks, Tokens, Audit, Services and Settings; the tour below shows some of them.
+
+[Visit CFactory →](https://cfactory.freundcloud.com/) · [Latest news](https://cfactory.freundcloud.com/blog/)
 
 <figure class="tour-hero" markdown="0">
   <img src="{{ '/assets/screenshots/cfactory/mission-control.png' | relative_url }}" alt="CFactory Mission Control — the whole factory at a glance">
@@ -38,7 +40,7 @@ stage, a live agent roster, and an anomaly feed — so you always know where eve
 </div>
 
 <div class="gallery" markdown="0">
-  <figure><img src="{{ '/assets/screenshots/cfactory/pipeline.png' | relative_url }}" alt="CFactory Pipeline"><figcaption><b>Pipeline</b>Every work item threaded across Plan → Code → Test by GitHub issue — click any card for live detail.</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/cfactory/pipeline.png' | relative_url }}" alt="CFactory Pipeline"><figcaption><b>Pipeline</b>Every work item threaded across Plan → Code → Test by its correlation key — click any card for live detail.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/running-tasks.png' | relative_url }}" alt="CFactory Running tasks"><figcaption><b>Running tasks</b>Live progress across every factory sibling — what's running, how far, what failed.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/cfactory/services.png' | relative_url }}" alt="CFactory Services"><figcaption><b>Services</b>The cockpit and the three upstreams it threads together — health and endpoints, editable.</figcaption></figure>
 </div>

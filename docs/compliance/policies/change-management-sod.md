@@ -99,7 +99,7 @@ workflow files, and the ArgoCD application manifests in `factory-gitops`.
 - `factory-gitops` is committed **directly to `main` with no branch protection**, and the
   ArgoCD `Application` manifests (`apps/*/application.yaml`, `bootstrap/argocd-root-app.yaml`)
   set `syncPolicy.automated` with `prune: true` and `selfHeal: true`. A merged tag bump
-  therefore reconciles to the live p510 cluster with **no human deploy approval and no
+  therefore reconciles to the live cluster on the operator host with **no human deploy approval and no
   gate** anywhere between merge and production.
 - Net effect on separation of duties: a single actor who can merge to an app repo (admins
   bypass protection; code-owner review not required; the same identity owns CODEOWNERS)

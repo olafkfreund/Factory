@@ -20,8 +20,10 @@ title: PFactory — a guided tour
 
 **PFactory** is the planning layer that sits **in front of** the coding agents. It ingests a
 plan, enriches it with **live** organizational context (Kubernetes, cloud, Backstage, wikis),
-runs architecture / security / feasibility review gates **with citations**, records human
+reviews them through seven lenses and a hard readiness gate, **with citations**, records human
 approval, and only then emits governed GitHub issues for AIFactory to build.
+
+[Visit PFactory →](https://pfactory.freundcloud.com/) · [Latest news](https://pfactory.freundcloud.com/blog/)
 
 <figure class="tour-hero" markdown="0">
   <img src="{{ '/assets/screenshots/pfactory/09-pipeline.png' | relative_url }}" alt="PFactory pipeline — enrich, decompose, review">
@@ -49,7 +51,7 @@ original as a reference oracle and TFactory proves the two behave the same.
 
 <div class="gallery" markdown="0">
   <figure><img src="{{ '/assets/screenshots/pfactory/01-portal-list.png' | relative_url }}" alt="PFactory portal"><figcaption><b>Portal</b>Every plan in one place, with status across the planning pipeline.</figcaption></figure>
-  <figure><img src="{{ '/assets/screenshots/pfactory/12-review.png' | relative_url }}" alt="PFactory review gates"><figcaption><b>Review gates</b>Architecture · security · feasibility — hybrid deterministic + LLM, every verdict cited.</figcaption></figure>
+  <figure><img src="{{ '/assets/screenshots/pfactory/12-review.png' | relative_url }}" alt="PFactory review gates"><figcaption><b>Review lenses</b>Seven lenses plus a readiness gate — hybrid deterministic + LLM, every verdict cited.</figcaption></figure>
   <figure><img src="{{ '/assets/screenshots/pfactory/14-approval.png' | relative_url }}" alt="PFactory human approval"><figcaption><b>Human approval</b>Nothing is emitted downstream until a person signs off.</figcaption></figure>
 </div>
 

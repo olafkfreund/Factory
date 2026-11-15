@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0010: Code-Aware Planning over Existing Repositories"
 permalink: /rfc/code-aware-planning/
+status: Implemented
 ---
 
 # RFC-0010 — Code-Aware Planning over Existing Repositories (Brownfield + Migration)
