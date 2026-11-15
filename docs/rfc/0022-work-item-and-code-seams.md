@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0022: Work-Item and Code Seams — Jira for planning, GitHub for code"
 permalink: /rfc/work-item-and-code-seams/
+status: Proposed
 ---
 
 # RFC-0022 — Work-Item and Code Seams

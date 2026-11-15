@@ -7,7 +7,7 @@
 
 ## Purpose
 
-Define how the Factory fleet establishes and proves the integrity and provenance of the software it builds, ships, and runs: every deployable artifact should be signed, carry a software bill of materials (SBOM), be scanned for known vulnerabilities, and be admitted to the runtime cluster only after its signature is verified. Scope covers the four service repos that build and push container images (AIFactory, PFactory, TFactory, CFactory), the GitOps deployment surface (`factory-gitops`, ArgoCD on the p510 k3d cluster), and the source-integrity controls (dependency pinning, signed commits) that protect the inputs to those builds. The controlling assertion an assessor tests is: every deployed image is signed and SBOM-attested, the cluster rejects unsigned or unverified images, and a target SLSA build level is documented and met.
+Define how the Factory fleet establishes and proves the integrity and provenance of the software it builds, ships, and runs: every deployable artifact should be signed, carry a software bill of materials (SBOM), be scanned for known vulnerabilities, and be admitted to the runtime cluster only after its signature is verified. Scope covers the four service repos that build and push container images (AIFactory, PFactory, TFactory, CFactory), the GitOps deployment surface (`factory-gitops`, ArgoCD on the operator host's k3d cluster), and the source-integrity controls (dependency pinning, signed commits) that protect the inputs to those builds. The controlling assertion an assessor tests is: every deployed image is signed and SBOM-attested, the cluster rejects unsigned or unverified images, and a target SLSA build level is documented and met.
 
 ## Current state (grounded)
 
@@ -86,7 +86,7 @@ Phased, smallest-first, closing the honest gaps in priority order.
 
 ### Phase 2 — Signature-verification admission gate
 
-- Deploy a policy controller into the p510 cluster via `factory-gitops` — Sigstore `policy-controller` (native cosign/keyless verification) or Kyverno with `verifyImages`.
+- Deploy a policy controller into the cluster on the operator host via `factory-gitops` — Sigstore `policy-controller` (native cosign/keyless verification) or Kyverno with `verifyImages`.
 - Author a `ClusterImagePolicy` (or Kyverno policy) that admits only images from `ghcr.io/<owner>/{aifactory,pfactory,tfactory,cfactory,…}` bearing a valid keyless cosign signature whose OIDC identity matches the release workflow's issuer/identity, and require the presence of an SPDX SBOM attestation.
 - Roll out in `warn`/audit mode first (log violations without blocking), confirm all four services pass, then flip to `enforce`. Scope the policy to the fleet namespaces so cluster-infra images are handled separately.
 - Pin deployed images by digest (not tag) so the verified artifact is the one that runs.

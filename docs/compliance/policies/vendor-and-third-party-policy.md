@@ -16,7 +16,7 @@ controlled.
 ## Scope
 
 Service providers and suppliers, including: LLM providers (Anthropic, OpenAI, and any
-self-hosted or local model host such as the p510 Ollama), GitHub (source, CI/CD, OIDC),
+self-hosted or local model host such as Ollama on the operator host), GitHub (source, CI/CD, OIDC),
 Cloudflare (edge/TLS), the cloud/hosting substrate, and upstream open-source
 dependencies and base images consumed by the build.
 

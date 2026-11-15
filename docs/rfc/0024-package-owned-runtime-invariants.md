@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0024: Package-Owned Runtime Invariants — every package declares what must hold, or says why nothing does"
 permalink: /rfc/package-owned-runtime-invariants/
+status: Proposed
 ---
 
 # RFC-0024 — Package-Owned Runtime Invariants

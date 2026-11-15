@@ -106,7 +106,7 @@ Not tested, by reasoning rather than time: Kata needs a VMM and `/dev/kvm`
 inside the node. Factory nodes are k3d containers (k3s-in-docker), so Kata
 requires nested virtualization plumbed through the node container plus a
 kernel/initrd per pod — a substrate change, not a runtime-class toggle. On
-the current single-remote-node k3d cluster (p510) this is out of reach without
+the current single-remote-node k3d cluster (the operator host) this is out of reach without
 moving to bare-metal k3s or VM-backed nodes. Revisit only if the cluster
 substrate changes.
 

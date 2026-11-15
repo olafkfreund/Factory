@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0021: Earned Memory and Promotion Gates — a memory has to survive something before it is kept"
 permalink: /rfc/earned-memory-and-promotion-gates/
+status: Proposed
 ---
 
 # RFC-0021 — Earned Memory and Promotion Gates

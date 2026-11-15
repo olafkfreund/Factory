@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0001: Correlation Key & Completion-Event Schema"
 permalink: /rfc/correlation-key/
+status: Implemented
 ---
 
 # RFC-0001 — Shared Correlation Key & Completion-Event Schema

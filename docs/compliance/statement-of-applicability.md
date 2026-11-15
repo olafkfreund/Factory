@@ -4,7 +4,7 @@
 - **Review cadence:** At least annually and at each management review
 - **Framework:** ISO/IEC 27001:2022 Clause 6.1.3(d) — the SoA is a mandatory document
 - **Assessment date:** 2026-07-24
-- **Re-measured 2026-11-07:** A.5.29, A.5.30, A.5.33, A.8.8, A.8.10, A.8.13-A.8.16 ([spec](../../spec/2026-11-07-324-compliance-records-refresh.md))
+- **Re-measured 2026-11-07:** A.5.29, A.5.30, A.5.33, A.8.8, A.8.10, A.8.13-A.8.16 ([spec](https://github.com/olafkfreund/Factory/blob/main/spec/2026-11-07-324-compliance-records-refresh.md))
 
 This is the ISO-specific, control-by-control view of the ISMS. It covers all **93** Annex
 A controls across the four themes (A.5 Organizational 37, A.6 People 8, A.7 Physical 14,
@@ -24,14 +24,14 @@ A.8 Technological 34). Each control is marked:
 Evidence pointers are relative to the repository roots under
 `GitHub/{Factory,PFactory,AIFactory,TFactory,CFactory,factory-gitops}`. The
 [control-matrix.md](control-matrix.md) gives the cross-framework view; this SoA and that
-matrix draw evidence from the same [domain documents](policies/). Owner tags map to
+matrix draw evidence from the same [domain documents](../policies/). Owner tags map to
 [roles.md](roles.md) (Security Owner unless a domain control owner is named).
 
 ## A.5 Organizational controls (37)
 
 | Control | Title | Status | Justification and evidence | Owner |
 |---|---|---|---|---|
-| A.5.1 | Policies for information security | Implemented | Policy set under [policies/](policies/), parent [information-security-policy.md](policies/information-security-policy.md); git history is the dated approval record. | Security Owner |
+| A.5.1 | Policies for information security | Implemented | Policy set under [policies/](../policies/), parent [information-security-policy.md](policies/information-security-policy.md); git history is the dated approval record. | Security Owner |
 | A.5.2 | Information security roles and responsibilities | Implemented | [roles.md](roles.md) names the Security Owner and per-domain control owners with a RACI. | Security Owner |
 | A.5.3 | Segregation of duties | Planned | SoD intent stated in [secure-sdlc-policy.md](policies/secure-sdlc-policy.md); weakened by push-to-main auto-deploy and single-owner CODEOWNERS (R-005, Factory#316). | Change-mgmt |
 | A.5.4 | Management responsibilities | Implemented | Management commitment in the InfoSec policy; quarterly management review defined in [roles.md](roles.md). | Security Owner |

@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0002: Factory Task Contract v2"
 permalink: /rfc/task-contract/
+status: Implemented
 ---
 
 # RFC-0002 — Factory Task Contract v2
@@ -9,7 +10,7 @@ permalink: /rfc/task-contract/
 > **Status:** Implemented · **Version:** 2.0 · **Created:** 2026-06-06 · **Updated:** 2026-06-17
 > Builds on [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation
 > key + completion-event envelope). The product repos implement against this
-> document. Machine-readable schema: [`apis/task-contract.schema.json`](../../apis/task-contract.schema.json).
+> document. Machine-readable schema: [`apis/task-contract.schema.json`](https://github.com/olafkfreund/Factory/blob/main/apis/task-contract.schema.json).
 
 ## 1. Motivation
 
@@ -290,10 +291,10 @@ Normative rules (the never-overclaim gate):
 4. A declared `achieved_level` above the computed truth is **downgraded** and
    flagged (an overclaim), mirroring RFC-0001a's no-evidence downgrade.
 
-The reference enforcement is [`scripts/verification_gate.py`](../../scripts/verification_gate.py)
+The reference enforcement is [`scripts/verification_gate.py`](https://github.com/olafkfreund/Factory/blob/main/scripts/verification_gate.py)
 (`normalize_verification()`), pure and dependency-free so each service vendors it.
 The machine-readable shape is `$defs.verification` in
-[`apis/task-contract.schema.json`](../../apis/task-contract.schema.json).
+[`apis/task-contract.schema.json`](https://github.com/olafkfreund/Factory/blob/main/apis/task-contract.schema.json).
 
 ## 5. Versioning
 

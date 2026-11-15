@@ -10,7 +10,7 @@ Each write was also checked for:
 - **wiring:** is the failing path actually called, and is there a test
   proving it?
 
-The method is in [plan](../../plan/2026-10-14-971-terminal-status-audit.md).
+The method is in [plan](https://github.com/olafkfreund/Factory/blob/main/plan/2026-10-14-971-terminal-status-audit.md).
 The audit was read-only, against each repo's `origin/dev`:
 
 | Service | Commit audited |

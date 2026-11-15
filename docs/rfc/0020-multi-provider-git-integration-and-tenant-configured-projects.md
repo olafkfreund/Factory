@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0020: Multi-Provider Git Integration and Tenant-Configured Projects — the board syncs to the host you actually use"
 permalink: /rfc/multi-provider-git-integration/
+status: Proposed
 ---
 
 # RFC-0020 — Multi-Provider Git Integration and Tenant-Configured Projects

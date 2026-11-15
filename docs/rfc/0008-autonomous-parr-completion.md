@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0008: Autonomous PARR Completion"
 permalink: /rfc/autonomous-completion/
+status: Partially implemented
 ---
 
 # RFC-0008 — Autonomous PARR Completion

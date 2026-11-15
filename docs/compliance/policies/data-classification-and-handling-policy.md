@@ -42,7 +42,7 @@ where it flows.
    `AIFACTORY_DATA_CLASSIFICATION` deployment-wide except to `regulated`. The two direct `claude --print`
    spawns in the web-server scrub the prompt the same way (AIFactory#1860). Where data
    must not leave the boundary at all, route to a local model (the `EgressClass=LOCAL`
-   lever, p510 Ollama) rather than a managed cloud provider.
+   lever, Ollama on the operator host) rather than a managed cloud provider.
 3. **Redaction must not fail silently.** A redactor that fails open (passes content
    through unredacted on error) is a data-protection defect; failures are surfaced and
    treated, not swallowed.

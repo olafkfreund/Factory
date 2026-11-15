@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0017: Full Job-Native Default Execution & Control-Plane Scale-Out"
 permalink: /rfc/job-native-scale-out/
+status: In progress
 ---
 
 # RFC-0017 — Full Job-Native Default Execution & Control-Plane Scale-Out

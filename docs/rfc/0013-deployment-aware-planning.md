@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0013: Deployment-Aware Planning"
 permalink: /rfc/deployment-aware-planning/
+status: Implemented
 ---
 
 # RFC-0013 — Deployment-Aware Planning

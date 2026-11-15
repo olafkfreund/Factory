@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0007: Access Discovery & Authenticated-Test Provisioning"
 permalink: /rfc/access-provisioning/
+status: Implemented
 ---
 
 # RFC-0007 — Access Discovery & Authenticated-Test Provisioning

@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0025: Planning from Observed Infrastructure — read the account, not just the repo"
 permalink: /rfc/planning-from-observed-infrastructure/
+status: Proposed
 ---
 
 # RFC-0025 — Planning from Observed Infrastructure

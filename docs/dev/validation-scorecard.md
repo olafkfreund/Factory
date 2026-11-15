@@ -100,7 +100,7 @@ one of them was found by reading code, not by a run failing.
 | `phaseModels` without `isAutoProfile: true` | The resolver ignores the map entirely and the run uses defaults. Nothing warns. | AIFactory `apps/backend/phase_config.py` precedence chain |
 | A phase key outside `{spec, planning, coding, qa, qa_fixer}` | Silently dropped by both AIFactory and TFactory whitelists. `testing` is the obvious one to reach for and does nothing. | AIFactory `routes/settings.py`; TFactory `tools/task_control.py` |
 | `BENCH_MODEL` alone | Sets the flat model, which loses to the per-phase pins. Observed 2026-06-13 producing an all-Claude build from a Gemini-labelled run. | benchmark-matrix-runbook.md |
-| Pinning `ollama:<model>` for the self-hosted box | The agentic Ollama provider is hard-pinned to `localhost:11434` and reads no env, so it never reaches p510. Use `openai-compatible:<model>`. | AIFactory#1099, TFactory#870 |
+| Pinning `ollama:<model>` for the self-hosted box | The agentic Ollama provider is hard-pinned to `localhost:11434` and reads no env, so it never reaches the operator host. Use `openai-compatible:<model>`. | AIFactory#1099, TFactory#870 |
 | Reading a TFactory model from `status.json` | `usage.model` is empty even on a Claude run, so the verify leg has no resolved-model evidence at all. | TFactory#869 |
 | Comparing swarms on per-worker wall-clock | `duration_ms` is 0 for every worker; tokens and cost are real, time is not. | AIFactory#1100 |
 
@@ -164,9 +164,9 @@ requested.
 | C2 | Gemini online (gemini-cli / antigravity) | PFactory | — | — | **N/A** | PFactory runs no LLM |
 | C2 | Gemini online (gemini-cli / antigravity) | AIFactory | TBD | TBD | TBD | Provider is `antigravity`; pin via `BENCH_PHASE_MODELS`, never `BENCH_MODEL`. Trust flag already set on this deployment |
 | C2 | Gemini online (gemini-cli / antigravity) | TFactory | TBD | TBD | TBD | Expected to fail until TFactory#871 lands (no `GEMINI_CLI_TRUST_WORKSPACE` on the deployment) |
-| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | PFactory | — | — | **N/A** | PFactory runs no LLM |
-| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | AIFactory | TBD | TBD | TBD | Must be spelled `openai-compatible:<model>`; `ollama:` cannot reach p510 (AIFactory#1099) |
-| C3 | Ollama self-hosted (p510, `host.k3d.internal:11434`) | TFactory | TBD | TBD | TBD | Same spelling constraint (TFactory#870); resolved-model evidence blocked on TFactory#869 |
+| C3 | Ollama self-hosted (the operator host, `host.k3d.internal:11434`) | PFactory | — | — | **N/A** | PFactory runs no LLM |
+| C3 | Ollama self-hosted (the operator host, `host.k3d.internal:11434`) | AIFactory | TBD | TBD | TBD | Must be spelled `openai-compatible:<model>`; `ollama:` cannot reach the operator host (AIFactory#1099) |
+| C3 | Ollama self-hosted (the operator host, `host.k3d.internal:11434`) | TFactory | TBD | TBD | TBD | Same spelling constraint (TFactory#870); resolved-model evidence blocked on TFactory#869 |
 | C4 | Ollama online (hosted) | PFactory | — | — | **N/A** | PFactory runs no LLM |
 | C4 | Ollama online (hosted) | AIFactory | TBD | TBD | TBD | No authenticated Ollama client exists; only route is `openai-compatible:` + `OPENAI_COMPATIBLE_BASE_URL=https://ollama.com`. Requires a deployment env change (mutually exclusive with C3) |
 | C4 | Ollama online (hosted) | TFactory | TBD | TBD | TBD | As above |
@@ -258,7 +258,7 @@ lucky run; put the sample size in `runs`.
 |---|---|---|---|---|---|---|---|---|---|
 | Anthropic (Claude) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | Baseline |
 | Gemini online | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Ollama self-hosted (p510) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | Cost column is tokens plus time, not USD |
+| Ollama self-hosted (the operator host) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | Cost column is tokens plus time, not USD |
 | Ollama online | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### F3. Parallel vs serial wall-clock

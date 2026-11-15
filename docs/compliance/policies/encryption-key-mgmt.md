@@ -23,7 +23,7 @@ Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-
 | Postgres | Unencrypted, risk accepted. | Record: R-014, review 2027-04-24 (Factory#3653). Live: PVC `data-postgres-0` on `local-path`. |
 | Other `local-path` volumes (Redis, Keycloak, service data) | Unencrypted. | Live: all PVCs on `local-path`. Record: R-003, open. |
 | etcd Secrets | Unencrypted. | Live: server node `k3s.io/node-args` has no `--secrets-encryption`. |
-| Node disk | No LUKS. | Record: owner host check 2026-10-24 (p620, `/mnt/code/k3d/storage` on `/dev/sdb1` ext4). |
+| Node disk | No LUKS. | Record: owner host check 2026-10-24 (the cluster host, `/mnt/code/k3d/storage` on `/dev/sdb1` ext4). |
 | Application-level keys | `KMS_FERNET_KEY` (aifactory), `CFACTORY_CREDENTIAL_KEY` (cfactory) documented; not checked live. | Repo: rotation policy in `docs/secrets-management.md`. |
 | FIPS 140 | Nothing asserted. Owner decision. | Record: Factory#314 scopes it to FedRAMP. |
 | KES / external KMS | Not deployed. MinIO uses its built-in static single-key mode. | Repo: MinIO manifest. |
@@ -45,7 +45,7 @@ Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-
 - Postgres — the durable control-plane state store (job_states and per-service tables, RFC-0016) — is a single-replica StatefulSet on an RWO `local-path` PVC (`factory-gitops/apps/postgres/manifests/manifests.yaml`). The k3s `local-path` provisioner writes to a plain host directory on the node's filesystem. No LUKS/dm-crypt, no encrypted StorageClass, no `pgcrypto` / column encryption, no TDE.
 - MinIO — the object store for PARR artifacts and evidence — runs with `args: ["server", "/data", …]` on an RWO `local-path` PVC (`factory-gitops/apps/minio/manifests/manifests.yaml`). SSE-S3 is configured on three buckets (`factory-artifacts`, `factory-backups`, `factory-evidence`) using MinIO's built-in static single-key mode (`MINIO_KMS_SECRET_KEY`). New writes are configured to be encrypted; existing-object coverage is not evidenced. The volume under MinIO is not encrypted.
 - Redis (`factory-gitops/apps/redis/manifests/manifests.yaml`) and Keycloak (`factory-gitops/infra/keycloak/keycloak.yaml`) are likewise on `local-path` with no at-rest encryption.
-- Update 2026-10-24: MinIO SSE-S3 is on for new writes (factory-gitops#71, #310). Host check on p620: no crypt/LUKS in `lsblk`; the Postgres PV dir `/mnt/code/k3d/storage` is on `/dev/sdb1` ext4, so Postgres stays unencrypted and is risk-accepted as R-014 (review 2027-04-24).
+- Update 2026-10-24: MinIO SSE-S3 is on for new writes (factory-gitops#71, #310). Host check on the cluster host: no crypt/LUKS in `lsblk`; the Postgres PV dir `/mnt/code/k3d/storage` is on `/dev/sdb1` ext4, so Postgres stays unencrypted and is risk-accepted as R-014 (review 2027-04-24).
 - Net: object content in MinIO is configured to be encrypted for new writes; every volume (Postgres, Redis, Keycloak, MinIO's own) and etcd are not.
 
 ### Key management posture
@@ -128,9 +128,9 @@ Phased; each phase is independently shippable and leaves evidence behind.
 
 Decided (lead, user-approved 2026-10-24): manual rotation with agenix is the accepted control for `factory-secrets` and `minio-creds`. Risk entry: R-016 in [risk-register.md](../risk-register.md). Secret inventory and per-secret mechanism: factory-gitops `docs/secrets-management.md` (the `factory-secrets` row reads "Manual (agenix)").
 
-- **Who:** the platform operator (Security Owner delegate) on p510. Another maintainer reviews the rotation PR/log entry (four-eyes).
+- **Who:** the platform operator (Security Owner delegate) on the operator host. Another maintainer reviews the rotation PR/log entry (four-eyes).
 - **Cadence:** API tokens (provider keys, `GITHUB_TOKEN`, `APP_API_TOKEN`, OIDC client secrets) every 90 days. Keys (`JWT_SECRET`, `POSTGRES_PASSWORD`, MinIO keys, HMAC/signing keys) every 365 days. Immediately on suspected exposure, including any gitleaks finding on a real secret.
-- **How:** (1) edit the value in agenix with `scripts/manage-secrets.sh edit <name>` in nixos_config; (2) re-run the p510 bootstrap script that decrypts and recreates the Kubernetes Secret; (3) restart every consumer listed for that secret in `secrets-management.md` (MinIO: recreate and bounce minio plus all consumers); (4) revoke the old value at the issuer.
+- **How:** (1) edit the value in agenix with `scripts/manage-secrets.sh edit <name>` in nixos_config; (2) re-run the operator-host bootstrap script that decrypts and recreates the Kubernetes Secret; (3) restart every consumer listed for that secret in `secrets-management.md` (MinIO: recreate and bounce minio plus all consumers); (4) revoke the old value at the issuer.
 - **Verification:** consumers report ready after the bounce; the old credential is rejected at the issuer; record date, secret name (never the value) and operator in the issue/PR for that rotation.
 - **Evidence for detection of leaked secrets:** gitleaks is a required status check on Factory, PFactory, AIFactory, TFactory and CFactory (branch-protection API, checked 2026-10-24; workflow `.github/workflows/secret-scan.yml`), and factory-gitops requires "no literal secrets in manifests".
 - **Review:** this acceptance expires 2027-04-24 (six months); revisit automation (ESO/Vault/sealed-secrets) then.

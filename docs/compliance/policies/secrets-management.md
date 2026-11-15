@@ -19,7 +19,7 @@ file that implements (or fails to implement) it, so a reviewer can verify the cl
 directly against the repositories rather than take the policy on trust.
 
 Scope: the four product services (PFactory, AIFactory, TFactory, CFactory), the
-`factory-gitops` delivery repo, and the p510 k3d cluster they run on. The one credential
+`factory-gitops` delivery repo, and the k3d cluster on the operator host they run on. The one credential
 that already auto-rotates — the shared Claude OAuth token, via the credential broker
 (Factory#292) — is credited here as the reference pattern the rest of the estate must be
 brought up to.

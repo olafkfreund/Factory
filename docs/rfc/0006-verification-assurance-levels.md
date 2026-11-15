@@ -2,6 +2,7 @@
 layout: default
 title: "RFC-0006: Verification Assurance Levels & Honest Reporting"
 permalink: /rfc/verification-assurance/
+status: Implemented
 ---
 
 # RFC-0006 — Verification Assurance Levels & Honest Reporting
@@ -58,7 +59,7 @@ The planner emits a **Verification Plan** in the RFC-0002 contract:
 service / target / credentials). TFactory executes the **highest level whose
 requirements are satisfied**, and records where it stopped.
 
-The reference registry is [`scripts/verification_profiles.py`](../../scripts/verification_profiles.py)
+The reference registry is [`scripts/verification_profiles.py`](https://github.com/olafkfreund/Factory/blob/main/scripts/verification_profiles.py)
 (`detect_artifact_type()` + `plan_verification(files, available)`): it detects the
 artifact type, returns the ladder with each un-achievable level pre-marked
 `not_run` + `reason`, and composes directly with the #72 gate
