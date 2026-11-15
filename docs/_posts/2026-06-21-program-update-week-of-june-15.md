@@ -122,7 +122,7 @@ between "concurrency core proven" and "fully job-native by default."
 - **RFC-0017** (full Job-native default execution & scale-out) — *In progress*;
   mechanisms shipped and multi-replica live, default flips converging.
 
-The [program roadmap](/roadmap/) and the [RFC index](/rfc/0016-horizontal-concurrent-execution.md)
+The [program roadmap](/roadmap/) and the [RFC index](/rfc/horizontal-concurrent-execution/)
 carry the same status, kept deliberately in sync with this post.
 
 ## Per-service posts for the week

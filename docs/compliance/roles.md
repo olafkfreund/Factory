@@ -8,7 +8,7 @@
 This document names the people accountable for the Factory ISMS, defines the
 management-review cadence that demonstrates oversight (ISO Clause 9.3), and sets the
 continuous-monitoring plan that watches control effectiveness between reviews (ISO
-Clause 9.1). It is the join between the [policies](../policies/) and the humans who own them.
+Clause 9.1). It is the join between the [policies](/compliance/policies/) and the humans who own them.
 
 ## Security roles
 

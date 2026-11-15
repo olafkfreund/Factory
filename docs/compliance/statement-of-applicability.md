@@ -24,14 +24,14 @@ A.8 Technological 34). Each control is marked:
 Evidence pointers are relative to the repository roots under
 `GitHub/{Factory,PFactory,AIFactory,TFactory,CFactory,factory-gitops}`. The
 [control-matrix.md](control-matrix.md) gives the cross-framework view; this SoA and that
-matrix draw evidence from the same [domain documents](../policies/). Owner tags map to
+matrix draw evidence from the same [domain documents](/compliance/policies/). Owner tags map to
 [roles.md](roles.md) (Security Owner unless a domain control owner is named).
 
 ## A.5 Organizational controls (37)
 
 | Control | Title | Status | Justification and evidence | Owner |
 |---|---|---|---|---|
-| A.5.1 | Policies for information security | Implemented | Policy set under [policies/](../policies/), parent [information-security-policy.md](policies/information-security-policy.md); git history is the dated approval record. | Security Owner |
+| A.5.1 | Policies for information security | Implemented | Policy set under [policies/](/compliance/policies/), parent [information-security-policy.md](policies/information-security-policy.md); git history is the dated approval record. | Security Owner |
 | A.5.2 | Information security roles and responsibilities | Implemented | [roles.md](roles.md) names the Security Owner and per-domain control owners with a RACI. | Security Owner |
 | A.5.3 | Segregation of duties | Planned | SoD intent stated in [secure-sdlc-policy.md](policies/secure-sdlc-policy.md); weakened by push-to-main auto-deploy and single-owner CODEOWNERS (R-005, Factory#316). | Change-mgmt |
 | A.5.4 | Management responsibilities | Implemented | Management commitment in the InfoSec policy; quarterly management review defined in [roles.md](roles.md). | Security Owner |
