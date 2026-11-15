@@ -2,7 +2,7 @@
 layout: default
 title: "RFC-0019 Phase 0 Spike: build the board natively vs integrate utter.ae"
 permalink: /rfc/agent-native-planning-control-plane-spike/
-status: Decided: build native
+status: "Decided: build native"
 ---
 
 # RFC-0019 Phase 0 Spike — build native vs integrate utter.ae
