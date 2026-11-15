@@ -21,7 +21,7 @@ title: CFactory — the cockpit tour
 **CFactory** is the control tower over the whole suite. It threads every unit of work across
 **PFactory → AIFactory → TFactory** into one `WorkItem` — keyed by a repo-scoped correlation key — and puts
 it on a single live cockpit, with an agentic copilot and an HMAC-chained audit trail. Here's
-the cockpit, tab by tab.
+the cockpit, tab by tab. The cockpit has ten views today: Mission Control, Needs you, Backlog, Planning board, Pipeline, Active tasks, Tokens, Audit, Services and Settings; the tour below shows some of them.
 
 [Visit CFactory →](https://cfactory.freundcloud.com/) · [Latest news](https://cfactory.freundcloud.com/blog/)
 

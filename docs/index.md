@@ -153,7 +153,7 @@ touching the governance, verification or observability around it.
 - Spec-first: every run starts from a written, editable spec
 - Isolated worktrees — nothing touches main until you merge
 - Multi-provider, per-phase model selection; MCP control plane
-- Enterprise: SAML/SCIM, tenant isolation, audit, LiteLLM gateway
+- Enterprise: SAML/SCIM, tenant isolation, audit, a LiteLLM gateway (in-house gateway image published, not deployed yet; the LiteLLM sub-chart is deprecated but still works)
 
 <div class="prod-shots">
   <figure><img src="{{ '/assets/screenshots/aifactory/board-parr-pipeline.png' | relative_url }}" alt="AIFactory mission control"><figcaption>mission control — the PARR pipeline over the board</figcaption></figure>
@@ -177,7 +177,7 @@ posts a ranked triage report to your PR.
 
 - Five-signal verdict: meaningful tests, not coverage theatre
 - Modality lanes with real evidence (screenshots, video, HAR, mutants)
-- Bidirectional handback: failures route back to AIFactory's QA fixer
+- Bidirectional handback: failures can route back to AIFactory's QA fixer (sending is off by default, `TFACTORY_HANDBACK_SEND`)
 - Works from any AC source (markdown / Gherkin / EARS) or MCP
 
 <div class="prod-shots">
@@ -225,11 +225,11 @@ The products are independently useful, but their real power is the **handoff
 chain** — the cooperation we're building out:
 
 1. **PFactory → AIFactory.** PFactory emits governed GitHub issues; AIFactory picks
-   them up and builds, carrying the issue number as provenance.
+   them up and builds, carrying the correlation key as provenance.
 2. **AIFactory → TFactory.** A finished feature on a branch is handed to TFactory,
    which generates and grades a test suite against the acceptance criteria.
 3. **TFactory → AIFactory (handback).** When tests fail, TFactory routes a
-   correction request back to AIFactory's QA fixer — a bounded, closed loop.
+   correction request back to AIFactory's QA fixer — a bounded, closed loop. Handback sending is **off by default** (`TFACTORY_HANDBACK_SEND`, `PFACTORY_HANDBACK_SEND`).
 4. **CFactory over everything.** A shared **correlation key — repo-scoped,
    `<repo>#<n>`, see [RFC-0001](/rfc/correlation-key/)** — threads `plan → code → branch/PR → tests`, so CFactory can show and
    steer the whole pipeline from one place.

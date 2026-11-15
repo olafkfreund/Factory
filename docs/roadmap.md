@@ -44,10 +44,10 @@ summarises it.
 - **Design records:** RFC-0023 ([#968](https://github.com/olafkfreund/Factory/pull/968)), RFC-0024 ([#3592](https://github.com/olafkfreund/Factory/pull/3592))
   and RFC-0025 ([#972](https://github.com/olafkfreund/Factory/pull/972)) were added. All three are *Proposed*.
 
-Access control ([epic #312](https://github.com/olafkfreund/Factory/issues/312)) is in design plus first slices only: the
+Access control ([epic #312](https://github.com/olafkfreund/Factory/issues/312)) has its designs merged in the hub: the
 fleet role model and access review ([#3663](https://github.com/olafkfreund/Factory/pull/3663), [#3666](https://github.com/olafkfreund/Factory/pull/3666)) and
-per-factory cockpit keys ([#3680](https://github.com/olafkfreund/Factory/pull/3680)). Role checks in PFactory and
-TFactory run in shadow mode, so nothing is blocked yet.
+per-factory cockpit keys ([#3680](https://github.com/olafkfreund/Factory/pull/3680)). The implementation is in progress on `dev` in the product repos. Role checks in PFactory and
+TFactory run in shadow mode.
 
 ## Earlier: July 2026
 
@@ -63,10 +63,9 @@ capability — it was **making the existing signals honest**.
   ([RFC-0018](rfc/0018-regression-suite-and-continuous-verification.md),
   *implemented*) — TFactory runs a standing regression suite, so a green verdict
   now means "and nothing that used to pass has broken".
-- **Job-native execution** ([RFC-0017](/rfc/job-native-scale-out/)) —
-  this roadmap said the build and verify default flips went live in July, but the
-  RFC still lists itself as *In progress* and no merged change proving the flip
-  was found. The RFC is the place to check the current state.
+- **Job-native execution** ([RFC-0017](/rfc/job-native-scale-out/),
+  *implemented*) — the build and verify default flips are on: the reference
+  deployment runs both as Jobs.
 - **CloudEvents cutover** — the legacy completion envelope is gone; every service
   speaks one event format, consumer-first so nothing broke on the way.
 - **Competitive-gap remediation** (epic #270) — benchmark harness, cost-aware
@@ -139,7 +138,8 @@ The PARR spine is now proven end-to-end on real infrastructure:
   epic #206) — Job-native log streaming, a Redis-backed multi-replica
   run-multiplexer, and workspace pack/unpack via object storage. The build and
   verify *default* flips were still converging at the end of June; they went
-  **live in July** (see above). Multi-node workspace consumption remains.
+  **live in July** (see above). RFC-0017 is now *Implemented*
+  ([RFC-0017](/rfc/job-native-scale-out/)).
 - **AWS demo resources cleaned up** — the App Runner / EKS demo stacks were torn
   down; zero ongoing cloud spend.
 
@@ -255,8 +255,8 @@ cluster ([#429](https://github.com/olafkfreund/Factory/issues/429), closed 2026-
 - **Earned memory and promotion gates**
   ([RFC-0021](/rfc/earned-memory-and-promotion-gates/), epic #389) — what
   an agent is allowed to remember across runs, and what it must prove before a
-  memory is trusted. Phase 0 and the Phase 1 exact-repeat gate have merged in
-  the product repos, so this is in progress.
+  memory is trusted. RFC-0021 is *In progress*: Phase 0 is released, and the
+  Phase 1 exact-repeat gate is merged to `dev` only, not released.
 
 ## Ongoing — the products
 

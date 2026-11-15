@@ -33,7 +33,7 @@ flowchart LR
     AF -- "merge-ready branch / PR" --> TF
     TF -. "handback · failing verdict" .-> AF
 
-    CF[" CFactory — control tower<br/>:3110 API · :3111 stream"]
+    CF[" CFactory — control tower<br/>:3110 UI · :3111 API"]
     PF -. "completion event" .-> CF
     AF -. "completion event" .-> CF
     TF -. "completion event" .-> CF
