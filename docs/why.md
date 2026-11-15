@@ -58,7 +58,7 @@ The 2026 data is blunt about where the pain is:
   <div class="k"><b>84% / 29%</b><span>developers <em>using</em> AI coding tools vs those who <em>trust</em> their output (trust down from ~70% in 2023)</span></div>
   <div class="k"><b>66%</b><span>frustrated by AI output that's "almost right, but not quite"</span></div>
   <div class="k"><b>45%</b><span>say debugging AI-generated code takes longer than writing it</span></div>
-  <div class="k"><b>Aug 2 2026</b><span>EU AI Act high-risk rules: logging, human oversight &amp; audit become mandatory</span></div>
+  <div class="k"><b>Aug 2 2026</b><span>EU AI Act high-risk rules: logging, human oversight &amp; audit became mandatory (from 2 Aug 2026)</span></div>
 </div>
 
 The bottleneck has moved from writing to **verifying and governing**. That maps

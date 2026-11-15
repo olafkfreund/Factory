@@ -75,10 +75,10 @@ flowchart TB
     TF["TFactory"] -- "POST /api/events/completion" --> COL
     TF -. "COMPLETED.json sentinel<br/>(same-host fallback)" .-> COL
 
-    subgraph CF["CFactory control tower · :3110 / :3111"]
+    subgraph CF["CFactory control tower · UI :3110 / API :3111"]
         direction TB
         COL["Completion-event collector"]
-        IDEM["Idempotent dedup<br/>(service, correlation_key, status)"]
+        IDEM["Idempotent dedup<br/>(CloudEvents id)"]
         STORE["WorkItem store<br/>keyed by correlation key"]
         COCKPIT["Cockpit + advise-and-confirm copilot"]
         COL --> IDEM --> STORE --> COCKPIT
@@ -95,9 +95,10 @@ flowchart TB
         class TF tf;
 </div>
 
-Events are **idempotent** by `(service, correlation_key, status)` and consumers
+Events are **idempotent** by the per-event CloudEvents `id` (a retried delivery
+carries the same `id`; a re-run after handback carries a new one) and consumers
 must ignore unknown fields, so adding a new product — or a new field — never forces
-a breaking change. See [RFC-0001](rfc/0001-correlation-key-and-completion-event.md).
+a breaking change. See [RFC-0001](/rfc/correlation-key/).
 
 A successful terminal event must also carry **evidence** that the stage really ran —
 issues created (plan), non-zero tokens and completed phases (build), a non-null
@@ -108,14 +109,15 @@ producers; see
 
 ## The correlation key — the thread through everything
 
-The connective tissue is a single **correlation key: the GitHub issue number** of
-the governed work item, threaded end to end. Before an issue exists, services emit
-a stable synthetic key (`pf-…`, `af-…`, `tf-…`) and reconcile to the real number
-once assigned.
+The connective tissue is a single **correlation key**, repo-scoped as `<repo>#<n>`
+(the issue's repository and its number), threaded end to end, so issue 12 in two
+repos is two work items. Before an issue exists, services emit a stable synthetic
+key (`pf-…`, `af-…`, `tf-…`) and reconcile to the real one once assigned
+([RFC-0001](/rfc/correlation-key/)).
 
 <div class="mermaid">
 flowchart LR
-    A["pfactory<br/>session_id"] --> B["GitHub<br/>issue #"]
+    A["pfactory<br/>session_id"] --> B["GitHub issue<br/>repo#n"]
     B --> C["aifactory<br/>task_id"]
     C --> D["branch /<br/>PR #"]
     D --> E["tfactory<br/>spec_id"]
@@ -147,7 +149,7 @@ CFactory reach them all.
 |---|---|---|
 | AIFactory | `3101` | Act |
 | TFactory | `3103` | Verify |
-| CFactory | `3110` (API) / `3111` (stream) | Cockpit |
+| CFactory | `3111` (API) / `3110` (UI) | Cockpit |
 | PFactory | `3114` (API) / `3115` (frontend) | Plan |
 
 ## Going deeper
@@ -158,4 +160,5 @@ CFactory reach them all.
 - [RFC-0006 — verification assurance levels & honest reporting](rfc/0006-verification-assurance-levels.md)
 - [RFC-0007 — access discovery & authenticated-test provisioning](rfc/0007-access-and-credential-provisioning.md)
 - [RFC-0010 — code-aware planning over existing repositories](rfc/0010-code-aware-planning-and-behavioral-equivalence.md)
+- [All RFCs](/rfc/), each with its own status
 - [How they cooperate](/#cooperation) · [Run locally](run-locally.md) · [Roadmap](roadmap.md)

@@ -131,7 +131,7 @@ flowchart TD
 | G2 | **Governance lenses** | Catch risk *before* code exists | `process` scores security · feasibility · cost · architecture; aggregate must clear **0.75** with no blocking findings |
 | G3 | **Live-infra / access checks** | Don't promise cloud actions you can't perform | Unverified IAM/cloud actions are flagged (surfaced, not hidden); soft/waivable when air-gapped |
 | G4 | **Human approval** | A person owns the go/no-go | `approve` records approver + plan-hash; nothing is signed until then |
-| G5 | **HMAC-signed contract** | Tamper-proof handover; downstream trusts *content*, not the caller | RFC-0002 v2, signed with a per-authority shared key |
+| G5 | **HMAC-signed contract** | Tamper-proof handover; downstream trusts *content*, not the caller | RFC-0002 v2, signed with a per-authority shared key. PFactory v0.6.35 also emits an optional Ed25519 signature next to it: warn-only, and no key is configured yet ([PFactory#929](https://github.com/olafkfreund/PFactory/pull/929)) |
 | G6 | **Verify or fallback** | A forged/edited contract must not skip planning | Valid signature → trusted fast path; invalid → safe re-plan fallback |
 | G7 | **OAuth-only auth** | Agents must not silently bill a raw API key | API key scrubbed by default; direct-key billing is opt-in (`AIFACTORY_ALLOW_API_KEY`) |
 | G8 | **Agent env scrub** | A prompt-injected agent can't exfiltrate host secrets | Control-plane tokens, DB URLs, cloud creds, provider keys blanked from the agent env |

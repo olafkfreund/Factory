@@ -23,6 +23,8 @@ title: AIFactory — a guided tour
 **P**repare · **A**ct · **R**eflect · **R**eview — in an isolated git worktree, with you in
 control at every gate. Here's what that looks like in the product.
 
+[Visit AIFactory →](https://aifactory.freundcloud.com/) · [Latest news](https://aifactory.freundcloud.com/blog/)
+
 <figure class="tour-hero" markdown="0">
   <img src="{{ '/assets/screenshots/aifactory/board-parr-pipeline.png' | relative_url }}" alt="AIFactory mission control — PARR pipeline over the kanban board">
   <figcaption>Mission control — the PARR pipeline (Plan · Code · Test) sitting above the board</figcaption>

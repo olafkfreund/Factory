@@ -11,7 +11,45 @@ Factory is managed as one program across five repositories, tracked on the
 sequencing principle is **spine first**: make the pipeline traceable end-to-end
 before building deep on top of it.
 
-## Recently shipped (July 2026)
+## Recently shipped (August–November 2026)
+
+Factory has no releases, so "shipped" means merged to `main`, which deploys. The
+list of [merged pull requests](https://github.com/olafkfreund/Factory/pulls?q=is%3Apr+is%3Amerged+base%3Amain)
+is the record, and the program post
+[What shipped, August to November]({{ '/blog/2026/11/15/what-shipped-august-to-november/' | relative_url }})
+summarises it.
+
+- **Compliance programme ([epic #310](https://github.com/olafkfreund/Factory/issues/310)):** six of its nine remaining
+  domain epics closed on 2026-10-24: audit logging
+  ([#313](https://github.com/olafkfreund/Factory/issues/313)), secrets rotation ([#315](https://github.com/olafkfreund/Factory/issues/315)), vulnerability
+  management ([#317](https://github.com/olafkfreund/Factory/issues/317)), supply-chain integrity ([#318](https://github.com/olafkfreund/Factory/issues/318)),
+  data governance ([#320](https://github.com/olafkfreund/Factory/issues/320)) and runtime isolation ([#322](https://github.com/olafkfreund/Factory/issues/322)).
+  Evidence landed with them, for example retention windows
+  ([#3650](https://github.com/olafkfreund/Factory/pull/3650)) and the runtime-isolation baseline ([#3655](https://github.com/olafkfreund/Factory/pull/3655)).
+- **Security sweep and gates:** a shared `sanitize_log` ([#717](https://github.com/olafkfreund/Factory/pull/717)) and
+  SSRF guard ([#734](https://github.com/olafkfreund/Factory/pull/734)), a security-sink lint gate ([#726](https://github.com/olafkfreund/Factory/pull/726)),
+  secret scanning ([#758](https://github.com/olafkfreund/Factory/pull/758)), and a CodeQL ratchet that closed
+  [epic #813](https://github.com/olafkfreund/Factory/issues/813) ([#3646](https://github.com/olafkfreund/Factory/pull/3646)).
+- **Branch protection:** `enforce_admins` on `main` of the five code repos
+  ([#3606](https://github.com/olafkfreund/Factory/pull/3606)), and protection that cannot be stripped by its own
+  applier ([#757](https://github.com/olafkfreund/Factory/pull/757)).
+- **Agentic SDLC operating model ([epic #1958](https://github.com/olafkfreund/Factory/issues/1958)), still open:** a control catalog keyed to the control matrix
+  ([#3582](https://github.com/olafkfreund/Factory/pull/3582)) and an autonomy matrix generated from code
+  ([#3543](https://github.com/olafkfreund/Factory/pull/3543)).
+- **Languages:** Swift and Kotlin onboarded through declarative descriptors
+  ([#1707](https://github.com/olafkfreund/Factory/issues/1707)).
+- **Kyverno image-signature hardening:** the tag@digest bypass
+  ([#3664](https://github.com/olafkfreund/Factory/issues/3664)) and unverified first-party images
+  ([#3665](https://github.com/olafkfreund/Factory/issues/3665)) were closed, so image verification now fails closed.
+- **Design records:** RFC-0023 ([#968](https://github.com/olafkfreund/Factory/pull/968)), RFC-0024 ([#3592](https://github.com/olafkfreund/Factory/pull/3592))
+  and RFC-0025 ([#972](https://github.com/olafkfreund/Factory/pull/972)) were added. All three are *Proposed*.
+
+Access control ([epic #312](https://github.com/olafkfreund/Factory/issues/312)) is in design plus first slices only: the
+fleet role model and access review ([#3663](https://github.com/olafkfreund/Factory/pull/3663), [#3666](https://github.com/olafkfreund/Factory/pull/3666)) and
+per-factory cockpit keys ([#3680](https://github.com/olafkfreund/Factory/pull/3680)). Role checks in PFactory and
+TFactory run in shadow mode, so nothing is blocked yet.
+
+## Earlier: July 2026
 
 260 issues closed across the five repositories this month. The theme was not new
 capability — it was **making the existing signals honest**.
@@ -25,8 +63,10 @@ capability — it was **making the existing signals honest**.
   ([RFC-0018](rfc/0018-regression-suite-and-continuous-verification.md),
   *implemented*) — TFactory runs a standing regression suite, so a green verdict
   now means "and nothing that used to pass has broken".
-- **Job-native defaults flipped live** ([RFC-0017](rfc/0017-full-job-native-execution-and-scale-out.md)) —
-  the build and verify defaults that were converging in June are now on.
+- **Job-native execution** ([RFC-0017](/rfc/job-native-scale-out/)) —
+  this roadmap said the build and verify default flips went live in July, but the
+  RFC still lists itself as *In progress* and no merged change proving the flip
+  was found. The RFC is the place to check the current state.
 - **CloudEvents cutover** — the legacy completion envelope is gone; every service
   speaks one event format, consumer-first so nothing broke on the way.
 - **Competitive-gap remediation** (epic #270) — benchmark harness, cost-aware
@@ -35,8 +75,8 @@ capability — it was **making the existing signals honest**.
   shown to anyone.
 - **Compliance program under way** (epic #310) — governance/ISMS, change
   management and separation of duties, incident response with SEC/NIS2 timelines,
-  and agentic-AI governance (model registry, eval gates) all closed. Seven further
-  epics remain open and are the current programme spine.
+  and agentic-AI governance (model registry, eval gates) all closed. Six more domain
+  epics closed on 2026-10-24 (see above); three remain open.
 
 ### The honesty sweep
 
@@ -53,8 +93,8 @@ more than any single fix.
 | a build reporting `human_review` | it wrote no code at all (AIFactory#1070) |
 | `all_verified: true` from the verify leg | the spec body never reached it (TFactory#855) |
 
-These are now tracked as one programme: **[epic #431](https://github.com/olafkfreund/Factory/issues/431)
-— silent fallbacks**, backed by an AST sweep of all five repositories. Of 158
+These were tracked as one programme: **[epic #431](https://github.com/olafkfreund/Factory/issues/431)
+— silent fallbacks** (closed 2026-08-01), backed by an AST sweep of all five repositories. Of 158
 candidate sites, 19 default to a value that *asserts progress or success* where
 the truth is unknown. A crash is cheap because it names its own cause; a
 plausible wrong value survives, propagates, and surfaces far from where it
@@ -115,8 +155,7 @@ The PARR spine is now proven end-to-end on real infrastructure:
   never-overclaim gate. Opt-in/default-off; honest caveats (one toolchain image
   per Job, synthetic exit code, single-node co-mount) are tracked in RFC-0005 §3.3.
 - **Access discovery for authenticated testing (design)** — a new
-  [RFC-0007](rfc/0007-access-and-credential-provisioning.md) (proposed; epic with
-  sub-issues filed) tackles the MFA/credentialed-target question: classify each
+  [RFC-0007](/rfc/access-provisioning/) (*Implemented*) tackles the MFA/credentialed-target question: classify each
   test target into four access classes (machine-native federation / bootstrap-once
   / ephemeral target / un-automatable), discover them at planning time, curate the
   human-verified ones, and keep VAL-3 honest when access can't be obtained — never
@@ -171,31 +210,27 @@ The PARR spine is now proven end-to-end on real infrastructure:
 - **OAuth-only by default** — agents never silently bill a stray API key
   (direct-key billing is an explicit opt-in).
 
-## Now — compliance and audit-readiness
+## Now — access control, encryption and audit evidence
 
-The PARR spine and the CFactory cockpit are both shipped; the current programme
-is [epic #310](https://github.com/olafkfreund/Factory/issues/310), audit
-readiness for ISO 27001 / SOC 2. Four of its epics closed in July. Seven remain,
-and they are the near-term sequence:
+The PARR spine and the CFactory cockpit are both shipped. The current programme is
+[epic #310](https://github.com/olafkfreund/Factory/issues/310), audit readiness for ISO 27001 / SOC 2. Of its domain
+epics, three are still open:
 
-- **IAM & access control** (#312) — enforce MFA, retire the shared wildcard
-- **Audit logging completeness** (#313) — retention policy, SIEM alerting
-- **Encryption at rest & key management** (#314) — DB / MinIO / KMS
-- **Secrets management & rotation** (#315)
-- **Vulnerability & patch management** (#317) — scan SLAs, evidence
-- **Supply-chain integrity** (#318) — SBOM everywhere, signature verification
-- **Data governance & PII egress controls** (#320)
-- **Runtime isolation & config hardening** (#322) — Job NetworkPolicy
-- **Evidence & audit-readiness** (#324) — control-to-framework matrix
+- **IAM & access control** ([#312](https://github.com/olafkfreund/Factory/issues/312)) — MFA, retiring the shared wildcard
+  token, RBAC and quarterly access review; design and first slices have landed.
+- **Encryption at rest & key management** ([#314](https://github.com/olafkfreund/Factory/issues/314)) — DB / MinIO / KMS; the
+  policy status is documented ([#3707](https://github.com/olafkfreund/Factory/pull/3707)), the implementation is open.
+- **Evidence & audit-readiness** ([#324](https://github.com/olafkfreund/Factory/issues/324)) — control matrix and gap
+  assessments ([#3706](https://github.com/olafkfreund/Factory/pull/3706), [#3682](https://github.com/olafkfreund/Factory/pull/3682), [#3678](https://github.com/olafkfreund/Factory/pull/3678)) have landed.
 
-Two of these have concrete open findings already: image signature verification
-currently fails for **every** fleet image while running in audit mode, so the
-policy reports violations and blocks nothing (#430); and five production
-CronJobs — including the Postgres backup — exist only as cluster state, not in
-git, so they would vanish on a rebuild (#429).
+Also open: the **agentic SDLC operating model**
+([#1958](https://github.com/olafkfreund/Factory/issues/1958)), whose remaining gaps are a model access gateway
+([#1959](https://github.com/olafkfreund/Factory/issues/1959)) and agent identity ([#1960](https://github.com/olafkfreund/Factory/issues/1960)).
 
-Running alongside: **[epic #431](https://github.com/olafkfreund/Factory/issues/431)**,
-the silent-fallback sweep described above.
+Already closed and no longer open findings: image signature verification
+([#430](https://github.com/olafkfreund/Factory/issues/430), closed 2026-08-05), the five CronJobs that lived only in the
+cluster ([#429](https://github.com/olafkfreund/Factory/issues/429), closed 2026-07-30), and the silent-fallback sweep
+([epic #431](https://github.com/olafkfreund/Factory/issues/431), closed 2026-08-01).
 
 ## Next — seams beyond GitHub
 
@@ -218,11 +253,10 @@ the silent-fallback sweep described above.
   factory can plan against a Jira board while coding against a different host.
   RFC-0020 did the code half; this does the work-item half.
 - **Earned memory and promotion gates**
-  ([RFC-0021](rfc/0021-earned-memory-and-promotion-gates.md), epic #389) — what
+  ([RFC-0021](/rfc/earned-memory-and-promotion-gates/), epic #389) — what
   an agent is allowed to remember across runs, and what it must prove before a
-  memory is trusted.
-- **GTM demos** (epic #240) — the demo set, once the honesty gaps behind it are
-  closed.
+  memory is trusted. Phase 0 and the Phase 1 exact-repeat gate have merged in
+  the product repos, so this is in progress.
 
 ## Ongoing — the products
 
