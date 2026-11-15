@@ -2,16 +2,20 @@
 layout: default
 title: "RFC-0017: Full Job-Native Default Execution & Control-Plane Scale-Out"
 permalink: /rfc/job-native-scale-out/
-status: In progress
+status: Implemented
 ---
 
 # RFC-0017 — Full Job-Native Default Execution & Control-Plane Scale-Out
 
-> **Status:** In progress (epic #206; mechanisms shipped — Job-native log
-> streaming, Redis-backed multi-replica rmux, workspace pack/unpack #207, and
-> multi-replica running live. The Job-native build+verify *default* flips
-> (#671/#466) are **not yet live** — they are converging through bug rounds on
-> safe in-pod defaults. Stage E workspace pack/unpack runs live, and the last
+> **Status:** Implemented (epic #206 closed 2026-06-23; updated 2026-11-15:
+> the reference deployment runs builds and verifies as Kubernetes Jobs —
+> `AIFACTORY_BUILD_BACKEND=kubejob` and `TFACTORY_VERIFY_EXEC=kubejob` in
+> factory-gitops `apps/{aifactory,tfactory}/manifests/manifests.yaml`. Shipped
+> mechanisms: Job-native log streaming, Redis-backed multi-replica rmux,
+> workspace pack/unpack #207, and multi-replica running live. The text below
+> from 2026-06-29 said the default flips (#671/#466) were not yet live; they
+> are now.)
+> Stage E workspace pack/unpack runs live, and the last
 > node-pin on the packed build path — the warm Nix-store PVC — was cut by baking
 > the store into a `-nix` build image (#190); a packed build Job now carries no
 > node affinity. The cross-node *landing* is now **proven live** (2026-06-29): a

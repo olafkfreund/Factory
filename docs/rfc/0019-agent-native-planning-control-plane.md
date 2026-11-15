@@ -2,12 +2,12 @@
 layout: default
 title: "RFC-0019: Agent-Native Planning Control Plane — one board humans and the factory's agents share"
 permalink: /rfc/agent-native-planning-control-plane/
-status: Proposed
+status: Implemented
 ---
 
 # RFC-0019 — Agent-Native Planning Control Plane
 
-> **Status:** Proposed · **Created:** 2026-07-19 · **Owner:** CFactory ·
+> **Status:** Implemented (epic [#302](https://github.com/olafkfreund/Factory/issues/302) closed 2026-07-26; phases 1-6 are on CFactory `main`: board REST and views, MCP board tools, board-to-intake dispatch, agent-skills manifests, the parity check and GitHub card sync) · **Created:** 2026-07-19 · **Updated:** 2026-11-15 · **Owner:** CFactory ·
 > **Extends:**
 > [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation key — the board is the human-facing home of a correlation),
 > [RFC-0003](./0003-github-agentic-integration.md) (GitHub integration — the board augments, never replaces, GitHub as the record of truth),

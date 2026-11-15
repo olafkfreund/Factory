@@ -15,7 +15,7 @@ status: Partially implemented
 
 On 2026-06-18 we ran the full pipeline end to end from a single brief: the
 OpenAPI documentation + Backstage catalog entry for a small "Task Board"
-service ([factory-demo-taskboard](https://github.com/olafkfreund/factory-demo-taskboard)).
+service (`factory-demo-taskboard`, a demo repo since retired).
 The seams held: PFactory produced a Backstage-grounded signed contract, AIFactory
 built the service and its web UI, TFactory independently generated a 15-file test
 suite and **caught a real behavioural bug** (the service accepted a whitespace-only

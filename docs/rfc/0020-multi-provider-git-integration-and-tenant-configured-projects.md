@@ -2,12 +2,12 @@
 layout: default
 title: "RFC-0020: Multi-Provider Git Integration and Tenant-Configured Projects — the board syncs to the host you actually use"
 permalink: /rfc/multi-provider-git-integration/
-status: Proposed
+status: Implemented
 ---
 
 # RFC-0020 — Multi-Provider Git Integration and Tenant-Configured Projects
 
-> **Status:** Proposed · **Created:** 2026-07-25 · **Owner:** CFactory ·
+> **Status:** Implemented (epic [#361](https://github.com/olafkfreund/Factory/issues/361) closed 2026-07-28, all phases, including several git connections per tenant) · **Created:** 2026-07-25 · **Updated:** 2026-11-15 · **Owner:** CFactory ·
 > **Extends:**
 > [RFC-0003](./0003-github-agentic-integration.md) (GitHub integration — this generalises it to the other hosts),
 > [RFC-0007](./0007-access-and-credential-provisioning.md) (credential provisioning — the custody model here is an instance of it),
