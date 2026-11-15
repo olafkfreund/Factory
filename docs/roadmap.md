@@ -7,7 +7,7 @@ permalink: /roadmap/
 # Program roadmap
 
 Factory is managed as one program across five repositories, tracked on the
-[Factory Program board](https://github.com/users/olafkfreund/projects/1). The
+[Factory issue tracker](https://github.com/olafkfreund/Factory/issues). The
 sequencing principle is **spine first**: make the pipeline traceable end-to-end
 before building deep on top of it.
 
@@ -273,4 +273,4 @@ CFactory is how the suite proves it.
 ---
 
 *Live status lives in the issues and the
-[program board](https://github.com/users/olafkfreund/projects/1).*
+[issue tracker](https://github.com/olafkfreund/Factory/issues).*

@@ -130,7 +130,7 @@ carry the same status, kept deliberately in sync with this post.
 Each product has its own write-up for the week of June 15–21:
 
 - **PFactory** — [olafkfreund.github.io/PFactory/blog/](https://olafkfreund.github.io/PFactory/blog/)
-- **AIFactory** — [olafkfreund.github.io/AIFactory/blog/](https://olafkfreund.github.io/AIFactory/blog/)
+- **AIFactory** — [aifactory.freundcloud.com/blog](https://aifactory.freundcloud.com/blog)
 - **TFactory** — [olafkfreund.github.io/TFactory/blog/](https://olafkfreund.github.io/TFactory/blog/)
 - **CFactory** — [olafkfreund.github.io/CFactory/blog/](https://olafkfreund.github.io/CFactory/blog/)
 
