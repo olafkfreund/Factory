@@ -45,3 +45,13 @@ Revert the PRs. Terminals return to token-only access. No data or schema change;
 - Non-service users lose projectless (home directory) terminals; service principal and local UI are unchanged.
 - PF/TF JWT users get strict project authorization on terminals regardless of `RBAC_ENFORCE_TASK_ROUTES`.
 - A terminal is still a login shell of the server's OS user: this is access control, not tenant isolation.
+
+## Deviations (2026-11-16)
+
+- **Create with an existing id.** Final Codex review (round 1, PF and TF) found the UI re-posts `createTerminal` on every remount of a live terminal, so a flat 409 would break reconnect (before, the old session was silently replaced and orphaned). Changed: if the id exists and the caller `may_use` it, a live session is returned unchanged (201, no spawn) and a dead one is closed and replaced; any other caller gets 409; the manager still raises `DuplicateSessionError` under its lock before spawning. The intent's "reject an id that already exists" now reads "never replace or take over another caller's session".
+- **Repo-only projects** (`path: ""`): `project_id_for_path` and `path_in_project` skip projects with an empty path (Codex round 1, PF). Test added in all three repos.
+- **Helper placement.** `authorize_path` became `_authorize_path` in `routes/terminal.py` (returns nothing; service principals skip the lookup). `pty/access.py` imports no `fastapi`, so the new file starts at zero in the mypy ratchet in environments without it. `pty/access.py` also holds `path_in_project`.
+- **Registry access.** AIF uses `server.project_registry.load_projects`, PF `server.services.project_paths.load_projects`, TF a lazy `server.routes.projects.load_projects` (as its `project_authz` does).
+- **Tests.** Existing direct callers updated with a service-principal request stub: AIF `tests/test_project_registry_containment.py`, `apps/web-server/tests/test_route_refusals_are_not_http_200.py`, `apps/web-server/tests/test_error_ref.py`; PF `apps/web-server/tests/test_repo_only_path_655.py`, `test_error_ref.py`; TF `tests/test_terminal_error_leak.py`.
+- **mypy ratchet** for PF/TF cannot run in the venv available (no pydantic plugin; with TFactory's venv first on PATH fastapi is missing, giving +2 on `routes/terminal.py`); counted with `--python-executable` of the repo venv instead: `routes/terminal.py` 28 -> 28, `pty/manager.py` 9 -> 3, others unchanged, `pty/access.py` 0.
+- **Final Codex review:** round 1 as above; round 2 on all three repos: no findings. agy was off by owner decision; the lead implemented all steps.
