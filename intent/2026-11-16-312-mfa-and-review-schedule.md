@@ -18,7 +18,7 @@ Already done and out of scope here: scoped keys replacing the wildcard (code), f
 
 ## Proposed outcome
 
-- A gitops CronJob with three modes: **audit** (default; strictly read-only, writes nothing to Keycloak, reports every user without an OTP credential), **new-users** (also enables the OTP required action and makes it a default for new users) and **enforce** (also assigns it to existing users without OTP, except a break-glass list). The owner moves audit -> new-users -> enforce by editing one value, after enrolling their own OTP. Rollback is setting the value back and the documented kcadm command.
+- A gitops CronJob with three modes: **audit** (default; strictly read-only, writes nothing to Keycloak, reports every enabled user without a second-factor credential (OTP or WebAuthn)), **new-users** (also enables the OTP required action and makes it a default for users created afterwards) and **enforce** (also assigns it to existing users without a second factor, except a break-glass list; refuses to run unless the owner is already enrolled). The owner moves audit -> new-users -> enforce by editing one value, after enrolling their own OTP. Rollback is setting the value back and the documented kcadm command.
 - A quarterly scheduled workflow opens the access-review issue from a record template (checklist, evidence path, signer, deadlines), so the Q4 2026 review is prompted and tracked.
 - #3702 is decided and recorded: per-org keys; closed.
 - The runbook and risk register say what MFA state is real.
