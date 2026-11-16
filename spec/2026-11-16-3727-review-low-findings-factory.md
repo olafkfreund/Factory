@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3727
 intent: intent/2026-11-16-3727-review-low-findings-factory.md
 ---
