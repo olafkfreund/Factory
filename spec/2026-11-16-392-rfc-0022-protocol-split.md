@@ -26,15 +26,15 @@ In `shared/factory-github/providers/protocol.py` add two
 - RFC-0022: Status Proposed to Accepted, plus a Decision section.
 
 Method bodies are not repeated: the protocols list signatures only, copied
-from `GitProvider`. The test compares each protocol member's \`inspect.signature\` with
-\`GitProvider\`'s, and asserts \`GitProvider\` members equal the union of the two
-plus \`api_get\`/\`api_post\`.
+from `GitProvider`. The test compares each protocol member's `inspect.signature` with
+`GitProvider`'s, and asserts `GitProvider` members equal the union of the two
+plus `api_get`/`api_post`.
 
-\`HttpGitHubProvider\` (Codex finding, verified): it lacks 7 of the 12 work-item
-members and has no \`fetch_prs\`/\`close_pr\`/\`check_permissions\`, so it satisfies
-neither protocol. The test pins that it is not a \`CodeProvider\`; RFC section
-2.1's claim that it is already a \`WorkItemProvider\` is corrected, and filling
-its 7 gaps is a sub-issue. \`isinstance\` checks presence only, not behaviour.
+`HttpGitHubProvider` (Codex finding, verified): it lacks 7 of the 12 work-item
+members and has no `fetch_prs`/`close_pr`/`check_permissions`, so it satisfies
+neither protocol. The test pins that it is not a `CodeProvider`; RFC section
+2.1's claim that it is already a `WorkItemProvider` is corrected, and filling
+its 7 gaps is a sub-issue. `isinstance` checks presence only, not behaviour.
 
 ## Alternatives rejected
 
