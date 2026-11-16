@@ -65,25 +65,16 @@ jobs:
 
       - name: Open / refresh an issue on regression
         if: steps.compare.outputs.code == '3'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const fs = require('fs');
-            let body = "The nightly benchmark resolved fewer tasks than the previous run.\n\n";
-            try { body += fs.readFileSync('compare.md', 'utf8'); } catch (e) { body += "_(no comparison captured)_\n"; }
-            body += `\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const existing = await github.rest.issues.listForRepo({
-              owner: context.repo.owner, repo: context.repo.repo,
-              state: 'open', labels: 'bench-regression',
-            });
-            if (existing.data.length) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: existing.data[0].number, body,
-              });
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner, repo: context.repo.repo,
-                title: "Nightly benchmark regression", body, labels: ['bench-regression'],
-              });
-            }
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf 'The nightly benchmark resolved fewer tasks than the previous run.\n\n' > issue.md
+          cat compare.md >> issue.md
+          printf '\nRun: %s\n' "$RUN_URL" >> issue.md
+          number=$(gh issue list --label bench-regression --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file issue.md
+          else
+            gh issue create --title "Nightly benchmark regression" --label bench-regression --body-file issue.md
+          fi
