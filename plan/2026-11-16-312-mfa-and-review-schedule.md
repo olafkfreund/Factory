@@ -57,3 +57,8 @@ factory-gitops repo (separate PR, base `main`):
 ## Rollback
 
 Revert the PRs. The Argo app prunes the CronJob. Realm state the job may have written (default action, assigned actions) is undone by the rollback commands in the runbook; `audit` mode writes nothing.
+
+## Deviations
+
+- Step 2: the reminder logic is `scripts/access_review_reminder.sh` (called by the workflow) with `tests/test_access_review_reminder.py`, so the quarter computation and the dedupe are tested; issue links are rewritten to absolute repository URLs (Codex final review).
+- Step 4: the script does not skip `service-account-*` users by name. Keycloak's users API already excludes service accounts, and the name prefix is valid for a human, so skipping by name would silently exempt real users (Codex final review). The owner guard matches names literally (`grep -Fx`).
