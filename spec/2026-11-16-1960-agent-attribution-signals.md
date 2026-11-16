@@ -15,10 +15,11 @@ service already records them; nothing is invented or reformatted.
 - **AIFactory** `server/services/completion.py`: new `_read_attribution(spec_dir)`
   (stdlib only, best-effort, never raises; the module is exec'd standalone, so no
   relative imports) reads `requirements.json` `originator` / `agent_identity`.
-  `build_completion_event` and `build_worker_event` take both as keyword args
-  (default `None`) and always set the two keys; callers `emit_terminal_completion`,
-  `emit_usage_snapshot`, `emit_worker_completion` pass `_read_attribution(spec_dir)`.
-  The progress event builder gets the same treatment if it shares the envelope.
+  `build_completion_event`, `build_worker_event` and `build_worker_progress_event`
+  (each builds its own envelope) take both as keyword args (default `None`) and
+  always set the two keys; the emitters `emit_terminal_completion`,
+  `emit_usage_snapshot`, `emit_worker_completion` and `emit_worker_progress` pass
+  `_read_attribution(spec_dir)`.
 - **AIFactory PR body** `services/pr_endgame.py::_pr_title_body`: when
   `requirements.json` has values, append two lines
   `Authored by agent: <agent_identity>` and `Originator: <originator>`; each value
@@ -33,10 +34,18 @@ service already records them; nothing is invented or reformatted.
   the two fields.
 - **PFactory** `plan/completion.py::build_completion_event`: set both keys from
   `session.originator` / `session.agent_identity` (already stamped at intake).
+- **PFactory `agents/triager.py::_notify_completion`** (legacy flat callback with
+  no attribution source in its status.json) is deliberately not changed: a
+  permanently-null key would be noise. Recorded as a follow-up.
 - **factory-gitops**: no change. `AIFACTORY_AGENT_COMMIT_TRAILERS` is already
   `"true"` (PR #326). The deployed image predates AIFactory#2015, so build Jobs
   honour it only after the next release; the live check that the agent can write
   the canonical spec dir in a build Job pod stays an owner/post-release action.
+
+Pre-existing, out of scope: `completion.py` imports `.billing` relatively, so
+the standalone exec in `agents/parallel_integration.py` fails and worker live
+events never emit from there (Codex finding, to be filed as its own issue). The
+new helper adds no relative import.
 
 ## Alternatives rejected
 
