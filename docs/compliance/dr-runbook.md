@@ -13,13 +13,53 @@
 | Asset | Backed up | Where the backup lives |
 |---|---|---|
 | Postgres (durable job-state, all 5 databases) | **yes** — daily `pg_dumpall` | MinIO `factory-backups/postgres/` |
-| MinIO object store (artifacts, **audit evidence**) | **no** | — |
+| MinIO object store (artifacts, **audit evidence**) | **not yet**: backup written, disabled until the off-site target exists (Factory#3681, Factory#3691) | `apps/backups/minio-offsite` in factory-gitops, to the off-site S3 bucket |
 | Keycloak, Redis, per-service PVCs | **no** | — |
 
 `postgres-backup` is a CronJob at `15 2 * * *` (02:15 UTC): an init container runs
 `pg_dumpall -h postgres -U factory --clean | gzip -9`, and the main container
 uploads it with `mc`. The declared `backups-14d` lifecycle rule expires dumps after 14 days and
 noncurrent versions after 7 (as declared; the `minio-create-bucket` Job's read-back checks the rule ID).
+
+## Scheduled restore drill (Factory#3691)
+
+The 2026-08-10 drill below was manual and proved the restore once. Since
+Factory#3691 the `postgres-restore-drill` CronJob (factory-gitops
+`apps/backups/drill`, daily 04:15 UTC, after the 02:15 dump) repeats it every
+day:
+
+1. fetches the newest `postgres-backup` dump from MinIO;
+2. rejects it if it is not valid gzip, older than 25h, future-dated, or cut
+   short (no `pg_dumpall` end marker);
+3. restores it into a throwaway Postgres inside the job pod (unix socket only;
+   the live database is never touched, and nothing is left behind: the cluster
+   is an `emptyDir` that dies with the pod);
+4. checks the restored data: all five databases present, the four service
+   databases with tables, rows present, no restore errors other than the three
+   that every fresh-cluster replay gives,
+   `pg_dump -s` works per database; per-database row counts are recorded;
+5. writes the result to `factory-evidence/control-plane-push/restore-drill/<UTC>.json`
+   and to the OpenObserve `job_health` stream (`source = 'restore-drill'`);
+6. fails the Job when any step fails. `job-watchdog` covers it like every other
+   CronJob: a failing drill is `failing`, a drill that stops running is
+   `stale`, and both open an issue.
+
+Read the latest result:
+
+```sql
+SELECT _timestamp, status, rto_seconds, fetch_seconds, initdb_seconds,
+       restore_seconds, check_seconds, dump, dump_age_seconds, databases,
+       tables, rows, problems
+FROM "job_health" WHERE source = 'restore-drill' ORDER BY _timestamp DESC
+```
+
+An assessor asking "when did the restore last run, and did it work" gets that
+query, or `mc ls fac/factory-evidence/control-plane-push/restore-drill/`.
+
+**What the drill does not prove:** that live row counts match (RPO makes them
+differ by design; counts are recorded for a human), that services work against
+the restored database, or anything about MinIO restore. It proves the newest
+dump is complete, fresh and replayable.
 
 ## Measured RTO and RPO
 
@@ -33,11 +73,21 @@ From the drill of **2026-08-10** (see Evidence). These are measurements, not tar
 | **RPO** | **up to 24h** | daily 02:15 schedule; the drill's dump was 8h33m old |
 | Demonstrated data delta | **1 row** | `pfactory.job_states` 102 live vs 101 restored |
 
-**Do not quote 24s as the RTO.** It is the *data restore step only*. A real
-recovery also needs: a Postgres to restore into, services repointed at it, and
-application validation. Those dominate and are not yet measured — the honest
-statement is "data restore is not the bottleneck; standing the platform back up
-is". Measuring the full path is outstanding (#321 closed; Factory#3691).
+**Do not quote 24s as the RTO.** It is the *data restore step only*.
+
+**Full-path RTO (Factory#3691).** Every drill run records `rto_seconds`: the time
+from starting the fetch to the end of validation, covering fetch, standing up a
+fresh Postgres (`initdb` and start), replay and the checks, with the phase
+split beside it. It does **not** include pod scheduling or the first image pull, nor
+the manual steps of a real recovery: repointing services at the replacement
+Postgres, scaling writers back up, and application validation. Those are listed
+in the procedure below and remain unmeasured; a stated RTO must add an
+estimate for them and say so.
+
+First value of record: **pending the first scheduled run on the cluster.**
+After the first run, read `rto_seconds` with the query above and record it
+here with the date. The drill was verified before release in CI against a
+synthetic five-database cluster only; that number is not an RTO.
 
 ## The single-failure-domain problem (READ THIS FIRST)
 
@@ -173,10 +223,16 @@ reads like a misconfiguration rather than a restore that stopped halfway.
 - [ ] **Off-box backup destination (Factory#3681)** — the single-failure-domain problem above.
       Needs an infrastructure decision (second machine, NAS, or real S3).
 - [x] **MinIO versioning** — enabled on all three buckets.
-- [ ] **MinIO backup** — versioning is not a backup. The evidence store is not
-      backed up, and it also holds the Postgres backups. Factory#3691.
-- [ ] **Full-path RTO (Factory#3691)** — measure standing the platform back up, not just the
-      data restore.
+- [~] **MinIO backup (Factory#3691)** — versioning is not a backup. The backup
+      CronJob `minio-backup-offsite` (`factory-artifacts`, `factory-evidence`,
+      never deletes or overwrites at the destination, verifies every object)
+      is written and tested but **not deployed**. **Owner action:** provide the
+      off-site S3 target and create the `offsite-s3-creds` Secret (Factory#3681),
+      then add `- ../minio-offsite` to `apps/backups/manifests/kustomization.yaml`
+      in factory-gitops. `factory-backups` has its own copy (Factory#3681).
+- [~] **Full-path RTO (Factory#3691)** — measured by every scheduled drill run
+      (see above); record the first value once it exists. The manual recovery
+      steps (repointing, scale-up, app validation) remain unmeasured.
 - [ ] **HA Postgres (Factory#3690)**, or a written single-writer risk acceptance.
-- [ ] **Scheduled re-drill** — a restore proven once is evidence with an expiry
-      date. Assessors ask when it last ran.
+- [x] **Scheduled re-drill (Factory#3691)** — `postgres-restore-drill`, daily,
+      results in `job_health` and `factory-evidence`, watched by `job-watchdog`.
