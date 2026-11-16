@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("httpx", reason="provider modules import httpx at module scope")
 
-from providers import (  # type: ignore[import-not-found]
+from providers import (
     AzureDevOpsProvider,
     CodeProvider,
     GitHubProvider,
