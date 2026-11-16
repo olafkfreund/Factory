@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3713
 spec: spec/2026-11-16-3713-weekly-gated-bench.md
 coders:   # every file-editing step is done by the lead: small, security-sensitive edits where a handoff costs more than it saves
