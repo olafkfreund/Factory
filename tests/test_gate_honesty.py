@@ -53,6 +53,7 @@ import check_codeql_exclude_pairing as pairing_gate
 import check_codeql_fork_validation as forkval_gate
 import check_codeql_query_suite as suite_gate
 import check_factory_github_drift as github_gate
+import check_factory_sandbox_drift as sandbox_gate
 import check_factory_ui_drift as ui_gate
 import check_gate_liveness as liveness_gate
 import check_import_resolution as import_gate
@@ -75,6 +76,7 @@ _SCRIPTS = _REPO_ROOT / "scripts"
 _COVERED: dict[str, str] = {
     "check_verification_core_drift.py": "test_verification_core_gate_is_honest",
     "check_factory_github_drift.py": "test_factory_github_gate_is_honest",
+    "check_factory_sandbox_drift.py": "test_factory_sandbox_gate_is_honest",
     "check_factory_ui_drift.py": "test_factory_ui_gate_is_honest",
     "check_branch_divergence.py": "test_branch_divergence_gate_is_honest",
     "check_pin_freshness.py": "test_pin_freshness_gate_is_honest",
@@ -206,6 +208,23 @@ def test_factory_github_gate_is_honest(
         "dropping a file from CANONICAL_FILES left the gate green on a file it no "
         "longer compares (this is what shipped in Factory#370 — two new canonical "
         "files, unlisted, and the gate reported OK against a tree it could not import)"
+    )
+
+
+def test_factory_sandbox_gate_is_honest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canonical = _REPO_ROOT / "shared" / "factory-sandbox" / "agent_sandbox"
+    files = {rel: rel for rel in sandbox_gate.CANONICAL_FILES}
+    service = _copy_into(canonical, files, tmp_path / "service")
+
+    assert sandbox_gate.run_check(canonical, service) == 0
+    _assert_enumerates(capsys.readouterr().out, files, compares=2 * len(files))
+
+    # Configuration mutation: the tree is untouched, one entry leaves the contract.
+    monkeypatch.setattr(sandbox_gate, "CANONICAL_FILES", sandbox_gate.CANONICAL_FILES[1:])
+    assert sandbox_gate.run_check(canonical, service) == 1, (
+        "dropping a file from CANONICAL_FILES left the gate green on a file it no longer compares"
     )
 
 

@@ -24,3 +24,10 @@ extend-exclude = [
     "shared/factory-github",
     ".ruff_cache",
 ]
+
+[lint.per-file-ignores]
+# Sandbox tests drive real git and fake secrets on purpose.
+"shared/factory-sandbox/tests/**" = ["S101", "PLR2004", "S105", "S108", "S603", "S607", "ARG", "PLC0415"]
+# per-file-ignores replace the baseline's table; repeat its test entries.
+"**/test_*.py" = ["S101", "PLR2004"]
+"**/tests/**" = ["S101", "PLR2004"]
