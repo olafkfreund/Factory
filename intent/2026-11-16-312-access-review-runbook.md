@@ -10,7 +10,7 @@ author: olafkfreund
 
 Epic #312 has three unchecked items. Checked against code on 2026-11-16:
 
-- **Wildcard token retirement:** done (PFactory#991, TFactory#1496, AIFactory#2017, CFactory#510, Factory#3680).
+- **Wildcard token retirement:** the code is done (scoped keys merged: PFactory#991, TFactory#1496, AIFactory#2017, CFactory#510, Factory#3680). Switching production callers off `APP_API_TOKEN` and `CFACTORY_MCP_SECRET`, then deleting them, is the owner's; until then the wildcards are a live standing exception, which the runbook lists.
 - **Fail-closed / `DISABLE_AUTH`:** done in code. CFactory `/api` and `/mcp` deny when no keys are set unless `api_dev_open` / `mcp_dev_open` is true (`CFactory apps/backend/cfactory/config.py:260-283`, `auth.py`). AIFactory and PFactory refuse `DISABLE_AUTH` on a non-loopback host (`AIFactory server/config.py:45-54`, `PFactory server/config.py:141-174`); TFactory has the same guard (`config.py:251`). The remaining ask, removing the switch from production images, is not a code gap and stays a tracked residual.
 - **Fleet RBAC role model + access reviews:** the design and plan are approved (`spec|plan/2026-10-27-312-fleet-rbac-role-model.md`) and the service slices S1, S2, S5 have landed (PFactory#939/#946, TFactory#1450/#1456). The hub slices H1, H2, H3 never landed: there is no role catalog, no access-review runbook, no AR risk-acceptance entries, and the IAM policy still says "Org RBAC exists in AIFactory only". There is also no tool that turns the review inputs into `review.md`, so the Q4 2026 review (due 2027-01-15) would be assembled by hand.
 - **MFA in Keycloak:** needs the owner (realm change, enrollment). Out of scope.
