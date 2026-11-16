@@ -10,9 +10,9 @@ author: olafkfreund
 
 Three LOW findings from the wave 8 cross-PR review:
 
-1. #3727: `.github/workflows/bench-nightly.yml` runs `gh issue create --label bench-regression`, but no step creates the label. On a fresh repo the call fails and the regression is never reported.
+1. #3727: `.github/workflows/bench-nightly.yml` runs `gh issue create --label bench-regression`, but no step creates the label. On a fresh repo the call fails and no regression issue is created (the summary and artifacts are still published).
 2. #3735: `get_agent_env_blanks` skips `BLANK_BREAKS` (`GIT_DIR`, `GIT_WORK_TREE`, ...) while `child_env(agent=True)` drops them, so the SDK agent inherits host values silently.
-3. #3729: hub CI runs `check_factory_sandbox_drift.py --self-test` only.
+3. #3729: hub CI runs the drift checker with `--self-test` and its unit tests (`tests/test_check_factory_sandbox_drift.py`) but never `--service`; the question is whether any vendored copy is left unchecked.
 
 ## Proposed outcome
 
