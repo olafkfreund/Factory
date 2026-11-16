@@ -40,7 +40,7 @@ the in-cluster cross-check; the stamp procedure; the assurance limit; the 90/365
 - CI: `test_report.py` runs the decision logic and the exit codes against a local stub; a workflow runs it.
 
 The stamp (owner, after rotation, same window as the ledger row):
-`kubectl -n factory annotate secret <name> --overwrite rotation.factory.dev/rotated-at=$(date -u +%F)`.
+`kubectl -n factory annotate secret <name> --overwrite rotation.factory.dev/rotated-at=<oldest-date>` (the date below).
 The stamp is the oldest evidenced last-rotated date among ALL credentials still in the Secret (read it from
 the ledger rows), not necessarily today: rotating the oldest key leaves the next-oldest as the new stamp. After
 a recreate, restore that date, not today.

@@ -30,16 +30,16 @@ Rebase on the current base before step 1 and again before each push.
 
 1. factory-gitops `apps/secret-rotation/manifests/report.py` and `test_report.py` (new): classification,
    metadata GET with the PartialObjectMetadata Accept header, job_health emit, issue dedupe, exit codes →
-   verify `python3 apps/secret-rotation/manifests/test_report.py` passes.
+   verify `python3 apps/secret-rotation/manifests/test_report.py` passes. Includes: a 200 then a 403 emits the collected records, then exits 1.
    Traps: stdlib only; never print a value; `from a import b` plain names for ruff.
 2. factory-gitops `apps/secret-rotation/manifests/{manifests.yaml,kustomization.yaml}` and
    `apps/secret-rotation/application.yaml` (new): ServiceAccount, Role (`get` on the 13 names) and RoleBinding,
-   CronJob `0 6 * * *`, pinned python image digest as cred-broker, ConfigMap via configMapGenerator
+   CronJob `0 6 * * *`, `concurrencyPolicy: Forbid`, `backoffLimit: 0`, pinned python image digest as cred-broker, ConfigMap via configMapGenerator
    (`disableNameSuffixHash`), securityContext like cred-broker → verify `kustomize build apps/secret-rotation/manifests`.
    Traps: `restartPolicy: Never`, no `ttlSecondsAfterFinished`, `GITHUB_TOKEN` optional.
 3. factory-gitops `.github/workflows/secret-rotation-test.yml` (new, no paths filter, pinned action SHAs copied
-   from cred-broker-test.yml) and `docs/secrets-management.md`: add the stamp as the last step of the Rotation
-   runbook and a "Rotation age report" subsection under Rotation policy → verify the workflow command locally.
+   from cred-broker-test.yml) and `docs/secrets-management.md`: add the stamp as the last step of the "Rotation runbook" (the agenix / `manage-secrets.sh edit` then bootstrap
+   or `kubectl patch` flow, also after a Secret is recreated) using the oldest evidenced date from the ledger rows, not today and a "Rotation age report" subsection under Rotation policy → verify the workflow command locally.
    Traps: do not edit the ledger markers (checker is strict).
 4. Factory `docs/compliance/policies/key-rotation.md` (new) plus a row in `docs/compliance/README.md`:
    classes, max age, owner, procedure links, stamp procedure, assurance limit, 90/365 note → verify links
