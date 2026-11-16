@@ -45,8 +45,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared" / "factory
 
 from factory_common.http import HttpClient, bearer_auth, is_success
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import provenance
+
 DEFAULT_AIFACTORY_URL = "http://localhost:3101"
-MODEL_NAME = "factory-pipeline"
+UNRECORDED_MODEL_NAME = "factory-pipeline-unrecorded"
+DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "benchmarks" / "nightly-config.json"
 
 
 class PipelineError(Exception):
@@ -255,10 +260,13 @@ def _find_existing_project(client: HttpClient, name: str, path: str) -> str | No
     return None
 
 
-def register_project(client: HttpClient, scratch_dir: Path, instance_id: str) -> str:
+def register_project(
+    client: HttpClient, scratch_dir: Path, instance_id: str, run_id: str | None = None
+) -> str:
     """POST /api/projects (path mode); reuse the project on a rerun instead of
-    erroring on a name/path conflict."""
-    name = f"swebench-{instance_id}"
+    erroring on a name/path conflict. A `run_id` scopes the name so a new run
+    never reuses an older run's project (and its old scratch path)."""
+    name = f"swebench-{run_id}-{instance_id}" if run_id else f"swebench-{instance_id}"
     path = str(scratch_dir)
     resp = client.post("/api/projects", body={"path": path, "name": name})
     if is_success(resp.status):
@@ -338,6 +346,9 @@ def poll_task(
         if not resp.json.get("is_running", True):
             return
         if clock.now() >= deadline:
+            # Best effort: without this the task keeps consuming quota while the
+            # next one starts. A failed stop is not fatal to the timeout verdict.
+            client.post(f"/api/tasks/{task_id}/stop")
             raise PipelineError(f"task {task_id} did not finish within {timeout_min}min", "timeout")
         clock.sleep(poll_sec)
 
@@ -426,11 +437,11 @@ def apply_evidence_gate(status: str, total_tokens: float | None) -> tuple[str, s
 # ── prediction + meta records ───────────────────────────────────────────────
 
 
-def build_prediction_record(instance_id: str, diff: str) -> dict[str, str]:
+def build_prediction_record(instance_id: str, diff: str, model_name: str) -> dict[str, str]:
     """The official SWE-bench harness prediction format."""
     return {
         "instance_id": instance_id,
-        "model_name_or_path": MODEL_NAME,
+        "model_name_or_path": model_name,
         "model_patch": diff,
     }
 
@@ -450,6 +461,7 @@ def build_meta_record(
         "total_tokens": outcome["total_tokens"],
         "cost_usd": outcome["cost_usd"],
         "duration_sec": round(outcome["duration_sec"], 1),
+        "model_name": outcome.get("model_name"),
     }
 
 
@@ -484,6 +496,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--tier", default="medium")
     ap.add_argument("--timeout-min", type=int, default=90)
     ap.add_argument("--poll-sec", type=int, default=20)
+    ap.add_argument(
+        "--model-name",
+        help="written as model_name_or_path; default is the provenance label "
+        "(models, prompt hash, service commits) when AIFACTORY_DIR is set",
+    )
+    ap.add_argument("--run-id", help="scopes the AIFactory project name to one run")
     ap.add_argument("--out", required=True, help="predictions.jsonl append path")
     ap.add_argument(
         "--provision-venv",
@@ -494,6 +512,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--extra-deps", default="", help="comma-separated extra pip packages for --provision-venv"
     )
     return ap.parse_args(argv)
+
+
+def resolve_model_name(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    if not os.environ.get("AIFACTORY_DIR"):
+        return UNRECORDED_MODEL_NAME
+    return provenance.label(provenance.collect(json.loads(DEFAULT_CONFIG.read_text())))
 
 
 def _load_problem_statement(args: argparse.Namespace) -> str:
@@ -526,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     started = time.monotonic()
     problem_statement = _load_problem_statement(args)
+    model_name = resolve_model_name(args.model_name)
     scratch_dir = Path(args.scratch_root) / args.instance_id
     prepare_scratch_repo(args.repo_url, args.base_commit, scratch_dir)
 
@@ -541,7 +568,7 @@ def main(argv: list[str] | None = None) -> int:
     diff = ""
 
     try:
-        project_id = register_project(client, scratch_dir, args.instance_id)
+        project_id = register_project(client, scratch_dir, args.instance_id, args.run_id)
         task_id, spec_id = submit_task(
             client, project_id, args.instance_id, problem_statement, args.tier
         )
@@ -579,13 +606,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[{args.instance_id}] WARNING: empty diff (status={status})")  # noqa: T201
 
     out_path = Path(args.out)
-    append_jsonl(out_path, build_prediction_record(args.instance_id, diff))
+    append_jsonl(out_path, build_prediction_record(args.instance_id, diff, model_name))
     outcome = {
         "status": status,
         "halt_reason": halt_reason,
         "total_tokens": evidence["total_tokens"],
         "cost_usd": evidence["cost_usd"],
         "duration_sec": time.monotonic() - started,
+        "model_name": model_name,
     }
     write_meta_sidecar(
         out_path,
