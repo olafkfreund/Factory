@@ -4,6 +4,7 @@
 - **Cadence:** quarterly, due by the 15th of the first month after the quarter ends (Q4 2026: **2027-01-15**), and within five working days of anyone leaving or changing role
 - **Frameworks:** SOC 2 CC6.2, CC6.3; ISO/IEC 27001:2022 A.5.18; NIST AC-2(3); SOX ITGC access
 - **Roles reviewed:** [rbac-role-catalog.md](rbac-role-catalog.md)
+- **Record and reminder:** `.github/workflows/access-review-reminder.yml` opens the issue "Access review <YYYY>-Q<n>" on the first day of January, April, July and October from [access-review-record-template.md](access-review-record-template.md); it tracks the sign-off, the evidence path and the revocation deadline
 
 ## Procedure
 
@@ -57,11 +58,11 @@ The generator writes this; the reviewer completes it.
 - A binding with no recorded justification, bound to a human (`User`), or bound to a `Group` (assess the group's members by hand).
 - The wildcard retirement date is not set.
 
-MFA state is recorded for every Keycloak user. It is not enforced.
+MFA state is recorded for every Keycloak user. Enforcement is built but off until the owner turns it on: the gitops CronJob `keycloak-mfa` (factory-gitops `apps/keycloak-mfa`, [keycloak-sso.md](https://github.com/olafkfreund/factory-gitops/blob/main/docs/keycloak-sso.md) section "MFA") runs in `audit` mode by default, which writes nothing and logs users without a second factor. The owner climbs `audit`, `new-users`, `enforce` one change at a time; `enforce` refuses to run unless the owner is already enrolled. Record the mode and the unenrolled count in each review. Until `enforce` has run, MFA is an accepted exception.
 
 ## Accepted exceptions (listed in every review)
 
-AR-004 separation of duties, AR-005 `APP_API_TOKEN` and `CFACTORY_MCP_SECRET`, and MFA not enforced. See the [risk register](risk-register.md).
+AR-004 separation of duties, AR-005 `APP_API_TOKEN` and `CFACTORY_MCP_SECRET`, and MFA not enforced (until `keycloak-mfa` runs in `enforce`). See the [risk register](risk-register.md).
 
 ## Not covered
 
