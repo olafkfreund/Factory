@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3724
 intent: intent/2026-11-16-3724-ws-all-task-org-filter.md
 ---
