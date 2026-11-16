@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3701
 spec: spec/2026-11-16-3701-kyverno-ephemeral-tests-docs.md
 coders:
