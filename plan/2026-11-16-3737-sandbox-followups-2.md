@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3737
 spec: spec/2026-11-16-3737-sandbox-followups-2.md
 coders:
