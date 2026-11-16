@@ -195,3 +195,9 @@ def test_git_path_names_not_blanked(monkeypatch, policy):
     blanks = get_agent_env_blanks(policy)
     assert "GIT_DIR" not in blanks and "GIT_NAMESPACE" not in blanks
     assert "GIT_DIR" not in child_env(policy, agent=True)
+
+
+def test_denied_allowed_proxy_name_stays_blank(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://u:pw@proxy:3128")
+    policy = replace(PFACTORY, deny_exact=PFACTORY.deny_exact | {"HTTPS_PROXY"})
+    assert get_agent_env_blanks(policy)["HTTPS_PROXY"] == ""
