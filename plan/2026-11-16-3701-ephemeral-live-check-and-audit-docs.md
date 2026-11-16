@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3701
 spec: spec/2026-11-16-3701-ephemeral-live-check-and-audit-docs.md
 coders:
