@@ -72,6 +72,8 @@ jobs:
           printf 'The nightly benchmark resolved fewer tasks than the previous run.\n\n' > issue.md
           cat compare.md >> issue.md
           printf '\nRun: %s\n' "$RUN_URL" >> issue.md
+          gh label create bench-regression --force --color B60205 \
+            --description "Nightly benchmark regression"
           number=$(gh issue list --label bench-regression --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body-file issue.md
