@@ -1,0 +1,89 @@
+name: Nightly benchmark
+
+# Standing evaluation (Factory#3713): a fixed 15-task SWE-bench subset through
+# the pipeline, scored by the official harness, stored with its provenance and
+# compared to the previous run. Needs a SELF-HOSTED runner (local AIFactory,
+# Docker, model credentials), which the owner provides, so the schedule is OFF.
+# To enable: see docs/benchmarks/nightly-eval.md, then uncomment `schedule`.
+
+on:
+  workflow_dispatch: {}
+  # schedule:
+  #   - cron: "0 1 * * *"   # 01:00 UTC
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: bench-nightly
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: [self-hosted, factory-bench]
+    timeout-minutes: 720
+    env:
+      NIGHTLY_RESULTS_DIR: ${{ vars.NIGHTLY_RESULTS_DIR }}
+      AIFACTORY_DIR: ${{ vars.BENCH_AIFACTORY_DIR }}
+      PFACTORY_DIR: ${{ vars.BENCH_PFACTORY_DIR }}
+      TFACTORY_DIR: ${{ vars.BENCH_TFACTORY_DIR }}
+      CFACTORY_DIR: ${{ vars.BENCH_CFACTORY_DIR }}
+      AIFACTORY_URL: ${{ vars.BENCH_AIFACTORY_URL }}
+      NIGHTLY_MODEL_OVERRIDES: ${{ vars.NIGHTLY_MODEL_OVERRIDES }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run the subset and score it
+        env:
+          APP_API_TOKEN: ${{ secrets.BENCH_APP_API_TOKEN }}
+        run: python3 scripts/benchmarks/nightly_eval.py run
+
+      - name: Compare with the previous run
+        id: compare
+        run: |
+          # exit 3 = regression (an issue is opened below); anything else nonzero is a real failure
+          set +e
+          python3 scripts/benchmarks/nightly_eval.py compare > compare.md
+          code=$?
+          cat compare.md
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then exit "$code"; fi
+
+      - name: Publish the report
+        if: always()
+        run: |
+          python3 scripts/benchmarks/nightly_eval.py report | tee -a "$GITHUB_STEP_SUMMARY"
+          cat compare.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: bench-results
+          path: ${{ vars.NIGHTLY_RESULTS_DIR }}/2*.json
+          retention-days: 90
+
+      - name: Open / refresh an issue on regression
+        if: steps.compare.outputs.code == '3'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            let body = "The nightly benchmark resolved fewer tasks than the previous run.\n\n";
+            try { body += fs.readFileSync('compare.md', 'utf8'); } catch (e) { body += "_(no comparison captured)_\n"; }
+            body += `\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'bench-regression',
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title: "Nightly benchmark regression", body, labels: ['bench-regression'],
+              });
+            }
