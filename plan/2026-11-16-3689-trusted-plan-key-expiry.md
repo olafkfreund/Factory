@@ -12,7 +12,7 @@ reviewers:
 # Plan: trusted-plan key expiry
 
 Implements the approved spec in AIFactory (branch `feat/3689-key-expiry`, base
-`dev`). Verifier-side `AIFACTORY_TRUSTED_PLAN_KEY_NOT_AFTER`
+`dev`). Verifier-side `AIFACTORY_TRUSTED_PLAN_EXPIRY`
 (`authority/kid=date` or `authority=date`), fail closed on a bad date, unset =
 no change, no envelope or signer change.
 
@@ -21,7 +21,7 @@ no change, no envelope or signer change.
 1. `apps/backend/trusted_plan.py`: add `_NOT_AFTER_ENV`, `load_not_after_from_env(env)`
    returning `{key: datetime}` (bad date -> sentinel that expires always), and
    an optional `not_after`/`now` check inside `_select_verification_key` and
-   `verify_plan_signature` (keyword args, default from env / UTC now). Add tests
+   `verify_plan_signature` (keyword args, default from env / UTC now). Add tests (incl. expiry var is not a keyring entry, before/after-expiry transition, malformed date)
    in `tests/test_trusted_plan.py`. -> `pytest tests/test_trusted_plan.py`, `ruff check`.
    Traps: ruff sorting of "as" aliases (use plain names); keep signature of
    `verify_trusted_plan` unchanged.
