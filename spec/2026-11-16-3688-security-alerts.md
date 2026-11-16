@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3688
 intent: intent/2026-11-16-3688-security-alerts.md
 ---
@@ -24,9 +24,11 @@ records to OpenObserve, job-watchdog watches the CronJob, and issues open in Git
    - One `job_health` record per rule per run. One GitHub issue per firing rule while none is
      open (hidden marker, label `security-alert`); inert without `GITHUB_TOKEN`.
    - Optional paging: if `ALERT_WEBHOOK_URL` (from Secret `security-alert-webhook`, key `url`,
-     optional) is set, POST `{"text": ...}` when an issue is newly opened, or every firing run
-     if the GitHub token is absent. Off by default; no URL is invented.
-   - Exit 1 on OpenObserve query or delivery failure, so job-watchdog reports a dead evaluator.
+     optional) is set, POST `{"text": ..., "dedup_key": <rule>}` on every run in which a rule is
+     firing, so a failed delivery is retried next run and the pager service dedupes on the key.
+     A failed POST makes the run exit 1. Off by default; no URL is invented.
+   - Both rules are always evaluated; the run then exits 1 if either errored or a delivery failed,
+     so an `error` on one rule is never hidden by the other. `not_configured` is a status, not an error. So job-watchdog reports a dead evaluator.
 2. Tests: `test_alerts.py` with network calls replaced, plus a CI workflow like
    `secret-rotation-test.yml`.
 3. Factory docs: `docs/compliance/ir-tabletop.md` (scenario, inject schedule, roles, blank
@@ -46,7 +48,9 @@ records to OpenObserve, job-watchdog watches the CronJob, and issues open in Git
 ## Risks
 
 - Auth-failure rows are only as complete as the `audit-siem-forward` feed; a stalled forwarder
-  yields silent `ok`. Mitigation: the forwarder is a CronJob watched by job-watchdog.
+  yields silent `ok`, and the forwarder caps a run at 10,000 rows, so a large backlog can push rows
+  past the 30-minute window while the forwarder still reports success. Known limit, documented in
+  `docs/security-alerts.md`; a forwarder-lag check is a follow-up, not in this slice.
 - Threshold of 10 per 30 minutes is a first guess; tunable by env in the manifest.
 - Issue opened in Factory: needs `GITHUB_TOKEN` from `factory-secrets`; absent means records only.
 
