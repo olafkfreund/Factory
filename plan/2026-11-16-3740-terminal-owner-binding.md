@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3740
 spec: spec/2026-11-16-3740-terminal-owner-binding.md
 coders:
