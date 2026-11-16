@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 389
 intent: intent/2026-11-16-389-memory-caps-expiry.md
 ---
