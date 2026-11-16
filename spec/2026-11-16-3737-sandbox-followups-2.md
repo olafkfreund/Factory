@@ -54,8 +54,8 @@ intent: intent/2026-11-16-3737-sandbox-followups-2.md
 - A name in `RUNNER_STRIP` that a runner does read would break it. Mitigation: each name
   has zero reads in `apps/backend`; a test pins that each is dropped and others pass.
 - `PR_SET_DUMPABLE=0` blocks `py-spy`/core dumps of the server; same as AIFactory.
-- Callers that merge a backend `.env` after `make_subprocess_env` can re-add a stripped name.
-  That file is operator-supplied runner config by design and is not changed here.
+- Callers that merge a backend `.env` after `make_subprocess_env` could re-add a stripped
+  name; the three loops skip `RUNNER_STRIP` names (see plan deviations).
 - Drift gate: each service PR pins a hub SHA that is on `main`.
 
 ## Verification

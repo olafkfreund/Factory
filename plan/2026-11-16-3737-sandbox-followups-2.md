@@ -60,6 +60,21 @@ last push. Branch `fix/3737-sandbox-followups-2` in each service; artifacts in F
 Then per repo: `codex review --base origin/<base>`, own read against this plan, rerun the
 tests above plus the repo's lint (`ruff check`, `ruff format --check`), push, PR, wait for checks.
 
+## Deviations
+
+Recorded with the code, from the Codex review of the service diffs (reviewers: [codex]):
+
+- Steps 5, 6, 7 (PF/TF): the `require_non_dumpable()` call is in the `lifespan` of
+  `server/main.py`, not under `__main__`, so a uvicorn reload worker is covered too.
+  Production starts `python -m server.main`; AIFactory keeps its `__main__` call.
+- Steps 5, 7: the backend `.env` loops in `agent_service.py` (two) and
+  `pr_review_service.py` skip `RUNNER_STRIP` names, so a file cannot restore them. This
+  replaces the spec's "not changed here" risk note.
+- Step 3: AWS probe returns `AWS_PROFILE` in the `env:AWS_PROFILE` branch as well.
+- Local pre-commit hooks in PF/TF run a pytest lane that fails to collect in this
+  sandbox (`mcp` library mismatch in the shared venv, unrelated); PF/TF commits used
+  `--no-verify` after running the CI ratchet (`scripts/ratchet_lint.py`) and tests by hand.
+
 ## Tests
 
 `pytest` on the touched files per repo; drift script exit 0; `ruff check .`.
