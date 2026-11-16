@@ -86,7 +86,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -150,6 +150,13 @@ class Gate:
     outage). For a gate that is NOT required, a filter is a legitimate way to
     keep it quiet, and flagging it would be the noise that gets a real alert
     muted.
+    """
+
+    pin_files: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    """service -> in-repo ``.hub-sha`` paths holding this gate's pin.
+
+    Empty means the pin is a workflow variable (``pin_var``). A service with
+    several copies lists every file; the furthest-behind pin is the one judged.
     """
 
     def services(self) -> list[str]:
@@ -298,6 +305,31 @@ GATES: tuple[Gate, ...] = (
         # separate step (Factory#814 measures which gates are stable enough).
         required_check=False,
     ),
+    Gate(
+        name="factory-common",
+        workflow=".github/workflows/factory-common-drift.yml",
+        canonical_root="shared/factory-common",
+        # The WHOLE package is vendored (its __init__ imports every sibling), so
+        # the layout key is the directory: a pathspec that catches any module,
+        # e.g. the sk-ant- redaction pattern of Factory#3745, which no consumer
+        # had because every .hub-sha predates it while every drift gate was green.
+        layouts={
+            service: {"factory_common": "(whole package, see pin_files)"}
+            for service in ("aifactory", "cfactory", "pfactory", "tfactory")
+        },
+        # The pins live in .hub-sha files, not a workflow variable, and AIFactory
+        # vendors two copies that are pinned independently.
+        pin_files={
+            "aifactory": (
+                "apps/backend/factory_common/.hub-sha",
+                "apps/web-server/factory_common/.hub-sha",
+            ),
+            "cfactory": ("apps/backend/factory_common/.hub-sha",),
+            "pfactory": ("apps/web-server/factory_common/.hub-sha",),
+            "tfactory": ("apps/web-server/factory_common/.hub-sha",),
+        },
+        required_check=False,
+    ),
 )
 
 _OWNER = "olafkfreund"
@@ -371,6 +403,14 @@ def pin_from(repo: str, body: str, workflow: str, pin_var: str = "HUB_PIN_SHA") 
     if match is None:
         raise PinUnavailableError(f"{repo}: no {pin_var} found in {workflow}")
     return match.group(1)
+
+
+def pin_from_file(repo: str, body: str, path: str) -> str:
+    """The 40-hex commit in a ``.hub-sha`` file; anything else is unavailable."""
+    sha = body.strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        raise PinUnavailableError(f"{repo}: {path} is not a 40-character commit SHA")
+    return sha
 
 
 def fetch_pin(repo: str, workflow: str, *, timeout: int = 20) -> str:
@@ -487,6 +527,14 @@ def scope_problems() -> list[str]:
     # sit outside one gate's layout (CFactory vendors no factory-ui component). It
     # may not sit outside every gate, which would mean this watchdog knows a repo
     # and reads nothing from it.
+    for gate in GATES:
+        if gate.pin_files and (
+            set(gate.pin_files) != set(gate.layouts) or not all(gate.pin_files.values())
+        ):
+            problems.append(
+                f"{gate.name}: pin_files must list at least one file for exactly the "
+                "services in its layout, or a copy's pin is never read"
+            )
     covered = {svc for gate in GATES for svc in gate.layouts}
     for service in sorted(set(_REPOS) - covered):
         problems.append(
@@ -684,6 +732,15 @@ def _gather(
         if no_fetch:
             on_missing(f"--no-fetch given but no --pin for {service}")
             continue
+        if gate.pin_files:
+            found = [
+                pin_from_file(repo, fetch_workflow(repo, path), path)
+                for path in gate.pin_files[service]
+            ]
+            # Older pin = superset of moved commits, so a stale copy cannot hide
+            # behind a fresh sibling (assumes pins sit on hub's linear history).
+            pins[service] = max(found, key=total_behind)
+            continue
         body = fetch_workflow(repo, gate.workflow)
         pins[service] = pin_from(repo, body, gate.workflow, gate.pin_var)
         # Only a REQUIRED gate can wedge a PR by being filtered; see Gate.
@@ -788,7 +845,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {line}")  # noqa: T201
         print(  # noqa: T201
             "\nRe-vendor the affected module(s) into that service and bump its "
-            "HUB_PIN_SHA. A byte-exact copy of a stale canonical is a green gate "
+            "HUB_PIN_SHA (for factory-common: the factory_common/.hub-sha file(s)). "
+            "A byte-exact copy of a stale canonical is a green gate "
             "against the wrong target.\n"
             "For the planning-card gate there is nothing to re-vendor - CFactory "
             "holds no copy of the schema - so the fix is the pin bump alone, plus "
