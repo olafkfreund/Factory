@@ -44,12 +44,16 @@ Factory issue tracker; factory-gitops and Factory docs.
   never resets age; only an evidenced rotation, recorded in the ledger, does.
 - An unstamped Secret is measured from the policy start date (2026-11-07), exactly as the ledger does
   for `unknown` rows, so it cannot be cleared by stamping without a rotation date.
+- Assurance limit: the date is operator-reported. It does not detect a value that changed without a stamp,
+  or ledger drift; it makes missing and stale stamps visible and alerting.
 - Out of scope: automated rotation, KMS, encryption at rest, `minio-kms` and `CFACTORY_AUDIT_HMAC_SECRET`
-  (compromise-only), `factory-cli-creds` (cred-broker).
+  (compromise-only). `factory-cli-creds` is included for its codex/copilot/gemini keys; the Claude key in it
+  is the cred-broker's and has its own expiry alert.
 - Another wave is merging into the same repos: keep diffs tight, rebase before push.
 
 ## Open questions
 
 Which interval governs API tokens, 90 days (Factory runbook, accepted 2026-10-24) or 365 days (gitops
-policy and ledger)? This work follows the gitops ledger (365) so the two checks agree, and records the
-conflict on the policy page for the owner to settle.
+policy and ledger)? This work applies the stricter accepted control: 90 days for `factory-secrets` (it holds
+the API tokens and the oldest credential decides), 365 days for the other Secrets. The gitops ledger rows for
+tokens still say 365; aligning them is a follow-up for the owner, noted on the policy page.
