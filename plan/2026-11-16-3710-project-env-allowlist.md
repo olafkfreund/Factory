@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3710
 spec: spec/2026-11-16-3710-project-env-allowlist.md
 coders:
