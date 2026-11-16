@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3702
 intent: intent/2026-11-16-3702-per-org-cockpit-tokens.md
 ---
