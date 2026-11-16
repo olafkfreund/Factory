@@ -23,12 +23,21 @@ cluster context is `k3d-factory`.
 
 ## Proposed outcome
 
-- On the first refresh rejected with `invalid_grant`, a GitHub issue exists with
-  `last-outcome`, `access-expires-at` and the exact re-seed steps in its body.
-- On any other failing refresh while `access-expires-at` is within N hours, the
-  same issue is raised.
-- No duplicate issues; the job-watchdog adopts the same issue.
-- The doc says `--context k3d-factory`.
+- On the first refresh rejected with `invalid_grant` while the access token has
+  30 days or less left (the case the broker already treats as an incident), a
+  GitHub issue exists with `last-outcome`, `access-expires-at` and the exact
+  re-seed steps in its body. The existing long-lived (`setup-token`) exemption
+  stays: more than 30 days of runway still reports success and raises nothing.
+- On any other failed refresh (HTTP error, network error) while
+  `access-expires-at` is within N hours, or unknown, the same issue is raised.
+- One open issue at a time: a failing run does not open a second one while the
+  first is open (the CronJob retries three pods within seconds).
+- The issue is the broker's own (own label and marker). It is not adopted by
+  job-watchdog, whose recovery logic would close it after one failed run (the
+  watchdog needs 2 failures or 8.25h staleness). The watchdog may later open its
+  own staleness issue; the broker issue says so.
+- The doc says `--context k3d-factory` (the one drifted doc named in the issue;
+  other docs with the same flag are listed in the PR, not changed).
 
 ## Affected users and systems
 
@@ -41,8 +50,12 @@ the owner (receives the issue). `factory-secrets/GITHUB_TOKEN` is read, not chan
 - Must never print or put token material in the issue.
 - Must stay inert (log only) when no GitHub token is available; alerting must
   never change the broker's exit code.
-- cred-broker RBAC stays limited to the one Secret.
+- cred-broker RBAC stays limited to the one Secret; the token comes from an
+  optional `secretKeyRef`, so a missing key cannot stop rotation.
+- job-watchdog is not changed.
 
 ## Open questions
 
-- N hours: proposed 12 (two failed 4h runs of margin on an 8h token). Approve or change.
+- N hours: the token lives 8h and the broker runs every 4h, so a first failed run
+  sees at most 4h left. Proposed N = 5 (env `ALERT_WITHIN_HOURS`), which alerts on
+  the first failed run of a non-`invalid_grant` error. Approve or change.
