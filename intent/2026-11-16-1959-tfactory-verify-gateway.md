@@ -20,7 +20,7 @@ behind a flag (CFactory#513), but TFactory cannot send a Job through it.
 ## Proposed outcome
 
 With `TFACTORY_MODEL_GATEWAY_URL` set, a dispatched verify Job gets
-`OPENAI_COMPATIBLE_BASE_URL={url}/v1` and a gateway client token as
+`OPENAI_COMPATIBLE_BASE_URL={url}` (origin) and a gateway client token as
 `OPENAI_COMPATIBLE_API_KEY`, and carries no `OPENAI_API_KEY`, `OLLAMA_API_KEY`
 or direct OpenAI-compatible key. Unset (the default) the Job env is
 byte-identical to today. Nothing in the cluster changes in this round.

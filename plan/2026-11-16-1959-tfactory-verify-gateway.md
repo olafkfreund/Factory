@@ -44,3 +44,17 @@ touched files. Expect all green.
 ## Rollback
 
 Revert the TFactory PR; the flag is unset everywhere so behaviour is unchanged.
+
+## Deviations (implementation, 2026-11-16)
+
+Found by `codex review`; code and this plan change in the same commit set.
+
+- `OPENAI_API_KEY` is NOT dropped. The Codex provider seeds its auth from it and
+  cannot use the gateway (plane C). Dropped: `OPENAI_COMPATIBLE_API_KEY`,
+  `OPENAI_COMPATIBLE_BASE_URL` (direct), `OLLAMA_API_KEY`. The residual stays an
+  owner decision in #1959.
+- A missing token never omits `OPENAI_COMPATIBLE_API_KEY` (`phase_config` would
+  fall back to `OPENAI_API_KEY`). No Secret: literal token, else the placeholder
+  `gateway-token-not-configured` (gateway answers 401). With the Secret: the
+  `secretKeyRef` is `optional: false`, so a Job without the key fails to start.
+- All three steps were done by the lead; no external coder was used.
