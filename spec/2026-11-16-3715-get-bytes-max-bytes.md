@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3715
 intent: intent/2026-11-16-3715-get-bytes-max-bytes.md
 ---
