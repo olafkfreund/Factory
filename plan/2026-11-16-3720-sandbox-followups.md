@@ -60,4 +60,6 @@ Revert the PRs. Services return to hub bf3cd95 by reverting their vendoring comm
 
 ## Deviations
 
-(none yet)
+- Step 2 (re-vendor) cannot start in this round: the service drift workflows need a hub
+  SHA on `main`, and the lead does not merge. The coordinator re-vendors after the hub PR
+  merges. Step 3 (AIFactory catalog skip) does not depend on the hub and ships on its own.
