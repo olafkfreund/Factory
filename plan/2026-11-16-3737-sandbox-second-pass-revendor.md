@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3737
 spec: spec/2026-11-16-3737-sandbox-second-pass-revendor.md
 coders:   # every file-editing step is done by the lead: small, security-sensitive edits where a handoff costs more than it saves
