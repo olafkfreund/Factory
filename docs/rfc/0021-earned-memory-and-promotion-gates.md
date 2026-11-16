@@ -232,6 +232,10 @@ being re-observed is usually stale but occasionally just rare.
   it fixes §1.1, the defect doing the most damage today.
 - **Phase 2 — caps and expiry.** Bound the store; add `last_confirmed_at` and
   demotion.
+  Implemented in AIFactory, PFactory and TFactory (spec
+  `spec/2026-11-16-389-memory-caps-expiry.md`): per-writer caps by session type,
+  a `confirmed.json` sidecar, and read-time demotion of gotchas not re-observed
+  in 30 days (not loaded after 90); nothing is deleted from disk.
 - **Phase 3 — the scratchpad and signals.** Observation layer; `dead_end`
   recording. The largest change, and the one worth doing last, once the store
   is no longer drowning.
@@ -259,6 +263,40 @@ acceptance criteria are measurements, not assertions:
 Each gate must be verified by mutation, per the fleet's standard: disable a gate
 and the test that covers it must go red. A promotion filter nobody has watched
 reject something is a filter nobody knows works.
+
+### 6.1 Baseline (recorded 2026-11-16, epic #389)
+
+**October live pool.** AIFactory `docs/dev/memory-baseline-2026-10.md`
+(2026-10-24, `aifactory-demo`): 33 items, 19 exact duplicate pairs, 80 near pairs
+(lexical cosine at 0.88), 15 of the 33 being `Implemented subtask:` boilerplate.
+`pfactory-friends-demo`: 14 items, 11 exact, 4 near. `AIFactory`: 6 items,
+3 exact, 0 near.
+
+**Local re-measurement.** Same script (AIFactory `scripts/memory_dup_baseline.py`,
+read-only, lexical bag-of-words cosine at 0.88) on the five project stores found
+under the owner's checkouts, git worktree copies of the same spec excluded:
+
+| Store | Items | Exact pairs | Near pairs | Boilerplate items |
+|---|---|---|---|---|
+| aifactory-test | 8 | 4 | 0 | 8 |
+| factory-demo-api-gateway | 8 | 3 | 4 | 7 |
+| gnomedoom | 22 | 8 | 6 | 22 |
+| hello-python | 16 | 8 | 0 | 16 |
+| factory-demo-api-gateway-2 (workspace) | 22 | 11 | 12 | 22 |
+
+**Finding.** Of 76 items, 75 are `Implemented subtask:` or `Failed to complete
+subtask:` markers and 1 is a QA status line, not a durable lesson. With the
+markers removed there are 0 pairs: the number of semantically equivalent pairs
+among durable lessons is 0 of 0. Every pair found is marker boilerplate. Phase 1
+stopped storing `Implemented subtask:` (a `what_worked` item); `Failed to complete
+subtask:` is a `what_failed` item, which Phase 1 leaves ungated, so it is still
+stored.
+
+**Limits.** All stores pre-date Phase 1 and project pooling; the lexical metric
+under-counts paraphrase; no `gotchas.md` exists in the sample. This measures how
+much of memory is boilerplate, not the paraphrase rate. The paraphrase baseline
+still needs a pooled project that has run on Phase 1 for several specs, measured
+with `--embedder` once an embedder is configured.
 
 ## 7. Risks
 
