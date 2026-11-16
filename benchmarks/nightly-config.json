@@ -1,0 +1,53 @@
+{
+  "description": "Nightly standing evaluation (Factory#3713). Fixed stratified subset of swebench-verified-50.json.",
+  "tasks": [
+    "django__django-10999",
+    "django__django-10554",
+    "django__django-11299",
+    "django__django-11149",
+    "django__django-12304",
+    "django__django-11477",
+    "django__django-12419",
+    "sympy__sympy-12481",
+    "sympy__sympy-13647",
+    "sympy__sympy-18189",
+    "sphinx-doc__sphinx-10449",
+    "pytest-dev__pytest-5809",
+    "pydata__xarray-6461",
+    "pylint-dev__pylint-6386",
+    "scikit-learn__scikit-learn-13328"
+  ],
+  "max_tasks": 15,
+  "tier": "medium",
+  "timeout_min": 45,
+  "per_task_token_cap": 4000000,
+  "total_token_budget": 40000000,
+  "regression_drop_tasks": 2,
+  "min_paired": 10,
+  "prompt_globs": [
+    "apps/backend/prompts/**/*.md"
+  ],
+  "services": [
+    "AIFactory",
+    "PFactory",
+    "TFactory",
+    "CFactory"
+  ],
+  "baseline": {
+    "django__django-10554": "resolved",
+    "django__django-10999": "unresolved",
+    "django__django-11149": "empty-patch",
+    "django__django-11299": "resolved",
+    "django__django-11477": "resolved",
+    "django__django-12304": "resolved",
+    "django__django-12419": "empty-patch",
+    "pydata__xarray-6461": "resolved",
+    "pylint-dev__pylint-6386": "resolved",
+    "pytest-dev__pytest-5809": "harness-error",
+    "scikit-learn__scikit-learn-13328": "empty-patch",
+    "sphinx-doc__sphinx-10449": "resolved",
+    "sympy__sympy-12481": "empty-patch",
+    "sympy__sympy-13647": "resolved",
+    "sympy__sympy-18189": "empty-patch"
+  }
+}
