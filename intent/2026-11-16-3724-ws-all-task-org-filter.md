@@ -10,12 +10,13 @@ author: olafkfreund
 
 `/ws/logs` and `/ws/progress` in AIFactory, PFactory and TFactory register a callback for every running task and stream every log line and progress update to any caller that passes `verify_websocket_token`. That check only proves the token is valid. A member of org A therefore receives the logs and progress of org B's tasks. The per-task sockets (#3703) and `/ws/events` (#3679) already confine by org; these two were left out of scope.
 
-`/ws/terminal/{id}` was to be looked at in the same pass. It is not a task stream: PTY sessions are host-wide, have no project or owner binding, and the REST routes that create and list them take no project either. There is nothing to filter by.
+`/ws/terminal/{id}` was to be looked at in the same pass. It is not a task stream: the create route accepts a project id, but only to pick a working directory; the PTY session keeps no project or owner, the `/sessions` listing ignores its `project` parameter, and the socket looks sessions up by id alone. There is nothing to filter by without a new ownership model.
 
 ## Proposed outcome
 
 - Both all-task sockets authenticate with `authenticate_websocket` and stream only tasks whose project the caller may read, using the #3703 rule: key principals always strict; JWT principals strict in AIFactory, and in PFactory/TFactory once `RBAC_ENFORCE_TASK_ROUTES` is on (shadow mode logs a would-deny and allows).
-- The decision is re-evaluated on the existing 5 s subscription refresh, so a removed membership stops the stream within one refresh. An `acw_` key is re-validated every 5 minutes as on the per-task sockets.
+- The decision is re-evaluated at least every 5 s. Today the refresh only runs after 5 s without a message, so a busy task would starve it: the refresh becomes time-based (checked on every loop turn), and a message from a task that is no longer allowed is dropped at send time. A removed membership then stops the stream within one interval. An `acw_` key is re-validated every 5 minutes as on the per-task sockets.
+- This applies to strict principals. In PFactory/TFactory shadow mode (JWT, flag off) the would-deny is logged and the stream is unchanged, by design, as on the per-task sockets.
 - The `running_tasks` lists sent on `/ws/progress` carry only readable tasks.
 - Factory#3714's last open box (AIFactory has no `_jwt_strict()`) is settled and #3714 is closed.
 
