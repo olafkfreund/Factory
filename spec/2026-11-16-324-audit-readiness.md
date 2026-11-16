@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 324
 intent: intent/2026-11-16-324-audit-readiness.md
 ---
