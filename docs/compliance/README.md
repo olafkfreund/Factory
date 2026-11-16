@@ -42,6 +42,9 @@ evidence. Certification is a separate engagement.
   Factory#316, domain 6.
 - [`soc2-gap-assessment.md`](soc2-gap-assessment.md) — the SOC 2 (TSC) criterion-by-criterion gap assessment (Security, Availability, Confidentiality) with current risk, an ISO 27001 gap summary pointing at the SoA, and the unsigned residual-risk sign-off. Factory#324.
 
+- [`training-and-awareness.md`](training-and-awareness.md), [`management-review-and-internal-audit.md`](management-review-and-internal-audit.md), [`supplier-management.md`](supplier-management.md) and [`operator-endpoint-standard.md`](operator-endpoint-standard.md) — the operating procedures and blank record templates behind SoA A.6.3, A.5.35, A.5.20/A.5.22 and A.8.1/A.7.7/A.7.9. They define the events; none records one. Factory#3693, #3694, #3695, #3696.
+- [`nydfs-part500-mapping.md`](nydfs-part500-mapping.md) — NYDFS Part 500 section-by-section control mapping, conditional on the applicability decision in Factory#3697. Factory#3700.
+
 ### ISMS policy set
 
 The core policies the governance domain calls for. Each is a tight, assessor-usable
