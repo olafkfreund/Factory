@@ -15,6 +15,8 @@ evidence. Certification is a separate engagement.
 - [`control-matrix.md`](control-matrix.md) — the control-to-framework matrix
   (Factory#324): one row per control domain, mapped to every in-scope framework,
   with current status and the child issue that drives it. Start here.
+- [`audit-readiness.md`](audit-readiness.md) — the readiness checklist, the mock-audit plan
+  and the steps only the owner can take (Factory#324).
 - [`policies/`](policies/) — the ISMS policy set (the artifacts an assessor opens)
   plus one grounded control document per domain. Each domain document carries:
   purpose, current state (cited against real code and manifests), gaps, a phased
