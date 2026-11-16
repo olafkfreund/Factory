@@ -58,7 +58,7 @@ The generator writes this; the reviewer completes it.
 - A binding with no recorded justification, bound to a human (`User`), or bound to a `Group` (assess the group's members by hand).
 - The wildcard retirement date is not set.
 
-MFA state is recorded for every Keycloak user. Enforcement is built but off until the owner turns it on: the gitops CronJob `keycloak-mfa` (factory-gitops `apps/keycloak-mfa`, [keycloak-sso.md](https://github.com/olafkfreund/factory-gitops/blob/main/docs/keycloak-sso.md) section "MFA") runs in `audit` mode by default, which writes nothing and logs users without a second factor. The owner climbs `audit`, `new-users`, `enforce` one change at a time; `enforce` refuses to run unless the owner is already enrolled. Record the mode and the unenrolled count in each review. Until `enforce` has run, MFA is an accepted exception.
+MFA state is recorded for every Keycloak user. Enrollment enforcement (every enabled user must enrol an authenticator; not an OTP challenge on every GitHub-brokered login, which needs a post-broker-login flow and is a follow-up) is built but off until the owner turns it on: the gitops CronJob `keycloak-mfa` (factory-gitops `apps/keycloak-mfa`, [keycloak-sso.md](https://github.com/olafkfreund/factory-gitops/blob/main/docs/keycloak-sso.md) section "MFA") runs in `audit` mode by default, which writes nothing and logs users without a second factor. The owner climbs `audit`, `new-users`, `enforce` one change at a time; `enforce` refuses to run unless the owner is already enrolled. Record the mode and the unenrolled count in each review. Until `enforce` has run, MFA is an accepted exception.
 
 ## Accepted exceptions (listed in every review)
 
