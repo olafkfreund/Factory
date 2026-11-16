@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3724
 spec: spec/2026-11-16-3724-ws-all-task-org-filter.md
 coders:
