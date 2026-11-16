@@ -91,6 +91,7 @@ def test_aifactory_child_env_flags(monkeypatch):
 
 
 def test_pin_git_on_and_off(monkeypatch):
+    monkeypatch.delenv("GIT_PAGER", raising=False)
     monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", "/tmp/evil")
