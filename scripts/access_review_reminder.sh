@@ -26,5 +26,7 @@ if printf '%s\n' "$existing" | grep -qxF "$title"; then
 fi
 
 body=$(mktemp); trap 'rm -f "$body"' EXIT
-sed "s/<YYYY>-Q<n>/$QUARTER/g" "$TEMPLATE" >"$body"
+# Relative links would resolve against the issue URL: point them at the repo.
+base="https://github.com/${GH_REPO:-olafkfreund/Factory}/blob/main/docs/compliance"
+sed -e "s/<YYYY>-Q<n>/$QUARTER/g" -e "s#](\([a-z0-9-]*\.md\))#]($base/\1)#g" "$TEMPLATE" >"$body"
 gh issue create --title "$title" --body-file "$body"

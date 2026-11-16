@@ -20,7 +20,7 @@ def _run(tmp_path: Path, existing: str, **env: str) -> tuple[subprocess.Complete
         "#!/bin/sh\n"
         'case "$2" in\n'
         f'  list) printf "%s\\n" "{existing}" ;;\n'
-        f'  create) shift 2; echo "$*" >"{log}"; cat "${{4:-/dev/null}}" >/dev/null ;;\n'
+        f'  create) shift 2; echo "$*" >"{log}"; cat "$4" >>"{log}" ;;\n'
         "esac\n"
     )
     stub.chmod(0o755)
@@ -78,3 +78,9 @@ def test_non_quarter_month_needs_explicit_quarter(tmp_path: Path) -> None:
 def test_bad_quarter_is_rejected(tmp_path: Path) -> None:
     proc, created = _run(tmp_path, "", QUARTER="2026-Q5")
     assert proc.returncode != 0 and created == ""
+
+
+def test_links_point_at_the_repo(tmp_path: Path) -> None:
+    _, created = _run(tmp_path, "", YEAR="2027", MONTH="01", GH_REPO="o/R")
+    assert "](https://github.com/o/R/blob/main/docs/compliance/access-review-runbook.md)" in created
+    assert "](access-review-runbook.md)" not in created
