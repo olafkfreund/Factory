@@ -30,7 +30,7 @@ no change to the three upstream factories. Repo: olafkfreund/CFactory, base
    `{"Authorization": f"Bearer {tok}"}`. Add the env rows to
    `docs/dev/environment-reference.md`.
    Verify: tests below.
-   Traps: never log a token; `just lint` (ruff, banned constructs).
+   Traps: never log a token. `just lint` is only statix/deadnix; run `ruff check` and `ruff format --check` separately. Tests record calls in a list (patch `upstream_ws.subscribe` with an async recorder, `await asyncio.gather(*tasks)`), not a dict, which would overwrite same-service calls.
 
 ## Tests
 
