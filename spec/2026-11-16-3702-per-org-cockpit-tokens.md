@@ -18,8 +18,10 @@ Option "one socket per org key", implemented in CFactory only.
 - `start_subscribers` starts the existing subscriber once for the primary
   token (unchanged) and once more per extra token, same URL, header
   `Authorization: Bearer <extra>`.
-- Ingest is already idempotent (`upsert_from_event` returns `applied`), so an
-  event seen on two sockets is broadcast once.
+- No cross-socket dedupe in CFactory (Codex: the store does not dedupe
+  id-less events). It is not needed: an org-bound key only receives its own
+  org's events (#3679 `_may_receive`), so two distinct org keys never see the
+  same event. The same key listed twice is removed by the parser.
 - Logs: the existing subscriber logs the URL and service, never the header.
   The extra subscribers reuse it, so tokens stay out of logs.
 
@@ -30,14 +32,16 @@ before. Nothing is read from the upstream factories' code.
 
 - Multi-org key: needs a key schema and mint API change in three factories and
   widens a credential. It is the owner's decision and stays open.
-- Pass a list in the existing token variable: breaks the single-token contract
-  and the `acw_` shape validation.
+- Pass a list in the existing token variable: breaks the single-token contract.
 
 ## Risks
 
 - Unset means identical behaviour. Misconfigured extra key: that socket
   reconnects every 3 s like any failing upstream (debug log only).
 - One extra reconnect loop per key. Acceptable at a handful of orgs.
+
+- Duplicates appear only if the owner lists a service-wide (unbound) key as
+  an extra token alongside org keys; document that extras must be org-bound.
 
 ## Verification
 
