@@ -72,7 +72,8 @@ Standing agenda:
 7. Resourcing and decisions requiring leadership.
 
 Each review is minuted to `docs/compliance/management-review/YYYY-QN.md` (decisions,
-owners, due dates). The minutes are the evidence that oversight occurred, and the
+owners, due dates), using the template and the internal-audit programme in
+[management-review-and-internal-audit.md](management-review-and-internal-audit.md). The minutes are the evidence that oversight occurred, and the
 risk-acceptance decisions recorded there are authoritative.
 
 ## Continuous monitoring
