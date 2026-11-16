@@ -74,6 +74,14 @@ and a re-read for about 400 lines).
    scheduled drill done, owner actions). Also correct the manual drill note
    that it is "outstanding". Check: markdown reads, links resolve.
 
+## Deviations
+
+- Step 3 (final Codex review, round 1): `mc diff` compares name, size and time
+  only, so a same-size corrupted copy passed. `minio-offsite.sh` now also
+  compares a sha256 read-back of every source object with its copy; the test
+  covers the same-size case. Cost: reads both sides nightly (noted as a
+  shortcut in the script).
+
 ## Tests
 
 - `docker run` the pinned postgres image with `apps/backups/drill/test.sh`:
