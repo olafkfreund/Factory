@@ -33,3 +33,7 @@ The three scripts above exit 0. Codex review on both diffs.
 ## Rollback
 
 Revert the two PRs; docs and an unused script only.
+
+## Deviations
+
+Step 4: the policy had already been refreshed on 2026-11-14, so only the KES row, rotation-policy links and the custody sentence were updated.
