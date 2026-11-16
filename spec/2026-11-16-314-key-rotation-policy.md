@@ -27,7 +27,7 @@ the in-cluster cross-check; the stamp procedure; the assurance limit; the 90/365
   `otel-otlp-auth`, `factory-cli-creds` 365d. `minio-kms` and the audit HMAC are compromise-only and not listed.
 - Per Secret, status: `ok`; `due_soon` (within 30 days of the deadline); `overdue`; `unstamped` (annotation
   missing or invalid: age measured from 2026-11-07, the policy start, like the ledger; overdue once past
-  the interval); `missing` (Secret absent or 403).
+  the interval); `missing` (404, Secret absent). A 403 or any other API error is not a status: the run reports what it has, then exits 1, so broken RBAC cannot pass as a clean daily run.
 - Emits one record per Secret to OpenObserve `job_health` (`source: secret-rotation`, `kind: secret_rotation`,
   name, age, max age, status) using the `observe-root` credential and the `/_json` path of
   `apps/backups/drill/emit.py`.
@@ -41,7 +41,9 @@ the in-cluster cross-check; the stamp procedure; the assurance limit; the 90/365
 
 The stamp (owner, after rotation, same window as the ledger row):
 `kubectl -n factory annotate secret <name> --overwrite rotation.factory.dev/rotated-at=$(date -u +%F)`.
-Applies to the oldest credential in the Secret; for `factory-secrets` stamp only when its oldest key was rotated.
+The stamp is the oldest evidenced last-rotated date among ALL credentials still in the Secret (read it from
+the ledger rows), not necessarily today: rotating the oldest key leaves the next-oldest as the new stamp. After
+a recreate, restore that date, not today.
 `kubectl annotate` merges metadata and does not touch `.data`; if the bootstrap recreates the Secret, the
 step must re-stamp, so the manage-secrets / bootstrap flow documents the stamp as its last step.
 
@@ -55,7 +57,7 @@ step must re-stamp, so the manage-secrets / bootstrap flow documents the stamp a
 
 ## Risks
 
-- First run: all 14 Secrets are `unstamped`; none overdue until 2027-02-05 (90d) / 2027-11-07 (365d). No flood.
+- First run: all 13 Secrets are `unstamped`; none overdue until 2027-02-05 (90d) / 2027-11-07 (365d). No flood.
 - RBAC `get` on a Secret can read its values; mitigated by the metadata Accept header and a script that never
   requests the full object. A change to the script could regress that; the test asserts the header.
 - Issue creation uses the shared `GITHUB_TOKEN`; absent token means inert, not failure.
