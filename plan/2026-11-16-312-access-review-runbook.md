@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 312
 spec: spec/2026-11-16-312-access-review-runbook.md
 coders:
