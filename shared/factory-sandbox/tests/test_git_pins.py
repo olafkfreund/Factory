@@ -73,7 +73,7 @@ def evil_repo(tmp_path: Path) -> Path:
 
 
 def test_pins_driver_and_filters_not_others(evil_repo, iso_env):
-    pins = merge_driver_pins(PFACTORY, evil_repo, env=iso_env)
+    pins = merge_driver_pins(evil_repo, env=iso_env)
     keys = pins[1::2]
     assert set(pins[0::2]) == {"-c"}
     assert sorted(keys) == [
@@ -82,7 +82,7 @@ def test_pins_driver_and_filters_not_others(evil_repo, iso_env):
 
 
 def test_pins_neutralise_driver_and_filter(evil_repo, iso_env):
-    pins = merge_driver_pins(PFACTORY, evil_repo, env=iso_env)
+    pins = merge_driver_pins(evil_repo, env=iso_env)
     (evil_repo / "f").write_text("a\n")
     (evil_repo / ".git" / "info").mkdir(exist_ok=True)
     (evil_repo / ".git" / "info" / "attributes").write_text("* filter=y merge=x\n")
@@ -101,7 +101,7 @@ def test_run_injected_and_check_called():
         return 0, "merge.a.driver\0core.bare\0"
 
     seen = []
-    pins = merge_driver_pins(PFACTORY, ".", run=run, check=lambda c, r: seen.append((c, r)))
+    pins = merge_driver_pins(".", run=run, check=lambda c, r: seen.append((c, r)))
     assert pins == ["-c", "merge.a.driver="]
     assert calls[0][:2] == ["git", "config"] and seen == [(".", run)]
 
@@ -111,7 +111,7 @@ def test_check_failure_propagates():
         raise RuntimeError("metadata changed")
 
     with pytest.raises(RuntimeError, match="metadata"):
-        merge_driver_pins(PFACTORY, ".", run=lambda a: (0, ""), check=boom)
+        merge_driver_pins(".", run=lambda a: (0, ""), check=boom)
 
 
 @pytest.mark.parametrize(
@@ -120,7 +120,7 @@ def test_check_failure_propagates():
 )
 def test_fail_closed(result, msg):
     with pytest.raises(RuntimeError, match=msg):
-        merge_driver_pins(PFACTORY, ".", run=lambda a: result)
+        merge_driver_pins(".", run=lambda a: result)
 
 
 def test_run_oserror_is_runtime_error():
@@ -128,12 +128,18 @@ def test_run_oserror_is_runtime_error():
         raise OSError("gone")
 
     with pytest.raises(RuntimeError, match="git config failed"):
-        merge_driver_pins(PFACTORY, ".", run=run)
+        merge_driver_pins(".", run=run)
 
 
 def test_non_utf8_subsection_round_trips(tmp_path):
     out = "merge.\udcff.driver\0"
-    assert merge_driver_pins(PFACTORY, tmp_path, run=lambda a: (0, out)) == [
+    assert merge_driver_pins(tmp_path, run=lambda a: (0, out)) == [
         "-c",
         "merge.\udcff.driver=",
     ]
+
+
+def test_needs_env_or_run():
+    # No hidden child_env default: git_pins must not import env (CodeQL cyclic import).
+    with pytest.raises(ValueError, match="env or run"):
+        merge_driver_pins(".")

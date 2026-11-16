@@ -6,8 +6,6 @@ import os
 import subprocess
 from collections.abc import Callable, Mapping
 
-from .policy import Policy
-
 RunFn = Callable[[list[str]], tuple[int, str]]
 
 # (key, value) pins; None means the editor/pager argument (#1689, #1717, #1745).
@@ -54,7 +52,6 @@ _MERGE_DRIVER_KEYS = (
 
 
 def merge_driver_pins(
-    policy: Policy,
     cwd: str | os.PathLike[str],
     run: RunFn | None = None,
     env: Mapping[str, str] | None = None,
@@ -70,9 +67,12 @@ def merge_driver_pins(
     filtered in Python, not by ``--get-regexp``: under a UTF-8 locale git's
     regex skips a non-UTF-8 subsection. ``run`` must decode with
     ``surrogateescape`` so such a key round-trips to argv. ``check`` is an
-    optional integrity check (it raises RuntimeError) run first. ``policy``
-    builds the env only when neither ``run`` nor ``env`` is given.
+    optional integrity check (it raises RuntimeError) run first. Pass ``env``
+    (for example ``child_env(policy, agent=True)``) or ``run``; with neither it
+    raises ``ValueError``, so this module never imports ``env`` (import cycle).
     """
+    if run is None and env is None:
+        raise ValueError("merge_driver_pins needs env or run")
     if check is not None:
         check(cwd, run)
     argv = list(_MERGE_DRIVER_KEYS)
@@ -80,15 +80,13 @@ def merge_driver_pins(
         if run is not None:
             rc, out = run(argv)
         else:
-            from .env import child_env  # noqa: PLC0415 - import cycle
-
             proc = subprocess.run(  # noqa: S603 - fixed argv
                 argv,
                 cwd=cwd,
                 capture_output=True,
                 text=True,
                 errors="surrogateescape",
-                env=dict(env) if env is not None else child_env(policy, agent=True),
+                env=dict(env or {}),
                 timeout=60,
                 check=False,
             )

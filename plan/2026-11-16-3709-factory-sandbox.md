@@ -32,7 +32,7 @@ Decisions carried from the approved spec (do not reopen):
   AIFactory shim: `agent=False`, `pin_git=True` (as today). PF/TF shims:
   `agent=True`, `pin_git=False`; they add `git_env(keep, extra)` =
   `pin_git=True`. Public names stay in each service's `core/child_env.py`.
-- Hub signature `merge_driver_pins(policy, cwd, run=None, env=None, check=None)`.
+- Hub signature `merge_driver_pins(cwd, run=None, env=None, check=None)` (see Deviations).
   Every service shim exposes the old call shape `merge_driver_pins(cwd,
   run=None, env=None)` bound to its Policy; AIFactory's binds
   `check=core.git_metadata.check_git_metadata`, PF/TF bind no check (metadata
@@ -219,3 +219,10 @@ Each PR is revertable alone. Services: revert the PR; the shim and vendored
 copy go away and the previous `core/child_env.py` returns from git. Hub: revert
 removes the package and gate; services pinned to it would then fail their drift
 workflow, so revert the service PRs first. No data, schema or cluster change.
+
+## Deviations
+
+- Hub `merge_driver_pins` no longer builds a default env with `child_env`, because its lazy
+  `from .env import child_env` was an import cycle (CodeQL alerts 65 and 66 on Factory#3729). It also drops the
+  `policy` parameter, now unused: `merge_driver_pins(cwd, run=None, env=None, check=None)`. With neither `env` nor `run` it raises `ValueError`, so each service shim
+  passes `env=child_env(policy, agent=True)` itself (the coordinator's fix, 2026-11-16).
