@@ -64,6 +64,14 @@ before implementing and before the last push.
 6. Per repo: run the repo's lint and the touched tests, `codex review --base
    origin/<base>`, fix confirmed findings (max 2 rounds), open PRs, tick #1960.
 
+## Deviations
+
+- Step 1 tests went into a new, fully annotated
+  `apps/web-server/tests/test_completion_attribution.py` (AIFactory) instead of
+  `test_completion_emitter.py`: the mypy --strict per-file ratchet counts untyped
+  test functions added to an existing file as regressions. `_read_attribution`
+  returns a `TypedDict` for the same reason (a plain `dict` failed `**` unpacking).
+
 ## Tests
 
 Touched test files per repo pass; ruff clean; repo CI green on the head SHA.
