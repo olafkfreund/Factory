@@ -40,15 +40,21 @@ rows stay. All paths below are under the Factory worktree.
      Ready).
    - Mock-audit plan: cites `management-review-and-internal-audit.md` section 2 for scope,
      independence, report template and "First audit"; adds the sample (SoA A.8.13, A.5.28;
-     SOC 2 CC6), evidence pulls (`kubectl get cronjob -n factory postgres-backup`,
-     `gh run list` for CodeQL, `scripts/access_review` export path from `roles.md`), pass
-     criteria (each sampled control has a dated artifact), findings go to
-     `risk-register.md`/`remediation-sla.md`, and states "not held".
+     SOC 2 CC6), evidence pulls with `mc` as in factory-gitops `docs/evidence-collection.md`
+     ("How an assessor retrieves a control's evidence"): `mc cat fac/factory-evidence/<date>/backups-index.json`
+     (backup operated), `mc cat fac/factory-evidence/<date>/audit-anchor.json` (chain),
+     `mc ls fac/factory-evidence/control-plane-push/access-review/` (access review),
+     `mc ls fac/factory-evidence/control-plane-push/codeql/`; pass criteria: each sampled control
+     has dated operating evidence (not only a manifest), and missing evidence is recorded as a
+     finding; findings go to
+     `risk-register.md`/`remediation-sla.md`; and states "not held".
    - Owner actions: `kubectl -n factory create secret generic evidence-github-token
      --from-literal=token=<PAT>` (value supplied by the owner, never committed); sign the
      residual-risk table; decide mock-audit date and independent reviewer (decision);
-     CI scan-upload wiring command as documented in the #324 2025-07-25 comment (decision
-     on S3 credentials in CI).
+     CI scan-upload wiring (decision: S3 credentials in CI, since the in-cluster MinIO is not
+     reachable from runners): the push contract is
+     `mc cp trivy.json fac/factory-evidence/control-plane-push/trivy/<repo>-<YYYY-MM-DD>.json`
+     and `.../codeql/<repo>-<YYYY-MM-DD>.sarif`, from the #324 comment of 2026-07-25.
    Verify: step 3 test. Traps: no secret values; link paths relative to `docs/compliance/`.
 2. Stale prose, each edit followed by a re-grep that the old phrase is gone:
    - `policies/data-governance.md`: intro (lines 19-23), Gaps 1 and 2 (lines 187-193), the
