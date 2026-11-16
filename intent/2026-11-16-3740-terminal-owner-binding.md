@@ -17,7 +17,7 @@ PTY sessions in AIFactory, PFactory and TFactory are host-wide. `POST /api/termi
 - Another user's session answers as "not found" (REST 404, WebSocket close 4004), so ids do not leak existence.
 - The service principal (legacy `API_TOKEN`, auth-disabled dev user) and legacy-token WebSockets keep full access, as in the all-task sockets (Factory#3724).
 - Create rejects an `id` that already exists (409).
-- Non-service create derives the directory from the authorized project only (`cwd` and `projectPath` overrides are refused), and a project id is required.
+- Non-service create must land in a registered project the caller is authorized for, whether named by `projectId` or by the directory the existing frontends send (`cwd`/`projectPath`); a directory outside it, a project id that does not contain the directory, or no project at all is refused (403). (Reconciled with the spec after Codex review: the frontends send paths, not ids.)
 - `POST /{id}/buffer` writes only under the session's own project; `/alive` follows the same denial rule.
 - Worktree and project-scoped session-clear routes authorize the project they name; `DELETE /sessions` without `project` and `POST /cleanup` stay service-only for non-service callers.
 - A live WebSocket re-authorizes at least every 5 s (project membership, and for `acw_` keys the key itself), and closes when access is lost.
