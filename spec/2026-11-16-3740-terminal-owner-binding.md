@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3740
 intent: intent/2026-11-16-3740-terminal-owner-binding.md
 ---
