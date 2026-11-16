@@ -19,14 +19,14 @@ Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-
 |---|---|---|
 | MinIO SSE-S3 | Configured for new writes on `factory-artifacts`, `factory-backups`, `factory-evidence`. Existing objects and versions not evidenced. | Live: Deployment `minio` takes `MINIO_KMS_SECRET_KEY` from Secret `minio-kms`; Job `minio-create-bucket` succeeded 2026-10-22. Repo: `apps/minio/manifests/manifests.yaml` (`mc encrypt set sse-s3` on the three buckets). |
 | KEK custody | Documented. Agenix copy and offline identity backup unconfirmed. | Record: owner comment on Factory#314, 2026-07-25. Repo: `docs/secrets-management.md`, custody section. |
-| Key-rotation policy and ledger | In place; rotation is manual. | Repo: `docs/secrets-management.md`, `scripts/rotation-ledger-check.py`, `.github/workflows/secret-rotation-due.yml`. |
+| Key-rotation policy and ledger | In place; rotation is manual. | Repo: `docs/secrets-management.md`, `scripts/rotation-ledger-check.py`, `.github/workflows/secret-rotation-due.yml`.  Record: policy [`key-rotation.md`](key-rotation.md) (Factory#3739); daily age report CronJob `secret-rotation-report` (factory-gitops#343). |
 | Postgres | Unencrypted, risk accepted. | Record: R-014, review 2027-04-24 (Factory#3653). Live: PVC `data-postgres-0` on `local-path`. |
 | Other `local-path` volumes (Redis, Keycloak, service data) | Unencrypted. | Live: all PVCs on `local-path`. Record: R-003, open. |
 | etcd Secrets | Unencrypted. | Live: server node `k3s.io/node-args` has no `--secrets-encryption`. |
 | Node disk | No LUKS. | Record: owner host check 2026-10-24 (the cluster host, `/mnt/code/k3d/storage` on `/dev/sdb1` ext4). |
 | Application-level keys | `KMS_FERNET_KEY` (aifactory), `CFACTORY_CREDENTIAL_KEY` (cfactory) documented; not checked live. | Repo: rotation policy in `docs/secrets-management.md`. |
 | FIPS 140 | Nothing asserted. Owner decision. | Record: Factory#314 scopes it to FedRAMP. |
-| KES / external KMS | Not deployed. MinIO uses its built-in static single-key mode. | Repo: MinIO manifest. |
+| KES / external KMS | Not deployed. MinIO uses its built-in static single-key mode. Decision to stay on it, with revisit triggers, recorded 2026-11-16. | Repo: MinIO manifest; [KES decision record](https://github.com/olafkfreund/factory-gitops/blob/main/docs/encryption-at-rest.md). |
 
 ### In transit (partial — external only)
 
@@ -52,7 +52,7 @@ Evidence labels: **Live** is a read-only `kubectl get/describe` on context `k3d-
 
 - The only automated rotation in the fleet is the credential broker for the Claude OAuth token, which refreshes and rolls the refresh/access token forward (`factory-gitops/apps/cred-broker/manifests/manifests.yaml`).
 - No key-management system and no envelope encryption exist. There is no KMS service in `factory-gitops`: MinIO's key is a static key in a Kubernetes Secret (`minio-kms`), not a KMS. A rotation policy and an overdue check now exist (factory-gitops#328).
-- Long-lived application secrets have no rotation automation and no documented custody: `JWT_SECRET`, the `acw_` API keys, the shared `POSTGRES_PASSWORD`, the MinIO root access/secret keys, and the runtime GitHub PAT. `Factory/docs/dev/secrets-and-tokens.md` documents manual, operator-driven "rotate on leak" procedures only (for example `acw_` keys are revoked by hand in the factory's key management, and MinIO creds are rotated by recreating the Secret and bouncing consumers).
+- Long-lived application secrets are rotated manually under the policy in [`key-rotation.md`](key-rotation.md) (Factory#3739), with a daily overdue report (factory-gitops#343) and agenix custody documented in factory-gitops `docs/secrets-management.md`. They have no rotation automation (accepted, R-016). The original gap covered: `JWT_SECRET`, the `acw_` API keys, the shared `POSTGRES_PASSWORD`, the MinIO root access/secret keys, and the runtime GitHub PAT. `Factory/docs/dev/secrets-and-tokens.md` documents manual, operator-driven "rotate on leak" procedures only (for example `acw_` keys are revoked by hand in the factory's key management, and MinIO creds are rotated by recreating the Secret and bouncing consumers).
 
 ## Gaps
 

@@ -15,6 +15,8 @@ evidence. Certification is a separate engagement.
 - [`control-matrix.md`](control-matrix.md) — the control-to-framework matrix
   (Factory#324): one row per control domain, mapped to every in-scope framework,
   with current status and the child issue that drives it. Start here.
+- [`audit-readiness.md`](audit-readiness.md) — the readiness checklist, the mock-audit plan
+  and the steps only the owner can take (Factory#324).
 - [`policies/`](policies/) — the ISMS policy set (the artifacts an assessor opens)
   plus one grounded control document per domain. Each domain document carries:
   purpose, current state (cited against real code and manifests), gaps, a phased
@@ -30,6 +32,7 @@ evidence. Certification is a separate engagement.
 - [`vulnerability-register.md`](vulnerability-register.md) — the register process
   that turns transient scan output into tracked, dated, owned findings with SLA
   due dates and closure evidence, plus the penetration-testing program. Factory#317.
+- [`rbac-role-catalog.md`](rbac-role-catalog.md) and [`access-review-runbook.md`](access-review-runbook.md) — the fleet role model and the quarterly access review with its report generator. Factory#312.
 - [`roles.md`](roles.md) — named security roles and control owners, the quarterly
   management-review cadence, and the continuous-monitoring plan. Factory#311.
 - [`agent-identity.md`](agent-identity.md) — why "agents must never merge" is an
@@ -169,8 +172,8 @@ classification scheme, and the per-domain gap assessments. Satisfies gap #6
   (#313, #319).
 
 **Wave 2 — structural hardening:**
-- Postgres and MinIO backups with a tested restore — the top gap, RPO is
-  currently unbounded (#321).
+- Off-cluster Postgres copy and a MinIO backup (#3681, #3691): the daily dump and a
+  tested restore exist (#321), but both sit on the node they protect.
 - Retire the shared wildcard `APP_API_TOKEN` in favor of scoped `acw_`
   service credentials; remove the `is_service=True` blanket authz bypass (#312).
 - Bring CFactory to parity: Trivy scan, dual SBOM, cosign signing, plus a
