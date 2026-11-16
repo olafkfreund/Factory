@@ -162,14 +162,15 @@ FedRAMP IR-4.
 
 ## Breach notification matrix
 
-Clocks start at t0 (incident *confirmed* at triage), except SEC which starts at the materiality
-determination. When multiple regimes apply, the shortest clock governs.
+Clocks start at t0 (incident *confirmed* at triage), except SEC, which starts at the materiality
+determination, and GDPR Art. 33, which starts when the controller becomes aware (take the
+earlier of awareness and confirmation; a processor tells its controller without undue delay). When multiple regimes apply, the shortest clock governs.
 
 | Regime | Trigger | Deadline (from) | Notify who | How |
 |---|---|---|---|---|
-| SEC Reg S-K Item 1.05 (8-K) | Cybersecurity incident determined **material** | **4 business days** from the materiality determination (make that determination without unreasonable delay after discovery) | SEC (Form 8-K, Item 1.05) | Public 8-K filing; materiality owner decides, comms owner files. Applies only if the entity is a public filer. |
-| NYDFS 23 NYCRR 500.17(a) | Cybersecurity event that (i) requires notice to another government/self-regulatory body, or (ii) has a reasonable likelihood of materially harming normal operations | **72 hours** from determination that the event occurred | NY Department of Financial Services | NYDFS online cybersecurity portal. Applies only if the entity or its customers are NYDFS-covered financial firms (conditional scope). |
-| GDPR Art. 33 | Personal-data breach with risk to individuals' rights and freedoms | **72 hours** from becoming aware | Lead supervisory authority (DPA) | DPA breach-notification form. Art. 34: also notify affected individuals "without undue delay" if high risk. Applies if EU/UK personal data is processed. |
+| SEC Reg S-K Item 1.05 (8-K) | Cybersecurity incident determined **material** | **4 business days** from the materiality determination (make that determination without unreasonable delay after discovery) | SEC (Form 8-K, Item 1.05) | Public 8-K filing; materiality owner decides, comms owner files. **Not applicable while out of scope** (decided 2026-11-16, [framework-applicability.md](../framework-applicability.md)); active only if re-scoped. |
+| NYDFS 23 NYCRR 500.17(a) | Cybersecurity event that (i) requires notice to another government/self-regulatory body, or (ii) has a reasonable likelihood of materially harming normal operations | **72 hours** from determination that the event occurred | NY Department of Financial Services | NYDFS online cybersecurity portal. **Not applicable while out of scope** (decided 2026-11-16, [framework-applicability.md](../framework-applicability.md)); active only if re-scoped. |
+| GDPR Art. 33 | Personal-data breach with risk to individuals' rights and freedoms | **72 hours** from becoming aware | Lead supervisory authority (DPA) | DPA breach-notification form. Art. 34: also notify affected individuals "without undue delay" if high risk. Applies if EU/UK personal data is processed; a processor notifies its controller without undue delay. |
 | PCI DSS 12.10 / card brands | Suspected/confirmed compromise of cardholder data | **Immediately** (per card-brand rules; hours, not days) | Acquiring bank + card brands (Visa/Mastercard/etc.), forensic (PFI) engagement | Card-brand-specific process. **Out of scope unless a payment flow is introduced** (Factory#310 scopes PCI out today). Listed for completeness. |
 | US state breach laws | Breach of residents' personal information | Varies by state ("without unreasonable delay"; some fixed caps) | State AG and/or affected residents | Per applicable state statute. Engage counsel. |
 | Customer contractual | Per DPA / MSA notification clauses | Per contract (often 24-72h) | Affected customers | Contact per contract; comms owner tracks. |
@@ -180,6 +181,30 @@ decision (notify / not-notify + rationale) in the incident log even when the dec
 not-notify -- the documented determination is itself the audit evidence. Engage legal counsel
 before any external regulatory notification. Never let engineering uncertainty about scope stall
 the clock: if a regime plausibly applies, treat it as applicable until counsel says otherwise.
+
+## Authority contact list
+
+Factory#3698, SoA A.5.5. Without a named channel the clocks above cannot be met. Every contact
+cell is empty until the owner fills it from the real source; nothing here is a verified contact.
+
+- **List owner:** Security Owner (also the Incident Commander by default, see [roles.md](../roles.md)).
+- **First population (target):** 2026-12-16. **Review:** annually and on any change of
+  jurisdiction, provider or customer contract; next review due 2027-11-16.
+- **Before filling the data-protection row** the owner records: jurisdiction of the
+  establishment, whether the operator is controller or processor for the data concerned, the
+  competent authority, and the clock that follows. The 72 hours is the controller's Art. 33
+  default.
+
+| Authority or party | When contacted | Deadline | Channel | Contact | Owner | Last verified |
+|---|---|---|---|---|---|---|
+| Data-protection authority (required) | Personal-data breach with risk to individuals, controller case | 72 hours from awareness | | | Security Owner | |
+| Controller (if the operator is a processor) | Personal-data breach affecting their data | Without undue delay | Per contract | | Security Owner | |
+| Law enforcement or national CERT | Criminal activity or a significant incident | None fixed; counsel advises | | | Security Owner | |
+| GitHub, Cloudflare, LLM and hosting providers | Incident on or through the provider | Per provider terms | Provider documents or contract (providers named in [supplier-management.md](../supplier-management.md)) | | Security Owner | |
+| Legal counsel | Before any external regulatory notification | At triage | | | Security Owner | |
+| Affected customers | Per DPA or MSA | Per contract | Per contract | | Security Owner | |
+| SEC (Form 8-K) | Only if re-scoped | 4 business days from materiality | EDGAR | n/a while out of scope | Security Owner | |
+| NYDFS | Only if re-scoped | 72 hours | NYDFS portal | n/a while out of scope | Security Owner | |
 
 ## Gaps
 

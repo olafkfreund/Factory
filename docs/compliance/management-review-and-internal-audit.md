@@ -3,8 +3,8 @@
 - **Policy owner:** Security Owner (CISO function) — see [roles.md](roles.md)
 - **Review cadence:** Management review quarterly; internal audit annually
 - **Frameworks:** ISO/IEC 27001:2022 Clause 9.2 (internal audit), 9.3 (management review),
-  A.5.35; SOC 2 CC1.2, CC4.1, CC4.2; NYDFS 500.4(b) (conditional, see
-  [nydfs-part500-mapping.md](nydfs-part500-mapping.md)); FFIEC management and audit booklets
+  A.5.35; SOC 2 CC1.2, CC4.1, CC4.2; NYDFS 500.4(b) (reference only, not applicable: see
+  [framework-applicability.md](framework-applicability.md)); FFIEC management and audit booklets
 - **Issue:** Factory#3694
 
 This document is the procedure and the templates. It is not a record: no review or audit
