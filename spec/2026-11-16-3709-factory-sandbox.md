@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3709
 intent: intent/2026-11-16-3709-factory-sandbox.md
 ---
