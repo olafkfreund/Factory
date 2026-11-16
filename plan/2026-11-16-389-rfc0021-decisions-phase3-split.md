@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 389
 spec: spec/2026-11-16-389-rfc0021-decisions-phase3-split.md
 coders:
