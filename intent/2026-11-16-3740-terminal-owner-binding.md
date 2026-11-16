@@ -17,8 +17,16 @@ PTY sessions in AIFactory, PFactory and TFactory are host-wide. `POST /api/termi
 - Another user's session answers as "not found" (REST 404, WebSocket close 4004), so ids do not leak existence.
 - The service principal (legacy `API_TOKEN`, auth-disabled dev user) and legacy-token WebSockets keep full access, as in the all-task sockets (Factory#3724).
 - Create rejects an `id` that already exists (409).
-- Worktree and session-clear routes authorize the project they name for non-service callers.
+- Non-service create derives the directory from the authorized project only (`cwd` and `projectPath` overrides are refused), and a project id is required.
+- `POST /{id}/buffer` writes only under the session's own project; `/alive` follows the same denial rule.
+- Worktree and project-scoped session-clear routes authorize the project they name; `DELETE /sessions` without `project` and `POST /cleanup` stay service-only for non-service callers.
+- A live WebSocket re-authorizes at least every 5 s (project membership, and for `acw_` keys the key itself), and closes when access is lost.
+- Duplicate-id rejection happens under the manager lock before the shell spawns.
 - Tests cover allowed and denied cases.
+
+## Out of scope
+
+A bound terminal is still a login shell of the server's OS user with the server environment and the shared Claude credential. Owner and project binding stops cross-user access to a session; it is not tenant filesystem isolation. That needs a sandbox and is a separate decision. `routes/cli_accounts.py` creates a PTY outside the router and looks already broken (unsupported `env=None`); it is covered only so the manager signature change stays compatible.
 
 ## Affected users and systems
 
