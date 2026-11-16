@@ -9,7 +9,8 @@ author: olafkfreund
 ## Problem
 
 Epic #1959 stage 2: TFactory verify Jobs are separate pods. `verify_dispatch.py`
-(`_SDK_PASSTHROUGH_ENV`, `_provider_env_entries`) copies `OPENAI_API_KEY`,
+(`_SDK_PASSTHROUGH_ENV`, `_provider_env_entries`) copies (as literal values, or as optional Secret references when
+`TFACTORY_VERIFY_PROVIDER_SECRET_NAME` is set) `OPENAI_API_KEY`,
 `OPENAI_COMPATIBLE_API_KEY`, `OLLAMA_API_KEY` and the OpenAI-compatible base
 URL into every Job. Migrating only the Deployment would leave the Jobs on
 direct keys, a half-migration that reads as success. The model gateway
@@ -32,8 +33,10 @@ Operators who later turn the flag on (owner step, needs the gateway Secret).
 ## Constraints
 
 - Default off; no fallback to a direct key when the flag is on.
-- No secret in any manifest; the token is read from the pod env or a
-  `secretKeyRef`, like the other provider secrets.
+- The gateway token follows the existing provider-secret rule: `secretKeyRef`
+  when the env-Secret is configured (no literal in the manifest), else the
+  pod-env value. The gateway path must suppress the direct keys from both
+  sources (literal and Secret reference).
 - Gemini, Claude OAuth and CLI-login providers are unchanged (planes B/C).
 - No live-cluster change, no credential created.
 
