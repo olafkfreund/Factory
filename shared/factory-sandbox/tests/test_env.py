@@ -197,6 +197,18 @@ def test_git_path_names_not_blanked(monkeypatch, policy):
     assert "GIT_DIR" not in child_env(policy, agent=True)
 
 
+def test_inherited_git_names_logged_once(monkeypatch, caplog):
+    monkeypatch.setattr("agent_sandbox.env._logged_inherited", set())
+    monkeypatch.setenv("GIT_DIR", "/secret-looking/path")
+    child_env(PFACTORY, agent=True)  # fills the dropped-name cache first
+    with caplog.at_level("WARNING", logger="agent_sandbox.env"):
+        blanks = get_agent_env_blanks(PFACTORY)
+        get_agent_env_blanks(PFACTORY)
+    msgs = [r.getMessage() for r in caplog.records if "git redirections" in r.getMessage()]
+    assert len(msgs) == 1 and "GIT_DIR" in msgs[0] and "/secret-looking" not in msgs[0]
+    assert "GIT_DIR" not in blanks
+
+
 def test_denied_allowed_proxy_name_stays_blank(monkeypatch):
     monkeypatch.setenv("HTTPS_PROXY", "http://u:pw@proxy:3128")
     policy = replace(PFACTORY, deny_exact=PFACTORY.deny_exact | {"HTTPS_PROXY"})
