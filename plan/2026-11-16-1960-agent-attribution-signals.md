@@ -44,12 +44,23 @@ before implementing and before the last push.
    alongside `test_tfactory_client_issue.py`. Traps: plain imports, ruff.
 4. PFactory `apps/backend/plan/completion.py::build_completion_event`: set both
    keys from the session; update `tests/test_plan_completion.py`.
-5. TFactory: `SpecIngestRequest` optional fields in `apps/web-server/server/routes/specs.py`,
-   forward in the `create_spec_ingest_workspace` call; persist in
-   `apps/backend/agents/tools_pkg/tools/task_control.py` source dict; set both in
-   `agents/triager.py::_build_completion_envelope`; add to `CompletionEnvelope`.
-   Tests: ingest-to-source.json and envelope with/without. Traps: contract-surface
-   fields are optional; vendored `artifact_store.py` untouched.
+5. TFactory (all paths from the repo root):
+   - `apps/web-server/server/routes/specs.py`: add optional `originator` and
+     `agent_identity` to `SpecIngestRequest` (~l.47-126) and forward them in the
+     `create_spec_ingest_workspace(...)` call (~l.323-337).
+   - `apps/backend/agents/tools_pkg/tools/task_control.py`: accept both and write
+     them into the `source` dict (~l.648-686) that becomes `context/source.json`.
+   - `apps/backend/agents/triager.py::_build_completion_envelope` (~l.816-955): set
+     both keys from `_load_source_meta`; `apps/backend/agents/completion_envelope.py`:
+     add both to `CompletionEnvelope`.
+   - Tests: `tests/test_spec_ingest_workspace.py` (source.json carries both, and
+     absent -> null), `tests/test_triager_completion_webhook.py` (envelope with and
+     without), and a route test (new, in `tests/test_specs_ingest_clone.py` style)
+     posting an ingest with both fields and asserting source.json, so a dropped
+     forward fails. Check: `python -m pytest tests/test_spec_ingest_workspace.py
+     tests/test_triager_completion_webhook.py tests/test_completion_envelope.py -q`.
+   Traps: new request fields optional (contract surface); vendored
+   `artifact_store.py` untouched.
 6. Per repo: run the repo's lint and the touched tests, `codex review --base
    origin/<base>`, fix confirmed findings (max 2 rounds), open PRs, tick #1960.
 
