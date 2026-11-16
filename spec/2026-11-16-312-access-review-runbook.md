@@ -21,14 +21,16 @@ Carries slices H1, H2, H3 of the approved `plan/2026-10-27-312-fleet-rbac-role-m
 
 | File | Content |
 |---|---|
-| `members-<svc>.ndjson` | AIFactory `/api/admin/access-review` lines (`email, role, active, last_login_at`) |
+| `members-<svc>.ndjson` | AIFactory `/api/admin/access-review` lines (`email, role, active, last_login_at`), optionally with `org_id` and `tenant_groups` (the collector adds them from Keycloak) |
+| `cfactory-keys.json` | list of `{actor, scope}` (the `key_actor` hash, never the key; `write` maps to `member`, `read` to `viewer`) |
+| `legacy-counters.json` | list of `{name, count}` (`_warn_legacy_api_token_once` hits, CFactory #504 legacy MCP counter), recorded as evidence |
 | `keys.json` | list of `{key_id, owner, owner_role, scopes, autonomy_ceiling, last_used_at, expires_at, service}` |
 | `bindings.json` | list of `{name, kind, subjects:[{kind,name}], justification}` |
 | `keycloak-users.json` | list of `{username, enabled, mfa}` (MFA recorded, not enforced) |
 | `platform-admins.json` | list of `{system, account}` |
 | `exceptions.json` | `{wildcard_retirement_date}` or absent |
 
-Checks, as in the plan: key scopes wider than the owner's role (a `viewer` may hold only `mcp:read`); active member above `viewer` with no login for 90 days; key unused 90 days or with no expiry; null `autonomy_ceiling`; binding without justification or bound to a human (`User` subject); wildcard retirement date unset; MFA state listed per Keycloak user. Output: `review.md` with Findings, Actions, Accepted exceptions (AR-004, AR-005, MFA not enforced), Signature (blank, the owner signs). Exit 0 always on a successful render; exit 2 if any input contains an `acw_` token shape (it refuses to write output), so a secret cannot reach the evidence store. `--now` fixes the clock for tests.
+Checks, as in the plan: key scopes wider than the owner's role (a `viewer` may hold only `mcp:read`); any member above `viewer`, active or not, with no login for 90 days (a missing `last_login_at` counts as no login); an email with more than one role in one org, and, when `tenant_groups` is present, anything other than exactly one group (otherwise reported "manual: tenant group not in export"); key unused 90 days or with no expiry; null `autonomy_ceiling`; binding without justification, or with a `User` subject (a `Group` subject is flagged for manual assessment of its members); wildcard retirement date unset; MFA state listed per Keycloak user; legacy counters and CFactory key inventory listed as evidence. Output: `review.md` with Findings, Actions, Accepted exceptions (AR-004, AR-005, MFA not enforced), Signature (blank, the owner signs). Exit 0 always on a successful render; exit 2 if any input contains an `acw_` token shape (it refuses to write output), so a secret cannot reach the evidence store. `--now` fixes the clock for tests.
 
 ## Alternatives rejected
 
