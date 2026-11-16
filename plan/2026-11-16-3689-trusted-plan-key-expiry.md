@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3689
 spec: spec/2026-11-16-3689-trusted-plan-key-expiry.md
 coders:
