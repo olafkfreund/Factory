@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3701
 intent: intent/2026-11-16-3701-catchall-first-party-image-rule.md
 ---
