@@ -32,6 +32,13 @@ no change to the three upstream factories. Repo: olafkfreund/CFactory, base
    Verify: tests below.
    Traps: never log a token. `just lint` is only statix/deadnix; run `ruff check` and `ruff format --check` separately. Tests record calls in a list (patch `upstream_ws.subscribe` with an async recorder, `await asyncio.gather(*tasks)`), not a dict, which would overwrite same-service calls.
 
+3. (Deviation, found in Codex final review.) `progress.py` `poll_progress_once`
+   and `routes_events.py` `/api/refresh`: the REST poll sees only the primary
+   org, so `reconcile_snapshot` would blank running stages that extra-org
+   sockets delivered. Skip `reconcile_snapshot` for a service that has extra
+   tokens. Cost: ghost running stages for that service clear only on a
+   terminal event, not by poll. Polling per extra token is the follow-up.
+
 ## Tests
 
 `just test tests/test_upstream_ws.py` and `just lint`: defaults give one task
