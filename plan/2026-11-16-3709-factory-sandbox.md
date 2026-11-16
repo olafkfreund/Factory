@@ -226,3 +226,22 @@ workflow, so revert the service PRs first. No data, schema or cluster change.
   `from .env import child_env` was an import cycle (CodeQL alerts 65 and 66 on Factory#3729). It also drops the
   `policy` parameter, now unused: `merge_driver_pins(cwd, run=None, env=None, check=None)`. With neither `env` nor `run` it raises `ValueError`, so each service shim
   passes `env=child_env(policy, agent=True)` itself (the coordinator's fix, 2026-11-16).
+- Phase B (services, 2026-11-16, AIFactory#2057, PFactory#1009, TFactory#1511):
+  - The per-service drift workflow extracts `shared/factory-sandbox/agent_sandbox/*`
+    with `--strip-components=4`, because the checker compares the package directory,
+    not `shared/factory-sandbox/` (the copy of `factory-github-drift.yml` used 3).
+  - PFactory carries `apps/backend/agent_sandbox/_invariants.py` (the invariant-ownership
+    check needs a declaration per package; the drift gate ignores extra files) and exempts
+    `agent-sandbox-drift.yml` in `tests/test_ruff_pin_agreement.py`.
+  - AIFactory: the dropped-names log test moves to the `agent_sandbox.env` logger and
+    filters on the dropped name (the shared function also logs names the credential
+    scrub removed); `merge_driver_pins` builds the default env only when no `run` is given.
+  - Remote git (TFactory writer fetch/push, web `run_git_command` in both services) keeps
+    `SSH_AUTH_SOCK` next to `GITHUB_KEEP` so ssh origins keep working (codex review).
+    The remote-program pins name `remote.origin.*` only, as the plan says; other remotes
+    are not pinned (follow-up in #3720).
+  - TFactory: the injected `runner_fn` receives `env=git_env(...)` and the config probe
+    goes through it; `write_paths_to_branch` signs (`-S`) only when
+    `TFACTORY_TRIAGER_GIT_SIGN` is on. PFactory: only `_default_runner_fn` carries the env.
+  - Implementers: Codex did TFactory step 8; the agy handoff for PFactory step 7 timed
+    out with no edits and the lead wrote it (steps 5 and 6 and the shims by the lead).
