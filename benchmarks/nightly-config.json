@@ -22,6 +22,8 @@
   "timeout_min": 45,
   "per_task_token_cap": 4000000,
   "total_token_budget": 40000000,
+  "total_cost_usd_budget": 30,
+  "per_task_cost_usd_cap": 4,
   "regression_drop_tasks": 2,
   "min_paired": 10,
   "prompt_globs": [

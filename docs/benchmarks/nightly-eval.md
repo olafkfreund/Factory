@@ -6,9 +6,16 @@ and is stored with what produced it. Each run is compared with the previous one.
 This is quality, not the seam gate: `parr-nightly.yml` checks that services talk
 to each other; this checks that the agents produce correct patches.
 
-**Status: the schedule is OFF.** The workflow `.github/workflows/bench-nightly.yml`
-runs on `workflow_dispatch` only until the owner provides a runner and agrees the
-cost below.
+**Cadence: weekly (decision 2026-11-16, was nightly).** `.github/workflows/bench-nightly.yml`
+(the file keeps its name) runs Sundays 01:00 UTC, but only when the repo variable
+`BENCH_ENABLED` is `true`; `workflow_dispatch` always runs. Until the owner sets the variable the
+scheduled run is skipped, so nothing waits on a runner that does not exist. The spend cap is
+enforced in code (see Cost), which is the condition for having a schedule at all.
+
+**Why not an in-cluster CronJob.** The official SWE-bench harness builds and runs a Docker
+container per task; the k3d nodes have no Docker daemon, and a Docker-in-Docker pod would need a
+privileged container, which the sandbox rules forbid. The runner path keeps the harness
+host-side. Revisit when a rootless harness exists.
 
 ## What runs
 
@@ -48,13 +55,16 @@ goes red, but no regression issue is opened.
 ## Cost (agree before enabling)
 
 From the 2026-07 baseline: average 2.37M tokens and USD 1.15 per task, heavy tail
-12.5M tokens. 15 tasks is about 36M tokens and USD 17 a night on average, about
-USD 520 a month. The baseline ran on subscription OAuth, so this draws quota
-rather than an API bill. Bounds: 15 tasks, `timeout_min` 45 per task (on timeout
-the driver stops the task), and no new task starts once cumulative tokens reach
-`total_token_budget` (40M; the last task can overshoot, and a task without token
-evidence is charged the cap). `per_task_token_cap` (4M) is checked after the
-task and flagged as `over_cap`; the pipeline has no mid-run token ceiling.
+12.5M tokens. 15 tasks is about 36M tokens and USD 17 a run on average, about
+USD 75 a month weekly (USD 520 nightly). The baseline ran on subscription OAuth, so this
+draws quota rather than an API bill. Bounds, all in code: 15 tasks, `timeout_min` 45 per task
+(on timeout the driver stops the task), and no new task starts once cumulative tokens reach
+`total_token_budget` (40M) or cumulative cost reaches `total_cost_usd_budget` (USD 30). Both budgets and
+`per_task_cost_usd_cap` (USD 4) are required keys: a config without them fails the run rather
+than dropping the limit. The last task can overshoot either; a task without token evidence is
+charged the per-task token cap, and one without a recorded cost the per-task USD cap.
+`per_task_token_cap` (4M) is checked after the task and flagged as `over_cap`; the pipeline has
+no mid-run token ceiling.
 
 ## Owner steps to enable
 
@@ -67,7 +77,7 @@ task and flagged as `over_cap`; the pipeline has no mid-run token ceiling.
    `BENCH_CFACTORY_DIR`, `BENCH_AIFACTORY_URL`, optional
    `NIGHTLY_MODEL_OVERRIDES`. Repo secret `BENCH_APP_API_TOKEN` (the local
    AIFactory `APP_API_TOKEN`).
-3. Agree the cost above, run `workflow_dispatch` once, then uncomment `schedule`.
+3. Agree the cost above, run `workflow_dispatch` once, then set the repo variable `BENCH_ENABLED=true`.
 
 Try it without calling anything: `AIFACTORY_DIR=<checkout> python3
 scripts/benchmarks/nightly_eval.py run --dry-run`.
