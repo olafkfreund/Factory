@@ -234,5 +234,6 @@ reads like a misconfiguration rather than a restore that stopped halfway.
       (see above); record the first value once it exists. The manual recovery
       steps (repointing, scale-up, app validation) remain unmeasured.
 - [ ] **HA Postgres (Factory#3690)**, or a written single-writer risk acceptance.
+      Options, RPO/RTO and a draft acceptance: [r007-ha-options.md](r007-ha-options.md).
 - [x] **Scheduled re-drill (Factory#3691)** — `postgres-restore-drill`, daily,
       results in `job_health` and `factory-evidence`, watched by `job-watchdog`.
