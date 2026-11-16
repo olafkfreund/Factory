@@ -53,7 +53,9 @@ def upstream_repo(tmp_path: Path) -> tuple[Path, str, str]:
 
 
 def test_build_prediction_record_shape() -> None:
-    record = rpt.build_prediction_record("astropy__astropy-1234", "diff --git a/x b/x\n")
+    record = rpt.build_prediction_record(
+        "astropy__astropy-1234", "diff --git a/x b/x\n", "factory-pipeline"
+    )
     assert record == {
         "instance_id": "astropy__astropy-1234",
         "model_name_or_path": "factory-pipeline",
@@ -62,7 +64,7 @@ def test_build_prediction_record_shape() -> None:
 
 
 def test_build_prediction_record_empty_diff_still_emits() -> None:
-    record = rpt.build_prediction_record("x-1", "")
+    record = rpt.build_prediction_record("x-1", "", "m")
     assert record["model_patch"] == ""
     assert record["instance_id"] == "x-1"
 
@@ -74,6 +76,7 @@ def test_build_meta_record_shape() -> None:
         "total_tokens": 4200,
         "cost_usd": 1.23,
         "duration_sec": 12.34,
+        "model_name": "factory-pipeline-abcd1234",
     }
     meta = rpt.build_meta_record("inst-1", "task-1", "spec-1", outcome)
     assert meta == {
@@ -85,6 +88,7 @@ def test_build_meta_record_shape() -> None:
         "total_tokens": 4200,
         "cost_usd": 1.23,
         "duration_sec": 12.3,
+        "model_name": "factory-pipeline-abcd1234",
     }
 
 
@@ -215,6 +219,37 @@ def test_register_project_returns_new_id() -> None:
     client = _FakeClient({("POST", "/api/projects"): _FakeResp(200, {"project_id": "p-1"})})
     project_id = rpt.register_project(client, Path("/scratch/x"), "inst-1")
     assert project_id == "p-1"
+
+
+def test_register_project_run_id_scopes_the_name() -> None:
+    client = _FakeClient({("POST", "/api/projects"): _FakeResp(200, {"project_id": "p-1"})})
+    rpt.register_project(client, Path("/scratch/x"), "inst-1", "20261116T030000Z")
+    body = client.calls[0][2]
+    assert body is not None
+    assert body["name"] == "swebench-20261116T030000Z-inst-1"
+
+
+def test_poll_task_timeout_stops_the_task() -> None:
+    client = _FakeClient(
+        {
+            ("GET", "/api/tasks/t-1/status"): _FakeResp(200, {"is_running": True}),
+            ("POST", "/api/tasks/t-1/stop"): _FakeResp(200, {}),
+        }
+    )
+    ticks = iter([0.0, 10_000.0])
+    clock = rpt._Clock(sleep=lambda _s: None, now=lambda: next(ticks))
+    with pytest.raises(rpt.PipelineError) as exc:
+        rpt.poll_task(client, "t-1", 1, 1, clock=clock)
+    assert exc.value.halt_reason == "timeout"
+    assert ("POST", "/api/tasks/t-1/stop", None) in client.calls
+
+
+def test_resolve_model_name_without_checkout_is_marked_unrecorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AIFACTORY_DIR", raising=False)
+    assert rpt.resolve_model_name(None) == rpt.UNRECORDED_MODEL_NAME
+    assert rpt.resolve_model_name("custom") == "custom"
 
 
 def test_register_project_reuses_existing_on_conflict() -> None:
@@ -391,3 +426,9 @@ def test_extract_patch_strips_aifactory_scaffolding(tmp_path: Path) -> None:
     assert ".aifactory" not in patch  # covers .aifactory/ and .aifactory-status
     assert "plan.md" not in patch
     assert "__pycache__" not in patch
+
+
+def test_evidence_reads_camelcase_aggregate() -> None:
+    data = {"totalTokens": 1234, "totalCostUsd": 0.5}
+    assert rpt._sum_tokens(data) == 1234
+    assert rpt._extract_cost(data) == 0.5
