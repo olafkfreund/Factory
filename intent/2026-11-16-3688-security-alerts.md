@@ -22,6 +22,11 @@ incident-response runbook has never been exercised. There is also no paging dest
 - job-watchdog already watches the new CronJob, so a dead evaluator is itself reported.
 - Factory docs hold a tabletop scenario and a blank record template, so the owner can run
   the exercise and file the record.
+- The egress rule is preparation: it reads a stream the owner must first populate, and
+  reports `not_configured` (never ok) until then. It detects nothing today.
+- Routing the existing `job_health` failures to a pager needs the owner's destination; the
+  docs give the exact steps. This slice leaves #3688 open and does not by itself move R-009
+  to its target score.
 - Docs state plainly what stays open: the paging destination, the egress telemetry source,
   and running the tabletop.
 
