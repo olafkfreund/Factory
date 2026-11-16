@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3737
 intent: intent/2026-11-16-3737-sandbox-second-pass-revendor.md
 ---
