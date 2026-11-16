@@ -18,7 +18,7 @@ Decisions carried over from the approved spec:
 
 1. factory-gitops `apps/job-watchdog/manifests/manifests.yaml`: add `PAGE_FAILS`, `page()`, the call in `notify()`, exit 7 in `main()`, selftest block, and the `ALERT_WEBHOOK_URL` optional secretKeyRef env. The selftest must include a two-run case: the first POST fails (counted in `PAGE_FAILS`, URL never printed), the next run with the unchanged open critical finding POSTs again with the same `dedup_key`; and a mutation check (removing the quiet-run `page()` call fails the selftest). `main()` returns 7 after the heartbeat when `PAGE_FAILS` is non-empty (read check; the heartbeat call precedes it). Check: extract the script and run `selftest`.
    Traps: the script is a block scalar in a ConfigMap; no `str(exception)` of a request (it can contain the URL).
-2. factory-gitops `docs/security-alerts.md`, `docs/job-health-watchdog.md`: replace the "create an OpenObserve alert in the UI" step with the webhook behaviour. Check: read.
+2. factory-gitops `docs/security-alerts.md`, `docs/job-health-watchdog.md`: add the webhook behaviour as a second bullet beside the OpenObserve Alert (deviation, factory-gitops#357: `apps/security-alerts/manifests/test_alert_filter.py` reads the documented Alert from this doc, and that Alert still covers other writers and warnings; the doc notes that using both pages a critical watchdog finding twice). Check: read.
 3. Owner (not an agent step): create the Secret, run the tabletop, file the record.
 
 ## Tests
