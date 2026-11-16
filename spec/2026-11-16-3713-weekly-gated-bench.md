@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3713
 intent: intent/2026-11-16-3713-weekly-gated-bench.md
 ---
