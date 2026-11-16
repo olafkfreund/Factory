@@ -58,3 +58,13 @@ Revert the PRs. Per-task sockets go back to token-only auth, `/ws/events` JWT me
 
 - PF/TF JWT per-task sockets stay unfiltered until `RBAC_ENFORCE_TASK_ROUTES` is on.
 - `/ws/logs` and `/ws/progress` (all tasks) still lack org filtering: new issue filed with these PRs.
+
+## Deviations (2026-11-16)
+
+- **Review of the artifacts.** Intent, spec and plan were reviewed in one round after drafting. Codex found four issues (bare task ids, frontend fallback, stale effect deps, exception policy); all four are folded into the spec and plan before the drafts were committed. The agy review failed (`status ERROR`, `error: interrupted`, no response) and was not obtained.
+- **Bare task ids** are denied on the per-task sockets for any non-service principal in every mode, including PF/TF shadow mode, because the handlers subscribe to the bare id and nothing ties it to a project.
+- **Frontend tests (step 4).** No hook test harness exists in the three `apps/frontend-web` trees and the worktrees have no `node_modules`, so no frontend test was added and only the changed lines were checked by reading and `tsc` on the touched files. CI runs `tsc`, lint and vitest.
+- **Local test runs.** The main checkouts' venvs carry an old `mcp`, so `tests/test_mcp_remote_session_key.py` fails (TF: collection error) and a few env-dependent tests fail (`test_github_env.py`, `rmux/test_remote_control.py`); none touch this change.
+- **Lint noise.** The PF commit hook autofixed `asyncio.TimeoutError` to `TimeoutError` in `logs.py` and `progress.py`; same behaviour.
+- **Issue #3714:** `_jwt_strict()` in AIF stays inline (no shadow mode); the other boxes are done.
+- **Filed:** #3724 for the all-task sockets `/ws/logs`, `/ws/progress`.
