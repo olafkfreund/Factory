@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3745
 spec: spec/2026-11-16-3745-revendor-hub-shared.md
 coders:
