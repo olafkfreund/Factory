@@ -23,11 +23,12 @@ the owner mints the keys and sets them.
 
 ## Affected users and systems
 
-CFactory `config.py` and `upstream_ws.py` only. No change to AIFactory,
+CFactory `config.py`, `upstream_ws.py` and their tests. No change to AIFactory,
 PFactory or TFactory, so no key gains any visibility.
 
 ## Constraints
 
+- CFactory merges every upstream feed into one store with no org context. That already holds for one key; the cockpit operator who configures several org keys is deliberately choosing to see those orgs together. Per-org isolation inside CFactory is out of scope (Codex review, unresolved by design).
 - Default off: no extra token configured means exactly today's behaviour.
 - No key schema change, no new scope: that is the rejected multi-org key.
 - Tokens are secrets: never logged, `repr=False`.
