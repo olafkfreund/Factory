@@ -110,6 +110,8 @@ Identical in AIFactory, PFactory, TFactory except one constant,
 File-backed memory only; the Graphiti write path in `agents/memory_manager.py`
 is untouched and bypasses caps when Graphiti is on (known gap). PFactory and
 TFactory have no project pool; caps and expiry apply to their per-spec stores.
+AIFactory `prompts/followup_planner.md` (lines 64-69) also `cat`s `gotchas.md`
+directly; that read is left unfiltered (known gap, follow-up planning only).
 The same `coder.md` also tells the agent to write `session_NNN.json` and append
 to `gotchas.md` itself with Python; those direct writes bypass the caps (known
 gap: the read side still bounds what agents see, because reads go through the
