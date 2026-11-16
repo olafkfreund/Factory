@@ -7,7 +7,12 @@ status: Proposed
 
 # RFC-0004 — Governed-Trajectory Capture
 
-> **Status:** Proposed (research / exploratory — not yet scheduled) · **Version:** 0.1 ·
+> **Status:** Proposed (research / exploratory — not yet scheduled); **phase 1 implemented
+> in AIFactory** (olafkfreund/AIFactory#2034: a full, secret-redacted per-run tool-call
+> transcript stored in the artifact store under `role=evidence`, 90-day ILM, linked from the
+> completion event and the task record). Not implemented: the automatic revert path and the
+> governed capture described below (signing, hash chain, labelled trajectories), tracked in
+> olafkfreund/AIFactory#2054. · **Version:** 0.1 ·
 > **Created:** 2026-06-09
 > Builds on [RFC-0001](./0001-correlation-key-and-completion-event.md) (correlation
 > key + completion-event envelope) and [RFC-0002](./0002-task-contract.md) (Task
