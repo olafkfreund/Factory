@@ -51,6 +51,7 @@ section needs is not in place today.
 | 500.16 | Incident response and business continuity and disaster recovery plans | [incident-response.md](policies/incident-response.md), [business-continuity-dr.md](policies/business-continuity-dr.md), [dr-runbook.md](dr-runbook.md) | Partial | Runbook untested (Factory#3688); no off-cluster copy (Factory#3681) |
 | 500.17(a) | Notice of a cybersecurity event within 72 hours | [incident-response.md](policies/incident-response.md) | Partial | No authority contact list (Factory#3698) |
 | 500.17(b) | Annual submission by April 15 | See below | Gap | No certification process held |
+| 500.17(c) | Notice within 24 hours of an extortion payment, and a written explanation within 30 days | None: [incident-response.md](policies/incident-response.md) has no extortion-payment step | Gap | Add the step if Part 500 applies |
 | 500.18 | Confidentiality of information provided to the department | Administrative | n/a | |
 | 500.19 | Exemptions | See below | Not decided | Owner's determination |
 | 500.20 | Enforcement | Administrative | n/a | |
