@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3727
 spec: spec/2026-11-16-3727-review-low-findings-factory.md
 coders:
