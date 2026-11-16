@@ -224,7 +224,9 @@ def test_register_project_returns_new_id() -> None:
 def test_register_project_run_id_scopes_the_name() -> None:
     client = _FakeClient({("POST", "/api/projects"): _FakeResp(200, {"project_id": "p-1"})})
     rpt.register_project(client, Path("/scratch/x"), "inst-1", "20261116T030000Z")
-    assert client.calls[0][2]["name"] == "swebench-20261116T030000Z-inst-1"
+    body = client.calls[0][2]
+    assert body is not None
+    assert body["name"] == "swebench-20261116T030000Z-inst-1"
 
 
 def test_poll_task_timeout_stops_the_task() -> None:

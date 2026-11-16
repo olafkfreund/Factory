@@ -521,7 +521,8 @@ def resolve_model_name(explicit: str | None) -> str:
         return explicit
     if not os.environ.get("AIFACTORY_DIR"):
         return UNRECORDED_MODEL_NAME
-    return provenance.label(provenance.collect(json.loads(DEFAULT_CONFIG.read_text())))
+    label: str = provenance.label(provenance.collect(json.loads(DEFAULT_CONFIG.read_text())))
+    return label
 
 
 def _load_problem_statement(args: argparse.Namespace) -> str:

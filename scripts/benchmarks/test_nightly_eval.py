@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).parent))
 
 import nightly_eval as ne
 
@@ -32,7 +32,10 @@ def _result(run_id: str, outcomes: dict[str, str], prompt: str = "h1") -> dict[s
         {"instance_id": i, "pipeline_status": "completed", "tokens": 10, "outcome": o}
         for i, o in outcomes.items()
     ]
-    return ne.build_result(run_id, {**PROV, "prompt_hash": prompt}, CFG, rows, 60.0)
+    result: dict[str, Any] = ne.build_result(
+        run_id, {**PROV, "prompt_hash": prompt}, CFG, rows, 60.0
+    )
+    return result
 
 
 def test_select_tasks_order_cap_and_missing() -> None:
