@@ -91,7 +91,7 @@ Retention is real but per-store and uneven, not policy-driven:
 
 - **MinIO/object store** — lifecycle (ILM) rules in
   `factory-gitops/apps/minio/manifests/manifests.yaml`: logs expire at 30 days, evidence at
-  90 days (evidence must outlive the VAL claim that references it).
+  396 days (evidence must outlive the VAL claim that references it).
 - **Evidence workspaces** — `PFactory/apps/backend/agents/evidence/retention.py` and the
   TFactory twin: failures kept `forever`, flagged `90_days`, passing `7_days`, plus a
   per-task size cap (default 500MB), keyed off the verdict.
@@ -260,7 +260,7 @@ Phased so the highest-exposure gap (default PII egress) closes first.
 | Local/self-hosted egress classification | `byo_llm.py` (`EgressClass`) | `PFactory/apps/backend/byo_llm.py` |
 | Agent command-layer egress guard | `security/egress.py` | `AIFactory/apps/backend/security/egress.py` |
 | Credential-broker honest-egress manifest | `pfactory_secrets/egress.py` | `PFactory/apps/backend/pfactory_secrets/egress.py` |
-| Object-store lifecycle (logs 30d / evidence 90d) | MinIO ILM manifest | `factory-gitops/apps/minio/manifests/manifests.yaml` |
+| Object-store lifecycle (logs 30d / evidence 396d) | MinIO ILM manifest | `factory-gitops/apps/minio/manifests/manifests.yaml` |
 | Evidence retention (failures/flagged/passing + size cap) | `agents/evidence/retention.py` | `PFactory/apps/backend/agents/evidence/retention.py` (+ TFactory twin) |
 | Audit retention (13-month default) | `audit_retention.py` | `{AIFactory,PFactory,TFactory}/apps/web-server/server/jobs/audit_retention.py` |
 | Data-flow, ROPA (Art. 30), PII inventory | DPIA data-flow | `AIFactory/guides/compliance/dpia-data-flow.md` |

@@ -91,7 +91,7 @@ a stub.
   `apps/web-server/server/jobs/audit_retention.py` deletes rows past
   `retention_until`. Object-store logs are lifecycled in
   `factory-gitops/apps/minio/manifests/manifests.yaml` — `role=log` prefixes
-  expire at 30 days, evidence at 90 days. OpenObserve keeps ingested audit
+  expire at 30 days, evidence at 396 days (13 months). OpenObserve keeps ingested audit
   records for 3650 days, pinned explicitly with `ZO_COMPACT_DATA_RETENTION_DAYS` in
   `factory-gitops/apps/observe/manifests/manifests.yaml` (Factory#313; the value is
   the upstream v0.90.3 default, chosen so the 10-year backfill is not deleted).
