@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3687
 spec: spec/2026-11-16-3687-setup-token-default.md
 coders:
