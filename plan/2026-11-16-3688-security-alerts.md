@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3688
 spec: spec/2026-11-16-3688-security-alerts.md
 coders:
@@ -14,8 +14,8 @@ reviewers:
 # Plan: auth-failure and egress alerts, IR tabletop (R-009)
 
 Decisions carried from the approved spec: new factory-gitops app `apps/security-alerts`, a CronJob
-every 15 minutes evaluating two rules (`auth_failure_spike` over `audit_chain`, 30 min window,
-threshold 10; `egress_anomaly` over stream `EGRESS_STREAM`, default empty, reports
+every 15 minutes evaluating two rules (`auth_failure_spike` = count of `action = 'auth.failure'` rows in `audit_chain`, 30 min window,
+env `AUTH_FAIL_THRESHOLD` default 10; `egress_anomaly` = row count in stream `EGRESS_STREAM`, env `EGRESS_THRESHOLD` default 1, stream default empty, reports
 `not_configured`, 404 reports `no_source`, never ok). Both rules always evaluated; one `job_health`
 record each; one GitHub issue per firing rule while none is open (label `security-alert`, inert
 without `GITHUB_TOKEN`); optional webhook (`security-alert-webhook`/`url`, optional) POSTed on every
@@ -29,6 +29,7 @@ This slice leaves Factory#3688 open.
 
 1. `apps/security-alerts/manifests/alerts.py` and `test_alerts.py`, modelled on
    `apps/secret-rotation/manifests/report.py` and `test_report.py` → `python3 apps/security-alerts/manifests/test_alerts.py`
+   Test cases: below threshold ok; at threshold firing; not_configured exits 0; 404 gives no_source; auth query error still evaluates egress and exits 1; issue created once and deduped on an open marker; no GITHUB_TOKEN inert; webhook off sends nothing, on posts with dedup_key each firing run, POST failure exits 1.
    Traps: stdlib only; never print a value or `str(e)`; OpenObserve search needs start/end in
    microseconds and not 0; 404 means stream missing.
 2. `apps/security-alerts/{application.yaml,manifests/kustomization.yaml,manifests/manifests.yaml}`
