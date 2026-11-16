@@ -97,7 +97,7 @@ GCS) or, where a shared filesystem is required, an RWX volume.
   - `S3_ACCESS_KEY` / `S3_SECRET_KEY` — credentials (from the `minio-creds` Secret)
   - `S3_REGION` — default `us-east-1` (MinIO ignores it; boto3 requires a value)
 - **Lifecycle:** apply a retention/TTL policy per `role` (e.g. logs 30d, evidence
-  90d); evidence referenced by a VAL claim (RFC-0006) MUST outlive the claim.
+  396d); evidence referenced by a VAL claim (RFC-0006) MUST outlive the claim.
 - **Workspace handoff:** a Phase-2 Job clones/fetches its inputs and writes
   outputs to its `<…>/workspace` and `<…>/build` keys; the control plane and
   CFactory read results from object storage + Postgres, never from a shared PVC.
