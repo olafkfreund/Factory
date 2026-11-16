@@ -8,7 +8,7 @@ intent: intent/2026-11-16-3713-weekly-gated-bench.md
 
 ## Design
 
-`budget_spent(rows, config)` (raises `KeyError` if either budget is missing) returns true when cumulative tokens (missing evidence charged the per-task cap) reach `total_token_budget` or cumulative `cost_usd` reaches `total_cost_usd_budget` (USD 30). The key is required: a config without it fails the run instead of silently dropping the USD limit. Tokens are the primary cap and are always charged (the per-task cap when evidence is missing); a task with no recorded cost counts as USD 0 toward the USD cap, because the token cap still bounds it. `cmd_run` calls it before every task. The workflow schedule is `0 1 * * 0`; the job has `if: workflow_dispatch || vars.BENCH_ENABLED == 'true'`. Cost: about USD 17 a run, USD 75 a month.
+`budget_spent(rows, config)` (raises `KeyError` if either budget is missing) returns true when cumulative tokens (missing evidence charged the per-task cap) reach `total_token_budget` or cumulative `cost_usd` reaches `total_cost_usd_budget` (USD 30). The key is required: a config without it fails the run instead of silently dropping the USD limit. Tokens are the primary cap and are always charged (the per-task cap when evidence is missing); a task with no recorded cost is charged `per_task_cost_usd_cap` (USD 4, required like the budgets) toward the USD cap, so missing cost evidence cannot bypass the guard. `cmd_run` calls it before every task. The workflow schedule is `0 1 * * 0`; the job has `if: workflow_dispatch || vars.BENCH_ENABLED == 'true'`. Cost: about USD 17 a run, USD 75 a month.
 
 ## Alternatives rejected
 
