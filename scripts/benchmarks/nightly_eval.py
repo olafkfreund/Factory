@@ -115,7 +115,7 @@ def budget_spent(rows: list[dict[str, Any]], config: dict[str, Any]) -> bool:
     spent = sum(
         r["cost_usd"] if isinstance(r.get("cost_usd"), int | float) else usd_cap for r in rows
     )
-    return spent >= config["total_cost_usd_budget"]
+    return bool(spent >= config["total_cost_usd_budget"])
 
 
 def apply_outcomes(rows: list[dict[str, Any]], gold: dict[str, str]) -> None:
