@@ -166,7 +166,7 @@ jobs:
         #
         # No new dependencies. Both files insert their own package root on
         # sys.path and are stdlib-only apart from pytest itself.
-        run: pytest -v tests/ shared/factory-common/tests/ scripts/benchmarks/
+        run: pytest -v tests/ shared/factory-common/tests/ shared/factory-sandbox/tests/ scripts/benchmarks/
 
       - name: Guard the shared job-dispatch policy surface
         # Factory#483. scripts/job_dispatch.py carries a self-test with the rules
@@ -182,6 +182,9 @@ jobs:
         # way. Same job as the steps above for the same reason: a separate job
         # would duplicate the checkout/setup block against the jscpd clone budget.
         run: python3 scripts/job_dispatch.py
+
+      - name: Guard the factory-sandbox drift gate (Factory#3709)
+        run: python3 scripts/check_factory_sandbox_drift.py --self-test
 
       - name: Guard the shared artifact-store key layout
         # Factory#488. Same shape as the step above and untestable until now: the
