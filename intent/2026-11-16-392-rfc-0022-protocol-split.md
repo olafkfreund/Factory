@@ -22,8 +22,9 @@ only the 12 work-item members, and no caller can say which half it needs.
   Phase 2-before-Phase 1 order, and the answer to the first open question.
 - The hub defines `WorkItemProvider` and `CodeProvider` next to `GitProvider`,
   additively. Every existing provider satisfies both unchanged; a test proves
-  it (GitHubProvider, GitLabProvider, AzureDevOpsProvider), and proves
-  `HttpGitHubProvider` is a work-item provider only.
+  it (GitHubProvider, GitLabProvider, AzureDevOpsProvider), and records
+  that `HttpGitHubProvider` is not a `CodeProvider`. It is also not yet a full
+  `WorkItemProvider` (7 members missing); the RFC's claim is corrected.
 - Nothing changes at runtime, so no flag is needed: no service imports the new
   names until a re-vendor.
 - The remaining slices are filed as sub-issues of #392.
