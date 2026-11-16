@@ -17,6 +17,25 @@ reviewers:
 
 Carries the approved spec: slices H1-H3 of `plan/2026-10-27-312-fleet-rbac-role-model.md` (the role catalog, the runbook with its checks and exceptions, policy/matrix updates) plus `scripts/access_review_report.py`. AR ids are AR-004 (SoD) and AR-005 (wildcard exception) because AR-003 is held by an unsigned draft in `r007-ha-options.md`. Docs and a stdlib script only: no service, gitops or cluster change, no MFA enforcement. The generator takes a directory of read-only exports (files in the spec), treats a missing file as a finding, refuses (exit 2, no output) any input containing an `acw_[A-Za-z0-9]{8,}` string, checks every member (active or not) for 90-day inactivity, flags `Group` binding subjects for manual assessment, and takes `--now`.
 
+## Generator contract (copied from the spec)
+
+Input directory, every file optional (a missing file is the finding "input not provided: <file>"):
+
+- \`members-<svc>.ndjson\`: lines \`{email, role, active, last_login_at, joined_at?, org_id?, tenant_groups?}\` (AIFactory \`/api/admin/access-review\`).
+- \`keys.json\`: list of \`{key_id, owner, owner_role, scopes, autonomy_ceiling, last_used_at, expires_at, service}\`.
+- \`cfactory-keys.json\`: list of \`{actor, scope}\`; \`write\` maps to \`member\`, \`read\` to \`viewer\`.
+- \`bindings.json\`: list of \`{name, kind, subjects:[{kind,name}], justification}\`.
+- \`keycloak-users.json\`: list of \`{username, enabled, mfa}\`; MFA is recorded, never enforced.
+- \`platform-admins.json\`: list of \`{system, account}\`.
+- \`legacy-counters.json\`: list of \`{name, count}\`, listed as evidence.
+- \`exceptions.json\`: \`{wildcard_retirement_date}\`; absent or empty is a finding "date not set".
+
+Checks (each one a finding line with the subject, never a secret): a key whose scopes exceed its owner's role (a \`viewer\` may hold only \`mcp:read\`); a member above \`viewer\`, active or not, with no login in 90 days or no \`last_login_at\`; an email with two roles in one org; \`tenant_groups\` present and not exactly one group (absent: "manual: tenant group not in export"); a key unused 90 days or with no \`expires_at\`; a null \`autonomy_ceiling\`; a binding with no justification or with a \`User\` subject (\`Group\` subject: "manual: assess members"); wildcard retirement date unset. Output \`review.md\` with sections Findings, Actions, Accepted exceptions (AR-004, AR-005, MFA not enforced), Signature (blank, signer: the owner, AR-004). Exit 2 and no output file if any input matches \`acw_[A-Za-z0-9]{8,}\`. \`--now YYYY-MM-DD\` fixes the clock; \`--in DIR --out FILE\`.
+
+Test cases: every check fires once; a clean input yields no findings; each missing file yields its finding; a token-shaped string exits 2 and writes nothing; a disabled admin with no login is flagged.
+
+Runbook content (step 2): cadence quarterly, due the 15th of the first month after quarter end (Q4 2026: 2027-01-15) and within five working days of anyone leaving or changing role; reviewer and signer the owner; revocations within five working days of signing, slower recorded as an exception with owner and date; read-only export commands per input; the guard \`grep -rE 'acw_[A-Za-z0-9]{8,}' <dir>\` must find nothing.
+
 ## Steps
 
 1. `scripts/access_review_report.py` (new) and `tests/test_access_review_report.py` (new): implement the checks and the `review.md` renderer. → `pytest tests/test_access_review_report.py`; `ruff check scripts/access_review_report.py tests/test_access_review_report.py`.
@@ -28,7 +47,7 @@ Carries the approved spec: slices H1-H3 of `plan/2026-10-27-312-fleet-rbac-role-
 
 ## Tests
 
-`pytest tests/test_access_review_report.py`; hub CI (docs, lint, link checks) green on the head SHA.
+`pytest tests/test_access_review_report.py`; hub CI green on the head SHA.
 
 ## Rollback
 
