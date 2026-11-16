@@ -29,16 +29,17 @@ its configuration.
 - **RTO (proposed): 4 hours.** Service is restored within four hours of a decision to
   recover.
 
-These objectives are proposed pending a business-impact analysis; until backups exist
-the actual RPO is unbounded, which is why this is the program's top risk (R-001).
+These objectives are proposed pending a business-impact analysis. A daily Postgres dump now
+exists but lives on the same node it protects, and MinIO is not backed up, so recovery from a
+node loss is still not assured, which is why this is the program's top risk (R-001).
 
 ## Policy statements
 
 1. **Backups are required.** Postgres and MinIO must be backed up on a schedule that
-   meets the RPO. Today there are no backups of either — no `pg_dump`/`pg_basebackup`/WAL
-   archiving for Postgres, and MinIO has expiry-only lifecycle rules with no versioning
-   or replication. Introducing an off-cluster encrypted `pg_dumpall` job and MinIO
-   versioning/replication is Wave 2 remediation (risk R-001).
+   meets the RPO. Today a daily in-cluster `pg_dumpall` CronJob (`postgres-backup`, see
+   [dr-runbook.md](../dr-runbook.md)) backs up Postgres into MinIO on the same node, and
+   MinIO itself has versioning but no backup. The off-cluster encrypted copy and the MinIO
+   backup are open (Factory#3681, Factory#3691, risk R-001).
 2. **Backups are off-cluster and encrypted.** A backup on the same single node it
    protects is not a backup. Backups are stored off-cluster and encrypted in transit and
    at rest.
@@ -70,4 +71,4 @@ the actual RPO is unbounded, which is why this is the program's top risk (R-001)
 - [business-continuity-dr.md](business-continuity-dr.md) — domain assessment and evidence
 - [incident-response-policy.md](incident-response-policy.md) — coordination during recovery
 - [encryption-key-mgmt.md](encryption-key-mgmt.md) — backup encryption
-- [risk-register.md](../risk-register.md) — R-001 (no backups), R-007 (single-instance data stores)
+- [risk-register.md](../risk-register.md) — R-001 (backups on the same node), R-007 (single-instance data stores)

@@ -25,6 +25,9 @@ that references them and holds the fleet accountable for maintaining them.
 
 ## Current state (grounded)
 
+> This section is the 2026-07-24 baseline and is kept for the record. The ISMS artifacts it
+> lists as missing now exist: see the gap table below and [audit-readiness.md](../audit-readiness.md).
+
 The fleet's engineering governance is mature; its *ISMS* documentation is essentially
 greenfield. Concretely, as of 2026-07-24:
 
@@ -75,10 +78,10 @@ demonstrates oversight.
 
 | # | Gap | Framework requirement not met |
 |---|-----|-------------------------------|
-| G1 | No information-security policy, approved and communicated | ISO 27001 A.5.1, Clause 5.2; SOC 2 CC5.3; NYDFS 500.3 |
-| G2 | No defined security roles / CISO / control owners | ISO 27001 Clause 5.3, A.5.2; SOC 2 CC1.3; NYDFS 500.4; SEC Item 106(c) |
-| G3 | No risk-assessment methodology or risk register | ISO 27001 Clause 6.1.2, 8.2; SOC 2 CC3.1-CC3.4; SEC Item 106(b); FFIEC mgmt |
-| G4 | No Statement of Applicability | ISO 27001 Clause 6.1.3(d) — mandatory document |
+| G1 | No information-security policy, approved and communicated. **Policy set written ([policies/](index.md)); still no acknowledgement or review record (SOC 2 CC5.3).** | ISO 27001 A.5.1, Clause 5.2; SOC 2 CC5.3; NYDFS 500.3 |
+| G2 | **Closed ([roles.md](../roles.md)).** No defined security roles / CISO / control owners | ISO 27001 Clause 5.3, A.5.2; SOC 2 CC1.3; NYDFS 500.4; SEC Item 106(c) |
+| G3 | **Closed ([risk-register.md](../risk-register.md)).** No risk-assessment methodology or risk register | ISO 27001 Clause 6.1.2, 8.2; SOC 2 CC3.1-CC3.4; SEC Item 106(b); FFIEC mgmt |
+| G4 | **Closed ([statement-of-applicability.md](../statement-of-applicability.md)).** No Statement of Applicability | ISO 27001 Clause 6.1.3(d) — mandatory document |
 | G5 | No management review / oversight cadence | ISO 27001 Clause 9.3; SOC 2 CC1.2, CC4.1; NYDFS 500.4(b) board reporting |
 | G6 | No continuous-monitoring plan | ISO 27001 Clause 9.1; SOC 2 CC4.1-CC4.2; FFIEC |
 | G7 | No independent review of information security | ISO 27001 A.5.35; SOC 2 CC4.1 |
