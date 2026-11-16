@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3688
 intent: intent/2026-11-16-3688-paging-webhook-job-watchdog.md
 ---
