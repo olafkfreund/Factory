@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3693
 intent: intent/2026-11-16-3693-governance-operating-records.md
 ---
