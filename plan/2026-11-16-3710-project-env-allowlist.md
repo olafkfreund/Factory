@@ -41,3 +41,12 @@ green; `ruff check`/`ruff format --check` clean on touched files.
 ## Rollback
 
 Revert the PR; behaviour returns to loading every key.
+
+## Deviations
+
+- Steps 1 and 2: the allowlist also carries the Graphiti provider keys
+  `apps/backend` reads (for example `AZURE_OPENAI_BASE_URL`), found by the final
+  Codex review; the spec said to derive the list from `routes/context.py` only.
+- The two `agent_service.py` project loaders and `pr_review_service.py` now share
+  one quote-stripping parse, as the spec decided. The `pr_review_service` import
+  is absolute in PFactory (lint ratchet).
