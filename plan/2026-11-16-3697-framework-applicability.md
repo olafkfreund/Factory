@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3697
 spec: spec/2026-11-16-3697-framework-applicability.md
 coders:  # lead does every step: docs prose, a handoff costs more than it saves
