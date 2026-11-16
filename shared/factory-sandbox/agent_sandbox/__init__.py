@@ -3,7 +3,6 @@
 from .env import (
     BASE_DENY_EXACT,
     CREDENTIAL_NAME,
-    Policy,
     child_env,
     get_agent_env_blanks,
     is_agent_env_allowed,
@@ -11,6 +10,7 @@ from .env import (
     without_host_secrets,
 )
 from .git_pins import merge_driver_pins, pin_git_config
+from .policy import Policy
 
 __all__ = [
     "BASE_DENY_EXACT",

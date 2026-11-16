@@ -7,8 +7,6 @@ from pathlib import Path
 # scripts/ is put on sys.path by tests/conftest.py.
 import check_factory_sandbox_drift as gate
 
-_REPO = Path(__file__).resolve().parents[1]
-
 
 def test_builtin_self_test_passes() -> None:
     assert gate._self_test() == 0

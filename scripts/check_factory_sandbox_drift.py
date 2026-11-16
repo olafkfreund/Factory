@@ -23,7 +23,7 @@ from pathlib import Path
 
 from gate_evidence import digest
 
-CANONICAL_FILES: tuple[str, ...] = ("__init__.py", "env.py", "git_pins.py")
+CANONICAL_FILES: tuple[str, ...] = ("__init__.py", "env.py", "git_pins.py", "policy.py")
 
 _DEFAULT_CANONICAL = Path(__file__).resolve().parent.parent / "shared/factory-sandbox/agent_sandbox"
 _EXIT_BAD_CANONICAL = 2

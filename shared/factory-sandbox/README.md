@@ -8,7 +8,8 @@ config pins that AIFactory, PFactory and TFactory each copied into
 
 | File | Role |
 | --- | --- |
-| `agent_sandbox/env.py` | `Policy` (per-service data), `child_env`, `is_denied_env_key`, `is_agent_env_allowed`, `get_agent_env_blanks`, `without_host_secrets`, `BASE_DENY_EXACT`. |
+| `agent_sandbox/policy.py` | `Policy`: the per-service rules as data. |
+| `agent_sandbox/env.py` | `child_env`, `is_denied_env_key`, `is_agent_env_allowed`, `get_agent_env_blanks`, `without_host_secrets`, `BASE_DENY_EXACT`. |
 | `agent_sandbox/git_pins.py` | `pin_git_config` (hooks, fsmonitor, ext transport, ssh, pager, editor, askPass, credential helpers) and `merge_driver_pins` (empty `merge.*.driver`, `filter.*.clean/smudge/process`). |
 | `tests/` | Logic tests plus one verdict table per service Policy. |
 

@@ -5,10 +5,8 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .env import Policy
+from .policy import Policy
 
 RunFn = Callable[[list[str]], tuple[int, str]]
 
