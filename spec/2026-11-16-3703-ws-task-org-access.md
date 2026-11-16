@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3703
 intent: intent/2026-11-16-3703-ws-task-org-access.md
 ---
