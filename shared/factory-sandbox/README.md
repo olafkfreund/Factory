@@ -9,7 +9,7 @@ config pins that AIFactory, PFactory and TFactory each copied into
 | File | Role |
 | --- | --- |
 | `agent_sandbox/policy.py` | `Policy`: the per-service rules as data. |
-| `agent_sandbox/env.py` | `child_env`, `is_denied_env_key`, `is_agent_env_allowed`, `get_agent_env_blanks`, `without_host_secrets`, `BASE_DENY_EXACT`. |
+| `agent_sandbox/env.py` | `child_env`, `is_denied_env_key`, `is_agent_env_allowed`, `get_agent_env_blanks`, `without_host_secrets`, `BASE_DENY_EXACT`, `BLANK_BREAKS`, `strip_proxy_userinfo`. |
 | `agent_sandbox/git_pins.py` | `pin_git_config` (hooks, fsmonitor, ext transport, ssh, pager, editor, askPass, credential helpers) and `merge_driver_pins` (empty `merge.*.driver`, `filter.*.clean/smudge/process`). |
 | `tests/` | Logic tests plus one verdict table per service Policy. |
 
@@ -42,3 +42,13 @@ Each service carries a byte-identical copy at `apps/backend/agent_sandbox/` plus
 from). Change the hub first. `scripts/check_factory_sandbox_drift.py` compares a
 service copy with this directory; the per-service workflow
 `agent-sandbox-drift.yml` runs it against the pinned hub SHA.
+
+## Env rules added in #3720
+
+- `*_KEY_FILE` / `*_TOKEN_FILE` count as credential names; `GL_TOKEN` is denied.
+- For agent children, proxy variables (`HTTP(S)_PROXY`, `ALL_PROXY`, `FTP_PROXY`) lose
+  `user:password@`; `get_agent_env_blanks` returns the stripped value for an allowed
+  name. A value that cannot be stripped is blank (SDK) or dropped (`child_env`).
+  Other children and `keep`/`extra` values are unchanged.
+- `get_agent_env_blanks` leaves `BLANK_BREAKS` (`GIT_DIR`, `GIT_WORK_TREE`, ...) alone:
+  a blank value breaks git and the SDK cannot unset. `child_env(agent=True)` drops them.
