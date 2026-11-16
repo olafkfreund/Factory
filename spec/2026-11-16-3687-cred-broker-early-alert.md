@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3687
 intent: intent/2026-11-16-3687-cred-broker-early-alert.md
 ---
