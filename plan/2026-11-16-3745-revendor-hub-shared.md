@@ -15,7 +15,7 @@ Decisions carried from the spec: copy canonical byte-for-byte, pin to hub main `
 
 ## Steps
 
-1. AIFactory, PFactory, TFactory `apps/backend/agent_sandbox/*.py` and `.hub-sha`; factory_common in AIFactory `apps/{backend,web-server}`, PFactory/TFactory `apps/web-server`, CFactory `apps/backend` → verify by drift script and `diff -r`.
+1. (also bump HUB_SHA in .github/workflows/agent-sandbox-drift.yml in the three sandbox repos) AIFactory, PFactory, TFactory `apps/backend/agent_sandbox/*.py` and `.hub-sha`; factory_common in AIFactory `apps/{backend,web-server}`, PFactory/TFactory `apps/web-server`, CFactory `apps/backend` → verify by drift script and `diff -r`.
    Traps: never hand-edit vendored files; pin = hub main squash commit.
 2. AIFactory `tests/test_sanitize_error_message.py`: use a non-sk-ant- key in the original-placeholder test and add a test that sk-ant- keys get the fleet placeholder → verify by `pytest tests/test_sanitize_error_message.py`.
    Traps: none.
