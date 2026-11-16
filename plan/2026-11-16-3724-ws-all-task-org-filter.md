@@ -54,3 +54,11 @@ Revert the PRs. The all-task sockets go back to token-only auth. No data or sche
 
 - PF/TF JWT all-task sockets stay unfiltered until `RBAC_ENFORCE_TASK_ROUTES` is on.
 - `/ws/terminal/{id}` still has no owner or project binding (follow-up issue).
+
+## Deviations (2026-11-16)
+
+- **Final Codex review, round 1** found two bugs in the first implementation, both fixed in a second commit per repo and covered by new tests: the refresh unregistered callbacks before awaiting the authorization queries (events lost during the awaits; now the new allowed set is computed first and the swap has no await), and a finished task leaves `running_tasks` before its last queued event is processed (the event was dropped; a message for a task not in `allowed` is now re-authorized with `readable([task_id])`). Round 2: no findings.
+- **Implementation shape.** PF factored the per-project check into a module function `_authorize_project`; TF added `_authorize_project` and `TaskSocketAccess._strict`; AIF added `_project_authorized`. All with the same behaviour as specified.
+- **mypy ratchet** for PF/TF cannot run with their own venvs (no pydantic); it was run with TFactory's `.venv/bin` first on PATH and passed on both.
+- **Terminals:** follow-up filed as olafkfreund/Factory#3740.
+- agy was off by owner decision; Codex reviewed the intent, spec and plan and implemented steps 1-3.
