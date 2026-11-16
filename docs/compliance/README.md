@@ -70,6 +70,7 @@ that references its technical domain document rather than duplicating it.
 | IAM and access control | [iam-access-control.md](policies/iam-access-control.md) | [#312](https://github.com/olafkfreund/Factory/issues/312) |
 | Audit logging and retention | [audit-logging.md](policies/audit-logging.md) | [#313](https://github.com/olafkfreund/Factory/issues/313) |
 | Encryption at rest and key management | [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | [#314](https://github.com/olafkfreund/Factory/issues/314) |
+| Key-rotation policy and age reporting | [key-rotation.md](policies/key-rotation.md) | [#314](https://github.com/olafkfreund/Factory/issues/314) |
 | Secrets management and rotation | [secrets-management.md](policies/secrets-management.md) | [#315](https://github.com/olafkfreund/Factory/issues/315) |
 | Change management and separation of duties | [change-management-sod.md](policies/change-management-sod.md) | [#316](https://github.com/olafkfreund/Factory/issues/316) |
 | Vulnerability and patch management | [vuln-patch-management.md](policies/vuln-patch-management.md) (+ [remediation-sla.md](remediation-sla.md), [vulnerability-register.md](vulnerability-register.md)) | [#317](https://github.com/olafkfreund/Factory/issues/317) |
