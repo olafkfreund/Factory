@@ -439,3 +439,99 @@ def test_no_repo_is_reported_when_none_ships_the_workflow(
     """The other direction, so the test above cannot pass by always finding one."""
     monkeypatch.setattr(pf, "workflow_exists", lambda *_a, **_kw: False)
     assert pf.unlisted_consumers() == []
+
+
+# --- factory_common: pins in .hub-sha files, five copies (Factory#3745) --------
+
+_PRE_3745_PIN = "294a62d5"  # AIFactory's factory_common pin; predates the sk-ant- pattern
+_FIVE_PIN_FILES = {
+    ("aifactory", "apps/backend/factory_common/.hub-sha"),
+    ("aifactory", "apps/web-server/factory_common/.hub-sha"),
+    ("cfactory", "apps/backend/factory_common/.hub-sha"),
+    ("pfactory", "apps/web-server/factory_common/.hub-sha"),
+    ("tfactory", "apps/web-server/factory_common/.hub-sha"),
+}
+
+
+def _common_gate() -> pf.Gate:
+    return next(g for g in pf.GATES if g.name == "factory-common")
+
+
+def test_factory_common_gate_reads_all_five_copies() -> None:
+    gate = _common_gate()
+    assert {(s, p) for s, files in gate.pin_files.items() for p in files} == _FIVE_PIN_FILES
+    assert gate.canonical_paths("aifactory") == ["shared/factory-common/factory_common"]
+    assert pf.scope_problems() == []
+
+
+def test_dropping_a_pin_file_is_a_scope_problem(monkeypatch: pytest.MonkeyPatch) -> None:
+    gate = _common_gate()
+    broken = dataclasses.replace(gate, pin_files={**gate.pin_files, "aifactory": ()})
+    monkeypatch.setattr(pf, "GATES", (*[g for g in pf.GATES if g is not gate], broken))
+    assert any("pin_files" in p for p in pf.scope_problems())
+
+
+def test_a_pin_file_must_hold_a_full_sha() -> None:
+    assert pf.pin_from_file("R", "a" * 40 + "\n", "p") == "a" * 40
+    for bad in ("", "294a62d5", "not-a-sha" * 5):
+        with pytest.raises(pf.PinUnavailableError):
+            pf.pin_from_file("R", bad, "p")
+
+
+@pytest.mark.skipif(not _have(_PRE_3745_PIN), reason="needs full hub history")
+def test_a_pre_3745_pin_is_stale_and_names_the_sk_ant_commit() -> None:
+    """Fails on main: there was no factory_common gate, so nothing noticed."""
+    pin = _git_out("rev-parse", _PRE_3745_PIN)
+    far_future = int(_git_out("log", "-1", "--pretty=format:%ct")) + 10 * 86400
+    fails, report = pf.check({"aifactory": pin}, now=far_future, gate=_common_gate())
+    assert fails
+    assert any("anthropic" in line.lower() for line in report)
+
+
+def _gather_with(monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> dict[str, str]:
+    def fake_fetch(repo: str, path: str, **_: int) -> str:
+        body = files[path]
+        if body == "UNREADABLE":
+            raise pf.PinUnavailableError(f"{repo}: cannot fetch {path}")
+        return body
+
+    monkeypatch.setattr(pf, "fetch_workflow", fake_fetch)
+    gate = _common_gate()
+    only_ai = dataclasses.replace(gate, layouts={"aifactory": gate.layouts["aifactory"]})
+    pins, _ = pf._gather(only_ai, {}, no_fetch=False, on_missing=pytest.fail)
+    return pins
+
+
+def test_multi_copy_service_is_judged_by_its_older_pin(monkeypatch: pytest.MonkeyPatch) -> None:
+    old, new = _git_out("rev-parse", _PRE_3745_PIN), _git_out("rev-parse", "HEAD")
+    for a, b in ((old, new), (new, old)):
+        pins = _gather_with(
+            monkeypatch,
+            {
+                "apps/backend/factory_common/.hub-sha": a,
+                "apps/web-server/factory_common/.hub-sha": b,
+            },
+        )
+        assert pins == {"aifactory": old}
+
+
+@pytest.mark.parametrize("bad", ["UNREADABLE", "garbage"])
+@pytest.mark.parametrize("which", ["apps/backend", "apps/web-server"])
+def test_either_unreadable_sibling_is_never_skipped(
+    monkeypatch: pytest.MonkeyPatch, which: str, bad: str
+) -> None:
+    head = _git_out("rev-parse", "HEAD")
+    files = {f"apps/{d}/factory_common/.hub-sha": head for d in ("backend", "web-server")}
+    files[f"{which}/factory_common/.hub-sha"] = bad
+    with pytest.raises(pf.PinUnavailableError):
+        _gather_with(monkeypatch, files)
+
+
+def _git_out(*args: str) -> str:
+    return subprocess.run(  # noqa: S603
+        ["git", *args],  # noqa: S607
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
