@@ -160,3 +160,11 @@ Revert the PR in each repo. The sidecar `confirmed.json` is ignored by old code;
 - PFactory and TFactory commits used `--no-verify`: their pre-commit hook runs
   the full test suite, which fails at collection on `tests/test_mcp_remote_session_key.py`
   (mcp `Server.__init__` signature) in this environment before and after the change.
+- Left after the second codex round (cap reached), all known gaps: (a) undated
+  bullets that the coder prompt or `append_gotcha` append after a dated entry
+  share that entry's age, so they can be demoted or omitted with it once that
+  entry is over the window (the text before the first heading is protected);
+  (b) the gotcha counter is per spec directory and lives as long as the tool
+  instance, so on the long-lived standalone MCP server it is not reset between
+  sessions on the same spec; (c) the sidecar lock above. Each costs at worst an
+  earlier demotion or a refused new gotcha, never a deleted file.
