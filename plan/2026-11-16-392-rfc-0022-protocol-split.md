@@ -36,6 +36,14 @@ protocol today and the RFC's claim is corrected.
    section (option C, order, same-object answer, Phase 2 sub-slices); correct
    the HttpGitHubProvider claim in 2.1 → verify by reading; then open sub-issues.
 
+## Deviations
+
+- Step 1: `GitProvider` now inherits `WorkItemProvider` and `CodeProvider` and keeps
+  only `api_get`/`api_post`, instead of three copies of the signatures. Reason:
+  copies add jscpd clones (the budget ratchet) and can drift. Member set and
+  `isinstance` behaviour of `GitProvider` are unchanged.
+- Step 2: signature comparison replaced by single-definition (no copies to compare).
+
 ## Tests
 
 `pytest tests/test_provider_protocol_split.py tests/test_provider_comments.py
