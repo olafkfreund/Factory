@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
@@ -42,6 +43,7 @@ HF_FILTER = (
 )
 SCORED = frozenset({"resolved", "unresolved", "empty-patch"})
 EXIT_REGRESSION = 3
+EXIT_UNGRADED = 4
 MIN_RUNS_TO_COMPARE = 2
 
 
@@ -108,7 +110,11 @@ def apply_outcomes(rows: list[dict[str, Any]], gold: dict[str, str]) -> None:
 
 
 def build_result(
-    run_id: str, prov: dict[str, Any], config: dict[str, Any], rows: list[dict[str, Any]]
+    run_id: str,
+    prov: dict[str, Any],
+    config: dict[str, Any],
+    rows: list[dict[str, Any]],
+    wall_sec: float,
 ) -> dict[str, Any]:
     scored = [r for r in rows if r["outcome"] in SCORED]
     return {
@@ -126,7 +132,7 @@ def build_result(
             "tasks": len(rows),
             "tokens": sum(r["tokens"] for r in rows if isinstance(r.get("tokens"), int | float)),
             "cost_usd": round(sum(r.get("cost_usd") or 0 for r in rows), 2),
-            "duration_sec": round(sum(r.get("duration_sec") or 0 for r in rows), 1),
+            "duration_sec": round(wall_sec, 1),
         },
     }
 
@@ -177,11 +183,10 @@ def render_comparison(cmp: dict[str, Any]) -> str:
         lines.append("- WARNING: the task list differs; only common tasks were compared.")
     if not cmp["enough_coverage"]:
         lines.append("- Insufficient paired coverage: no regression verdict.")
-    lines.append(
-        f"- **REGRESSION: {cmp['drop']} fewer resolved**"
-        if cmp["regression"]
-        else "- No regression."
-    )
+    if cmp["regression"]:
+        lines.append(f"- **REGRESSION: {cmp['drop']} fewer resolved**")
+    elif cmp["enough_coverage"]:
+        lines.append("- No regression.")
     return "\n".join(lines) + "\n"
 
 
@@ -283,6 +288,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"{len(tasks)} tasks, budget {config['total_token_budget']} tokens")  # noqa: T201
     if args.dry_run:
         return 0
+    started = time.monotonic()
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     directory = results_dir()
     work = directory / "work" / run_id
@@ -299,9 +305,12 @@ def cmd_run(args: argparse.Namespace) -> int:
                 }
             )
             continue
-        rows.append(
-            task_row(task["instance_id"], run_driver(task, run_id, model, work, config), cap)
-        )
+        try:
+            meta = run_driver(task, run_id, model, work, config)
+        except (OSError, ValueError, KeyError, IndexError) as exc:  # fetch or setup failure
+            print(f"[{task['instance_id']}] setup failed: {exc}")  # noqa: T201
+            meta = None
+        rows.append(task_row(task["instance_id"], meta, cap))
     ran = [
         r["instance_id"]
         for r in rows
@@ -309,10 +318,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     ]
     gold = score(work, run_id, model, ran) if ran else {}
     apply_outcomes(rows, gold)
-    result = build_result(run_id, prov, config, rows)
+    result = build_result(run_id, prov, config, rows, time.monotonic() - started)
     (directory / f"{run_id}.json").write_text(json.dumps(result, indent=2) + "\n")
     print(f"stored {directory / f'{run_id}.json'}: {result['totals']}")  # noqa: T201
-    return 0
+    # The record is kept as evidence, but a night the harness could not grade is
+    # not a successful evaluation.
+    return 0 if result["totals"]["scored"] else EXIT_UNGRADED
 
 
 def cmd_compare(_args: argparse.Namespace) -> int:
@@ -322,7 +333,9 @@ def cmd_compare(_args: argparse.Namespace) -> int:
         return 0
     cmp = compare_results(results[-2], results[-1], json.loads(CONFIG_PATH.read_text()))
     print(render_comparison(cmp))  # noqa: T201
-    return EXIT_REGRESSION if cmp["regression"] else 0
+    if cmp["regression"]:
+        return EXIT_REGRESSION
+    return 0 if cmp["enough_coverage"] else EXIT_UNGRADED
 
 
 def cmd_report(_args: argparse.Namespace) -> int:

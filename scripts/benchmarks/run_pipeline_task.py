@@ -383,8 +383,10 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 def _sum_tokens(data: dict[str, Any]) -> float | None:
     """Best-effort total_tokens extraction: a flat field, a nested `usage`
     block, or the v1.3 per-worker `usage` map (summed)."""
-    if isinstance(data.get("total_tokens"), int | float):
-        return data["total_tokens"]
+    # camelCase: AIFactory's token_attribution aggregate (totalTokens/totalCostUsd)
+    for key in ("total_tokens", "totalTokens"):
+        if isinstance(data.get(key), int | float):
+            return data[key]
     usage = data.get("usage")
     if not isinstance(usage, dict):
         return None
@@ -396,7 +398,7 @@ def _sum_tokens(data: dict[str, Any]) -> float | None:
 
 
 def _extract_cost(data: dict[str, Any]) -> float | None:
-    for key in ("cost_usd", "total_cost_usd", "cost"):
+    for key in ("cost_usd", "total_cost_usd", "totalCostUsd", "cost"):
         value = data.get(key)
         if isinstance(value, int | float):
             return value
@@ -490,7 +492,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--scratch-root", default="./bench-scratch")
     ap.add_argument(
         "--aifactory-url",
-        default=os.environ.get("AIFACTORY_URL", DEFAULT_AIFACTORY_URL),
+        default=os.environ.get("AIFACTORY_URL") or DEFAULT_AIFACTORY_URL,
     )
     ap.add_argument("--token", default=os.environ.get("APP_API_TOKEN", ""))
     ap.add_argument("--tier", default="medium")

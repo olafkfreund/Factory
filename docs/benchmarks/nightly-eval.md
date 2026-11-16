@@ -41,7 +41,9 @@ Only tasks scored in both runs count (harness errors, budget skips and driver
 crashes are excluded on both sides). Regression = net resolved falls by
 `regression_drop_tasks` (2) or more, with at least `min_paired` (10) paired
 tasks. `compare` exits 3; the workflow opens or refreshes an issue labelled
-`bench-regression`. The report also notes a changed prompt hash or task list.
+`bench-regression`. The report also notes a changed prompt hash or task list. When nothing could be
+graded (harness failed) or too few tasks pair up, `run`/`compare` exit 4: the job
+goes red, but no regression issue is opened.
 
 ## Cost (agree before enabling)
 

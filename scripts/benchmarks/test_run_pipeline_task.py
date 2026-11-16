@@ -424,3 +424,9 @@ def test_extract_patch_strips_aifactory_scaffolding(tmp_path: Path) -> None:
     assert ".aifactory" not in patch  # covers .aifactory/ and .aifactory-status
     assert "plan.md" not in patch
     assert "__pycache__" not in patch
+
+
+def test_evidence_reads_camelcase_aggregate() -> None:
+    data = {"totalTokens": 1234, "totalCostUsd": 0.5}
+    assert rpt._sum_tokens(data) == 1234
+    assert rpt._extract_cost(data) == 0.5

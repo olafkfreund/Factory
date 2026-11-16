@@ -32,7 +32,7 @@ def _result(run_id: str, outcomes: dict[str, str], prompt: str = "h1") -> dict[s
         {"instance_id": i, "pipeline_status": "completed", "tokens": 10, "outcome": o}
         for i, o in outcomes.items()
     ]
-    return ne.build_result(run_id, {**PROV, "prompt_hash": prompt}, CFG, rows)
+    return ne.build_result(run_id, {**PROV, "prompt_hash": prompt}, CFG, rows, 60.0)
 
 
 def test_select_tasks_order_cap_and_missing() -> None:
@@ -126,3 +126,21 @@ def test_compare_cli_exit_codes_and_same_day_runs_kept(
     second = _result("20261116T150000Z", {"a": "unresolved", "b": "unresolved", "c": "resolved"})
     (tmp_path / "20261116T150000Z.json").write_text(json.dumps(second))
     assert ne.main(["compare"]) == ne.EXIT_REGRESSION
+    ungraded = _result(
+        "20261117T030000Z", {"a": "harness-error", "b": "harness-error", "c": "harness-error"}
+    )
+    (tmp_path / "20261117T030000Z.json").write_text(json.dumps(ungraded))
+    assert ne.main(["compare"]) == ne.EXIT_UNGRADED
+
+
+def test_wall_time_is_the_whole_run_not_the_task_sum() -> None:
+    rows = [
+        {
+            "instance_id": "a",
+            "pipeline_status": "completed",
+            "tokens": 1,
+            "duration_sec": 5,
+            "outcome": "resolved",
+        }
+    ]
+    assert ne.build_result("1", PROV, CFG, rows, 99.0)["totals"]["duration_sec"] == 99.0
