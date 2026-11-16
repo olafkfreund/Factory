@@ -17,7 +17,7 @@ Approved spec decisions, carried over. Implemented in olafkfreund/TFactory
 (origin, no `/v1`), default unset = no change. When set,
 `_provider_env_entries()` drops `OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`,
 `OPENAI_COMPATIBLE_BASE_URL`, `OLLAMA_API_KEY` from both branches (literal and
-secretKeyRef), then emits `OPENAI_COMPATIBLE_BASE_URL={url}/v1` and
+secretKeyRef), then emits `OPENAI_COMPATIBLE_BASE_URL={url}` (origin, provider appends `/v1`) and
 `OPENAI_COMPATIBLE_API_KEY` = secretKeyRef (`TFACTORY_VERIFY_PROVIDER_SECRET_NAME`,
 key `model-gateway-token`, optional) or the pod value of
 `TFACTORY_MODEL_GATEWAY_TOKEN`; no token = key omitted; never a fallback.
@@ -26,7 +26,7 @@ key `model-gateway-token`, optional) or the pod value of
 
 1. `apps/backend/agents/verify_dispatch.py` near `_provider_env_entries`: add
    `_GATEWAY_REPLACED` frozenset, skip those vars when the flag is set, append
-   the two gateway entries. → verify by `pytest tests/test_verify_dispatch.py -q`.
+   the two gateway entries. → verify by `nix develop -c apps/backend/.venv/bin/pytest tests/test_verify_dispatch.py -q`.
    Traps: ruff rules (no broad except); secret never in argv.
 2. `tests/test_verify_dispatch.py`: add tests for flag off, flag on (literal
    mode, secret mode, no token). → verify by the same pytest command.
@@ -37,8 +37,8 @@ key `model-gateway-token`, optional) or the pod value of
 
 ## Tests
 
-`cd apps/backend && python -m pytest ../../tests/test_verify_dispatch.py -q`
-(or the repo's Justfile equivalent); `ruff check` and `ruff format --check` on
+`nix develop -c apps/backend/.venv/bin/pytest tests/test_verify_dispatch.py -q`
+(the file skips if SQLAlchemy is missing; confirm it ran, not skipped); `ruff check` and `ruff format --check` on
 touched files. Expect all green.
 
 ## Rollback

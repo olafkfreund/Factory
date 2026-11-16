@@ -15,13 +15,15 @@ reads a new pod env `TFACTORY_MODEL_GATEWAY_URL` (gateway origin, no `/v1`).
 - Set: skip `OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`,
   `OPENAI_COMPATIBLE_BASE_URL` and `OLLAMA_API_KEY` in the passthrough loop, for
   both the literal and the Secret-reference branch. Then emit
-  `OPENAI_COMPATIBLE_BASE_URL={url}/v1` (plain value) and
+  `OPENAI_COMPATIBLE_BASE_URL={url}` (the origin; the provider appends `/v1/chat/completions`) and
   `OPENAI_COMPATIBLE_API_KEY` holding the gateway token: a `secretKeyRef`
   (name `TFACTORY_VERIFY_PROVIDER_SECRET_NAME`, key `model-gateway-token`,
   optional) when that Secret is configured, else the pod value of
   `TFACTORY_MODEL_GATEWAY_TOKEN`. With no token available the key is omitted,
-  so a call fails with 401 at the gateway; there is never a fallback to a direct
-  key.
+  so a call fails with 401 at the gateway. Scope: this covers the env-var
+  fallback of `get_provider_extra_kwargs` (no saved endpoint). A saved
+  OpenAI-compatible endpoint in the DB, `studio:`, `github-models/`, Codex
+  seeded auth and Gemini keep their own routes and are not covered.
 - Gemini, Claude OAuth, `OLLAMA_BASE_URL` and the other passthrough vars are
   untouched.
 
@@ -41,8 +43,8 @@ and a commented line in `.env.example`.
 
 - Flag on while the gateway lacks its Secret: verify LLM calls fail (503/401).
   Mitigation: default off, owner enables after the epic's stage 1 steps.
-- Dropping `OPENAI_API_KEY` disables the native OpenAI provider in Jobs while
-  the flag is on. Intended; the gateway only speaks OpenAI-compatible chat.
+- Dropping `OPENAI_API_KEY` removes the key from the Job env; bare gpt-*/Codex
+  models can still use seeded Codex auth (plane C, an owner decision in #1959).
 
 ## Verification
 
