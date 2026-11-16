@@ -22,18 +22,24 @@ only the 12 work-item members, and no caller can say which half it needs.
   Phase 2-before-Phase 1 order, and the answer to the first open question.
 - The hub defines `WorkItemProvider` and `CodeProvider` next to `GitProvider`,
   additively. Every existing provider satisfies both unchanged; a test proves
-  it, and proves `HttpGitHubProvider` is a work-item provider only.
+  it (GitHubProvider, GitLabProvider, AzureDevOpsProvider), and proves
+  `HttpGitHubProvider` is a work-item provider only.
 - Nothing changes at runtime, so no flag is needed: no service imports the new
   names until a re-vendor.
 - The remaining slices are filed as sub-issues of #392.
 
 ## Affected users and systems
 
-Hub `shared/factory-github/providers/protocol.py` only. The four vendored
-copies are untouched until their own sub-issues.
+Hub `shared/factory-github/providers/protocol.py`, `providers/__init__.py`,
+`docs/rfc/0022-work-item-and-code-seams.md` and one new hub test. The four
+vendored copies are untouched until their own sub-issues.
 
 ## Constraints
 
+- Vendoring exception (RFC section 8, "all four or none"): this slice adds
+  names only and the services stay pinned to their current hub SHA, so no
+  drift gate fires and no service sees a half-changed protocol. The re-vendor
+  of all four is its own sub-issue and lands together.
 - Additive only: `api_get`/`api_post` stay on `GitProvider` and the concrete
   classes until the caller audit (sub-issue) is done and all four copies move
   together (drift gates).
