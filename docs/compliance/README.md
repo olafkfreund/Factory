@@ -171,8 +171,8 @@ classification scheme, and the per-domain gap assessments. Satisfies gap #6
   (#313, #319).
 
 **Wave 2 — structural hardening:**
-- Postgres and MinIO backups with a tested restore — the top gap, RPO is
-  currently unbounded (#321).
+- Off-cluster Postgres copy and a MinIO backup (#3681, #3691): the daily dump and a
+  tested restore exist (#321), but both sit on the node they protect.
 - Retire the shared wildcard `APP_API_TOKEN` in favor of scoped `acw_`
   service credentials; remove the `is_service=True` blanket authz bypass (#312).
 - Bring CFactory to parity: Trivy scan, dual SBOM, cosign signing, plus a
