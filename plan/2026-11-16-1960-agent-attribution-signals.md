@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1960
 spec: spec/2026-11-16-1960-agent-attribution-signals.md
 coders:
