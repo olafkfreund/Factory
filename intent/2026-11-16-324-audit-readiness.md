@@ -27,7 +27,8 @@ The #324 issue body has four unchecked boxes. The 2026-11-14 comments confirm th
   review (#3694, ISO A.5.35).
 - The stale statements named above corrected to what the code, cluster and
   newer documents show, with a pointer to the open tracker where one exists.
-- A test that every link and evidence path in the new page resolves.
+- A test that every relative link, repo-path reference and tracker link in the new
+  page is well formed and resolves to a file in the repo (external pages are not fetched).
 - Owner-only steps listed with exact commands.
 
 ## Affected users and systems
@@ -39,7 +40,9 @@ Assessors, the Security Owner, `docs/compliance/` in Factory. No runtime change.
 - Docs and one test only. No cluster change, no secret handling.
 - No SoA or SOC 2 rating changes: those are the owner's call (A.8.8, A.8.13).
 - Do not edit text owned by open work: alerting, paging and IR (#3688), key
-  expiry (#3689), backup rows and the off-cluster copy (#3681, #3691).
+  expiry (#3689), the SoA and risk-register backup rows and the off-cluster copy
+  work (#3681, #3691). Prose that says "no backups" is in scope: it corrects the
+  fact to the daily in-cluster dump and points at #3681.
 - Do not claim the mock audit was held. The plan only describes it.
 
 ## Open questions
