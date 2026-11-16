@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3710
 intent: intent/2026-11-16-3710-project-env-allowlist.md
 ---
