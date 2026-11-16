@@ -21,6 +21,7 @@ from factory_common import secrets  # noqa: E402
         ("github-fine-grained-pat", "github_pat_" + "a" * 30),
         ("gitlab-pat", "glpat-" + "x" * 20),
         ("slack-token", "xoxb-" + "1" * 12),
+        ("anthropic-api-key", "sk-ant-api03-" + "a" * 20),
         ("aws-access-key-id", "AKIA" + "A" * 16),
         ("aws-access-key-id", "ASIA" + "Z" * 16),
     ],
