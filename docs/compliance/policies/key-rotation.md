@@ -3,7 +3,7 @@
 - **Domain:** Encryption and key management, item "key-rotation policy + automation" (Factory#314)
 - **Frameworks:** ISO 27001 A.8.24, SOC 2 CC6.1, PCI DSS 3.7 / 8.3, NIST SC-12 / IA-5
 - **Owner:** Security Owner; operated by the platform operator, with a second maintainer reviewing each rotation (four-eyes, as in [R-016](../risk-register.md)).
-- **Artifacts:** [intent](https://github.com/olafkfreund/Factory/blob/main/intent/2026-11-16-314-key-rotation-policy.md), [spec](../../../spec/2026-11-16-314-key-rotation-policy.md), [plan](../../../plan/2026-11-16-314-key-rotation-policy.md)
+- **Artifacts:** [intent](https://github.com/olafkfreund/Factory/blob/main/intent/2026-11-16-314-key-rotation-policy.md), [spec](https://github.com/olafkfreund/Factory/blob/main/spec/2026-11-16-314-key-rotation-policy.md), [plan](https://github.com/olafkfreund/Factory/blob/main/plan/2026-11-16-314-key-rotation-policy.md)
 
 ## What this adds
 
@@ -37,7 +37,7 @@ kubectl --context k3d-factory -n factory annotate secret <name> --overwrite \
   rotation.factory.dev/rotated-at=<YYYY-MM-DD>
 ```
 
-The date is the **oldest evidenced last-rotated date among all credentials still in that Secret**, from the ledger rows. It is not necessarily today: rotating the oldest key leaves the
+The date is the **oldest evidenced last-rotated date among all credentials still in that Secret that have a scheduled interval**, from the ledger rows. Compromise-only keys (`CFACTORY_AUDIT_HMAC_SECRET`, which lives in `factory-secrets`) do not count, so a legitimate alert can be cleared without rotating them. It is not necessarily today: rotating the oldest key leaves the
 next-oldest as the stamp. Re-stamp after any recreate of the Secret (the `manage-secrets.sh` edit then bootstrap flow, or a manual create), because a recreate drops the annotation.
 An unstamped Secret is measured from the policy start, 2026-11-07, so stamping never manufactures a younger credential than the ledger shows.
 

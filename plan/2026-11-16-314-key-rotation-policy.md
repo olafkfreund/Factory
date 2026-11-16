@@ -45,6 +45,10 @@ Rebase on the current base before step 1 and again before each push.
    classes, max age, owner, procedure links, stamp procedure, assurance limit, 90/365 note → verify links
    resolve (`rg` for the targets) and README row renders.
 
+## Deviations
+
+- Step 3/4: the stamp rule excludes compromise-only credentials (`CFACTORY_AUDIT_HMAC_SECRET`, in `factory-secrets`), found by the Codex review; otherwise that Secret could never clear after 90 days.
+
 ## Tests
 
 - `python3 apps/secret-rotation/manifests/test_report.py` → OK.
