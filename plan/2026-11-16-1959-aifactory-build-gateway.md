@@ -17,8 +17,8 @@ these artifacts live in Factory. In `build_job_env()`: read `AIFACTORY_MODEL_GAT
 change. Flag set: skip `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_BASE_URL`,
 `OLLAMA_API_KEY` in the passthrough loop; set `OPENAI_COMPATIBLE_BASE_URL` = origin and
 `OPENAI_COMPATIBLE_API_KEY` = token or `gateway-token-not-configured`. Keep
-`OPENAI_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_CLOUD_BASE_URL`. Guarantee is only "no direct
-key in the Job env" (saved endpoints and native Ollama are not rerouted).
+`OPENAI_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_CLOUD_BASE_URL`. Guarantee is only "the replaced
+credentials (OpenAI-compatible key/URL, Ollama key) are absent from the Job env"; `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY` stay (saved endpoints and native Ollama are not rerouted).
 
 ## Steps
 
@@ -28,7 +28,7 @@ key in the Job env" (saved endpoints and native Ollama are not rerouted).
    `ruff check` and the step 2 tests. Traps: ruff `S105` noqa on token-name constants; use
    plain imports; never log the token.
 2. `tests/test_build_backend_kubejob.py`: tests for flag off, flag on, empty or whitespace
-   token. Clear the flag vars and `_PASSTHROUGH_BUILD_ENV` with monkeypatch. → verify by
+   token, a whitespace-only URL (= flag off), a trailing slash, and a token without a URL (= flag off). Add an autouse fixture that clears both gateway vars for the whole module. Clear the flag vars and `_PASSTHROUGH_BUILD_ENV` with monkeypatch. → verify by
    `pytest tests/test_build_backend_kubejob.py -q`.
 
 ## Tests
