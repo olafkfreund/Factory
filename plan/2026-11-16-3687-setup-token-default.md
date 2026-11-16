@@ -85,3 +85,11 @@ checks are green on the PR head.
 ## Rollback
 
 Revert the PR; the broker returns to the #340 behaviour. No cluster state is touched.
+
+## Deviations
+
+- Step 2: the `auth login` alternative skips the agenix slot for the credential file (the broker
+  rotates its refresh token every 4h, so a stored copy would be dead within hours); only the
+  `CLAUDE_CODE_OAUTH_TOKEN` slot is optional there. Raised in the final agy review.
+- Step 1: the stale-advice comments in `main()` and the setup-token jq payload (token via stdin,
+  not an argument) were adjusted after the final codex and agy reviews.
