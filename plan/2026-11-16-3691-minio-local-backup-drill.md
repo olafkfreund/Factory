@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3691
 spec: spec/2026-11-16-3691-minio-local-backup-drill.md
 coders:
