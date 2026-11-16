@@ -189,7 +189,8 @@ the clock: if a regime plausibly applies, treat it as applicable until counsel s
 2. **No security detection layer.** OpenObserve aggregates logs but has no alerting rules for
    auth failures, anomalous egress from untrusted Jobs, or credential misuse.
 3. **Runbook untested.** This runbook has never been exercised; no tabletop, no post-incident
-   review has run against it.
+   review has run against it. Scenario and record template: `../ir-tabletop.md` (Factory#3688);
+   still to be run by the IR owner.
 4. **Notification readiness unproven.** Materiality decision-maker and DPA/regulator contacts
    are not yet enumerated per-entity; the clocks are documented but the human chain is not
    rehearsed.
