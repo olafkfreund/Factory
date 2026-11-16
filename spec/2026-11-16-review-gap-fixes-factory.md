@@ -24,6 +24,13 @@ In `scripts/check_pin_freshness.py`:
   has several pick the one furthest behind (`total_behind`). The older pin's
   moved-commit set is a superset of the newer's, so a stale copy cannot hide
   behind a fresh sibling.
+- `scope_problems` also checks that each gate's `pin_files` keys equal its
+  layout keys and that no service lists zero files; a test pins the exact five
+  paths so dropping AIFactory's second copy fails. Picking the furthest-behind
+  pin assumes the pins are commits on the hub's linear squash-merge history
+  (the consumer drift gates enforce that).
+- The failure footer names the pin files for a `pin_files` gate (bump
+  `<path>/.hub-sha` after re-vendoring `factory_common`) instead of `HUB_PIN_SHA`.
 - `fetch_pin`/workflow paths unchanged. `unlisted_consumers` only compares
   repos absent from a layout; all four are present, so no change.
 
