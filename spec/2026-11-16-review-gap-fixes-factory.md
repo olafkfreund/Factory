@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3745
 intent: intent/2026-11-16-review-gap-fixes-factory.md
 ---
