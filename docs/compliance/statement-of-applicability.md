@@ -50,9 +50,9 @@ matrix draw evidence from the same [domain documents](/compliance/policies/). Ow
 | A.5.17 | Authentication information | Implemented | Secrets via out-of-band K8s Secrets + agenix; cred-broker rotation ([secrets-management.md](policies/secrets-management.md)). Partial: broad rotation pending (R-002). | Secrets |
 | A.5.18 | Access rights | Implemented | Provisioning/revocation and quarterly review via `access_review.py` (`AIFactory/apps/web-server/server/routes/access_review.py`). | IAM |
 | A.5.19 | Information security in supplier relationships | Implemented | [vendor-and-third-party-policy.md](policies/vendor-and-third-party-policy.md). | Security Owner |
-| A.5.20 | Addressing information security within supplier agreements | Planned | Processor-terms/DPA and sub-processor list pending publication (Factory#320). | Security Owner |
+| A.5.20 | Addressing information security within supplier agreements | Planned | Processor-terms/DPA and sub-processor list pending publication (Factory#320). Register and checklist: [supplier-management.md](supplier-management.md); terms in force not yet recorded (Factory#3695). | Security Owner |
 | A.5.21 | Managing information security in the ICT supply chain | Partial | Dependency pinning (`flake.lock`, digest-pinned bases), Trivy P0 gate, Dependabot base-image updates ([supply-chain-integrity.md](policies/supply-chain-integrity.md)). Downgraded from Implemented 2026-07-30: pinning without an operating update bot is a frozen supply chain, not a managed one, and that was the actual state until Factory#436. `factory-gitops` agent-CLI pins remain unmanaged. | Supply-chain |
-| A.5.22 | Monitoring, review and change management of supplier services | Planned | Annual vendor re-review defined in policy; recurring review cadence being operationalized. | Security Owner |
+| A.5.22 | Monitoring, review and change management of supplier services | Planned | Annual vendor re-review defined in policy; recurring review cadence being operationalized. Re-review procedure: [supplier-management.md](supplier-management.md); first review not yet recorded (Factory#3695). | Security Owner |
 | A.5.23 | Information security for use of cloud services | Implemented | Cluster/edge/provider controls; egress-class routing for LLM providers ([runtime-isolation.md](policies/runtime-isolation.md), [data-governance.md](policies/data-governance.md)). | Runtime |
 | A.5.24 | Information security incident management planning and preparation | Implemented | [incident-response-policy.md](policies/incident-response-policy.md) + [runbook](policies/incident-response.md) with severity/roles/lifecycle. | IR |
 | A.5.25 | Assessment and decision on information security events | Implemented | Runbook triage (t0=confirmed) and severity classification ([incident-response.md](policies/incident-response.md)). | IR |
@@ -65,7 +65,7 @@ matrix draw evidence from the same [domain documents](/compliance/policies/). Ow
 | A.5.32 | Intellectual property rights | Implemented | Dual SBOM (SPDX/CycloneDX) inventories dependencies and their licences; OSS licence compliance tracked in supply-chain. **Executable evidence** — see [the note below this table](#executable-evidence-a532) for what it does and does not prove. | Supply-chain |
 | A.5.33 | Protection of records | Implemented | Audit records are tamper-evident and retained 13 months (`audit_retention.py`); ILM keeps evidence 396 days (13 months) per the manifest (`minio-create-bucket`, factory-gitops `apps/minio/manifests/manifests.yaml`, Factory#3692); the Job reads back each rule's ID and day count after sync; noncurrent versions on `factory-evidence` are reaped 30 days later and evidence history starts 2026-07-25 (R-006). | Audit |
 | A.5.34 | Privacy and protection of PII | Planned | Redactor + DPIA exist; DSAR deferred by decision 2026-10-24; CLI-spawn scrub gap open (R-004, Factory#320). | Data |
-| A.5.35 | Independent review of information security | Planned | Annual independent review scheduled but not yet performed (governance domain, Factory#311). | Security Owner |
+| A.5.35 | Independent review of information security | Planned | Annual independent review scheduled but not yet performed (governance domain, Factory#311). Programme and independence rule: [management-review-and-internal-audit.md](management-review-and-internal-audit.md); first audit not yet held (Factory#3694). | Security Owner |
 | A.5.36 | Compliance with policies, rules and standards | Implemented | CI gates enforce SDLC policy; management review checks control effectiveness ([roles.md](roles.md)). | Security Owner |
 | A.5.37 | Documented operating procedures | Implemented | Runbooks and RFCs (`Factory/docs/rfc/`, IR runbook, BC/DR remediation, bootstrap-flow docs). | Security Owner |
 
@@ -106,7 +106,7 @@ Extending this pattern to other rows is tracked in Factory#504. Each row must ha
 |---|---|---|---|---|
 | A.6.1 | Screening | Not Applicable | Small maintainer team with no employment/hiring process; contributor access is credential- and review-gated rather than HR-screened. Re-scope if the team formalizes employment. | Security Owner |
 | A.6.2 | Terms and conditions of employment | Not Applicable | No employment relationship; acceptable use is bound via [acceptable-use-policy.md](policies/acceptable-use-policy.md) instead. | Security Owner |
-| A.6.3 | Information security awareness, education and training | Planned | Policy set is the baseline material; a recorded awareness cadence is pending (Factory#311). | Security Owner |
+| A.6.3 | Information security awareness, education and training | Planned | Policy set is the baseline material; cadence and record template: [training-and-awareness.md](training-and-awareness.md); first completion record not yet filed (Factory#3693). | Security Owner |
 | A.6.4 | Disciplinary process | Implemented | Violation handling and escalation defined in the acceptable-use and InfoSec policies. | Security Owner |
 | A.6.5 | Responsibilities after termination or change of employment | Implemented | Immediate access revocation on departure ([access-control-policy.md](policies/access-control-policy.md), leaver process). | IAM |
 | A.6.6 | Confidentiality or non-disclosure agreements | Not Applicable | No employees/contractors under NDA today; confidentiality obligations flow through the acceptable-use policy. Re-scope on formal engagements. | Security Owner |
@@ -128,9 +128,9 @@ Applicable to the fleet's own operation, justified per control below.
 | A.7.4 | Physical security monitoring | Not Applicable | Provider-inherited for hosting facilities. | Security Owner |
 | A.7.5 | Protecting against physical and environmental threats | Not Applicable | Provider-inherited (power, cooling, fire). | Security Owner |
 | A.7.6 | Working in secure areas | Not Applicable | No secure physical areas operated by the fleet. | Security Owner |
-| A.7.7 | Clear desk and clear screen | Planned | Applies to operator endpoints; covered by remote-working guidance, formal statement pending (A.8.1). | Security Owner |
+| A.7.7 | Clear desk and clear screen | Planned | Applies to operator endpoints; covered by [operator-endpoint-standard.md](operator-endpoint-standard.md) (E2, E8); per-host evidence not yet attached (Factory#3696). | Security Owner |
 | A.7.8 | Equipment siting and protection | Not Applicable | No owned server/equipment; provider-inherited. | Security Owner |
-| A.7.9 | Security of assets off-premises | Planned | Operator laptops are the only off-premises assets; endpoint hardening is tracked at A.8.1. | Security Owner |
+| A.7.9 | Security of assets off-premises | Planned | Operator laptops are the only off-premises assets; endpoint hardening is tracked at A.8.1 and set out in [operator-endpoint-standard.md](operator-endpoint-standard.md) (E1, E4, E7); per-host evidence not yet attached (Factory#3696). | Security Owner |
 | A.7.10 | Storage media | Not Applicable | No removable physical media; all storage is cloud volumes/object store. | Security Owner |
 | A.7.11 | Supporting utilities | Not Applicable | Provider-inherited (power/network utilities). | Security Owner |
 | A.7.12 | Cabling security | Not Applicable | Provider-inherited. | Security Owner |
@@ -141,7 +141,7 @@ Applicable to the fleet's own operation, justified per control below.
 
 | Control | Title | Status | Justification and evidence | Owner |
 |---|---|---|---|---|
-| A.8.1 | User endpoint devices | Planned | Operator-endpoint hardening standard pending; interim reliance on remote-working guidance (Factory#311). | Security Owner |
+| A.8.1 | User endpoint devices | Planned | Standard written: [operator-endpoint-standard.md](operator-endpoint-standard.md); per-host evidence not yet attached, so it stays Planned (Factory#3696). | Security Owner |
 | A.8.2 | Privileged access rights | Implemented | Least-privilege cluster RBAC (e.g. cred-broker Role scoped to one Secret); org admin role gated. Partial: wildcard-token bypass (R-002). | IAM |
 | A.8.3 | Information access restriction | Implemented | Org RBAC and scoped `acw_` keys (`mcp:read`/`mcp:write`) restrict access to data and functions. | IAM |
 | A.8.4 | Access to source code | Implemented | GitHub org access + CODEOWNERS; branch protection on protected repos ([secure-sdlc-policy.md](policies/secure-sdlc-policy.md)). Partial: coverage uneven (R-005). | Change-mgmt |
