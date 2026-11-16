@@ -80,7 +80,8 @@ and a re-read for about 400 lines).
   only, so a same-size corrupted copy passed. `minio-offsite.sh` now also
   compares a sha256 read-back of every source object with its copy; the test
   covers the same-size case. Cost: reads both sides nightly (noted as a
-  shortcut in the script).
+  shortcut in the script). Round 2: the read-back runs under `pipefail`, so a
+  failed `mc cat` cannot hash as two equal empty inputs; test added.
 
 ## Tests
 
