@@ -1,12 +1,15 @@
 # R-007: HA options for Postgres and MinIO
 
-> Factory#3690 (risk R-007, under the #310 compliance program). **Advice for the
-> owner's decision, not a decision.** Nothing here is deployed, and the draft
-> acceptance in the last section is **UNSIGNED**.
+> Factory#3690 (risk R-007, under the #310 compliance program). **Decided under
+> owner delegation on 2026-11-16 (option A): the acceptance is recorded as AR-003
+> in [risk-register.md](risk-register.md). The Security Owner's signature is
+> still open.** The options below are the advice that decision rests on. Nothing
+> here is deployed, and the draft acceptance in the last section is **UNSIGNED**.
 >
 > Artifacts: [intent](../../intent/2026-11-16-3690-r007-ha-options.md) ·
 > [spec](../../spec/2026-11-16-3690-r007-ha-options.md) ·
-> [plan](../../plan/2026-11-16-3690-r007-ha-options.md)
+> [plan](../../plan/2026-11-16-3690-r007-ha-options.md) ·
+> [decision](../../spec/2026-11-16-3690-dr-encryption-offsite.md)
 
 ## Facts (each with its source)
 
