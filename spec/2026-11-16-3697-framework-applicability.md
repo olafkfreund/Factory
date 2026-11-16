@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3697
 intent: intent/2026-11-16-3697-framework-applicability.md
 ---
