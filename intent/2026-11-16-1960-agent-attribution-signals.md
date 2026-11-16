@@ -23,7 +23,7 @@ agent-authored and who asked for it. Measured on `dev` today:
 ## Proposed outcome
 
 - Every AIFactory, PFactory and TFactory completion event has `agent_identity`
-  and `originator` keys, each independently nullable (format `agent:<svc>/<id>`,
+  and `originator` keys, each independently nullable (agent format `agent:<svc>/<id>`,
   `human:...` as already used).
 - AIFactory hands both to TFactory at verify handoff; TFactory stores them in
   `context/source.json` and echoes them in its envelope.
