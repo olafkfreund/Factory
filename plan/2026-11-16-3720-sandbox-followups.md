@@ -63,3 +63,7 @@ Revert the PRs. Services return to hub bf3cd95 by reverting their vendoring comm
 - Step 2 (re-vendor) cannot start in this round: the service drift workflows need a hub
   SHA on `main`, and the lead does not merge. The coordinator re-vendors after the hub PR
   merges. Step 3 (AIFactory catalog skip) does not depend on the hub and ships on its own.
+- Step 3: the helper is `unusable_credential_reason` in `agents/tools_pkg/mcp_catalog.py`
+  and the test is `tests/test_catalog_creds_skip.py` (repo-root `tests/`, not
+  `apps/backend/tests`). It logs a warning only (the ratchet counts a new `print`).
+- Step 4: follow-up issue is olafkfreund/Factory#3737.
