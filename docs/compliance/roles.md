@@ -33,7 +33,7 @@ backlog for delegation.
 | Domain | Document | Owner |
 |---|---|---|
 | Governance / ISMS | [governance-isms.md](policies/governance-isms.md) | Security Owner |
-| IAM & access control | [iam-access-control.md](policies/iam-access-control.md) | Security Owner |
+| IAM & access control | [iam-access-control.md](policies/iam-access-control.md), [role catalog](rbac-role-catalog.md), [access-review runbook](access-review-runbook.md) | Security Owner (`platform-admin` holder: the owner only) |
 | Audit logging & retention | [audit-logging.md](policies/audit-logging.md) | Security Owner |
 | Encryption & key management | [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | Security Owner |
 | Secrets management | [secrets-management.md](policies/secrets-management.md) | Security Owner |
