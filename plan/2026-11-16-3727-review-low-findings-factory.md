@@ -18,7 +18,7 @@ Approved decisions (spec): (1) create label `bench-regression` idempotently with
 
 1. `.github/workflows/bench-nightly.yml` regression step (~line 72): add `gh label create bench-regression --force --description "Nightly benchmark regression" --color B60205` before `gh issue list`. Check: `tests/test_bench_nightly_workflow.py` (new, PyYAML: label-create precedes `--label bench-regression` in that step) passes.
    Traps: SHA-pinned actions untouched; jscpd budget, keep the test small.
-2. `shared/factory-sandbox/agent_sandbox/env.py` `get_agent_env_blanks`: add `_logged_inherited: set[str]` and log once the `k.upper() in BLANK_BREAKS` names present in `os.environ`. Check: new `caplog` test in `shared/factory-sandbox/tests/test_env.py`.
+2. `shared/factory-sandbox/agent_sandbox/env.py` `get_agent_env_blanks`: add `_logged_inherited: set[str]` and log once the `k.upper() in BLANK_BREAKS` names present in `os.environ`. Check: new `caplog` test in `shared/factory-sandbox/tests/test_env.py`: clear `env._logged_inherited` first (monkeypatch), call `child_env(agent=True)` with host `GIT_DIR` set, then `get_agent_env_blanks` twice: exactly one inheritance message, the value not logged, `GIT_DIR` not in blanks.
    Traps: stdlib only; file is vendored byte-exact, so product repos need a re-vendor (not in this PR); do not log values.
 3. Run `pytest tests/ shared/factory-sandbox/tests/` and `ruff check`/format on touched files.
 
