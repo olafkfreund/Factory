@@ -134,3 +134,64 @@ def test_without_host_secrets(monkeypatch):
     monkeypatch.setenv("APP_API_TOKEN", "host-secret-sentinel")
     src = {"RENAMED": "host-secret-sentinel", "PLAIN": "safe-sentinel", "EMPTY": ""}
     assert without_host_secrets(PFACTORY, src) == {"PLAIN": "safe-sentinel", "EMPTY": ""}
+
+
+# Factory#3720
+@pytest.mark.parametrize("name", ("GL_TOKEN", "gl_token"))
+def test_gl_token_denied(name):
+    assert is_denied_env_key(AIFACTORY, name)
+
+
+@pytest.mark.parametrize("name", ("SOME_API_KEY_FILE", "X_TOKEN_FILE", "x_token_file"))
+def test_credential_file_names_dropped_from_plain_children(monkeypatch, name):
+    monkeypatch.setenv(name, "/run/secret")
+    assert name not in child_env(PFACTORY)
+    assert name in child_env(PFACTORY, runner=True)
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    (
+        ("http://u:p%40w@proxy:3128", "http://proxy:3128"),
+        ("u:pw@proxy:3128", "proxy:3128"),
+        ("http://proxy:3128", "http://proxy:3128"),
+        ("http://u:pw@[::1]:3128", "http://[::1]:3128"),
+        ("http://u:pw@proxy/x@y", None),  # an "@" left in the path: fail closed
+        ("http://u:pw@", "http://"),
+        ("http:/u@proxy", None),  # not a form we parse: fail closed
+    ),
+)
+def test_strip_proxy_userinfo(raw, want):
+    from agent_sandbox.env import strip_proxy_userinfo
+
+    assert strip_proxy_userinfo(raw) == want
+
+
+@pytest.mark.parametrize("policy", POLICIES)
+def test_proxy_userinfo_agent_only(monkeypatch, policy):
+    monkeypatch.setenv("HTTPS_PROXY", "http://u:pw@proxy:3128")
+    monkeypatch.setenv("http_proxy", "http:/u@proxy")
+    assert child_env(policy, agent=True)["HTTPS_PROXY"] == "http://proxy:3128"
+    assert "http_proxy" not in child_env(policy, agent=True)
+    assert child_env(policy)["HTTPS_PROXY"] == "http://u:pw@proxy:3128"
+    assert (
+        child_env(policy, agent=True, extra={"HTTPS_PROXY": "http://a:b@x"})["HTTPS_PROXY"]
+        == "http://a:b@x"
+    )
+    blanks = get_agent_env_blanks(policy)
+    assert blanks["HTTPS_PROXY"] == "http://proxy:3128"
+    assert blanks["http_proxy"] == ""
+
+
+def test_denied_proxy_name_stays_blank(monkeypatch):
+    monkeypatch.setenv("FTP_PROXY", "http://u:pw@proxy:3128")  # allow pattern has no FTP
+    assert get_agent_env_blanks(PFACTORY)["FTP_PROXY"] == ""
+
+
+@pytest.mark.parametrize("policy", POLICIES)
+def test_git_path_names_not_blanked(monkeypatch, policy):
+    monkeypatch.setenv("GIT_DIR", "/x")
+    monkeypatch.setenv("GIT_NAMESPACE", "n")
+    blanks = get_agent_env_blanks(policy)
+    assert "GIT_DIR" not in blanks and "GIT_NAMESPACE" not in blanks
+    assert "GIT_DIR" not in child_env(policy, agent=True)
