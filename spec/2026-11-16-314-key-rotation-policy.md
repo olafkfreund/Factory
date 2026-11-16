@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 314
 intent: intent/2026-11-16-314-key-rotation-policy.md
 ---
