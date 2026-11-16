@@ -269,7 +269,13 @@ class ArtifactStore:
         if max_bytes is None:
             # boto3's client is untyped, so .read() is Any; coerce to satisfy strict.
             return cast(bytes, obj["Body"].read())
-        data = bytes(obj["Body"].read(max_bytes + 1))
+        body = obj["Body"]
+        try:
+            data = bytes(body.read(max_bytes + 1))
+        finally:
+            # An overflow leaves the stream unread; release the connection.
+            if hasattr(body, "close"):
+                body.close()
         if len(data) > max_bytes:
             raise ValueError(f"object {key!r} exceeds max_bytes={max_bytes}")
         size = obj.get("ContentLength")
@@ -625,8 +631,11 @@ def _selftest_get_bytes_cap() -> None:
             asked.append(n)
             return b"ab"
 
-    s3 = cast("_FakeS3", store._s3)  # type: ignore[attr-defined]
-    s3.get_object = lambda **_: {"Body": _Body(), "ContentLength": 9}  # type: ignore[method-assign]
+    class _ShortS3:
+        def get_object(self, **_: object) -> dict[str, Any]:
+            return {"Body": _Body(), "ContentLength": 9}
+
+    store._s3 = _ShortS3()
     try:
         store.get_bytes("k", max_bytes=100)
     except OSError:
