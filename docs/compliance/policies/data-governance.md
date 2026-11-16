@@ -17,9 +17,10 @@ each class is retained, and how it controls personal data (PII) leaving the trus
 boundary — most acutely, the PII that flows outbound to third-party LLM providers
 (Anthropic, OpenAI, Bedrock, Vertex) on every task. It is the assessor-facing statement
 of the fleet's confidentiality, privacy, and retention posture, and it is honest about
-the two structural gaps the 2026-07-23 audit flagged as fleet gap #7: PII is sent to LLM
-providers by default, and there is no classification scheme or Postgres-level retention
-policy behind the per-store lifecycle rules that already exist.
+the structural gaps the 2026-07-23 audit flagged as fleet gap #7. Status on 2026-11-16: the
+outbound scrub is on by default and a classification policy is published
+([data-classification-and-handling-policy.md](data-classification-and-handling-policy.md)),
+so gaps 1 and 2 below are closed. A Postgres-level retention policy is still open.
 
 ## Current state (grounded)
 
@@ -184,13 +185,13 @@ treated as Regulated-by-default, which is what forces `scrub_outbound` on (see R
 
 ## Gaps
 
-1. **PII egress to LLM providers by default (fleet gap #7).** Outbound scrubbing
-   (`scrub_outbound`) defaults off; the redactor protects the audit row, not the request
-   sent to Anthropic/OpenAI. For Regulated data this is a confidentiality and GDPR
-   Art. 44 transfer exposure. The redactor's PYTHONPATH failure-safe further degrades to
-   no redaction silently.
-2. **No data-classification scheme.** Nothing assigns tiers or labels to stores/flows, so
-   there is no basis for tier-driven handling, and A.5.12/C1.1 have no evidence.
+1. **PII egress to LLM providers by default (fleet gap #7).** Closed for the outbound
+   request: `scrub_outbound` defaults on (`_env_scrub_outbound_default`, AIFactory#1128),
+   and projects classified `regulated` always scrub. Still open: the audit-row redactor's
+   PYTHONPATH failure-safe degrades to no redaction silently (`llm_audit_hook.py`).
+2. **No data-classification scheme.** Closed: the four-tier scheme is published in
+   [data-classification-and-handling-policy.md](data-classification-and-handling-policy.md)
+   (SoA A.5.12). Still open: assigning each store and flow a tier (see the checklist).
 3. **No retention policy for Postgres durable state.** Logs, evidence, and audit rows have
    retention; the operational databases (specs, task records, prompt history) do not. Fails
    GDPR Art. 5 storage limitation, NYDFS 500.13, PCI 3, SI-12.
@@ -234,11 +235,11 @@ Phased so the highest-exposure gap (default PII egress) closes first.
 
 ## Acceptance criteria
 
-- [ ] Four-tier classification scheme (public/internal/confidential/regulated) ratified and
+- [x] Four-tier classification scheme (public/internal/confidential/regulated) ratified and
       published, with handling rules per tier.
 - [ ] Every Postgres store, MinIO prefix, and LLM flow assigned a tier (store-and-flow
       inventory published, extending the DPIA data inventory).
-- [ ] Regulated data is not sent to a third-party (MANAGED_CLOUD) LLM in the clear:
+- [x] Regulated data is not sent to a third-party (MANAGED_CLOUD) LLM in the clear:
       `scrub_outbound` default-on for Regulated deployments AND/OR LOCAL/SELF_HOSTED routing
       documented as the sanctioned path.
 - [ ] Redactor no longer fails open silently — missing-redactor is fail-closed or a startup
@@ -256,7 +257,7 @@ Phased so the highest-exposure gap (default PII egress) closes first.
 |---|---|---|
 | PII redaction (built-in + custom patterns, Luhn CC) | `llm_pii_redactor.py` | `AIFactory/apps/backend/services/llm_pii_redactor.py` |
 | Audit-row redaction + retention + failure-safe | `llm_audit_hook.py` | `AIFactory/apps/web-server/server/services/llm_audit_hook.py` |
-| Outbound scrub default (`scrubBeforeSend`, default off) | `_env_scrub_outbound_default` | `AIFactory/apps/backend/providers/openai_compatible.py` |
+| Outbound scrub default (`scrubBeforeSend`, default on, `LITELLM_AUDIT_SCRUB_OUTBOUND=false` disables) | `_env_scrub_outbound_default` | `AIFactory/apps/backend/providers/openai_compatible.py` |
 | Local/self-hosted egress classification | `byo_llm.py` (`EgressClass`) | `PFactory/apps/backend/byo_llm.py` |
 | Agent command-layer egress guard | `security/egress.py` | `AIFactory/apps/backend/security/egress.py` |
 | Credential-broker honest-egress manifest | `pfactory_secrets/egress.py` | `PFactory/apps/backend/pfactory_secrets/egress.py` |

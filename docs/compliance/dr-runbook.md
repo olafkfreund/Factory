@@ -61,6 +61,34 @@ differ by design; counts are recorded for a human), that services work against
 the restored database, or anything about MinIO restore. It proves the newest
 dump is complete, fresh and replayable.
 
+### MinIO snapshot and restore drill (Factory#3691)
+
+Two more CronJobs in factory-gitops `apps/backups`, no new credential:
+
+- `minio-backup-local`, 03:30 UTC: full copy of `factory-artifacts` and
+  `factory-evidence` into a new generation `gen-<UTC stamp>` on the separate PVC
+  `minio-backup-local`, checked against the live source, with a `MANIFEST.sha256`
+  and a `COMPLETE` marker; the newest 3 generations are kept. A rewritten or
+  deleted object stays recoverable from an earlier generation.
+- `minio-restore-drill`, 04:30 UTC: restores up to 20 objects per bucket (each
+  at most 50 MiB) from the newest complete snapshot into the scratch bucket
+  `restore-drill-scratch`, checks each against the manifest, empties the scratch
+  bucket, and fails red on a missing, stale (over 25h) or corrupted snapshot, an
+  empty bucket, or any mismatch. Result: `factory-evidence/control-plane-push/minio-restore-drill/<UTC>.json`
+  and `job_health` with `cronjob = 'minio-restore-drill'`; `rto_seconds` is the
+  full path (snapshot lookup, restore, verify) for the sample, with
+  `sample_bytes` and `snapshot_bytes` so a full restore can be estimated.
+
+```sql
+SELECT _timestamp, status, rto_seconds, snapshot, snapshot_age_seconds,
+       sample_objects, sample_bytes, snapshot_bytes, problems
+FROM "job_health" WHERE cronjob = 'minio-restore-drill' ORDER BY _timestamp DESC
+```
+
+**Limits:** the snapshot is on the same node disk as `minio-data`, so it does
+not survive loss of that disk (only the off-site copy does), and it is plaintext
+(mode 0700, uid 65532), so SSE-S3 at rest does not carry over to it.
+
 ## Measured RTO and RPO
 
 From the drill of **2026-08-10** (see Evidence). These are measurements, not targets:
@@ -223,15 +251,17 @@ reads like a misconfiguration rather than a restore that stopped halfway.
 - [ ] **Off-box backup destination (Factory#3681)** — the single-failure-domain problem above.
       Needs an infrastructure decision (second machine, NAS, or real S3).
 - [x] **MinIO versioning** — enabled on all three buckets.
-- [~] **MinIO backup (Factory#3691)** — versioning is not a backup. The backup
-      CronJob `minio-backup-offsite` (`factory-artifacts`, `factory-evidence`,
+- [~] **MinIO backup (Factory#3691)** — versioning is not a backup. In-cluster
+      snapshot `minio-backup-local` and `minio-restore-drill` are deployed by
+      factory-gitops (see above); same node, so not a defence against disk loss.
+      The off-site backup CronJob `minio-backup-offsite` (`factory-artifacts`, `factory-evidence`,
       never deletes or overwrites at the destination, verifies every object)
       is written and tested but **not deployed**. **Owner action:** provide the
       off-site S3 target and create the `offsite-s3-creds` Secret (Factory#3681),
       then add `- ../minio-offsite` to `apps/backups/manifests/kustomization.yaml`
       in factory-gitops. `factory-backups` has its own copy (Factory#3681).
 - [~] **Full-path RTO (Factory#3691)** — measured by every scheduled drill run
-      (see above); record the first value once it exists. The manual recovery
+      (Postgres and MinIO sample, see above); record the first values once they exist. The manual recovery
       steps (repointing, scale-up, app validation) remain unmeasured.
 - [ ] **HA Postgres (Factory#3690)**, or a written single-writer risk acceptance.
       Options, RPO/RTO and a draft acceptance: [r007-ha-options.md](r007-ha-options.md).

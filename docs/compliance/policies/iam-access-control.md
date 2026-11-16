@@ -43,16 +43,16 @@ This is the single biggest access-control gap. Trace end to end:
 ### Authentication bypasses
 
 - **`DISABLE_AUTH` / `APP_DISABLE_AUTH`:** when set, `TokenAuthMiddleware` short-circuits and injects a global `admin` principal (`AIFactory/apps/web-server/server/auth.py` lines 223–229; setting default `False` in `config.py` line 114). It is **host-guarded**: `config.py` (lines 45–54) refuses to start with auth disabled on a non-loopback host, and gitops docs state "the cluster always runs real auth" (`factory-gitops/docs/build-and-deploy.md`). So the bypass is dev-only by design — but the switch exists in production images and relies on a runtime guard rather than being compiled out.
-- **CFactory OPEN mode (fail-open default):** when `CFACTORY_API_KEYS` is empty the keystore is OPEN and **every request is allowed** — `CFactory/apps/backend/cfactory/auth.py` (`KeyStore.authorize`, lines 117–124; `is_open` derivation in `config.py` line 199). The gitops manifest does wire `CFACTORY_API_KEYS` from a Secret (`cfactory/manifests.yaml` line 61), but the safe default is fail-open, and the injected nginx key is described as a "harmless no-op while the keystore is open" (manifest line ~105). Fail-open is the wrong default for a control surface.
+- **CFactory OPEN mode (closed 2026-11, see gap 4; text below is the historical finding):** when `CFACTORY_API_KEYS` is empty the keystore is OPEN and **every request is allowed** — `CFactory/apps/backend/cfactory/auth.py` (`KeyStore.authorize`, lines 117–124; `is_open` derivation in `config.py` line 199). The gitops manifest does wire `CFACTORY_API_KEYS` from a Secret (`cfactory/manifests.yaml` line 61), but the safe default is fail-open, and the injected nginx key is described as a "harmless no-op while the keystore is open" (manifest line ~105). Fail-open is the wrong default for a control surface.
 
 ## Gaps
 
 1. **Shared wildcard `API_TOKEN` = fleet admin (highest priority).** One token in `factory-secrets`, present in all four planes, grants `is_service=True` which bypasses all per-org/project authz. Violates least-privilege and segregation of duties (ISO A.8.2, SOC 2 CC6.1/CC6.3, PCI 7.2, NYDFS §500.7, NIST AC-6). Deprecation (#555) is log-only; the credential is still live.
 2. **MFA not enforced.** No TOTP/WebAuthn required action in Keycloak; MFA neither mandated nor evidenced. Fails PCI 8.4/8.5, NYDFS §500.12, NIST IA-2(1)/(2).
 3. **`DISABLE_AUTH` present in prod images.** Host-guarded but not removed; a full-bypass switch in the shipped artifact is an audit finding (NIST AC-3, SOC 2 CC6.1).
-4. **CFactory fail-open default.** No keys => allow-all. Should fail closed (NIST AC-3, SOC 2 CC6.1).
-5. **No fleet-wide human RBAC role model.** Org RBAC exists in AIFactory only; there is no documented least-privilege role catalog spanning all four services, and the JWT `role` defaults to `"user"` with no cross-plane role mapping.
-6. **No periodic access-review process.** An export endpoint exists (`access_review.py`) but there is no defined cadence, approver, or retained evidence of a completed review (SOC 2 CC6.2/CC6.3, ISO A.5.18, SOX ITGC, NIST AC-2(3)).
+4. **CFactory fail-open default.** Closed 2026-11: with no keys, `/api` and `/mcp` deny unless the explicit dev opt-ins `api_dev_open` / `mcp_dev_open` are set (`CFactory apps/backend/cfactory/config.py`, `auth.py`).
+5. **Fleet role model published, task-route checks not yet enforced.** All three services have `ROLE_LEVELS`; the catalog is [rbac-role-catalog.md](../rbac-role-catalog.md). PF and TF task routes run in shadow mode (`RBAC_ENFORCE_TASK_ROUTES` off) until projects carry an `org_id`; org admins cannot yet revoke another member's key.
+6. **Access-review process documented, first review not yet signed.** Cadence, inputs, checks and generator: [access-review-runbook.md](../access-review-runbook.md). Open until the Q4 2026 review (due 2027-01-15) is signed and stored.
 7. **Keycloak is non-declarative and dev-mode.** `start-dev` + H2 + imperative `kcadm.sh` config means realm/MFA/client state is not in gitops and not reproducible or auditable.
 
 ## Remediation plan

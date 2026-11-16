@@ -33,7 +33,7 @@ backlog for delegation.
 | Domain | Document | Owner |
 |---|---|---|
 | Governance / ISMS | [governance-isms.md](policies/governance-isms.md) | Security Owner |
-| IAM & access control | [iam-access-control.md](policies/iam-access-control.md) | Security Owner |
+| IAM & access control | [iam-access-control.md](policies/iam-access-control.md), [role catalog](rbac-role-catalog.md), [access-review runbook](access-review-runbook.md) | Security Owner (`platform-admin` holder: the owner only) |
 | Audit logging & retention | [audit-logging.md](policies/audit-logging.md) | Security Owner |
 | Encryption & key management | [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | Security Owner |
 | Secrets management | [secrets-management.md](policies/secrets-management.md) | Security Owner |
@@ -89,7 +89,7 @@ exist, wiring it is a tracked gap (see the referenced issue).
 | Vulnerability posture | CodeQL (5 repos), Trivy P0 build gate, Dependabot (security alerts + base images) | Per PR / per build / daily | P0 fails the build; CodeQL alerts triaged; SLA tracked Factory#317 |
 | Access review | `access_review.py` export | Quarterly | Unexpected grant removed and logged; wildcard-token retirement tracked Factory#312 |
 | CI gate pass rate | GitHub Actions | Continuous | Sustained failures reviewed at management review |
-| Backup success / restore test | Backup jobs (being introduced) | Per backup / periodic restore drill | Backup absence is the current top risk, tracked Factory#321 |
+| Backup success / restore test | `postgres-backup` CronJob, restore drill ([dr-runbook.md](dr-runbook.md)) | Daily / periodic restore drill | Backups share the node they protect; off-cluster copy tracked Factory#3681, MinIO backup Factory#3691 |
 | Auth-failure and anomaly spikes | Application + audit logs | Continuous (alerting to be wired) | Spike pages Incident Commander; SIEM forward tracked Factory#313 |
 
 The continuous-monitoring output (scan results, anchor-verifier logs, access-review

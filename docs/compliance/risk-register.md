@@ -62,6 +62,8 @@ its date. R-007 changed in text only: its score is unchanged. R-006's existing-c
 | ID | Risk | Accepted | Review by | Decided |
 |---|---|---|---|---|
 | AR-001 | R-012 runtime isolation: no gVisor/microVM boundary on per-task Jobs; CIS baseline not assessed | 2026-10-24 | 2027-04-24 (six months) | Decided (lead, user-approved 2026-10-24) |
+| AR-004 | R-005 separation of duties in access reviews: the owner is sole reviewer and grantor | 2026-10-27 | 2027-04-27 (six months) | Decided (owner answer 1 in `plan/2026-10-27-312-fleet-rbac-role-model.md`) |
+| AR-005 | R-002 standing exception: `APP_API_TOKEN` and `CFACTORY_MCP_SECRET` stay live until production callers move to scoped keys | 2026-10-27 | 2027-04-27, or the retirement date once set | Decided (owner answer 5 in the same plan); retirement date not set |
 
 **AR-001 compensating controls (live, with evidence).**
 - NetworkPolicy `factory-sandbox-jobs-egress`, selector `factory.io/kind: task`, Ingress+Egress: `factory-gitops apps/factory-namespace/manifests/networkpolicy-sandbox-jobs.yaml:100,131`. Known residual: 3-5 s unconfined window at pod start (Factory#517); egress is 443 to public, not per-destination.
@@ -78,6 +80,19 @@ period) is recorded here with the Security Owner's sign-off, a compensating cont
 an expiry date, and is revisited at the next management review.
 
 - **2026-10-24 — R-014, Postgres at rest unencrypted.** Decided (lead, user-approved 2026-10-24). Evidence: on the cluster host, `lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT` shows no crypt/LUKS device; `findmnt -T /mnt/code/k3d/storage` = `/dev/sdb1` ext4 (the local-path PV dir, mounted at `/var/lib/rancher/k3s/storage` in `k3d-factory-server-0`). Accepted until a regulated tenant; compensating: host access control, scram-sha-256. Expiry/review: 2027-04-24 (six months).
+### AR-004 — access-review separation of duties (Factory#312)
+
+- **Decided:** the owner is the sole reviewer and grantor of access (plan `2026-10-27-312-fleet-rbac-role-model.md`, answer 1). Listed as an exception in every review.
+- **Compensating controls:** the access review is signed and stored as evidence (`access-review-runbook.md`); the generator's findings are mechanical, not the reviewer's judgement; audit chain records membership changes (`org.member.add/remove`).
+- **Expiry / review date:** 2027-04-27, or when a second reviewer exists.
+
+### AR-005 — wildcard `APP_API_TOKEN` and `CFACTORY_MCP_SECRET` (R-002, Factory#312)
+
+- **Decided:** the wildcards remain until production callers use the scoped keys (answer 5 in the same plan). The scoped keys are merged in code; the production cutover and deletion are the owner's.
+- **Compensating controls:** mint-time and auth-time scope caps (AIFactory#1911, #1914); `_warn_legacy_api_token_once` logs wildcard use; the CFactory legacy-MCP counter (CFactory#504); scoped keys with expiry and `autonomy_ceiling`.
+- **Retirement date:** not set. The access review lists this as a finding until the owner sets it.
+- **Expiry / review date:** 2027-04-27.
+
 ### AR-002 — R-015 no external penetration test (Factory#317)
 
 - **Decided (lead, user-approved 2026-10-24):** no external pen test until a customer contract or certification audit requires one.
