@@ -39,3 +39,12 @@ and `ruff format --check` on touched files. Expect green.
 ## Rollback
 
 Revert the AIFactory PR; the flag is unset everywhere, so behaviour is unchanged.
+
+## Deviations (implementation, 2026-11-16)
+
+None to the code. Final `codex review` raised one P1: with the flag on, the native
+`ollama-cloud` runtime (`OLLAMA_CLOUD_BASE_URL` + `OLLAMA_API_KEY`) loses its key and still
+points at ollama.com. This is the limit the spec already states; not routed here because
+the gateway path for that runtime is unproven. Owner action: route such builds as
+OpenAI-compatible, or leave the flag off for them. All steps were done by the lead; no
+external coder was used.
