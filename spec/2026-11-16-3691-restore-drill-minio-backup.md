@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3691
 intent: intent/2026-11-16-3691-restore-drill-minio-backup.md
 ---
