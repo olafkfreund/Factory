@@ -22,16 +22,31 @@
 
 ## Inputs
 
+Each row's command is read-only and its output is reduced to the schema in the plan (`plan/2026-11-16-312-access-review-runbook.md`, "Generator contract"). Reduce with `jq`, keeping only the listed fields.
+
 | File in `<dir>` | Source |
 |---|---|
 | `members-<service>.ndjson` | AIFactory `GET /api/admin/access-review?org_id=` (lines: `email, role, active, last_login_at`). PF and TF: by hand from the membership tables until slice S3. Add `org_id` and `tenant_groups` from Keycloak when available |
-| `keys.json` | per-service `acw_` key listing: `key_id, owner, owner_role, scopes, autonomy_ceiling, last_used_at, expires_at, service` (ids only) |
+| `keys.json` | No service lists other members' keys through the API. The platform admin runs a read-only query per service database (`SELECT id, user_id, scopes, autonomy_ceiling, last_used_at, expires_at FROM api_keys`; never select the key hash or prefix), joins the owner's current role from `org_members`, and writes `{key_id, owner, owner_role, scopes, autonomy_ceiling, last_used_at, expires_at, service}` |
 | `cfactory-keys.json` | `{actor, scope}` derived from `CFACTORY_API_KEYS` by the platform admin, as `key_actor` hashes |
-| `bindings.json` | `kubectl get rolebinding,clusterrolebinding -A -o json` and `factory-gitops` manifests, reduced to `{name, kind, subjects, justification}` |
-| `keycloak-users.json` | `kcadm.sh get users`, `groups` and `users/<id>/credentials`, reduced to `{username, enabled, mfa}` |
+| `bindings.json` | `kubectl get rolebinding,clusterrolebinding -A -o json \| jq '[.items[] \| {name: .metadata.name, kind, subjects: (.subjects // []), justification: (.metadata.annotations["factory.io/justification"] // "")}]'`; the reviewer fills `justification` where the annotation is absent |
+| `keycloak-users.json` | `kcadm.sh get users -r <realm>` and, per user, `kcadm.sh get users/<id>/credentials -r <realm>`; `mfa` is `totp`, `webauthn` or `none` from the credential types |
 | `platform-admins.json` | `{system, account}` listed by hand: kubectl, ArgoCD, Keycloak admin |
 | `legacy-counters.json` | `{name, count}` from the `_warn_legacy_api_token_once` logs and the CFactory legacy-MCP counter (CFactory#504) |
 | `exceptions.json` | `{"wildcard_retirement_date": "YYYY-MM-DD"}` once the owner sets it |
+
+## review.md template
+
+The generator writes this; the reviewer completes it.
+
+```markdown
+# Access review draft (<date>)
+## Findings            one line per finding, from the generator
+## Evidence recorded   MFA state, platform-admin accounts, CFactory key actors, legacy counters
+## Actions             per finding: revoke | accept (reason) | date. Revoke within five working days of signing
+## Accepted exceptions AR-004, AR-005 (retirement date), MFA not enforced
+## Signature           reviewer / signer, date
+```
 
 ## Checks the generator runs
 

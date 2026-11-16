@@ -35,9 +35,10 @@ Minimum role per action. "Flag off" means `RBAC_ENFORCE_TASK_ROUTES` is `False`:
 | AIF | Set a key's `autonomy_ceiling` | `admin` | `routes/api_keys.py` |
 | AIF | Export the access review | `admin` | `routes/access_review.py` (`require_org_role("admin")`) |
 | AIF, PF, TF | Export the audit log | `admin` | `routes/audit.py`, `/api/audit/export` |
-| AIF, PF, TF | Mint own `acw_` key (below `member`: `mcp:read` only; an `acw_` key cannot mint) | `member` | `routes/api_keys.py`; auth-time cap `cap_by_owner_role` (`mcp_remote/auth.py`, PF and TF) |
+| AIF, PF, TF | Mint own `acw_` key (a `viewer` may mint `mcp:read` only; `mcp:write` needs `member`; an `acw_` key cannot mint) | `viewer` for `mcp:read`, `member` for `mcp:write` | `routes/api_keys.py`; auth-time cap `cap_by_owner_role` (`mcp_remote/auth.py`, PF and TF) |
 | AIF, PF, TF | Revoke a key | creator only | **Gap:** `revoke_api_key` matches `ApiKey.user_id == current_user.id`, so an `admin` cannot revoke another member's key (plan slice S4) |
-| AIF, PF, TF | Manage members and roles | `admin` (`owner` for `admin` grants) | `routes/organizations.py` |
+| AIF, PF, TF | Invite a member (never as `owner`, never above the inviter's own role) | `admin` | `invite_member`, `routes/organizations.py` |
+| AIF, PF, TF | Change a member's role, transfer ownership | `owner` | `update_member_role`, `routes/organizations.py` |
 | AIF, PF, TF | Remote MCP tool calls | key scope and the caller's org role | AIFactory#1917; PFactory#946 and TFactory#1456 are closed, and the surface is off by default |
 | CFactory | Cockpit, `/api` GETs, MCP read tools | key with `read` | `KeyStore.authorize` (`cfactory/auth.py`) |
 | CFactory | Create, move, dispatch a card; MCP write tools | key with `write` | Same. Unregistered MCP tools default to `write` |
@@ -66,4 +67,4 @@ Cluster workloads are service principals, and nothing is grandfathered. Narrowly
 
 - PF and TF task-route checks are in shadow mode. Enforcing them needs every project to carry an `org_id` (plan slice S6) and is the owner's decision, because a wrong flip locks people out.
 - Org `admin` cannot revoke another member's key (slice S4).
-- Key inventory per org and `GET /api/admin/access-review` exist only in AIFactory (slice S3); the runbook collects PF and TF data by hand until then.
+- No service lists other members' keys: `list_api_keys` returns the caller's own keys (`ApiKey.user_id == current_user.id`) in AIFactory, PFactory and TFactory, so `keys.json` is collected from the database by the platform admin (slice S3 adds an admin inventory). `GET /api/admin/access-review` exists only in AIFactory; PF and TF membership is collected by hand.

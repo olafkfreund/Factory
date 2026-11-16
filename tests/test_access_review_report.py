@@ -187,6 +187,41 @@ def test_token_shaped_input_is_refused(tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def test_escaped_token_is_refused(tmp_path: Path) -> None:
+    _clean(tmp_path)
+    (tmp_path / "keys.json").write_text('[{"note": "\\u0061cw_ABCDEFGH12345678"}]')
+    (tmp_path / "members-pf.ndjson").write_text('{"email": "\\u0061cw_ABCDEFGH12345678"}\n')
+    assert ar.build(tmp_path, NOW)[1] == 2
+    (tmp_path / "keys.json").write_text("[]")
+    assert ar.build(tmp_path, NOW)[1] == 2
+
+
+def test_bare_read_scope_and_missing_groups_are_findings(tmp_path: Path) -> None:
+    _clean(tmp_path)
+    (tmp_path / "members-pfactory.ndjson").write_text(
+        json.dumps({"email": "p@x", "role": "viewer", "active": True, "org_id": "o"}) + "\n"
+    )
+    _w(
+        tmp_path,
+        "keys.json",
+        [
+            {
+                "key_id": "k3",
+                "owner": "v@x",
+                "owner_role": "viewer",
+                "scopes": ["read"],
+                "autonomy_ceiling": "low",
+                "last_used_at": "2027-01-05",
+                "expires_at": "2027-06-01",
+                "service": "tf",
+            }
+        ],
+    )
+    f = _findings(tmp_path)
+    assert "p@x (pfactory, org o): manual: tenant group not in export" in f
+    assert "owner is viewer but key holds read" in f
+
+
 def test_main_writes_review(tmp_path: Path) -> None:
     src = tmp_path / "in"
     src.mkdir()

@@ -22,7 +22,7 @@ STALE_DAYS = 90
 TOKEN_SHAPE = re.compile(r"acw_[A-Za-z0-9]{8,}")
 ROLES = {"viewer": 0, "member": 1, "admin": 2, "owner": 3}
 # Highest scope tier a role may hold: viewer reads only; member and above may write.
-READ_ONLY_SCOPES = {"mcp:read", "read"}
+READ_ONLY_SCOPES = {"mcp:read"}
 FILES = (
     "keys.json",
     "cfactory-keys.json",
@@ -45,6 +45,20 @@ def _day(value: str | None) -> date | None:
 def _age(value: str | None, now: date) -> int | None:
     d = _day(value)
     return None if d is None else (now - d).days
+
+
+def _has_token(text: str) -> bool:
+    """Scan the raw text and the decoded JSON, so a \\u0061cw_ escape cannot slip through."""
+    if TOKEN_SHAPE.search(text):
+        return True
+    for chunk in [text, *text.splitlines()]:
+        try:
+            decoded = json.dumps(json.loads(chunk), ensure_ascii=False)
+        except ValueError:
+            continue
+        if TOKEN_SHAPE.search(decoded):
+            return True
+    return False
 
 
 def _load(root: Path, name: str, findings: list[str]) -> Any:
@@ -84,7 +98,9 @@ def check_members(members: list[dict[str, Any]], now: date) -> list[str]:
             elif age > STALE_DAYS:
                 out.append(f"{who}: {role}, {state}, last login {age} days ago")
         groups = m.get("tenant_groups")
-        if groups is not None and len(groups) != 1:
+        if groups is None:
+            out.append(f"{who}: manual: tenant group not in export")
+        elif len(groups) != 1:
             out.append(f"{who}: {len(groups)} tenant groups, expected exactly one")
     for (svc, org, email), roles in seen.items():
         if len(roles) > 1:
@@ -92,8 +108,6 @@ def check_members(members: list[dict[str, Any]], now: date) -> list[str]:
                 f"{email} ({svc}, org {org}): {len(roles)} role rows "
                 f"({', '.join(roles)}), expected one"
             )
-    if members and not any("tenant_groups" in m for m in members):
-        out.append("manual: tenant group not in export")
     return out
 
 
@@ -132,7 +146,7 @@ def check_bindings(bindings: list[dict[str, Any]]) -> list[str]:
 def build(root: Path, now: date) -> tuple[str, int]:
     """Return (review.md text, exit code). Exit 2 means a token shape was found."""
     for f in root.iterdir():
-        if f.is_file() and TOKEN_SHAPE.search(f.read_text(errors="replace")):
+        if f.is_file() and _has_token(f.read_text(errors="replace")):
             return f"refused: {f.name} contains an acw_ token shape", 2
     findings: list[str] = []
     findings += check_members(_members(root, findings), now)

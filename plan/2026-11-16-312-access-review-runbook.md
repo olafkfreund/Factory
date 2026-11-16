@@ -52,3 +52,10 @@ Runbook content (step 2): cadence quarterly, due the 15th of the first month aft
 ## Rollback
 
 Revert the PR. Docs and one unused script.
+
+## Deviations (recorded with the code, from the final Codex review)
+
+- A member row without `tenant_groups` (or null) is reported "manual: tenant group not in export" per member, not once for the whole export.
+- The secret guard also scans decoded JSON, so a `acw_` escape is refused.
+- Bare `read` is not an allowed viewer scope in `keys.json` (it belongs to `cfactory-keys.json`).
+- The catalog splits "manage members" into invite (`admin`) and change role (`owner`), and records that no service lists other members' keys, so `keys.json` comes from a database query by the platform admin.
