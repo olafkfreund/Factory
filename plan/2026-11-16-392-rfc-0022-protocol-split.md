@@ -39,7 +39,10 @@ protocol today and the RFC's claim is corrected.
 ## Tests
 
 `pytest tests/test_provider_protocol_split.py tests/test_provider_comments.py
-tests/test_http_github_provider.py`; `ruff check` and `mypy` as in CI.
+tests/test_http_github_provider.py`; `ruff format --check scripts/ tests/`; `python scripts/ratchet_lint.py --base origin/main --package scripts,tests`
+(ruff, then `--tool mypy`). The provider files are outside those ratchets, so also run
+`ruff check` and `ruff format --check` directly on `shared/factory-github/providers/protocol.py`
+and `__init__.py`.
 
 ## Rollback
 
