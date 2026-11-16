@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 392
 intent: intent/2026-11-16-392-rfc-0022-protocol-split.md
 ---
