@@ -4,7 +4,7 @@
 - **Review cadence:** Annually, and when a host is added or replaced
 - **Frameworks:** ISO/IEC 27001:2022 A.8.1 (user endpoint devices), A.7.7 (clear desk and
   clear screen), A.7.9 (assets off premises); SOC 2 CC6.4, CC6.7; NYDFS 500.7
-  (conditional, see [nydfs-part500-mapping.md](nydfs-part500-mapping.md))
+  (reference only, not applicable: see [framework-applicability.md](framework-applicability.md))
 - **Issue:** Factory#3696
 
 Operator laptops hold the agenix decrypting identity and GitHub credentials, so they are

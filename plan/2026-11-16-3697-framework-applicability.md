@@ -97,7 +97,7 @@ read against this plan, push, PR, issue comments.
 - Link check, run from the repo root; expected output empty:
   `for f in $(git diff --name-only origin/main -- 'docs/compliance/*.md' 'docs/compliance/policies/*.md'); do d=$(dirname $f); grep -o '](\([^)#:]*\.md\)' $f | sed 's/^](//;s/)$//' | while read l; do [ -e "$d/$l" ] || echo "$f -> $l"; done; done`
 - NYDFS rows: `grep -c '^| 500\.' docs/compliance/nydfs-part500-mapping.md` equals the count on
-  main (25); every such row contains "N/A".
+  main (26); every such row contains "N/A".
 - No Markdown linter is configured (pre-commit has gitleaks only); gitleaks passes.
 - `git diff --stat origin/main` touches only `docs/compliance/**`, `intent/`, `spec/`, `plan/`.
 - Repo doc CI (markdown/pre-commit) run locally if configured; CI green on the head SHA.

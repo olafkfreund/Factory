@@ -46,7 +46,8 @@ evidence. Certification is a separate engagement.
 - [`soc2-gap-assessment.md`](soc2-gap-assessment.md) — the SOC 2 (TSC) criterion-by-criterion gap assessment (Security, Availability, Confidentiality) with current risk, an ISO 27001 gap summary pointing at the SoA, and the unsigned residual-risk sign-off. Factory#324.
 
 - [`training-and-awareness.md`](training-and-awareness.md), [`management-review-and-internal-audit.md`](management-review-and-internal-audit.md), [`supplier-management.md`](supplier-management.md) and [`operator-endpoint-standard.md`](operator-endpoint-standard.md) — the operating procedures and blank record templates behind SoA A.6.3, A.5.35, A.5.20/A.5.22 and A.8.1/A.7.7/A.7.9. They define the events; none records one. Factory#3693, #3694, #3695, #3696.
-- [`nydfs-part500-mapping.md`](nydfs-part500-mapping.md) — NYDFS Part 500 section-by-section control mapping, conditional on the applicability decision in Factory#3697. Factory#3700.
+- [`framework-applicability.md`](framework-applicability.md) — the decision record for SEC, NYDFS Part 500, FFIEC and SOX ITGC (not applicable, 2026-11-16) with premises, re-scope triggers and the owner's premise check. Factory#3697.
+- [`nydfs-part500-mapping.md`](nydfs-part500-mapping.md) — NYDFS Part 500 section-by-section control mapping, kept as reference: Part 500 is not applicable ([framework-applicability.md](framework-applicability.md), Factory#3697). Factory#3700.
 
 ### ISMS policy set
 
@@ -90,9 +91,9 @@ that references its technical domain document rather than duplicating it.
 | Framework | In scope | Rationale |
 |---|---|---|
 | ISO 27001 / SOC 2 | Yes (foundational) | Baseline for any serious SaaS; do first. |
-| SEC cyber rules | Conditional | Applies if operated by a public company (4-business-day incident disclosure). |
-| NYDFS Part 500 / FFIEC | Conditional | Applies if you or your customers are regulated financial firms. |
-| SOX ITGC | Conditional | Applies for a public company whose systems affect financial reporting. |
+| SEC cyber rules | Not applicable (decided 2026-11-16) | Applies only to a public company (4-business-day incident disclosure). Premise and re-scope trigger: [framework-applicability.md](framework-applicability.md). |
+| NYDFS Part 500 / FFIEC | Not applicable (decided 2026-11-16) | Applies only if the operator or a customer is a regulated financial firm. [NYDFS mapping](nydfs-part500-mapping.md) kept as reference. See [framework-applicability.md](framework-applicability.md). |
+| SOX ITGC | Not applicable (decided 2026-11-16) | Applies only if the fleet affects a public company's financial reporting. See [framework-applicability.md](framework-applicability.md). |
 | PCI DSS | Scoped out | No cardholder data flows through the fleet today. Re-scope if payments are added. |
 | FedRAMP | Deferred | Large lift (NIST 800-53 + 3PAO + ConMon); pursue only if US federal is a target. |
 
@@ -191,7 +192,7 @@ classification scheme, and the per-domain gap assessments. Satisfies gap #6
 
 ## Next steps
 
-1. Confirm the framework scope decisions above (ISO 27001 + SOC 2 first).
+1. Confirm the three premises behind the scope decisions above ([framework-applicability.md](framework-applicability.md)); ISO 27001 + SOC 2 are in scope first.
 2. Adopt the Wave 0 artifacts and assign control owners per the ISMS document.
 3. Schedule Wave 1 as individual PRs; each closes against its child issue with
    evidence attached.
