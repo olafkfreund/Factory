@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1959
 spec: spec/2026-11-16-1959-aifactory-build-gateway.md
 coders:
