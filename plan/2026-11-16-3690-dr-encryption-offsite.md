@@ -130,3 +130,11 @@ fetched by `fetch-age.sh`, never a stub:
 
 Revert the PRs. Nothing deployed changes: the off-site directories are
 unreferenced and the aifactory flag is false.
+
+## Deviations
+
+- Listing errors fail closed (no "prefix may not exist" fallback): S3 lists an
+  unused prefix as empty, so the fallback was unneeded and could overwrite.
+- Never-overwrite is check-then-copy, not atomic (`mc cp` has no create-only
+  mode); documented in factory-gitops `docs/restore.md`, relies on destination
+  versioning for hand-started overlapping Jobs.
