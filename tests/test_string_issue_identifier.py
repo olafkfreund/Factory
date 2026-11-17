@@ -20,7 +20,7 @@ sys.path.insert(0, str(_ROOT / "shared" / "factory-github"))
 sys.path.insert(0, str(_ROOT / "shared" / "factory-contracts" / "python"))
 pytest.importorskip("httpx", reason="provider modules import httpx at module scope")
 fc = pytest.importorskip("factory_contracts")
-from providers import as_issue_int  # noqa: E402
+from providers import as_issue_int, fanout_comments  # noqa: E402
 from providers._github_json import (  # noqa: E402
     group_bulk_comments,
     issue_number_from_url,
@@ -90,3 +90,17 @@ def test_github_refuses_a_non_numeric_key_before_any_call(
     provider._gh_client = _NoCalls()
     with pytest.raises(ValueError, match="not numeric for GitHub"):
         asyncio.run(getattr(provider, method)("PROJ-1", *args))
+
+
+def test_fanout_keys_are_canonical_decimal_strings() -> None:
+    class _P:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def fetch_comments(self, ref: str, **_: Any) -> list[Any]:
+            self.calls.append(ref)
+            return []
+
+    p = _P()
+    assert asyncio.run(fanout_comments(p, ["007", "7", 7, "PROJ-1"])) == {"7": [], "PROJ-1": []}
+    assert p.calls == ["7", "PROJ-1"]

@@ -179,8 +179,8 @@ components:
         issue_number:
           oneOf:
             - type: integer
+              nullable: true
             - type: string
-          nullable: true
           description: Work-item identifier; a decimal string (an integer is read as its decimal form) or a tracker key such as PROJ-123.
         aifactory_task_id:
           type: string

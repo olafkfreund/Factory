@@ -369,8 +369,8 @@ class AzureDevOpsProvider(FanoutCommentsMixin):
     # -------------------------------------------------------------------------
     async def fetch_issue(self, number: IssueRef) -> IssueData:
         """Fetch an Azure DevOps work item."""
-        number = as_issue_int(number, "Azure DevOps")
-        url = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{number}?api-version=7.1"
+        iid = as_issue_int(number, "Azure DevOps")
+        url = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{iid}?api-version=7.1"
         async with self._client() as client:
             resp = await client.get(url)
             resp.raise_for_status()
@@ -462,9 +462,9 @@ class AzureDevOpsProvider(FanoutCommentsMixin):
 
     async def add_comment(self, issue_or_pr_number: IssueRef, body: str) -> int:
         """Add comment to ADO pull request or work item."""
-        issue_or_pr_number = as_issue_int(issue_or_pr_number, "Azure DevOps")
+        iid = as_issue_int(issue_or_pr_number, "Azure DevOps")
         # Try PR comment first, if fails then try work item comment
-        url_pr = f"{self._base_url}/{self._org}/{self._proj}/_apis/git/repositories/{self._repo_id}/pullrequests/{issue_or_pr_number}/threads?api-version=7.1"
+        url_pr = f"{self._base_url}/{self._org}/{self._proj}/_apis/git/repositories/{self._repo_id}/pullrequests/{iid}/threads?api-version=7.1"
         thread = {
             "comments": [
                 {"parentCommentId": 0, "content": body, "commentType": "text"}
@@ -477,7 +477,7 @@ class AzureDevOpsProvider(FanoutCommentsMixin):
                 return resp_pr.json()["id"]
 
             # Fallback to workitem comments API
-            url_wi = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{issue_or_pr_number}/comments?api-version=7.1"
+            url_wi = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{iid}/comments?api-version=7.1"
             resp_wi = await client.post(url_wi, json={"text": body})
             resp_wi.raise_for_status()
             return resp_wi.json()["id"]
@@ -647,14 +647,14 @@ class AzureDevOpsProvider(FanoutCommentsMixin):
     # -------------------------------------------------------------------------
     async def apply_labels(self, issue_or_pr_number: IssueRef, labels: list[str]) -> None:
         """Update tags on a work item or labels on a PR."""
-        issue_or_pr_number = as_issue_int(issue_or_pr_number, "Azure DevOps")
+        iid = as_issue_int(issue_or_pr_number, "Azure DevOps")
         # For simplicity, we implement tag updating on the work item
         try:
-            full_wi = await self.fetch_issue(str(issue_or_pr_number))
+            full_wi = await self.fetch_issue(str(iid))
             existing_tags = full_wi.labels
             all_tags = list(set(existing_tags + labels))
 
-            url = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{issue_or_pr_number}?api-version=7.1"
+            url = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{iid}?api-version=7.1"
             patch = [
                 {
                     "op": "add",
@@ -669,13 +669,13 @@ class AzureDevOpsProvider(FanoutCommentsMixin):
 
     async def remove_labels(self, issue_or_pr_number: IssueRef, labels: list[str]) -> None:
         """Remove tags from work item."""
-        issue_or_pr_number = as_issue_int(issue_or_pr_number, "Azure DevOps")
+        iid = as_issue_int(issue_or_pr_number, "Azure DevOps")
         try:
-            full_wi = await self.fetch_issue(str(issue_or_pr_number))
+            full_wi = await self.fetch_issue(str(iid))
             existing_tags = full_wi.labels
             filtered_tags = [t for t in existing_tags if t not in labels]
 
-            url = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{issue_or_pr_number}?api-version=7.1"
+            url = f"{self._base_url}/{self._org}/{self._proj}/_apis/wit/workitems/{iid}?api-version=7.1"
             patch = [
                 {
                     "op": "add",

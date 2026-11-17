@@ -191,6 +191,12 @@ class SupportsFetchComments(Protocol):
         pass
 
 
+def _canonical_ref(ref: IssueRef | int) -> str:
+    """The decimal form of a numeric identifier (``"007"`` and ``7`` are ``"7"``)."""
+    text = str(ref)
+    return str(int(text)) if text.isascii() and text.isdigit() else text
+
+
 def _ref_sort_key(ref: str) -> tuple[int, int, str]:
     """Numeric keys in numeric order (as before), then other keys alphabetically."""
     return (0, int(ref), ref) if ref.isascii() and ref.isdigit() else (1, 0, ref)
@@ -211,7 +217,7 @@ async def fanout_comments(
     """
     return {
         number: await provider.fetch_comments(number, since=since)
-        for number in sorted({str(number) for number in issue_numbers}, key=_ref_sort_key)
+        for number in sorted({_canonical_ref(number) for number in issue_numbers}, key=_ref_sort_key)
     }
 
 

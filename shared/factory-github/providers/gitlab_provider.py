@@ -354,10 +354,10 @@ class GitLabProvider(FanoutCommentsMixin):
     # -------------------------------------------------------------------------
     async def fetch_issue(self, number: IssueRef) -> IssueData:
         """Fetch a GitLab issue by its IID."""
-        number = as_issue_int(number, "GitLab")
+        iid = as_issue_int(number, "GitLab")
         async with self._client() as client:
             resp = await client.get(
-                f"/api/v4/projects/{self._project_id}/issues/{number}"
+                f"/api/v4/projects/{self._project_id}/issues/{iid}"
             )
             resp.raise_for_status()
             issue = resp.json()
@@ -440,18 +440,18 @@ class GitLabProvider(FanoutCommentsMixin):
 
     async def add_comment(self, issue_or_pr_number: IssueRef, body: str) -> int:
         """Add a general comment to an issue or merge request."""
-        issue_or_pr_number = as_issue_int(issue_or_pr_number, "GitLab")
+        iid = as_issue_int(issue_or_pr_number, "GitLab")
         # Try merge request notes first, if not found or failed, try issues notes
         async with self._client() as client:
             mr_resp = await client.post(
-                f"/api/v4/projects/{self._project_id}/merge_requests/{issue_or_pr_number}/notes",
+                f"/api/v4/projects/{self._project_id}/merge_requests/{iid}/notes",
                 json={"body": body},
             )
             if mr_resp.status_code == 201:
                 return mr_resp.json()["id"]
 
             issue_resp = await client.post(
-                f"/api/v4/projects/{self._project_id}/issues/{issue_or_pr_number}/notes",
+                f"/api/v4/projects/{self._project_id}/issues/{iid}/notes",
                 json={"body": body},
             )
             issue_resp.raise_for_status()
@@ -709,30 +709,30 @@ class GitLabProvider(FanoutCommentsMixin):
     # -------------------------------------------------------------------------
     async def apply_labels(self, issue_or_pr_number: IssueRef, labels: list[str]) -> None:
         """Add labels to MR or Issue."""
-        issue_or_pr_number = as_issue_int(issue_or_pr_number, "GitLab")
+        iid = as_issue_int(issue_or_pr_number, "GitLab")
         async with self._client() as client:
             # Try MR update first, then issue update
             mr_resp = await client.put(
-                f"/api/v4/projects/{self._project_id}/merge_requests/{issue_or_pr_number}",
+                f"/api/v4/projects/{self._project_id}/merge_requests/{iid}",
                 json={"add_labels": ",".join(labels)},
             )
             if mr_resp.status_code != 200:
                 await client.put(
-                    f"/api/v4/projects/{self._project_id}/issues/{issue_or_pr_number}",
+                    f"/api/v4/projects/{self._project_id}/issues/{iid}",
                     json={"add_labels": ",".join(labels)},
                 )
 
     async def remove_labels(self, issue_or_pr_number: IssueRef, labels: list[str]) -> None:
         """Remove labels from MR or Issue."""
-        issue_or_pr_number = as_issue_int(issue_or_pr_number, "GitLab")
+        iid = as_issue_int(issue_or_pr_number, "GitLab")
         async with self._client() as client:
             mr_resp = await client.put(
-                f"/api/v4/projects/{self._project_id}/merge_requests/{issue_or_pr_number}",
+                f"/api/v4/projects/{self._project_id}/merge_requests/{iid}",
                 json={"remove_labels": ",".join(labels)},
             )
             if mr_resp.status_code != 200:
                 await client.put(
-                    f"/api/v4/projects/{self._project_id}/issues/{issue_or_pr_number}",
+                    f"/api/v4/projects/{self._project_id}/issues/{iid}",
                     json={"remove_labels": ",".join(labels)},
                 )
 
