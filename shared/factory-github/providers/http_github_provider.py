@@ -119,12 +119,12 @@ class HttpGitHubProvider:
     _transport: httpx.AsyncBaseTransport | None = None
 
     @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.GITHUB
-
-    @property
     def repo(self) -> str:
         return self._repo
+
+    @property
+    def provider_type(self) -> ProviderType:
+        return ProviderType.GITHUB
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
