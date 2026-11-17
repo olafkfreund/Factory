@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from contract_schema import error_messages, schema
 
 _CLASSES = {m["class"] for m in schema("model-catalog.json")["models"].values()}
 
 
-def _execution() -> dict:
-    return schema("task-contract.schema.json")["properties"]["execution"]["properties"]
+def _execution() -> dict[str, Any]:
+    props: dict[str, Any] = schema("task-contract.schema.json")["properties"]["execution"][
+        "properties"
+    ]
+    return props
 
 
-def _doc(**execution: object) -> dict:
+def _doc(**execution: object) -> dict[str, Any]:
     phase = {"phase": 1, "name": "p", "subtasks": [{"id": "t", "description": "d"}]}
     return {
         "contract_version": "2",
@@ -22,20 +27,20 @@ def _doc(**execution: object) -> dict:
     }
 
 
-def test_enum_is_the_catalog_class_set():
+def test_enum_is_the_catalog_class_set() -> None:
     ex = _execution()
     assert set(ex["route"]["enum"]) == _CLASSES
     assert set(ex["phase_routes"]["additionalProperties"]["enum"]) == _CLASSES
 
 
-def test_routes_validate_and_phase_models_still_does():
+def test_routes_validate_and_phase_models_still_does() -> None:
     s = schema("task-contract.schema.json")
     ok = _doc(route="cheap", phase_routes={"coding": "local"}, phase_models={"coding": "x"})
     assert error_messages(s, ok) == []
     assert error_messages(s, _doc()) == []
 
 
-def test_unknown_route_rejected():
+def test_unknown_route_rejected() -> None:
     s = schema("task-contract.schema.json")
     assert error_messages(s, _doc(route="tier-frontier"))
     assert error_messages(s, _doc(phase_routes={"qa": "premium"}))
