@@ -12,7 +12,7 @@ intent: intent/2026-11-17-3772-remove-raw-http.md
 - The concrete providers (`GitHubProvider`, `GitLabProvider`, `AzureDevOpsProvider`) and `GHClient` keep their `api_get`/`api_post` (RFC-0022 section 2.2: GitHub-specific callers hold a GitHub-specific type). `HttpGitHubProvider` never had them.
 - Hub tests that assert the protocol member set are updated to the smaller set; one new test asserts `api_get`/`api_post` are in neither protocol.
 - Services (separate PRs, after the Factory#3771 PRs are merged): re-vendor the canonical files from the hub commit carrying this change plus Factory#3773 and #3771, bump `HUB_SHA`. AIFactory, PFactory, TFactory, CFactory in one set.
-- Each service's own test double (`runners/github/testing.py`) drops `api_get`/`api_post` only if nothing non-protocol still calls them (the AIFactory `permissions.py` calls them on `GHClient`, which stays).
+- Service test doubles that model a provider drop `api_get`/`api_post` only where nothing still calls them. `MockGitHubClient` in `runners/github/testing.py` models `GHClient` and stays unchanged; AIFactory `permissions.py` calls `GHClient.api_get`, which stays.
 
 ## Alternatives rejected
 
