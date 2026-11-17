@@ -162,6 +162,12 @@ silently.
 display ([[factory-billing-mode-usage]]): only `metered` yields a `$` estimate;
 `subscription`/`local` are costed as tokens/time.
 
+The task contract carries the class itself as the additive `execution.route` and
+`execution.phase_routes` (Factory#1959 stage 3), with the same four values
+(`local|cheap|balanced|frontier`, pinned to this catalog by
+`tests/test_task_contract_routes.py`). `phase_models` is unchanged; a consumer that
+cannot resolve a class keeps using it.
+
 ## 4. Task scoring → routing class
 
 `PFactory plan/emit/task_scorer.py` (pure, deterministic) reads signals **already
