@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3773
 spec: spec/2026-11-17-3773-http-github-workitem.md
 coders:
