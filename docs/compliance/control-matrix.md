@@ -17,13 +17,15 @@ Status legend:
 
 PCI DSS is scoped out (no cardholder data). FedRAMP is deferred; where a control
 maps to a NIST 800-53 family it is noted for future ConMon. FFIEC is mapped at
-booklet level only (IT Examination Handbook); whether it applies is an open
-owner decision (Factory#3697). NYDFS Part 500 is mapped section by section, and
-conditionally on that decision, in [nydfs-part500-mapping.md](nydfs-part500-mapping.md).
+booklet level only (IT Examination Handbook). SEC, NYDFS Part 500, FFIEC and SOX ITGC were
+decided not applicable on 2026-11-16 ([framework-applicability.md](framework-applicability.md),
+Factory#3697), so their columns below are reference mappings, not in-scope claims, kept so a
+re-scope starts from a mapped baseline. NYDFS Part 500 is mapped section by section in
+[nydfs-part500-mapping.md](nydfs-part500-mapping.md), every section marked N/A.
 
 ## Framework mapping
 
-| Domain | ISO 27001:2022 | SOC 2 (TSC) | SOX ITGC | NYDFS 500 | FFIEC IT Handbook (booklet) | SEC | 800-53 (FedRAMP) | Status |
+| Domain | ISO 27001:2022 | SOC 2 (TSC) | SOX ITGC (reference) | NYDFS 500 (reference) | FFIEC IT Handbook (booklet, reference) | SEC (reference) | 800-53 (FedRAMP) | Status |
 |---|---|---|---|---|---|---|---|---|
 | Governance / ISMS (#311) | Cl. 4-10, A.5.1-.4 | CC1-CC5 | Control env. | 500.2-.4, .9, .10, .14, .17(b), .19 | Management | Risk-mgmt disclosure | PM, CA | Partial |
 | IAM & access control (#312) | A.5.15-.18, A.8.2-.5 | CC6.1-.3 | Access to programs/data | 500.7, 500.12 | Information Security | - | AC, IA | Partial |

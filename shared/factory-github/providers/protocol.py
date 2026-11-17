@@ -300,133 +300,15 @@ class LabelData:
 
 
 @runtime_checkable
-class GitProvider(Protocol):
-    """
-    Abstract protocol for git hosting providers.
+class WorkItemProvider(Protocol):
+    """The work-item half of :class:`GitProvider` (RFC-0022 section 2.1).
 
-    All provider implementations must implement these methods.
-    This enables the system to work with GitHub, Bitbucket, etc.
-    """
+    Jira implements this and nothing else. ``isinstance`` checks that members
+    exist, not that they work."""
 
     @property
     def provider_type(self) -> ProviderType:
         """Get the provider type."""
-
-    @property
-    def repo(self) -> str:
-        """Get the repository in owner/repo format."""
-
-    # -------------------------------------------------------------------------
-    # Pull Request Operations
-    # -------------------------------------------------------------------------
-
-    async def fetch_pr(self, number: int) -> PRData:
-        """
-        Fetch a pull request by number.
-
-        Args:
-            number: PR/MR number
-
-        Returns:
-            PRData with full PR details including diff
-        """
-
-    async def fetch_prs(self, filters: PRFilters | None = None) -> list[PRData]:
-        """
-        Fetch pull requests with optional filters.
-
-        Args:
-            filters: Optional filters (state, labels, etc.)
-
-        Returns:
-            List of PRData
-        """
-
-    async def fetch_pr_diff(self, number: int) -> str:
-        """
-        Fetch the diff for a pull request.
-
-        Args:
-            number: PR number
-
-        Returns:
-            Unified diff string
-        """
-
-    async def post_review(
-        self,
-        pr_number: int,
-        review: ReviewData,
-    ) -> int:
-        """
-        Post a review to a pull request.
-
-        Args:
-            pr_number: PR number
-            review: Review data with findings and comments
-
-        Returns:
-            Review ID
-        """
-
-    async def merge_pr(
-        self,
-        pr_number: int,
-        merge_method: str = "merge",
-        commit_title: str | None = None,
-    ) -> bool:
-        """
-        Merge a pull request.
-
-        Args:
-            pr_number: PR number
-            merge_method: merge, squash, or rebase
-            commit_title: Optional commit title
-
-        Returns:
-            True if merged successfully
-        """
-
-    async def close_pr(
-        self,
-        pr_number: int,
-        comment: str | None = None,
-    ) -> bool:
-        """
-        Close a pull request without merging.
-
-        Args:
-            pr_number: PR number
-            comment: Optional closing comment
-
-        Returns:
-            True if closed successfully
-        """
-
-    async def enable_auto_merge(
-        self,
-        pr_number: int,
-        merge_method: str = "squash",
-    ) -> bool:
-        """
-        Enable auto-merge on a PR (RFC-0011 low tier: auto-merge-when-green).
-
-        The PR merges automatically once the host's required checks pass — the
-        provider-native equivalent of the RFC-0009 merge gate. Implementations
-        that don't support auto-merge should raise ``NotImplementedError`` with
-        a clear message.
-
-        Args:
-            pr_number: PR number
-            merge_method: merge, squash, or rebase
-
-        Returns:
-            True if auto-merge was enabled
-        """
-
-    # -------------------------------------------------------------------------
-    # Issue Operations
-    # -------------------------------------------------------------------------
 
     async def fetch_issue(self, number: int) -> IssueData:
         """
@@ -439,9 +321,7 @@ class GitProvider(Protocol):
             IssueData with full issue details
         """
 
-    async def fetch_issues(
-        self, filters: IssueFilters | None = None
-    ) -> list[IssueData]:
+    async def fetch_issues(self, filters: IssueFilters | None = None) -> list[IssueData]:
         """
         Fetch issues with optional filters.
 
@@ -594,10 +474,6 @@ class GitProvider(Protocol):
                 is recognized as the Copilot Coding Agent alias.
         """
 
-    # -------------------------------------------------------------------------
-    # Label Operations
-    # -------------------------------------------------------------------------
-
     async def apply_labels(
         self,
         issue_or_pr_number: int,
@@ -643,9 +519,21 @@ class GitProvider(Protocol):
             List of LabelData
         """
 
-    # -------------------------------------------------------------------------
-    # Repository Operations
-    # -------------------------------------------------------------------------
+
+@runtime_checkable
+class CodeProvider(Protocol):
+    """The code/VCS half of :class:`GitProvider` (RFC-0022 section 2.1).
+
+    Includes ``repo`` and ``get_repository_info``: Jira has projects, not
+    repositories."""
+
+    @property
+    def provider_type(self) -> ProviderType:
+        """Get the provider type."""
+
+    @property
+    def repo(self) -> str:
+        """Get the repository in owner/repo format."""
 
     async def get_repository_info(self) -> dict[str, Any]:
         """
@@ -653,6 +541,110 @@ class GitProvider(Protocol):
 
         Returns:
             Repository metadata
+        """
+
+    async def fetch_pr(self, number: int) -> PRData:
+        """
+        Fetch a pull request by number.
+
+        Args:
+            number: PR/MR number
+
+        Returns:
+            PRData with full PR details including diff
+        """
+
+    async def fetch_prs(self, filters: PRFilters | None = None) -> list[PRData]:
+        """
+        Fetch pull requests with optional filters.
+
+        Args:
+            filters: Optional filters (state, labels, etc.)
+
+        Returns:
+            List of PRData
+        """
+
+    async def fetch_pr_diff(self, number: int) -> str:
+        """
+        Fetch the diff for a pull request.
+
+        Args:
+            number: PR number
+
+        Returns:
+            Unified diff string
+        """
+
+    async def post_review(
+        self,
+        pr_number: int,
+        review: ReviewData,
+    ) -> int:
+        """
+        Post a review to a pull request.
+
+        Args:
+            pr_number: PR number
+            review: Review data with findings and comments
+
+        Returns:
+            Review ID
+        """
+
+    async def merge_pr(
+        self,
+        pr_number: int,
+        merge_method: str = "merge",
+        commit_title: str | None = None,
+    ) -> bool:
+        """
+        Merge a pull request.
+
+        Args:
+            pr_number: PR number
+            merge_method: merge, squash, or rebase
+            commit_title: Optional commit title
+
+        Returns:
+            True if merged successfully
+        """
+
+    async def close_pr(
+        self,
+        pr_number: int,
+        comment: str | None = None,
+    ) -> bool:
+        """
+        Close a pull request without merging.
+
+        Args:
+            pr_number: PR number
+            comment: Optional closing comment
+
+        Returns:
+            True if closed successfully
+        """
+
+    async def enable_auto_merge(
+        self,
+        pr_number: int,
+        merge_method: str = "squash",
+    ) -> bool:
+        """
+        Enable auto-merge on a PR (RFC-0011 low tier: auto-merge-when-green).
+
+        The PR merges automatically once the host's required checks pass — the
+        provider-native equivalent of the RFC-0009 merge gate. Implementations
+        that don't support auto-merge should raise ``NotImplementedError`` with
+        a clear message.
+
+        Args:
+            pr_number: PR number
+            merge_method: merge, squash, or rebase
+
+        Returns:
+            True if auto-merge was enabled
         """
 
     async def get_default_branch(self) -> str:
@@ -674,9 +666,17 @@ class GitProvider(Protocol):
             Permission level (admin, write, read, none)
         """
 
-    # -------------------------------------------------------------------------
-    # API Operations (Low-level)
-    # -------------------------------------------------------------------------
+
+@runtime_checkable
+class GitProvider(WorkItemProvider, CodeProvider, Protocol):
+    """
+    Abstract protocol for git hosting providers.
+
+    The union of :class:`WorkItemProvider` and :class:`CodeProvider` plus the
+    raw ``api_get``/``api_post`` escape hatches, which RFC-0022 section 2.2
+    removes once the caller audit is done. Kept whole so callers and the
+    vendored copies see the same member set as before.
+    """
 
     async def api_get(
         self,
