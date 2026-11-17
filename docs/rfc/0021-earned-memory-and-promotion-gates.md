@@ -339,13 +339,32 @@ Implementation notes, where the build reduced section 3.2 on purpose
 - Only `dead_end` (agent tool) and `error_fingerprint` (PostToolUseFailure
   hook) have producers; the other section 3.1 signals are accepted by the
   scratchpad and wait for producers.
-- PFactory and TFactory have no project pool, so dead-end recall there is
+- PFactory and TFactory had no project pool, so dead-end recall there was
   same-spec; AIFactory recalls across specs through the existing pool. No
-  cross-project read exists in either path (tested).
-- Known gaps, unchanged: the Graphiti write path bypasses caps; `confirmed.json`,
-  `scratchpad.json` and `gotchas.md` are not locked across processes, and the
-  pool copy replaces a file wholesale, so a stale spec snapshot can lose
-  observations or marks.
+  cross-project read exists in either path (tested). The follow-up below adds the
+  PF/TF pool.
+
+### 6.2.1 Follow-ups to the known gaps (2026-11-17, epic #389)
+
+Spec `spec/2026-11-17-389-memory-followups.md`; issues #3795, #3796, #3797;
+one PR per service repo. Measured with the fixtures in each repo's
+`tests/test_memory_lock.py`, `test_memory_graphiti_gate.py` and
+`test_memory_pool.py`.
+
+| Gap | Change | Measure |
+|---|---|---|
+| Files not locked across processes (#3796) | `memory/locking.py`: `flock` on `<memory>/.memory.lock`, 2 s bounded wait, a busy lock means no write | Two processes, 25 observations and confirmations each: 50 of 50 kept with the lock, 29 of 50 in one run without it |
+| Graphiti write path bypassed caps (#3797) | `gate_for_graphiti`: shared session cap, "unverified" on gotchas while the trust window is open; no new Graphiti capability | Items sent per session, fixture of 30 per field: 180 before, 20 after |
+| Pool copy replaced files wholesale | `memory/pool.py` `merge_into`: higher count wins, `bad` and `ab` take the max, later confirmation, gotchas unioned | A stale snapshot (n=3) no longer lowers a pooled count (n=7) |
+| PF/TF dead-end recall same-spec (#3795) | `pool_dir(project_dir)` = `<project>/.<service>/memory`, seeded at workspace setup, merged after each session | Recall of dead ends from earlier specs: 0 tokens before; 39 / 69 / 182 tokens after 1 / 5 / 20 specs (3 recurring plus 1 one-off dead end per spec, recall capped at 800 characters); pool bytes 620 / 1188 / 3321 |
+
+Tests with a mutation check: two-process loss without the lock; a busy lock is
+written to when the lock is removed; Graphiti gets 180 items when the gate is
+removed; a shared pool leaks a dead end across projects; wholesale copy lowers a
+count. Remaining gaps: `codebase_map.json` is written by its own unlocked code (merged safely into the pool, not locked at its source); the lock does not exclude across hosts on a network
+filesystem (the wait still bounds the damage); PF/TF sync only when
+`source_spec_dir` is known; dead ends are recalled without a frequency gate (one
+off dead ends are recalled too, within the 800-character cap).
 
 ## 7. Risks
 
