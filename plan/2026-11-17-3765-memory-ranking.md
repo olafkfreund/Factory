@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3765
 spec: spec/2026-11-17-3765-memory-ranking.md
 coders:
