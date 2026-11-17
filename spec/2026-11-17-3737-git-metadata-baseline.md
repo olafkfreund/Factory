@@ -45,6 +45,9 @@ intent: intent/2026-11-17-3737-git-metadata-baseline.md
   the same UID could still delete it (the next check then takes a late baseline); the owner
   accepted same-UID reads with `PR_SET_DUMPABLE=0` and deferred the UID split (#3737), so this
   is a documented residual, not a new one.
+- A repo that uses `includeIf` conditions that differ per worktree (`onbranch`, `gitdir`) makes
+  an untouched worktree look changed against the shared baseline: the check fails closed and the
+  operator re-baselines. Inherited from AIFactory; not handled in this change (Codex round 2).
 - Check and use are not atomic: a writer that adds a key after the check and before the git
   call is not caught. The empty merge/filter pins cover keys present at probe time only.
   Same window as AIFactory.

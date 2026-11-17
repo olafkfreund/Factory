@@ -157,3 +157,15 @@ def test_recovery_hint_names_the_baseline_dir(repo: Path) -> None:
     _git(repo, "config", "merge.x.driver", "true")
     with pytest.raises(RuntimeError, match="FACTORY_GIT_BASELINE_DIR="):
         check_git_metadata(repo)
+
+
+def test_recovery_hint_quotes_a_path_with_spaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FACTORY_GIT_BASELINE_DIR", str(tmp_path / "b"))
+    r = tmp_path / "my repo"
+    subprocess.run(["git", "init", "-q", str(r)], check=True)
+    record_baseline(r)
+    _git(r, "config", "merge.x.driver", "true")
+    with pytest.raises(RuntimeError, match=r"--rebaseline '.*my repo'"):
+        check_git_metadata(r)
