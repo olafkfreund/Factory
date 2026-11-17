@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3782
 intent: intent/2026-11-17-3782-netpol-node-probe.md
 ---
