@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -32,8 +33,10 @@ from providers.github_provider import GitHubProvider  # noqa: E402
 from providers.http_github_provider import HttpGitHubProvider  # noqa: E402
 from providers.protocol import (  # noqa: E402
     IssueFilters,
+    LabelData,
     ProviderCommentError,
     ProviderType,
+    WorkItemProvider,
 )
 
 # Not a credential: an opaque literal so assertions about where it does and does
@@ -253,3 +256,198 @@ async def test_a_failing_comment_page_raises_rather_than_truncating():
     provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     with pytest.raises(ProviderCommentError, match="comment read failed"):
         await provider.fetch_comments(1)
+
+
+# ── the rest of the work-item protocol (Factory#3773) ────────────────────────
+
+
+def _recording(responses: dict[tuple[str, str], Any] | None = None):
+    """A transport that records (method, path, body, auth) and replays canned answers."""
+    seen: list[tuple[str, str, bytes, str]] = []
+    canned = responses or {}
+
+    def handler(request: Any) -> Any:
+        seen.append(
+            (request.method, request.url.path, request.content, request.headers["Authorization"])
+        )
+        return canned.get((request.method, request.url.path), httpx.Response(200, json={}))
+
+    return seen, _transport(handler)
+
+
+def test_it_is_now_a_complete_work_item_provider():
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN)
+    assert isinstance(provider, WorkItemProvider)
+
+
+@pytest.mark.asyncio
+async def test_add_comment_posts_to_the_issues_endpoint_and_returns_the_id():
+    seen, transport = _recording(
+        {("POST", "/repos/acme/widgets/issues/7/comments"): httpx.Response(201, json={"id": 99})}
+    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    assert await provider.add_comment(7, "hello") == 99
+    method, path, body, auth = seen[0]
+    assert (method, path) == ("POST", "/repos/acme/widgets/issues/7/comments")
+    assert b'"body":"hello"' in body.replace(b" ", b"")
+    assert auth == f"Bearer {_FAKE_TOKEN}"
+
+
+@pytest.mark.asyncio
+async def test_close_issue_comments_first_then_patches_state():
+    seen, transport = _recording(
+        {("POST", "/repos/acme/widgets/issues/7/comments"): httpx.Response(201, json={"id": 1})}
+    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    assert await provider.close_issue(7, comment="done") is True
+    assert [(m, p) for m, p, _, _ in seen] == [
+        ("POST", "/repos/acme/widgets/issues/7/comments"),
+        ("PATCH", "/repos/acme/widgets/issues/7"),
+    ]
+    assert b"closed" in seen[1][2]
+
+
+@pytest.mark.asyncio
+async def test_close_issue_answers_false_on_a_server_error_like_the_gh_provider():
+    _, transport = _recording({("PATCH", "/repos/acme/widgets/issues/7"): httpx.Response(500)})
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    assert await provider.close_issue(7) is False
+
+
+@pytest.mark.asyncio
+async def test_apply_labels_posts_the_whole_list():
+    seen, transport = _recording()
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    await provider.apply_labels(7, ["bug", "p1"])
+
+    assert seen[0][:2] == ("POST", "/repos/acme/widgets/issues/7/labels")
+    assert b'"labels"' in seen[0][2] and b'"p1"' in seen[0][2]
+
+
+@pytest.mark.asyncio
+async def test_remove_labels_deletes_each_quoted_and_tolerates_a_missing_one():
+    seen, transport = _recording(
+        {("DELETE", "/repos/acme/widgets/issues/7/labels/gone"): httpx.Response(404)}
+    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    await provider.remove_labels(7, ["good first issue", "gone"])
+
+    assert [(m, p) for m, p, _, _ in seen] == [
+        ("DELETE", "/repos/acme/widgets/issues/7/labels/good first issue"),
+        ("DELETE", "/repos/acme/widgets/issues/7/labels/gone"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_remove_labels_still_raises_on_a_real_error():
+    _, transport = _recording(
+        {("DELETE", "/repos/acme/widgets/issues/7/labels/x"): httpx.Response(403)}
+    )
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await provider.remove_labels(7, ["x"])
+
+
+@pytest.mark.asyncio
+async def test_create_label_updates_when_it_already_exists():
+    exists = httpx.Response(422, json={"errors": [{"code": "already_exists"}]})
+    seen, transport = _recording({("POST", "/repos/acme/widgets/labels"): exists})
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    await provider.create_label(LabelData(name="bug", color="d73a4a", description="broken"))
+
+    assert [(m, p) for m, p, _, _ in seen] == [
+        ("POST", "/repos/acme/widgets/labels"),
+        ("PATCH", "/repos/acme/widgets/labels/bug"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_label_does_not_treat_any_422_as_already_existing():
+    """MUTATION GUARD: only `already_exists` may fall through to an update."""
+    invalid = httpx.Response(422, json={"errors": [{"code": "invalid", "field": "color"}]})
+    seen, transport = _recording({("POST", "/repos/acme/widgets/labels"): invalid})
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=transport)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await provider.create_label(LabelData(name="bug", color="zzz"))
+    assert len(seen) == 1, "no PATCH was attempted"
+
+
+@pytest.mark.asyncio
+async def test_list_labels_pages_to_completion():
+    def handler(request: Any) -> Any:
+        page = int(request.url.params["page"])
+        if page == 1:
+            return httpx.Response(200, json=[{"name": f"l{i}", "color": "fff"} for i in range(100)])
+        return httpx.Response(200, json=[{"name": "last", "color": "000", "description": "d"}])
+
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
+
+    labels = await provider.list_labels()
+
+    assert len(labels) == 101
+    assert labels[-1] == LabelData(name="last", color="000", description="d")
+
+
+@pytest.mark.asyncio
+async def test_assign_to_user_posts_graphql_to_the_api_host():
+    urls: list[str] = []
+
+    def handler(request: Any) -> Any:
+        urls.append(str(request.url))
+        return httpx.Response(
+            200, json={"data": {"repository": {"suggestedActors": {"nodes": []}}}}
+        )
+
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
+    await provider.assign_to_user(7, ["Copilot"])
+
+    assert urls == ["https://api.github.com/graphql"]
+
+
+@pytest.mark.asyncio
+async def test_graphql_on_github_enterprise_drops_the_v3_segment():
+    urls: list[str] = []
+
+    def handler(request: Any) -> Any:
+        urls.append(str(request.url))
+        return httpx.Response(200, json={"data": {}})
+
+    provider = HttpGitHubProvider(
+        _repo=_REPO,
+        _token=_FAKE_TOKEN,
+        _base_url="https://github.acme.internal/api/v3",
+        _transport=_transport(handler),
+    )
+    await provider.assign_to_user(7, ["alice"])
+
+    assert urls == ["https://github.acme.internal/api/graphql"]
+
+
+@pytest.mark.asyncio
+async def test_a_graphql_error_in_a_200_response_is_raised_not_swallowed():
+    """MUTATION GUARD: a FORBIDDEN mutation must not look like a completed assignment."""
+    answers = [
+        {"data": {"repository": {"suggestedActors": {"nodes": [_BOT]}}}},
+        {"data": {"repository": {"issue": {"id": "ISSUE_ID"}}}},
+        {"data": None, "errors": [{"type": "FORBIDDEN", "message": "no"}]},
+    ]
+
+    def handler(_request: Any) -> Any:
+        return httpx.Response(200, json=answers.pop(0))
+
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
+
+    with pytest.raises(RuntimeError, match="FORBIDDEN"):
+        await provider.assign_to_user(7, ["Copilot"])
+    assert answers == [], "all three requests were made before the failure surfaced"
+
+
+_BOT = {"login": "copilot-swe-agent", "__typename": "Bot", "id": "BOT_ID"}
