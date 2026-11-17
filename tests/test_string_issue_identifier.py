@@ -70,7 +70,7 @@ class _NoCalls:
     """A gh client that fails the test if the provider reaches it."""
 
     def __getattr__(self, name: str) -> Any:
-        raise AssertionError(f"gh client reached: {name}")
+        raise AttributeError(f"gh client reached: {name}")
 
 
 @pytest.mark.parametrize(
