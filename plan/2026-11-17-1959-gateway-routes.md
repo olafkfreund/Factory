@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1959
 spec: spec/2026-11-17-1959-gateway-routes.md
 coders:
