@@ -32,7 +32,7 @@ evidence. Certification is a separate engagement.
 - [`vulnerability-register.md`](vulnerability-register.md) — the register process
   that turns transient scan output into tracked, dated, owned findings with SLA
   due dates and closure evidence, plus the penetration-testing program. Factory#317.
-- [`rbac-role-catalog.md`](rbac-role-catalog.md) and [`access-review-runbook.md`](access-review-runbook.md) — the fleet role model and the quarterly access review with its report generator. The review record template and the quarterly reminder workflow: [`access-review-record-template.md`](access-review-record-template.md). Factory#312.
+- [`rbac-role-catalog.md`](rbac-role-catalog.md) and [`access-review-runbook.md`](access-review-runbook.md) — the fleet role model and the quarterly access review with its report generator. The review record template and the quarterly reminder workflow: [`access-review-record-template.md`](access-review-record-template.md). Factory#312. The owner's checklist for enforcing task-route roles in PFactory and TFactory: [`rbac-enforcement-cutover.md`](rbac-enforcement-cutover.md).
 - [`roles.md`](roles.md) — named security roles and control owners, the quarterly
   management-review cadence, and the continuous-monitoring plan. Factory#311.
 - [`agent-identity.md`](agent-identity.md) — why "agents must never merge" is an

@@ -51,7 +51,7 @@ This is the single biggest access-control gap. Trace end to end:
 2. **MFA not enforced.** No TOTP/WebAuthn required action in Keycloak; MFA neither mandated nor evidenced. Fails PCI 8.4/8.5, NYDFS §500.12, NIST IA-2(1)/(2).
 3. **`DISABLE_AUTH` present in prod images.** Host-guarded but not removed; a full-bypass switch in the shipped artifact is an audit finding (NIST AC-3, SOC 2 CC6.1).
 4. **CFactory fail-open default.** Closed 2026-11: with no keys, `/api` and `/mcp` deny unless the explicit dev opt-ins `api_dev_open` / `mcp_dev_open` are set (`CFactory apps/backend/cfactory/config.py`, `auth.py`).
-5. **Fleet role model published, task-route checks not yet enforced.** All three services have `ROLE_LEVELS`; the catalog is [rbac-role-catalog.md](../rbac-role-catalog.md). PF and TF task routes run in shadow mode (`RBAC_ENFORCE_TASK_ROUTES` off) until projects carry an `org_id`; org admins cannot yet revoke another member's key.
+5. **Fleet role model published, task-route checks not yet enforced.** All three services have `ROLE_LEVELS`; the catalog is [rbac-role-catalog.md](../rbac-role-catalog.md). PF and TF task routes run in shadow mode (`RBAC_ENFORCE_TASK_ROUTES` off) until projects carry an `org_id`; org admins cannot yet revoke another member's key. Cutover steps: [rbac-enforcement-cutover.md](../rbac-enforcement-cutover.md).
 6. **Access-review process documented, first review not yet signed.** Cadence, inputs, checks and generator: [access-review-runbook.md](../access-review-runbook.md). Open until the Q4 2026 review (due 2027-01-15) is signed and stored.
 7. **Keycloak is non-declarative and dev-mode.** `start-dev` + H2 + imperative `kcadm.sh` config means realm/MFA/client state is not in gitops and not reproducible or auditable.
 
