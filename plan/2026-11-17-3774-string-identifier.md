@@ -62,7 +62,7 @@ Codex reviews the artifacts and the diff.
    REST/GraphQL/WIQL boundary; parsers emit `str(...)`. PR-only paths keep `int`.
    → `pytest tests/test_provider_comments.py tests/test_http_github_provider.py
    tests/test_github_assign_to_user.py`.
-   Traps: the GraphQL `Int!` call at `github_provider.py:511-517`; a PR caller
+   Traps: the GraphQL `Int!` query is now in `_github_json.py` (~262-268, used by `assign_actors`): cover both GitHub transports and keep numeric-wire assertions; a PR caller
    of a shared member passes `str(n)`.
 5. Tests. Update the provider tests for `str` ids, add: schema validates `5`
    and `"PROJ-1"`; `CorrelationBlock(issue_number=5).issue_number == "5"`; correlation
@@ -77,6 +77,7 @@ Codex reviews the artifacts and the diff.
    `int()` casts, update the integer-keyed comment maps, and add the text-column
    write-side migration where the 2b audit lists an integer issue column; one PR
    per repo → each repo's own CI (ruff, mypy, pytest, drift gate).
+   Each service PR also: rejects a non-numeric key at its edge until its column migration lands; adds a grep-gate test that fails on `== <int>` comparisons against issue identifiers; and pins the correlation-key parity (`"o/r#5"` for `5` and `"5"`) against the service's real `origin_key`/`synthetic_key` function (the hub holds no such function, so the test lives in each service; name it in the PR).
    Traps: AIFactory autonomy matrix is regenerated, never hand-merged; use plain
    names in parenthesised imports; vendored files are byte-checked against the hub.
 
@@ -88,4 +89,4 @@ Codex reviews the artifacts and the diff.
 ## Rollback
 
 Hub: revert the PR (types widen only, no wire emission changes). Services: revert
-the service PR; a text column keeps decimal values so a revert needs no data fix.
+the service PR; a text column keeps decimal values, so a revert needs no data fix only while no non-numeric key (`PROJ-123`) has been stored. Precondition: revert before any Jira work item is ingested; afterwards delete or remap those rows first (a Jira tenant does not exist until #3775).
