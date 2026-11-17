@@ -32,20 +32,21 @@ under `apps/backend/` of each repo.
    not reopen (re-entrancy). Sidecar must not break `clear_memory`.
 2. `memory/pool.py` (new): `merge_into(src, dst)` as in the spec. AIFactory:
    `agents/utils.py` `sync_memory_to_project` and `sync_memory_to_source` call it.
-   PF/TF: also `pool_dir`, `pool_dir_from_spec`, `seed`, `sync`. -> pool tests
+   PF/TF: also `pool_dir`, `pool_dir_from_spec`, `seed`, `sync` (never raise). -> pool tests
    Traps: AIFactory ruff vs `standards/ruff.toml` alias sorting: plain imports.
-3. `memory/graphiti_helpers.py`: `gate_for_graphiti`; call it in
+3. `memory/graphiti_helpers.py`: `gate_for_graphiti` (deep copy, idempotent, shared budget in the spec's field order); call it in
    `save_to_graphiti_async`, `patterns.append_*` (also marker on the file bullet,
    per-process count), and `agents/memory_manager.py` before both Graphiti saves.
    -> graphiti tests
 4. PF/TF only: seed in `core/workspace/setup.py` after `copy_spec_to_worktree`;
-   sync in `agents/session.py` after each `save_session_memory`.
+   sync in `agents/session.py` after each `save_session_memory`, skipped when
+   `source_spec_dir` is None.
    -> `pytest tests/test_memory_pool.py`
 5. Tests per repo: `tests/test_memory_lock.py` (two processes, timeout, mutation),
    `tests/test_memory_graphiti_gate.py` (mutation), `tests/test_memory_pool.py`
    (PF/TF: path derives from project dir only, repeated-failure recall, other
    project sees nothing; all: merge keeps newer data, mutation), measures fixture.
-6. Hub: `docs/rfc/0021-...md` section 6.2 (measures and the remaining gaps),
+6. Hub: `docs/rfc/0021-earned-memory-and-promotion-gates.md` section 6.2 (measures and the remaining gaps),
    epic #389 boxes, issue comments #3795-#3797 with the decision record.
 
 ## Tests
