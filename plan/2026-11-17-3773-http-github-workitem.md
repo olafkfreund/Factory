@@ -25,6 +25,7 @@ Approved decisions (spec `spec/2026-11-17-3773-http-github-workitem.md`): add `a
 
 - Step 1: the moved algorithm is not strictly verbatim. A null issue node (`repository.issue: null`) used to raise `AttributeError`; it is now the no-op the surrounding code already intended (`if not assignable_id: return`). Covered by `test_missing_issue_node_skips_the_mutation` on both transports.
 - Step 2: `HttpGitHubProvider._graphql` raises when the response carries an `errors` array, because GraphQL failures arrive as HTTP 200 (Codex review finding, confirmed); `gh api graphql` already fails on those. Covered by `test_a_graphql_error_in_a_200_response_is_raised_not_swallowed`.
+- 2026-11-17 (service wave rfc22-2b2c): the services pick up HttpGitHubProvider via the single re-vendor at hub 5d0a51e in olafkfreund/AIFactory#2103, olafkfreund/PFactory#1049, olafkfreund/TFactory#1547, olafkfreund/CFactory#534; no separate re-vendor PR.
 
 ## Tests
 
