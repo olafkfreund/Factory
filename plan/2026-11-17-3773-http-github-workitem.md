@@ -15,15 +15,15 @@ Approved decisions (spec `spec/2026-11-17-3773-http-github-workitem.md`): add `a
 
 ## Steps
 
-1. `shared/factory-github/providers/_github_json.py`: add `async def assign_actors(graphql, repo, issue_number, assignees)` holding the algorithm from `github_provider.py:431-534` verbatim (alias constants move with it). `github_provider.py`: `assign_to_user` calls it with `self._graphql`. → verify by the existing `GitHubProvider` assign tests passing unchanged.
+1. `shared/factory-github/providers/_github_json.py`: add `async def assign_actors(graphql, repo, issue_number, assignees)` holding the algorithm from `github_provider.py:431-534` verbatim (alias constants move with it). `github_provider.py`: `assign_to_user` calls it with `self._graphql`. BEFORE the extraction, port the regression cases from AIFactory `tests/test_git_providers_assign.py` (mixed aliases, Copilot disabled, empty assignees, unknown login) into a new hub test `tests/test_github_assign_to_user.py` against a fake `gh` client, and see them pass on the unextracted code; after the extraction they must pass unchanged. → verify by that new hub test file.
    Traps: vendored byte-exact; no behaviour change; keep the silent no-op when Copilot is disabled.
-2. `shared/factory-github/providers/http_github_provider.py`: add the seven members and a `_graphql` method (`POST` to `{base}/graphql`, or `{base minus /v3}/graphql` for a GHE `/api/v3` base), all through `_client()`; add the REST label/close/comment calls per the spec table. Update the module docstring (work-item seam now complete). Add tests to `tests/test_http_github_provider.py`. → verify by `pytest -q tests/test_http_github_provider.py tests/test_provider_credential_repr.py tests/test_provider_redirect_posture.py`, then the full hub suite, ruff and mypy.
+2. `shared/factory-github/providers/http_github_provider.py`: add the seven members and a `_graphql` method (`POST` to `{base}/graphql`, or `{base minus /v3}/graphql` for a GHE `/api/v3` base), all through `_client()`. Decisions carried from the spec: `close_issue` posts the optional comment first, then PATCHes `state=closed`, returns `True`, and returns `False` on `httpx.HTTPError`; `list_labels` pages with `per_page=100` until a short page; `remove_labels` issues one DELETE per label, URL-quoted, ignoring a 404; `create_label` POSTs and falls back to PATCH only when the response is 422 AND the error body's `errors[].code` is `already_exists` (any other 422 raises); `add_comment` returns the integer comment id. Update the module docstring (work-item seam now complete). Add tests to `tests/test_http_github_provider.py`. → verify by `pytest -q tests/test_http_github_provider.py tests/test_provider_credential_repr.py tests/test_provider_redirect_posture.py`, then the full hub suite, ruff and mypy.
    Traps: token never in repr or logs; `follow_redirects=False` stays; URL-quote label names; `isinstance(HttpGitHubProvider(...), WorkItemProvider)` must be true.
 3. Open the PR to main with the artifacts; wait for green; the coordinator merges. Closing #3773 happens after merge.
 
 ## Tests
 
-Full hub suite as in `.github/workflows/contracts.yml`; new tests assert method, path, body and `Authorization` header per member, 422-then-PATCH label create, 404-tolerant label removal, Copilot disabled no-op.
+Full hub suite as in `.github/workflows/contracts.yml`; new tests assert method, path, body and `Authorization` header per member, 422-then-PATCH label create, 404-tolerant label removal, Copilot disabled no-op, a non-`already_exists` 422 raising, `list_labels` spanning two pages, `close_issue` returning `False` on a 5xx.
 
 ## Rollback
 
