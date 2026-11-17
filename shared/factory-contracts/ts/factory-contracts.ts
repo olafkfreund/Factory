@@ -17,7 +17,7 @@ export interface Usage {
 
 export interface CorrelationBlock {
   session_id?: string | null;
-  issue_number?: number | null;
+  issue_number?: string | number | null;
   aifactory_task_id?: string | null;
   branch?: string | null;
   pr_number?: number | null;

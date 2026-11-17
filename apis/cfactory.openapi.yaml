@@ -251,8 +251,11 @@ components:
         session_id:
           type: string
         issue_number:
-          type: integer
-          nullable: true
+          oneOf:
+            - type: integer
+              nullable: true
+            - type: string
+          description: Work-item identifier; a decimal string (an integer is read as its decimal form) or a tracker key such as PROJ-123.
         aifactory_task_id:
           type: string
           nullable: true

@@ -23,7 +23,7 @@
       "properties": {
         "source": { "type": "string", "description": "Emitting system, e.g. 'pfactory'." },
         "session_id": { "type": "string" },
-        "issue_number": { "type": "integer" },
+        "issue_number": { "type": ["integer", "string"], "description": "Work-item identifier (Factory#3774): a decimal string, or an integer read as its decimal form, or a tracker key such as PROJ-123." },
         "repo": { "type": "string", "description": "The target repo, OPTIONALLY provider-qualified as '<provider>:<path>' (RFC-0020 3.5): 'owner/repo' | 'gitlab:group/subgroup/project' | 'azure_devops:organization/project/repo'. GitHub is the UNQUALIFIED default, so a pre-RFC-0020 contract and every GitHub contract are unchanged and need no backfill; an unqualified value reads as 'github:'. Only a KNOWN provider name is a qualification, so a clone URL and any other colon-bearing path are the whole reference. This is the one place a tenant declares which git HOST its work belongs to: PFactory, AIFactory and TFactory read the host off this reference instead of each choosing from their own environment default, which is what stopped a GitLab tenant's run reconnoitring github.com and opening a GitHub PR. There is deliberately no sibling 'provider' field - two would be two sources of truth."},
         "base_ref": { "type": "string", "description": "RFC-0010 reconnaissance: the branch/tag the plan was built against, e.g. 'main'." },
         "baseline_commit": { "type": "string", "description": "RFC-0010 reconnaissance: the resolved commit SHA the RepoMap was built from. Lets AIFactory/TFactory anchor to the exact tree the human approved and detect drift." },

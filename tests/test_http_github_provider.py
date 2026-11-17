@@ -110,9 +110,9 @@ async def test_the_token_is_sent_as_a_bearer_credential():
         return httpx.Response(200, json={"number": 7, "title": "t", "state": "open"})
 
     provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
-    issue = await provider.fetch_issue(7)
+    issue = await provider.fetch_issue("7")
 
-    assert issue.number == 7
+    assert issue.number == "7"
     assert seen["auth"] == f"Bearer {_FAKE_TOKEN}"
     assert seen["url"].endswith("/repos/acme/widgets/issues/7")
 
@@ -179,7 +179,7 @@ async def test_pull_requests_are_dropped_from_the_issue_list():
     provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
     issues = await provider.fetch_issues()
 
-    assert [i.number for i in issues] == [1, 3]
+    assert [i.number for i in issues] == ["1", "3"]
 
 
 @pytest.mark.asyncio
