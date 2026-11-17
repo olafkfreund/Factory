@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3765
 intent: intent/2026-11-17-3765-memory-ranking.md
 ---
