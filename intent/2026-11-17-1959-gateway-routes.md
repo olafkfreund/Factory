@@ -20,14 +20,14 @@ Epic #1958 acceptance item 3 asks that a production change's evidence trail answ
 ## Proposed outcome
 
 - The hub task-contract schema explicitly defines and validates additive `execution.route` and `execution.phase_routes` (the execution object already tolerates unknown keys, so this adds validation, not tolerance), values from the catalog class vocabulary `local|cheap|balanced|frontier`, distinct from `execution.routing.class` (`economy|standard|premium|governed`). `phase_models` is unchanged and still honoured.
-- PFactory emits `phase_routes` beside `phase_models` (class of each picked model) and, when a gateway is configured, a consumer prefers the route; otherwise behaviour is exactly today's.
+- PFactory emits `phase_routes` beside `phase_models` (class of each picked model). A consumer preferring the route is deferred (spec design 3: nothing resolves a class name to a model yet); behaviour is exactly today's.
 - A PFactory schema-2 signature records the route used: the gateway-reported route when a run went through the gateway, else the cost router's planning route, else null.
 - `governance_cli --json` and the text output show `controls`, `agent_identity` and `model_route`; `--control` and `--tier` filtering is regression-tested.
 - The smallest deploy-to-plan join is designed; its reader is built if it needs no secret or service.
 
 ## Affected users and systems
 
-Factory (schema, artifacts), PFactory (`render.py`, `usage.py`, `cost_router.py`, `phase_config.py`, `aifactory_handoff.py`, `governance_cli.py`, vendored schema). AIFactory (build consumer) and the writer side of the join are out of this round.
+Factory (schema, artifacts), PFactory (`render.py`, `usage.py`, `cost_router.py`, `governance_cli.py`, vendored schema). AIFactory (build consumer) and the writer side of the join are out of this round.
 
 ## Constraints
 
