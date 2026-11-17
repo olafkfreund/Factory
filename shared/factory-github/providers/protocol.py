@@ -24,6 +24,25 @@ class ProviderType(str, Enum):
     AZURE_DEVOPS = "azure_devops"
 
 
+# A work-item identifier (RFC-0022 Phase 1, Factory#3774): a decimal string for
+# GitHub/GitLab/ADO, a key such as ``PROJ-123`` for Jira. PR numbers stay ``int``.
+IssueRef = str
+
+
+def as_issue_int(ref: IssueRef | int, provider: str = "this provider") -> int:
+    """The integer a numeric API needs, or a clear error for a key it cannot take.
+
+    Providers call this at their own boundary (REST path, GraphQL ``Int!``, ADO
+    work item id, GitLab IID). An ``int`` is accepted so a not-yet-migrated
+    caller keeps working; ``bool`` and non-decimal strings are not identifiers.
+    """
+    if isinstance(ref, int) and not isinstance(ref, bool):
+        return ref
+    if isinstance(ref, str) and ref.isascii() and ref.isdigit():
+        return int(ref)
+    raise ValueError(f"issue identifier {ref!r} is not numeric for {provider}")
+
+
 # ============================================================================
 # DATA MODELS
 # ============================================================================
@@ -73,7 +92,7 @@ class IssueData:
     Provider-agnostic representation of an issue.
     """
 
-    number: int
+    number: IssueRef
     title: str
     body: str
     author: str
@@ -105,7 +124,7 @@ class IssueComment:
     """
 
     id: str
-    issue_number: int
+    issue_number: IssueRef
     author: str
     body: str
     created_at: datetime
@@ -166,17 +185,22 @@ class SupportsFetchComments(Protocol):
 
     async def fetch_comments(
         self,
-        issue_number: int,
+        issue_number: IssueRef,
         since: datetime | None = None,
     ) -> list[IssueComment]:
         pass
 
 
+def _ref_sort_key(ref: str) -> tuple[int, int, str]:
+    """Numeric keys in numeric order (as before), then other keys alphabetically."""
+    return (0, int(ref), ref) if ref.isascii() and ref.isdigit() else (1, 0, ref)
+
+
 async def fanout_comments(
     provider: SupportsFetchComments,
-    issue_numbers: list[int],
+    issue_numbers: list[IssueRef],
     since: datetime | None = None,
-) -> dict[int, list[IssueComment]]:
+) -> dict[IssueRef, list[IssueComment]]:
     """Per-issue fallback for providers with no bulk comment endpoint.
 
     Costs exactly ``len(set(issue_numbers))`` API calls — bounded and
@@ -187,7 +211,7 @@ async def fanout_comments(
     """
     return {
         number: await provider.fetch_comments(number, since=since)
-        for number in sorted({int(number) for number in issue_numbers})
+        for number in sorted({str(number) for number in issue_numbers}, key=_ref_sort_key)
     }
 
 
@@ -210,14 +234,14 @@ class FanoutCommentsMixin:
         # this in must provide fetch_comments. No runtime effect.
         async def fetch_comments(
             self,
-            issue_number: int,
+            issue_number: IssueRef,
             since: datetime | None = None,
         ) -> list[IssueComment]:
             pass
 
     async def fetch_comments_bulk(
-        self, issue_numbers: list[int], since: datetime | None = None
-    ) -> dict[int, list[IssueComment]]:
+        self, issue_numbers: list[IssueRef], since: datetime | None = None
+    ) -> dict[IssueRef, list[IssueComment]]:
         """One call per issue; single-paged per issue when ``since`` is set."""
         return await fanout_comments(self, issue_numbers, since)
 
@@ -314,7 +338,7 @@ class WorkItemProvider(Protocol):
     def provider_type(self) -> ProviderType:
         """Get the provider type."""
 
-    async def fetch_issue(self, number: int) -> IssueData:
+    async def fetch_issue(self, number: IssueRef) -> IssueData:
         """
         Fetch an issue by number.
 
@@ -358,7 +382,7 @@ class WorkItemProvider(Protocol):
 
     async def close_issue(
         self,
-        number: int,
+        number: IssueRef,
         comment: str | None = None,
     ) -> bool:
         """
@@ -374,7 +398,7 @@ class WorkItemProvider(Protocol):
 
     async def add_comment(
         self,
-        issue_or_pr_number: int,
+        issue_or_pr_number: IssueRef,
         body: str,
     ) -> int:
         """
@@ -390,7 +414,7 @@ class WorkItemProvider(Protocol):
 
     async def fetch_comments(
         self,
-        issue_number: int,
+        issue_number: IssueRef,
         since: datetime | None = None,
     ) -> list[IssueComment]:
         """
@@ -424,9 +448,9 @@ class WorkItemProvider(Protocol):
 
     async def fetch_comments_bulk(
         self,
-        issue_numbers: list[int],
+        issue_numbers: list[IssueRef],
         since: datetime | None = None,
-    ) -> dict[int, list[IssueComment]]:
+    ) -> dict[IssueRef, list[IssueComment]]:
         """
         Read comment threads for several issues at once (Factory#375).
 
@@ -452,7 +476,7 @@ class WorkItemProvider(Protocol):
 
     async def assign_to_user(
         self,
-        issue_number: int,
+        issue_number: IssueRef,
         assignees: list[str],
     ) -> None:
         """
@@ -480,7 +504,7 @@ class WorkItemProvider(Protocol):
 
     async def apply_labels(
         self,
-        issue_or_pr_number: int,
+        issue_or_pr_number: IssueRef,
         labels: list[str],
     ) -> None:
         """
@@ -493,7 +517,7 @@ class WorkItemProvider(Protocol):
 
     async def remove_labels(
         self,
-        issue_or_pr_number: int,
+        issue_or_pr_number: IssueRef,
         labels: list[str],
     ) -> None:
         """

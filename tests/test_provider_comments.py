@@ -212,7 +212,7 @@ def test_normalised_shape_is_identical_across_providers() -> None:
         assert isinstance(comment, IssueComment)
         assert comment.provider is provider_type
         assert comment.id == "1"
-        assert comment.issue_number == 7
+        assert comment.issue_number == "7"
         assert comment.author == "alice"
         assert comment.body == "ship it"
         assert comment.created_at == datetime(2026, 7, 20, 9, 0, tzinfo=UTC)
@@ -389,7 +389,7 @@ def test_github_incremental_backfill_of_46_issues_is_one_api_call() -> None:
     poll that runs over and over reads all 46 cards in a single request instead
     of 46.
     """
-    numbers = list(range(1, 47))
+    numbers = [str(n) for n in range(1, 47)]
     github, client = _github([[_gh_comment(1, issue_number=3), _gh_comment(2, issue_number=9)]])
 
     grouped = asyncio.run(github.fetch_comments_bulk(numbers, since=NOW))
@@ -398,9 +398,9 @@ def test_github_incremental_backfill_of_46_issues_is_one_api_call() -> None:
     assert client.calls[0].startswith("/repos/owner/repo/issues/comments?")
     assert parse_qs(urlparse(client.calls[0]).query)["since"] == ["2026-07-26T12:00:00Z"]
     assert set(grouped) == set(numbers), "every requested issue is present"
-    assert [c.id for c in grouped[3]] == ["1"]
-    assert [c.id for c in grouped[9]] == ["2"]
-    assert grouped[4] == [], "an issue with no new comments maps to an empty list"
+    assert [c.id for c in grouped["3"]] == ["1"]
+    assert [c.id for c in grouped["9"]] == ["2"]
+    assert grouped["4"] == [], "an issue with no new comments maps to an empty list"
 
 
 def test_github_cold_backfill_costs_one_call_per_issue_and_no_more() -> None:
@@ -410,7 +410,7 @@ def test_github_cold_backfill_costs_one_call_per_issue_and_no_more() -> None:
     history to answer a question about 46 issues; per-issue is 46 calls whatever
     the repository's size.
     """
-    numbers = list(range(1, 47))
+    numbers = [str(n) for n in range(1, 47)]
     github, client = _github([[] for _ in numbers])
 
     grouped = asyncio.run(github.fetch_comments_bulk(numbers, since=None))
@@ -425,8 +425,16 @@ def test_providers_without_a_bulk_endpoint_fan_out_one_call_per_issue() -> None:
     gitlab, gl_calls = _gitlab([[] for _ in range(3)])
     azure, ado_calls = _azure([{"comments": []} for _ in range(3)])
 
-    assert set(asyncio.run(gitlab.fetch_comments_bulk([1, 2, 3], since=NOW))) == {1, 2, 3}
-    assert set(asyncio.run(azure.fetch_comments_bulk([1, 2, 3], since=NOW))) == {1, 2, 3}
+    assert set(asyncio.run(gitlab.fetch_comments_bulk(["1", "2", "3"], since=NOW))) == {
+        "1",
+        "2",
+        "3",
+    }
+    assert set(asyncio.run(azure.fetch_comments_bulk(["1", "2", "3"], since=NOW))) == {
+        "1",
+        "2",
+        "3",
+    }
     assert len(gl_calls) == 3
     assert len(ado_calls) == 3
 
@@ -503,7 +511,7 @@ def test_gitlab_pr_comments_read_merge_request_notes() -> None:
     assert [c.id for c in comments] == ["1"], "system notes dropped, as for issues"
     assert calls[0][0].endswith("/merge_requests/9/notes")
     assert comments[0].url.endswith("/-/merge_requests/9#note_1")
-    assert comments[0].issue_number == 9
+    assert comments[0].issue_number == "9"
 
 
 def test_gitlab_issue_notes_still_use_the_issues_path() -> None:
