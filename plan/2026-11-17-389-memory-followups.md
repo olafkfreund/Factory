@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 389
 spec: spec/2026-11-17-389-memory-followups.md
 coders:
