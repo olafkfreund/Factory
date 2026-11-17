@@ -28,3 +28,6 @@ Hub suite; per service the drift gate, mypy and the service test suite.
 ## Rollback
 
 Revert the service re-vendors, then the hub PR. Concrete providers kept their methods throughout, so runtime behaviour is unchanged by either direction.
+
+## Deviations (recorded with the code that made them)
+- 2026-11-17 (service wave rfc22-2b2c): step 3 did not need its own service PRs. The 3771 service PRs re-vendor at 5d0a51e, which already contains the protocol removal (#3790) and Factory#3773 (#3789), so they close the 3772 re-vendor too: olafkfreund/AIFactory#2103, olafkfreund/PFactory#1049, olafkfreund/TFactory#1547, olafkfreund/CFactory#534. Provider classes keep their own `api_get`/`api_post` methods (only the protocol dropped them); no service calls them (grep over apps/ and tests/: zero production callers).
