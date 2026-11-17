@@ -7,7 +7,7 @@ status: In progress
 
 # RFC-0021 — Earned Memory and Promotion Gates
 
-> **Status:** In progress (epic [#389](https://github.com/olafkfreund/Factory/issues/389) open; Phase 0 project-level memory is released (AIFactory#1035); the Phase 1 exact-repeat gate is merged to `dev` in AIFactory#2019, PFactory#992 and TFactory#1497, not yet released) — **§1 CORRECTED 2026-07-27, see §0** · **Created:** 2026-07-27 · **Updated:** 2026-11-15 · **Owner:** AIFactory (memory subsystem; PFactory and TFactory vendor the same tree) ·
+> **Status:** In progress (epic [#389](https://github.com/olafkfreund/Factory/issues/389) open; Phase 0 project-level memory is released (AIFactory#1035); the Phase 1 exact-repeat gate is merged in AIFactory#2019, PFactory#992 and TFactory#1497; Phase 2 caps and expiry in AIFactory#2063, PFactory#1012 and TFactory#1514; Phases 3-5 are split into their own issues) — **§1 CORRECTED 2026-07-27, see §0** · **Created:** 2026-07-27 · **Updated:** 2026-11-15 · **Owner:** AIFactory (memory subsystem; PFactory and TFactory vendor the same tree) ·
 > **Extends:**
 > [RFC-0010](./0010-code-aware-planning-and-behavioral-equivalence.md) (code-aware planning — memory is what makes the second pass over a codebase cheaper than the first),
 > [RFC-0012](./0012-external-knowledge-grounding.md) (external grounding — this is the *internal* counterpart: what the fleet learned by doing, rather than what it read),
@@ -217,8 +217,9 @@ being re-observed is usually stale but occasionally just rare.
 
 ## 4. What does not change
 
-- The store stays Graphiti / LadybugDB. This RFC changes **what is written**, not
-  where.
+- The store stays where it is: the file store under `<project>/.aifactory/memory/`
+  (decided 2026-11-16; Graphiti is not extended, see §8). This RFC changes **what
+  is written**, not where.
 - No task-contract change.
 - `insight_extractor.py` keeps its role, moved to the end of the pipeline.
 - Phase 1 adds no new runtime dependency: the fleet already configures an
@@ -241,6 +242,8 @@ being re-observed is usually stale but occasionally just rare.
   is no longer drowning.
 - **Phase 4 — validation and trust gates.** Requires Phase 3's signals.
 - **Phase 5 — retrieval quality.** Rank by confidence and recency at read time.
+  First scoped to age-based ranking (recency, `confirmed.json` age); ranking on
+  validation or trust signals waits for Phases 3-4.
 
 Phase 1 is deliberately shippable alone. If this RFC stalls after it, the fleet
 is still meaningfully better off.
@@ -312,15 +315,18 @@ with `--embedder` once an embedder is configured.
   replaces a larger LLM synthesis call.
 - **Vendoring.** The memory tree exists in three service repos. A change here
   needs the same discipline as `shared/factory-github/`, or the three drift.
-  Phase 1 should land in all three or none.
+  Phase 1 should land in all three or none, and so should Phases 3-5 (decided
+  2026-11-16).
 
 ## 8. Open questions
 
-- Should memories be **tenant-scoped**? RFC-0020 made git configuration
-  tenant-scoped; memory is currently project-scoped. A multi-tenant deployment
-  sharing one project's memories across tenants is a leak, and this RFC does not
-  resolve it.
-- Is `dead_end` safe to share across projects, or is an approach that failed in
-  one codebase actively misleading in another?
-- Does the knowledge-graph structure earn its keep, given Aperant moved off
-  Graphiti for their rebuild? Worth a spike before Phase 3, not before Phase 1.
+Decided 2026-11-16 (owner delegation, epic #389):
+
+- **Tenant scope.** Memory stays project-scoped. This holds only if no read path
+  crosses projects; RFC-0020 does not itself guarantee one tenant per project, so
+  Phase 3 carries an acceptance test that the pool path derives from the project
+  directory alone. Revisit if a project becomes shared across tenants.
+- **`dead_end` sharing.** Not shared across projects: an approach that failed in
+  one codebase can mislead in another.
+- **Knowledge graph.** No investment. Graphiti was unreachable in production when
+  last observed (§0), and Phase 3 builds on the file store.
