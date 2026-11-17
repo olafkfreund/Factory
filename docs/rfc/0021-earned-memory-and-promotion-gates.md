@@ -361,7 +361,7 @@ one PR per service repo. Measured with the fixtures in each repo's
 Tests with a mutation check: two-process loss without the lock; a busy lock is
 written to when the lock is removed; Graphiti gets 180 items when the gate is
 removed; a shared pool leaks a dead end across projects; wholesale copy lowers a
-count. Remaining gaps: the lock does not exclude across hosts on a network
+count. Remaining gaps: `codebase_map.json` is written by its own unlocked code (merged safely into the pool, not locked at its source); the lock does not exclude across hosts on a network
 filesystem (the wait still bounds the damage); PF/TF sync only when
 `source_spec_dir` is known; dead ends are recalled without a frequency gate (one
 off dead ends are recalled too, within the 800-character cap).
