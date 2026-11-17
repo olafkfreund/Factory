@@ -11,6 +11,7 @@ config pins that AIFactory, PFactory and TFactory each copied into
 | `agent_sandbox/policy.py` | `Policy`: the per-service rules as data. |
 | `agent_sandbox/env.py` | `child_env`, `is_denied_env_key`, `is_agent_env_allowed`, `get_agent_env_blanks`, `without_host_secrets`, `BASE_DENY_EXACT`, `BLANK_BREAKS`, `strip_proxy_userinfo`. |
 | `agent_sandbox/git_pins.py` | `pin_git_config` (hooks, fsmonitor, ext transport, ssh, pager, editor, askPass, credential helpers) and `merge_driver_pins` (empty `merge.*.driver`, `filter.*.clean/smudge/process`). |
+| `agent_sandbox/git_metadata.py` | Git metadata baseline (#3737): `record_baseline`, `record_worktree_baseline`, `check_git_metadata`, `snapshot`. Bind `check_git_metadata` as the `check` of `merge_driver_pins`. Baselines live in `$FACTORY_GIT_BASELINE_DIR` (default `~/.factory/git-baselines`); re-baseline with `python -m agent_sandbox.git_metadata --rebaseline <repo>`. |
 | `tests/` | Logic tests plus one verdict table per service Policy. |
 
 The import name is `agent_sandbox` (not `factory_sandbox`, which would shadow
@@ -52,3 +53,14 @@ service copy with this directory; the per-service workflow
   Other children and `keep`/`extra` values are unchanged.
 - `get_agent_env_blanks` leaves `BLANK_BREAKS` (`GIT_DIR`, `GIT_WORK_TREE`, ...) alone:
   a blank value breaks git and the SDK cannot unset. `child_env(agent=True)` drops them.
+
+## Added in #3737
+
+- `git_metadata.py` is the AIFactory baseline (local and worktree `merge.*`, `filter.*`,
+  `diff.*`, exec-bearing keys, `info/attributes`) without the base-SHA records. PFactory and
+  TFactory record it at worktree creation and bind it in their `merge_driver_pins` wrapper.
+- `merge_driver_pins` raises `RuntimeError` for any `remote.<name>.uploadpack`,
+  `.receivepack` or `.vcs` key. A `-c` pin cannot override the repo file (git keeps the
+  first value; verified on git 2.54), and `.vcs` cannot be blanked, so the key is refused
+  for every remote, not only `origin`. The drift checker skips a listed file that an older
+  pinned canonical lacks, so adding a file does not break services still on the old pin.

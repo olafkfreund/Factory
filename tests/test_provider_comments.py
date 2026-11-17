@@ -455,3 +455,127 @@ def test_add_comment_still_exists_unchanged() -> None:
 
     signature = inspect.signature(GitHubProvider.add_comment)
     assert list(signature.parameters) == ["self", "issue_or_pr_number", "body"]
+
+
+# ---------------------------------------------------------------------------
+# Pull-request comments and avatars (Factory#3771, RFC-0022 Phase 2b)
+# ---------------------------------------------------------------------------
+
+
+def test_avatar_url_is_filled_from_each_providers_own_shape() -> None:
+    """The board shows an avatar; no caller should read raw_data per provider."""
+    gh = {**_gh_comment(1), "user": {"login": "alice", "avatar_url": "https://gh/a.png"}}
+    gl = {**_gl_note(1), "author": {"username": "alice", "avatar_url": "https://gl/a.png"}}
+    ado = {
+        **_ado_comment(1),
+        "createdBy": {"uniqueName": "alice", "_links": {"avatar": {"href": "https://ado/a.png"}}},
+    }
+    github, _ = _github([[gh]])
+    gitlab, _ = _gitlab([[gl]])
+    azure, _ = _azure([{"comments": [ado]}])
+
+    assert asyncio.run(github.fetch_comments(7))[0].avatar_url == "https://gh/a.png"
+    assert asyncio.run(gitlab.fetch_comments(7))[0].avatar_url == "https://gl/a.png"
+    assert asyncio.run(azure.fetch_comments(7))[0].avatar_url == "https://ado/a.png"
+
+
+def test_avatar_url_defaults_to_empty_when_the_provider_sends_none() -> None:
+    github, _ = _github([[_gh_comment(1)]])
+    assert asyncio.run(github.fetch_comments(7))[0].avatar_url == ""
+
+
+def test_github_pr_comments_read_the_issues_endpoint() -> None:
+    """A PR's conversation is served by /issues/{n}/comments on GitHub."""
+    github, client = _github([[_gh_comment(1, issue_number=9)]])
+
+    comments = asyncio.run(github.fetch_pr_comments(9))
+
+    assert [c.id for c in comments] == ["1"]
+    assert client.calls[0].startswith("/repos/owner/repo/issues/9/comments?")
+
+
+def test_gitlab_pr_comments_read_merge_request_notes() -> None:
+    """MR notes live under merge_requests/, and the url points at the MR page."""
+    gitlab, calls = _gitlab([[_gl_note(1), _gl_note(2, system=True)]])
+
+    comments = asyncio.run(gitlab.fetch_pr_comments(9))
+
+    assert [c.id for c in comments] == ["1"], "system notes dropped, as for issues"
+    assert calls[0][0].endswith("/merge_requests/9/notes")
+    assert comments[0].url.endswith("/-/merge_requests/9#note_1")
+    assert comments[0].issue_number == 9
+
+
+def test_gitlab_issue_notes_still_use_the_issues_path() -> None:
+    gitlab, calls = _gitlab([[_gl_note(1)]])
+    comments = asyncio.run(gitlab.fetch_comments(7))
+    assert calls[0][0].endswith("/issues/7/notes")
+    assert comments[0].url.endswith("/-/issues/7#note_1")
+
+
+def _ado_thread_comment(comment_id: int, **extra: Any) -> dict[str, Any]:
+    return {
+        "id": comment_id,
+        "author": {"uniqueName": "bob", "_links": {"avatar": {"href": "https://ado/b.png"}}},
+        "content": "looks good",
+        "publishedDate": "2026-07-20T09:00:00Z",
+        "lastContentUpdatedDate": "2026-07-21T09:00:00Z",
+        **extra,
+    }
+
+
+def test_azure_pr_comments_flatten_threads_and_skip_deleted() -> None:
+    azure, calls = _azure(
+        [
+            {
+                "value": [
+                    {
+                        "id": 10,
+                        "comments": [
+                            _ado_thread_comment(1),
+                            _ado_thread_comment(2, isDeleted=True),
+                        ],
+                    },
+                    {"id": 11, "isDeleted": True, "comments": [_ado_thread_comment(3)]},
+                    {"id": 12, "comments": [_ado_thread_comment(1)]},
+                ]
+            }
+        ]
+    )
+
+    comments = asyncio.run(azure.fetch_pr_comments(5))
+
+    # Comment ids restart at 1 in every thread, so the id is thread-qualified.
+    assert [c.id for c in comments] == ["10.1", "12.1"]
+    assert comments[0].raw_data["threadId"] == 10
+    assert comments[0].author == "bob"
+    assert comments[0].body == "looks good"
+    assert comments[0].avatar_url == "https://ado/b.png"
+    assert comments[0].provider is ProviderType.AZURE_DEVOPS
+    assert "/pullrequests/5/threads" in calls[0][0]
+
+
+def test_azure_pr_comments_apply_since_client_side() -> None:
+    stale = _ado_thread_comment(1, lastContentUpdatedDate="2026-06-01T09:00:00Z")
+    fresh = _ado_thread_comment(2, lastContentUpdatedDate="2026-07-26T18:00:00Z")
+    azure, _ = _azure([{"value": [{"id": 3, "comments": [stale, fresh]}]}])
+
+    comments = asyncio.run(azure.fetch_pr_comments(5, since=NOW))
+
+    assert [c.id for c in comments] == ["3.2"]
+
+
+def test_azure_pr_comments_raise_instead_of_returning_nothing_on_failure() -> None:
+    azure, _ = _azure([RuntimeError("boom")])
+    with pytest.raises(ProviderCommentError, match="pull request 5"):
+        asyncio.run(azure.fetch_pr_comments(5))
+
+
+def test_http_github_provider_leaves_pr_comments_to_the_gh_provider() -> None:
+    from providers.http_github_provider import (  # noqa: PLC0415
+        HttpGitHubProvider,
+    )
+
+    provider = HttpGitHubProvider(_repo="owner/repo", _token="t")  # noqa: S106
+    with pytest.raises(NotImplementedError, match="fetch_pr_comments"):
+        asyncio.run(provider.fetch_pr_comments(1))
