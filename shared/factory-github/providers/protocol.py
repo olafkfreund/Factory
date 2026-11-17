@@ -116,6 +116,10 @@ class IssueComment:
     # Provider-specific raw data
     raw_data: dict[str, Any] = field(default_factory=dict)
 
+    # Last on purpose: positional construction by existing callers is unchanged.
+    # Empty when the provider does not supply one (RFC-0022 Phase 2b, Factory#3771).
+    avatar_url: str = ""
+
 
 class ProviderCommentError(RuntimeError):
     """A comment read failed or could not be completed.
@@ -574,6 +578,32 @@ class CodeProvider(Protocol):
 
         Returns:
             Unified diff string
+        """
+
+    async def fetch_pr_comments(
+        self,
+        pr_number: int,
+        since: datetime | None = None,
+    ) -> list[IssueComment]:
+        """
+        Read the discussion comments on a pull request (Factory#3771).
+
+        The pull-request counterpart to :meth:`WorkItemProvider.fetch_comments`:
+        GitLab keeps merge-request notes and Azure DevOps keeps PR threads in
+        different places from issue and work-item comments, so a caller that
+        wants a PR's discussion needs its own method. Same contract: normalised
+        :class:`IssueComment` list, oldest first, ``since`` narrows to comments
+        updated strictly after that instant.
+
+        Args:
+            pr_number: PR/MR number
+            since: Only return comments updated after this instant
+
+        Returns:
+            Comments, oldest first. Empty when the PR has no discussion.
+
+        Raises:
+            ProviderCommentError: The thread could not be read in full.
         """
 
     async def post_review(
