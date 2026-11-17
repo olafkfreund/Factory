@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-_SHARED = Path(__file__).resolve().parents[1] / "shared" / "factory-github"
+_SHARED = Path(__file__).resolve().parents[1].joinpath("shared", "factory-github")
 if str(_SHARED) not in sys.path:
     sys.path.insert(0, str(_SHARED))
 

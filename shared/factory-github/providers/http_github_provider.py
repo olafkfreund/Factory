@@ -234,7 +234,9 @@ class HttpGitHubProvider:
 
     async def assign_to_user(self, issue_number: int, assignees: list[str]) -> None:
         """Assign users or the Copilot agent; the algorithm is shared with the gh provider."""
-        await assign_actors(self._graphql, self._repo, issue_number, assignees)
+        await assign_actors(
+            self._graphql, repo=self._repo, issue_number=issue_number, assignees=assignees
+        )
 
     async def _graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         """One GraphQL request. GitHub Enterprise serves it at ``/api/graphql``."""
