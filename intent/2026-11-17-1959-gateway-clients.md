@@ -14,8 +14,8 @@ Separately, epic #1958 acceptance item 3 (a production change's evidence trail a
 
 ## Proposed outcome
 
-- The three clients' URL and token env are present in the manifests but unset, so nothing changes until the owner seeds `factory/factory-secrets` keys `MODEL_GATEWAY_CLIENT_TOKEN` and `MODEL_GATEWAY_URL` (and the gateway Secret from `docs/model-gateway.md`).
-- Task Job pods may reach the gateway pods on 8080 and nothing else new.
+- The three clients' URL and token env are present in the manifests but absent from the running containers, so nothing changes until the owner seeds `factory/factory-secrets` keys `MODEL_GATEWAY_CLIENT_TOKEN` and `MODEL_GATEWAY_URL` (and the gateway Secret from `docs/model-gateway.md`).
+- Task Job pods may reach the gateway pods on 8080 and nothing else new (a narrow permission that takes effect when the policy syncs; no client routes through it until configured).
 - A read-only script proves "401 without token, 200 with it" from a token file, never printing the token.
 - A written assessment of #1958 item 3: what answers it today, what does not, with the gap recorded as a plan step for the owning repos.
 
@@ -32,4 +32,4 @@ Separately, epic #1958 acceptance item 3 (a production change's evidence trail a
 
 ## Open questions
 
-None. Decisions (owner delegation 2026-11-17): (1) no CFactory release is cut, because the promotion to `main` is the release process (RELEASE.md) and it already happened; (2) the URL is an optional Secret key rather than a manifest literal, because a literal would switch the clients on with no token and fail the copilot closed; (3) the Job-egress rule is added now and is inert until a Job carries the URL.
+None. Decisions (owner delegation 2026-11-17): (1) no CFactory release is cut, because the promotion to `main` is the release process (RELEASE.md) and it already happened; (2) the URL is an optional Secret key rather than a manifest literal, because a literal would switch the clients on with no token and fail the copilot closed; (3) the Job-egress rule is added now: it takes effect on sync, but only towards the gateway pods on 8080, and no client uses it until configured; (4) activation also needs a client rollout after seeding (env from a Secret is read at container start), and CFactory only routes `ollama`, `openai` and `openai_compatible` copilot providers (the default `claude` path is unchanged), so URL plus token alone does not move every request. Codex review of this intent confirmed the premises against the code.
