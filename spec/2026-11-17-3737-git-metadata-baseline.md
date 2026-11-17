@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3737
 intent: intent/2026-11-17-3737-git-metadata-baseline.md
 ---
