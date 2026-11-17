@@ -1,15 +1,18 @@
-name: Nightly benchmark
+name: Benchmark (weekly)
 
 # Standing evaluation (Factory#3713): a fixed 15-task SWE-bench subset through
 # the pipeline, scored by the official harness, stored with its provenance and
 # compared to the previous run. Needs a SELF-HOSTED runner (local AIFactory,
-# Docker, model credentials), which the owner provides, so the schedule is OFF.
-# To enable: see docs/benchmarks/nightly-eval.md, then uncomment `schedule`.
+# Docker, model credentials), which the owner provides. Weekly (decision
+# 2026-11-16, docs/benchmarks/nightly-eval.md): the schedule is on, but the job
+# runs only when the repo variable BENCH_ENABLED is "true", so nothing is queued
+# on a runner that does not exist. Spend is capped in code by the token and USD
+# budgets in benchmarks/nightly-config.json. workflow_dispatch always runs.
 
 on:
   workflow_dispatch: {}
-  # schedule:
-  #   - cron: "0 1 * * *"   # 01:00 UTC
+  schedule:
+    - cron: "0 1 * * 0"   # Sundays 01:00 UTC
 
 permissions:
   contents: read
@@ -21,6 +24,7 @@ concurrency:
 
 jobs:
   bench:
+    if: github.event_name == 'workflow_dispatch' || vars.BENCH_ENABLED == 'true'
     runs-on: [self-hosted, factory-bench]
     timeout-minutes: 720
     env:
@@ -69,14 +73,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          printf 'The nightly benchmark resolved fewer tasks than the previous run.\n\n' > issue.md
+          printf 'The benchmark resolved fewer tasks than the previous run.\n\n' > issue.md
           cat compare.md >> issue.md
           printf '\nRun: %s\n' "$RUN_URL" >> issue.md
           gh label create bench-regression --force --color B60205 \
-            --description "Nightly benchmark regression"
+            --description "Benchmark regression"
           number=$(gh issue list --label bench-regression --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body-file issue.md
           else
-            gh issue create --title "Nightly benchmark regression" --label bench-regression --body-file issue.md
+            gh issue create --title "Benchmark regression" --label bench-regression --body-file issue.md
           fi

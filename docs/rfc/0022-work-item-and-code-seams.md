@@ -7,7 +7,7 @@ status: Proposed
 
 # RFC-0022 — Work-Item and Code Seams
 
-> **Status:** Proposed · **Created:** 2026-07-27 · **Owner:** Factory hub (`shared/factory-github/`), consumed by all four services ·
+> **Status:** Accepted (2026-11-16, option C, see Decision) · **Created:** 2026-07-27 · **Owner:** Factory hub (`shared/factory-github/`), consumed by all four services ·
 > **Extends:**
 > [RFC-0003](./0003-github-agentic-integration.md) (GitHub as the record of truth — this RFC has to qualify that claim),
 > [RFC-0020](./0020-multi-provider-git-integration-and-tenant-configured-projects.md) (multi-provider git — this is the seam RFC-0020 Phase 5 could not cross),
@@ -92,9 +92,12 @@ CodeProvider       the 9 code members + repo, get_repository_info + provider_typ
 both sets, so **they satisfy both protocols unchanged**. This is a type-level
 split, not a rewrite, and the existing classes need no edit to keep working.
 
-`HttpGitHubProvider` (Factory#370) is already a `WorkItemProvider` and nothing
-else — it was written to that shape before the shape had a name, which is
-corroboration that the seam is real rather than invented for Jira.
+`HttpGitHubProvider` (Factory#370) is a read-only subset of the work-item half
+and has none of the code half. It was written to that shape before the shape
+had a name, which is corroboration that the seam is real. It does not yet
+satisfy `WorkItemProvider`: 7 of the 12 members are missing (`close_issue`,
+`add_comment`, `assign_to_user`, `apply_labels`, `remove_labels`,
+`create_label`, `list_labels`).
 
 ### 2.2 The escape hatches do not survive the split
 
@@ -231,6 +234,26 @@ should land in Phase 3 rather than being worked around.
   transition, and screens that reject an API-created issue for missing a
   mandatory custom field. Phase 3 must fail loudly with the field name rather
   than reporting a generic 400.
+
+## Decision (owner delegation 2026-11-16)
+
+The owner delegated the A/B/C choice on Factory#392 to the recorded
+recommendation. **Option C: accept this RFC with Phase 2 before Phase 1.**
+
+- **Order:** Phase 2 (protocol split, caller audit), then Phase 1 (string
+  identifier, informed by what the audit finds), then Phases 3 to 5. Section 4's
+  reason for putting Phase 1 first is weaker than it looked: correlation keys
+  (`synthetic_key`, `origin_key`) are already `str`.
+- **Open question 1 (same object for both):** yes. A provider may implement both
+  protocols (the three existing ones do). A tenant may still configure two
+  connections. Less configuration, and no new special case in the callers.
+- **Open questions 2 and 3** stay open for Phases 3 and 5.
+- **Phase 2 slicing:** (a) hub protocols, additive, `GitProvider` becomes the
+  union plus `api_get`/`api_post` (done, Factory#392 PR); (b) caller audit of the
+  18 `api_get` sites and move to protocol methods, per service; (c) remove
+  `api_get`/`api_post` from the protocols and re-vendor all four copies together;
+  (d) fill the 7 missing `HttpGitHubProvider` work-item members.
+- **Still the owner's:** a Jira Cloud test site and credentials for Phase 3.
 
 ## 9. Open questions
 
