@@ -26,6 +26,10 @@ factory-gitops CI; Factory docs. No runtime behaviour changes.
 - Do not flip the flag, touch secrets or the live cluster.
 - The check must run on every PR (no paths filter) so a required check never goes missing.
 
+## Limits
+
+A grep sees literals in the repo's deployable files (manifests, kustomize and Helm values, workflows), not values injected from a Secret or ConfigMap at runtime. The services themselves refuse `DISABLE_AUTH` on a non-loopback host (`server/config.py` in AIFactory, PFactory, TFactory), so the CI check is the second layer, not the only one.
+
 ## Open questions
 
 None. Decision (owner delegation 2026-11-17): put the check in factory-gitops, not the hub, because that is the only repo whose manifests reach production; a Kyverno policy was not chosen because the file never needs to be admitted to the cluster to be wrong, and the flag is in a Deployment env that a CI grep covers earlier and without a cluster rollout.
