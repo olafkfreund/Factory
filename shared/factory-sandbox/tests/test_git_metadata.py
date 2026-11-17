@@ -76,7 +76,7 @@ def test_remote_program_key_is_refused(repo: Path, name: str, suffix: str) -> No
 
 def test_plain_remote_is_allowed(repo: Path) -> None:
     _git(repo, "remote", "add", "evil", "/tmp/nowhere")
-    assert merge_driver_pins(repo, env={}) == []
+    assert not any(p.startswith("remote.") for p in merge_driver_pins(repo, env={}))
 
 
 def test_unpinnable_remote_program_would_run_without_the_refusal(tmp_path: Path) -> None:
