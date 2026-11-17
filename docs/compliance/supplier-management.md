@@ -3,8 +3,8 @@
 - **Policy owner:** Security Owner (CISO function) — see [roles.md](roles.md)
 - **Review cadence:** Annually per vendor, and on any material change
 - **Frameworks:** ISO/IEC 27001:2022 A.5.19-A.5.22; SOC 2 CC9.2 and CC6.4 (inherited
-  physical security); NYDFS 500.11 (conditional, see
-  [nydfs-part500-mapping.md](nydfs-part500-mapping.md)); FFIEC outsourcing booklet;
+  physical security); NYDFS 500.11 (reference only, not applicable: see
+  [framework-applicability.md](framework-applicability.md)); FFIEC outsourcing booklet;
   GDPR Art. 28
 - **Issue:** Factory#3695
 

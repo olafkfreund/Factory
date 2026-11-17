@@ -20,6 +20,8 @@ CFG = {
     "timeout_min": 1,
     "per_task_token_cap": 100,
     "total_token_budget": 250,
+    "total_cost_usd_budget": 5.0,
+    "per_task_cost_usd_cap": 2.0,
     "regression_drop_tasks": 2,
     "min_paired": 3,
     "baseline": {"a": "resolved", "b": "unresolved", "zzz": "resolved"},
@@ -64,6 +66,19 @@ def test_task_row_driver_crash_and_over_cap() -> None:
 
 def test_budget_charges_cap_for_missing_tokens() -> None:
     assert ne.budget_used([{"tokens": 30}, {"tokens": None}], 100) == 130
+
+
+def test_budget_spent_checks_tokens_and_usd() -> None:
+    cfg = CFG
+    assert not ne.budget_spent([{"tokens": 10, "cost_usd": 1.0}], cfg)
+    assert ne.budget_spent([{"tokens": 10, "cost_usd": 5.0}], cfg)  # USD cap
+    assert ne.budget_spent([{"tokens": 300, "cost_usd": 0.1}], cfg)  # token cap
+    # a task with no recorded cost is charged the per-task USD cap (2.0)
+    assert not ne.budget_spent([{"tokens": 10, "cost_usd": None}] * 2, cfg)
+    assert ne.budget_spent([{"tokens": 10}] * 3, cfg)
+    for key in ("total_cost_usd_budget", "per_task_cost_usd_cap"):
+        with pytest.raises(KeyError):  # a missing cap fails loudly, it does not disable the limit
+            ne.budget_spent([{"tokens": 10}], {k: v for k, v in CFG.items() if k != key})
 
 
 def test_exit2_task_with_patch_is_still_scored() -> None:
