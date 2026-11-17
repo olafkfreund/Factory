@@ -24,6 +24,14 @@ You need:
 | A repository you may push to | The pipeline opens pull requests | `git push --dry-run` |
 | A provider token | Reading issues, opening PRs | see [Boards]({{ '/guides/boards/' | relative_url }}) |
 | Access to the four services | Or run them locally | [Run locally]({{ '/run-locally/' | relative_url }}) |
+| A GitHub App (optional) | PRs authored by a bot instead of a personal token | [GitHub App setup](https://aifactory.freundcloud.com/concepts/github-app) |
+
+**GitHub identity.** By default AIFactory pushes and opens PRs with a personal
+token. For a shared deployment, register a GitHub App instead, so the PR author
+is a bot and a maintainer can approve it. The steps, the traps and the Copilot
+review options (opt-in, not the default) are on one page:
+[GitHub App identity: operator setup](https://aifactory.freundcloud.com/concepts/github-app).
+Do it once, before the first task.
 
 If you are running locally rather than against a shared cluster, do
 [Run the whole Factory locally]({{ '/run-locally/' | relative_url }}) first and
