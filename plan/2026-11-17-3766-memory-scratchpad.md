@@ -50,7 +50,7 @@ memory dir, like `gotchas_written`), a repeat only increments; refused message
 when over cap. `get_session_context` appends `## Dead ends (already tried, do
 not retry)` after gotchas. `memory/hooks.py` `make_failure_hook(memory_dir)` ->
 async `PostToolUseFailure` hook observing `error_fingerprint` of
-`"<tool_name>: <error>"` (never raises, returns `{}`), registered in
+`"<tool_name>: <error>"` (never raises, returns `{}`, ignores `is_interrupt` failures as PF/TF `guard.failure` does), registered in
 `core/client.py` where the client has `spec_dir` (`spec_dir / "memory"`):
 AIFactory adds a `"PostToolUseFailure"` group; PF/TF add a second matcher next
 to `guard.failure`. Pooling unchanged (AIFactory copies `memory/`). Known gaps
