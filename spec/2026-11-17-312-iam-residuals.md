@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 312
 intent: intent/2026-11-17-312-iam-residuals.md
 ---
