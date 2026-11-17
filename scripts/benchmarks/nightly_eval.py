@@ -101,6 +101,23 @@ def budget_used(rows: list[dict[str, Any]], cap: int) -> float:
     return sum(r["tokens"] if isinstance(r.get("tokens"), int | float) else cap for r in rows)
 
 
+def budget_spent(rows: list[dict[str, Any]], config: dict[str, Any]) -> bool:
+    """True when the token budget or the USD budget (Factory#3713) is used up.
+
+    Both budgets and `per_task_cost_usd_cap` are required (KeyError otherwise: a
+    missing cap must fail the run, not disable the limit). Checked before every
+    task, so no task is admitted past either. A task with no recorded cost is
+    charged the per-task USD cap, as a task with no tokens is charged the token cap.
+    """
+    if budget_used(rows, config["per_task_token_cap"]) >= config["total_token_budget"]:
+        return True
+    usd_cap = config["per_task_cost_usd_cap"]
+    spent = sum(
+        r["cost_usd"] if isinstance(r.get("cost_usd"), int | float) else usd_cap for r in rows
+    )
+    return bool(spent >= config["total_cost_usd_budget"])
+
+
 def apply_outcomes(rows: list[dict[str, Any]], gold: dict[str, str]) -> None:
     for row in rows:
         if row["pipeline_status"] in ("skipped_budget", "driver_error"):
@@ -296,7 +313,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     cap = config["per_task_token_cap"]
     rows: list[dict[str, Any]] = []
     for task in tasks:
-        if budget_used(rows, cap) >= config["total_token_budget"]:
+        if budget_spent(rows, config):
             rows.append(
                 {
                     "instance_id": task["instance_id"],

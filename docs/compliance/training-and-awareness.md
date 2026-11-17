@@ -3,7 +3,7 @@
 - **Policy owner:** Security Owner (CISO function) — see [roles.md](roles.md)
 - **Review cadence:** Annually, and after any Sev-1 incident or material policy change
 - **Frameworks:** ISO/IEC 27001:2022 A.6.3 and Clause 7.2/7.3; SOC 2 CC1.4;
-  NYDFS 500.10 and 500.14 (conditional, see [nydfs-part500-mapping.md](nydfs-part500-mapping.md));
+  NYDFS 500.10 and 500.14 (reference only, not applicable: see [framework-applicability.md](framework-applicability.md));
   FedRAMP AT family (deferred); PCI DSS 12.6 (scoped out)
 - **Issue:** Factory#3693
 

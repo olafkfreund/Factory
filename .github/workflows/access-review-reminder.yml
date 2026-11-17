@@ -1,0 +1,30 @@
+# Opens the quarterly access-review issue from the record template (Factory#312).
+# Runbook: docs/compliance/access-review-runbook.md. Idempotent: an existing issue
+# (open or closed) for the quarter is left alone.
+name: access review reminder
+
+on:
+  schedule:
+    - cron: "0 8 1 1,4,7,10 *"
+  workflow_dispatch:
+    inputs:
+      quarter:
+        description: "Quarter to open, e.g. 2026-Q4 (default: the quarter that just ended)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  open-issue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Open the access-review issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          QUARTER: ${{ inputs.quarter }}
+        run: sh scripts/access_review_reminder.sh

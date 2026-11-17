@@ -1,14 +1,17 @@
 # NYDFS 23 NYCRR Part 500: Control Mapping
 
 - **Owner:** Security Owner (CISO function) — see [roles.md](roles.md)
-- **Review cadence:** Annually, and when [#3697](https://github.com/olafkfreund/Factory/issues/3697) is decided
+- **Review cadence:** Annually, and whenever a re-scope trigger in [framework-applicability.md](framework-applicability.md) fires
 - **Framework:** New York DFS Cybersecurity Regulation, 23 NYCRR Part 500
 - **Issue:** Factory#3700
 
-> **Conditional.** Whether Part 500 applies is the owner's decision in Factory#3697 and
-> is not made here. If the answer is that it does not apply, this document is withdrawn
-> and #3700 is closed as not planned. Section summaries below are written from memory
-> of the 2023 amendment and every row must be checked against the current rule text
+> **Not applicable (decided 2026-11-16, Factory#3697).** Part 500 is out of active compliance
+> scope: see [framework-applicability.md](framework-applicability.md) for the premises, the
+> re-scope triggers and the owner's premise check. This document is kept as the reference
+> mapping, so a re-scope starts from a mapped baseline. Every section is marked N/A in the
+> Applicability column. The Status column describes how the fleet would stand if the Part
+> applied; it is not a compliance claim. Section summaries below are written from memory of
+> the 2023 amendment and every row must be checked against the current rule text
 > (https://www.dfs.ny.gov/industry_guidance/cybersecurity/23_nycrr_part_500) before
 > anyone relies on it.
 
@@ -31,38 +34,41 @@ section needs is not in place today.
 
 ## Section mapping
 
-| Section | Requirement (short) | Fleet control | Status | Gap or issue |
-|---|---|---|---|---|
-| 500.1 | Definitions | Administrative | n/a | |
-| 500.2 | Cybersecurity program | [Information Security Policy](policies/information-security-policy.md), [governance-isms.md](policies/governance-isms.md), [control matrix](control-matrix.md) | Partial | Management review not yet held (Factory#3694) |
-| 500.3 | Cybersecurity policy | [Policy set](policies/index.md), approved by Security Owner | Partial | Board or senior-officer approval, not held (case 1) |
-| 500.4 | CISO and governance; report to the board at least annually (500.4(b)) | Security Owner is the CISO function ([roles.md](roles.md)); [management review](management-review-and-internal-audit.md) | Gap | Report to governing body not produced; no deputy named |
-| 500.5 | Penetration testing (annual) and vulnerability management | CodeQL, Trivy P0 gate, Dependabot, [vulnerability-register.md](vulnerability-register.md) | Gap | No external pen test: accepted risk R-015 / AR-002 contradicts an annual test requirement if Part 500 applies |
-| 500.6 | Audit trail | HMAC audit hash-chain, daily anchor, SIEM forward ([audit-logging.md](policies/audit-logging.md)) | Partial | Retention floor vs ILM (Factory#3692) |
-| 500.7 | Access privileges and management | [access-control-policy.md](policies/access-control-policy.md), [iam-access-control.md](policies/iam-access-control.md), [operator-endpoint-standard.md](operator-endpoint-standard.md) | Partial | Wildcard `APP_API_TOKEN` (R-002, Factory#312) |
-| 500.8 | Application security | [secure-sdlc-policy.md](policies/secure-sdlc-policy.md): PR review, CodeQL, Trivy, gitleaks, signed provenance; independent TFactory verification | Partial | Annual review of the written procedures and the in-house applications' security is not recorded |
-| 500.9 | Risk assessment (periodic, documented) | [risk-register.md](risk-register.md) methodology and quarterly review | Partial | Review not yet recorded (Factory#3694); written assessment sign-off |
-| 500.10 | Cybersecurity personnel and intelligence | Security Owner named in [roles.md](roles.md); [training-and-awareness.md](training-and-awareness.md) | Gap | No qualified-personnel record, no threat-intelligence intake defined, no recorded training (Factory#3693) |
-| 500.11 | Third-party service provider security policy | [vendor-and-third-party-policy.md](policies/vendor-and-third-party-policy.md), [supplier-management.md](supplier-management.md) | Partial | Register and terms not recorded (Factory#3695); the only section that binds in case 2 |
-| 500.12 | Multi-factor authentication | Keycloak SSO with GitHub upstream | Gap | MFA not enforced at the IdP (R-010, Factory#312) |
-| 500.13 | Asset management and data retention | [data-governance.md](policies/data-governance.md), classification policy | Partial | No asset inventory register (SoA A.5.9) |
-| 500.14 | Monitoring and training | Audit-chain alert, `audit-siem-forward`; [training-and-awareness.md](training-and-awareness.md) | Gap | No paging, no recorded training (Factory#3688, #3693) |
-| 500.15 | Encryption of nonpublic information | [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | Partial | Postgres at rest accepted R-014 |
-| 500.16 | Incident response and business continuity and disaster recovery plans | [incident-response.md](policies/incident-response.md), [business-continuity-dr.md](policies/business-continuity-dr.md), [dr-runbook.md](dr-runbook.md) | Partial | Runbook untested (Factory#3688); no off-cluster copy (Factory#3681) |
-| 500.17(a) | Notice of a cybersecurity event within 72 hours | [incident-response.md](policies/incident-response.md) | Partial | No authority contact list (Factory#3698) |
-| 500.17(b) | Annual submission by April 15 | See below | Gap | No certification process held |
-| 500.17(c) | Notice within 24 hours of an extortion payment, and a written explanation within 30 days | None: [incident-response.md](policies/incident-response.md) has no extortion-payment step | Gap | Add the step if Part 500 applies |
-| 500.18 | Confidentiality of information provided to the department | Administrative | n/a | |
-| 500.19 | Exemptions | See below | Not decided | Owner's determination |
-| 500.20 | Enforcement | Administrative | n/a | |
-| 500.21 | Effective date | Administrative | n/a | |
-| 500.22 | Transitional periods | Administrative | n/a | Check which transition dates have passed |
-| 500.23 | Severability | Administrative | n/a | |
-| 500.24 | Exemptions from electronic filing | Exemption | n/a | Only if the owner has to file |
+| Section | Applicability | Requirement (short) | Fleet control | Status if the Part applied | Gap or issue |
+|---|---|---|---|---|---|
+| 500.1 | N/A | Definitions | Administrative | n/a | |
+| 500.2 | N/A | Cybersecurity program | [Information Security Policy](policies/information-security-policy.md), [governance-isms.md](policies/governance-isms.md), [control matrix](control-matrix.md) | Partial | Management review not yet held (Factory#3694) |
+| 500.3 | N/A | Cybersecurity policy | [Policy set](policies/index.md), approved by Security Owner | Partial | Board or senior-officer approval, not held (case 1) |
+| 500.4 | N/A | CISO and governance; report to the board at least annually (500.4(b)) | Security Owner is the CISO function ([roles.md](roles.md)); [management review](management-review-and-internal-audit.md) | Gap | Report to governing body not produced; no deputy named |
+| 500.5 | N/A | Penetration testing (annual) and vulnerability management | CodeQL, Trivy P0 gate, Dependabot, [vulnerability-register.md](vulnerability-register.md) | Gap | No external pen test: accepted risk R-015 / AR-002 contradicts an annual test requirement if Part 500 applies |
+| 500.6 | N/A | Audit trail | HMAC audit hash-chain, daily anchor, SIEM forward ([audit-logging.md](policies/audit-logging.md)) | Partial | Retention floor vs ILM (Factory#3692) |
+| 500.7 | N/A | Access privileges and management | [access-control-policy.md](policies/access-control-policy.md), [iam-access-control.md](policies/iam-access-control.md), [operator-endpoint-standard.md](operator-endpoint-standard.md) | Partial | Wildcard `APP_API_TOKEN` (R-002, Factory#312) |
+| 500.8 | N/A | Application security | [secure-sdlc-policy.md](policies/secure-sdlc-policy.md): PR review, CodeQL, Trivy, gitleaks, signed provenance; independent TFactory verification | Partial | Annual review of the written procedures and the in-house applications' security is not recorded |
+| 500.9 | N/A | Risk assessment (periodic, documented) | [risk-register.md](risk-register.md) methodology and quarterly review | Partial | Review not yet recorded (Factory#3694); written assessment sign-off |
+| 500.10 | N/A | Cybersecurity personnel and intelligence | Security Owner named in [roles.md](roles.md); [training-and-awareness.md](training-and-awareness.md) | Gap | No qualified-personnel record, no threat-intelligence intake defined, no recorded training (Factory#3693) |
+| 500.11 | N/A | Third-party service provider security policy | [vendor-and-third-party-policy.md](policies/vendor-and-third-party-policy.md), [supplier-management.md](supplier-management.md) | Partial | Register and terms not recorded (Factory#3695); the only section that binds in case 2 |
+| 500.12 | N/A | Multi-factor authentication | Keycloak SSO with GitHub upstream | Gap | MFA not enforced at the IdP (R-010, Factory#312) |
+| 500.13 | N/A | Asset management and data retention | [data-governance.md](policies/data-governance.md), classification policy | Partial | No asset inventory register (SoA A.5.9) |
+| 500.14 | N/A | Monitoring and training | Audit-chain alert, `audit-siem-forward`; [training-and-awareness.md](training-and-awareness.md) | Gap | No paging, no recorded training (Factory#3688, #3693) |
+| 500.15 | N/A | Encryption of nonpublic information | [encryption-key-mgmt.md](policies/encryption-key-mgmt.md) | Partial | Postgres at rest accepted R-014 |
+| 500.16 | N/A | Incident response and business continuity and disaster recovery plans | [incident-response.md](policies/incident-response.md), [business-continuity-dr.md](policies/business-continuity-dr.md), [dr-runbook.md](dr-runbook.md) | Partial | Runbook untested (Factory#3688); no off-cluster copy (Factory#3681) |
+| 500.17(a) | N/A | Notice of a cybersecurity event within 72 hours | [incident-response.md](policies/incident-response.md) | Partial | No authority contact list (Factory#3698) |
+| 500.17(b) | N/A | Annual submission by April 15 | See below | Gap | No certification process held |
+| 500.17(c) | N/A | Notice within 24 hours of an extortion payment, and a written explanation within 30 days | None: [incident-response.md](policies/incident-response.md) has no extortion-payment step | Gap | Add the step if Part 500 applies |
+| 500.18 | N/A | Confidentiality of information provided to the department | Administrative | n/a | |
+| 500.19 | N/A | Exemptions | See below | Not claimed: not a covered entity | Owner determination only if re-scoped |
+| 500.20 | N/A | Enforcement | Administrative | n/a | |
+| 500.21 | N/A | Effective date | Administrative | n/a | |
+| 500.22 | N/A | Transitional periods | Administrative | n/a | Check which transition dates have passed |
+| 500.23 | N/A | Severability | Administrative | n/a | |
+| 500.24 | N/A | Exemptions from electronic filing | Exemption | n/a | Only if the owner has to file |
 
 Every row: verify against the current rule before reliance.
 
 ## 500.17(b): the annual submission
+
+N/A while Part 500 is not applicable; nothing is filed. The text below is the template to use if
+the operator is re-scoped as a covered entity.
 
 Part 500.17(b) requires, by April 15 each year, for the prior calendar year, either:
 
@@ -97,7 +103,10 @@ to a certification.
 500.19 gives limited exemptions by size and some other categories (for example based on
 number of employees and contractors, gross annual revenue, and year-end total assets,
 or being fully covered by a parent's program). The thresholds change and must be taken
-from the current rule. The determination is the owner's, recorded in #3697:
+from the current rule. Not applicable while the Part is out of scope: the entity is not a covered entity, so no
+exemption is claimed and no notice is filed (decision in
+[framework-applicability.md](framework-applicability.md)). If a re-scope makes the operator a
+covered entity, the determination is the owner's and goes in this table:
 
 | Field | Value |
 |---|---|
@@ -113,5 +122,5 @@ still apply.
 
 ## Done when
 
-Every Part 500 section is mapped, marked administrative, or marked exempt in the
-table above, and #3697 is decided. This document delivers the mapping only.
+Every Part 500 section is mapped and marked N/A (Part 500 not applicable, #3697 decided
+2026-11-16). The mapping is retained as reference only.
