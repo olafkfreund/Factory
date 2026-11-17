@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 312
 spec: spec/2026-11-17-312-iam-residuals.md
 coders:
