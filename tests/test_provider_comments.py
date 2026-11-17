@@ -529,9 +529,15 @@ def test_azure_pr_comments_flatten_threads_and_skip_deleted() -> None:
         [
             {
                 "value": [
-                    {"comments": [_ado_thread_comment(1), _ado_thread_comment(2, isDeleted=True)]},
-                    {"isDeleted": True, "comments": [_ado_thread_comment(3)]},
-                    {"comments": [_ado_thread_comment(4)]},
+                    {
+                        "id": 10,
+                        "comments": [
+                            _ado_thread_comment(1),
+                            _ado_thread_comment(2, isDeleted=True),
+                        ],
+                    },
+                    {"id": 11, "isDeleted": True, "comments": [_ado_thread_comment(3)]},
+                    {"id": 12, "comments": [_ado_thread_comment(1)]},
                 ]
             }
         ]
@@ -539,7 +545,9 @@ def test_azure_pr_comments_flatten_threads_and_skip_deleted() -> None:
 
     comments = asyncio.run(azure.fetch_pr_comments(5))
 
-    assert [c.id for c in comments] == ["1", "4"]
+    # Comment ids restart at 1 in every thread, so the id is thread-qualified.
+    assert [c.id for c in comments] == ["10.1", "12.1"]
+    assert comments[0].raw_data["threadId"] == 10
     assert comments[0].author == "bob"
     assert comments[0].body == "looks good"
     assert comments[0].avatar_url == "https://ado/b.png"
@@ -550,11 +558,11 @@ def test_azure_pr_comments_flatten_threads_and_skip_deleted() -> None:
 def test_azure_pr_comments_apply_since_client_side() -> None:
     stale = _ado_thread_comment(1, lastContentUpdatedDate="2026-06-01T09:00:00Z")
     fresh = _ado_thread_comment(2, lastContentUpdatedDate="2026-07-26T18:00:00Z")
-    azure, _ = _azure([{"value": [{"comments": [stale, fresh]}]}])
+    azure, _ = _azure([{"value": [{"id": 3, "comments": [stale, fresh]}]}])
 
     comments = asyncio.run(azure.fetch_pr_comments(5, since=NOW))
 
-    assert [c.id for c in comments] == ["2"]
+    assert [c.id for c in comments] == ["3.2"]
 
 
 def test_azure_pr_comments_raise_instead_of_returning_nothing_on_failure() -> None:
