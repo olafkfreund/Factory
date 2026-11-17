@@ -65,6 +65,6 @@ Cluster workloads are service principals, and nothing is grandfathered. Narrowly
 
 ## Known gaps
 
-- PF and TF task-route checks are in shadow mode. Enforcing them needs every project to carry an `org_id` (plan slice S6) and is the owner's decision, because a wrong flip locks people out.
+- PF and TF task-route checks are in shadow mode. Enforcing them needs every project to carry an `org_id` (plan slice S6) and is the owner's decision, because a wrong flip locks people out. The steps are in [rbac-enforcement-cutover.md](rbac-enforcement-cutover.md).
 - Org `admin` cannot revoke another member's key (slice S4).
 - No service lists other members' keys: `list_api_keys` returns the caller's own keys (`ApiKey.user_id == current_user.id`) in AIFactory, PFactory and TFactory, so `keys.json` is collected from the database by the platform admin (slice S3 adds an admin inventory). `GET /api/admin/access-review` exists only in AIFactory; PF and TF membership is collected by hand.

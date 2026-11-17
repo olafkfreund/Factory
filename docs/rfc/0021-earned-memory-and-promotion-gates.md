@@ -301,6 +301,52 @@ much of memory is boilerplate, not the paraphrase rate. The paraphrase baseline
 still needs a pooled project that has run on Phase 1 for several specs, measured
 with `--embedder` once an embedder is configured.
 
+### 6.2 Phases 3-5 measures (2026-11-17, epic #389)
+
+Implemented in AIFactory, PFactory and TFactory together (specs
+`spec/2026-11-17-3765-memory-ranking.md`, `...-3766-memory-scratchpad.md`,
+`...-3767-memory-gates.md`). All figures come from deterministic fixtures in the
+repos' tests (`tests/test_memory_ranking.py`, `test_memory_scratchpad.py`,
+`test_memory_gates.py`), identical in the three repos. They are simulations, not
+a live project: the section 6.1 live baseline (33 items, 19 exact pairs, 80 near
+pairs) still needs a pooled project that has run several specs on these phases.
+
+| Measure | Before | After |
+|---|---|---|
+| Retrieved gotcha tokens, fixed fixture (estimate, chars / 4) | 250 | 208 |
+| Stale share of the loaded set (fragments count as one entry) | 0.40 | 0.25 |
+| Items written over 20 simulated sessions (3 recurring errors, 6 one-offs, 2 repeats after web content) | 68 | 3 |
+| Exact duplicate pairs in the same run | 571 | 0 |
+| Bytes written in the same run | 2250 | 183 |
+| `memory/` bytes after 1 / 5 / 20 sessions (session files plus scratchpad) | | 627 / 2555 / 10082 |
+| `scratchpad.json` bytes after 1 / 5 / 20 sessions | | 262 / 720 / 2581 |
+
+"Before" for the gates is every observation written as a gotcha (the ungated
+behaviour the RFC describes); "after" is `gates.promote`. Each gate and the
+ranking have a mutation check in the tests that turns red when the gate is
+removed.
+
+Implementation notes, where the build reduced section 3.2 on purpose
+(owner delegation 2026-11-17):
+
+- Novelty stays exact-repeat, as Phase 1 shipped: the pods have no embedder.
+- Synthesis is a fixed-form sentence, not an LLM call, so the LLM call count
+  cannot rise.
+- Trust is a 10-minute window opened by WebFetch, WebSearch and the AIFactory
+  `web_fetch` tool; any observation inside it makes that key unpromotable, and
+  an explicit `record_gotcha` inside it carries an "unverified" source line.
+  Another session can only make this one promote less.
+- Only `dead_end` (agent tool) and `error_fingerprint` (PostToolUseFailure
+  hook) have producers; the other section 3.1 signals are accepted by the
+  scratchpad and wait for producers.
+- PFactory and TFactory have no project pool, so dead-end recall there is
+  same-spec; AIFactory recalls across specs through the existing pool. No
+  cross-project read exists in either path (tested).
+- Known gaps, unchanged: the Graphiti write path bypasses caps; `confirmed.json`,
+  `scratchpad.json` and `gotchas.md` are not locked across processes, and the
+  pool copy replaces a file wholesale, so a stale spec snapshot can lose
+  observations or marks.
+
 ## 7. Risks
 
 - **A too-aggressive novelty gate suppresses a real distinction.** "Rate limit
