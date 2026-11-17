@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3772
 spec: spec/2026-11-17-3772-remove-raw-http.md
 coders:
