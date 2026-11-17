@@ -32,7 +32,7 @@ def test_halves_share_only_provider_type() -> None:
     code = {n for n in vars(CodeProvider) if not n.startswith("_")}
     assert wi & code == {"provider_type"}
     assert len(wi) == 13  # 12 work-item members + provider_type
-    assert len(code) == 12  # 9 code members + repo, get_repository_info, provider_type
+    assert len(code) == 13  # 10 code members + repo, get_repository_info, provider_type
 
 
 def test_git_provider_is_the_union_plus_raw_http() -> None:
