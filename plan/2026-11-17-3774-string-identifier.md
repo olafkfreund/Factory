@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3774
 spec: spec/2026-11-17-3774-string-identifier.md
 coders:
