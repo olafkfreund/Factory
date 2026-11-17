@@ -34,6 +34,19 @@ paths; AIFactory vendors only; late baseline is a warning, as in AIFactory. Base
    script exit 0; `pytest tests/test_agent_sandbox.py`.
 5. Per repo: `codex review --base origin/<base>`, own read against this plan, lint, push, PR.
 
+## Deviations
+
+From the Codex final review (`codex review --base origin/main` and per service):
+
+- Step 1: `git_metadata` reads git output as bytes, so a CR-to-LF change in a config value
+  is detected (text mode hid it); the recovery hint prefixes `FACTORY_GIT_BASELINE_DIR=<dir>`
+  when the variable is set, because PF/TF default to `~/.pfactory` and `~/.tfactory`.
+- Step 3 (PF/TF): the bound check ignores an injected `run` and uses the byte-exact default
+  runner, and `create_worktree` records with it too, so recording and checking decode the
+  same way. `tests/test_git_writer.py` (fake runner on non-git directories) stubs the check;
+  the real check is exercised in `tests/test_git_metadata_baseline.py` and
+  `tests/test_git_utils_env.py`.
+
 ## Tests
 
 Hub: `pytest shared/factory-sandbox/tests tests/test_check_factory_sandbox_drift.py`.

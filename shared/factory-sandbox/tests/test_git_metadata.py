@@ -141,3 +141,19 @@ def test_rebaseline_command_fixes_a_linked_worktree(repo: Path, tmp_path: Path) 
     assert Path(cmd) == wt.resolve()
     record_baseline(Path(cmd), overwrite=True)
     check_git_metadata(wt)
+
+
+def test_carriage_return_change_is_detected(repo: Path) -> None:
+    _git(repo, "config", "alias.probe", "!# harmless\rtouch /tmp/x")
+    record_baseline(repo)
+    cfg = repo / ".git" / "config"
+    cfg.write_bytes(cfg.read_bytes().replace(b"\rtouch", b"\\ntouch"))
+    with pytest.raises(RuntimeError, match="alias"):
+        check_git_metadata(repo)
+
+
+def test_recovery_hint_names_the_baseline_dir(repo: Path) -> None:
+    record_baseline(repo)
+    _git(repo, "config", "merge.x.driver", "true")
+    with pytest.raises(RuntimeError, match="FACTORY_GIT_BASELINE_DIR="):
+        check_git_metadata(repo)
