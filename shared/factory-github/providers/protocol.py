@@ -217,7 +217,7 @@ async def fanout_comments(
     """
     return {
         number: await provider.fetch_comments(number, since=since)
-        for number in sorted({_canonical_ref(number) for number in issue_numbers}, key=_ref_sort_key)
+        for number in sorted({_canonical_ref(n) for n in issue_numbers}, key=_ref_sort_key)
     }
 
 
