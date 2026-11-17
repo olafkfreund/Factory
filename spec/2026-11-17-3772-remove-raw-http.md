@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3772
 intent: intent/2026-11-17-3772-remove-raw-http.md
 ---
