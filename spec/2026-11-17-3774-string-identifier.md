@@ -24,13 +24,20 @@ Canonical type: `IssueRef = str` (a decimal string for GitHub/GitLab/ADO, a key 
    `as_issue_int(ref) -> int` (raises `ValueError("issue identifier ... not numeric for <provider>")`):
    REST paths, GraphQL `Int!`, ADO work item id, GitLab IID. `group_bulk_comments` and
    `fanout_comments` key by `str`; the `int()` casts go away.
+   Every provider parser (e.g. \`github_provider.py:724\`) and \`issue_number_from_url\`
+   (\`_github_json.py:61\`) emits \`str(...)\` explicitly; a dataclass annotation alone normalises nothing.
 4. **Services.** Annotations move to `str`; the 27 `int()` casts are removed or replaced by
    `as_issue_int` only where a numeric API needs it. Database columns holding the number are
    not retyped in this change: values are written as the decimal string into existing text or
    integer columns via a read-side `str()`; the Phase 2b audit lists any column that needs a
    migration and that goes in the service PR's plan.
-5. **Order (no half-migrated type).** Hub PR (accepts both, emits string) -> 4 re-vendor PRs
-   (drift pins) -> 4 service PRs. Merge order is enforced by the pinned-SHA gates.
+5. **Order (no half-migrated type).** The vendor gates only check bytes, so order is by
+   procedure. Hub PR widens the schema/contract to accept both and changes the protocol types
+   while providers still emit the same values; the re-vendor of each service is bundled in that
+   service's single PR with its caller migration (re-vendor and migration land together, never
+   one without the other), and the four service PRs merge together. The hub contract's
+   emit-as-string behaviour is switched on only by those PRs. Coordinator merges the four
+   service PRs back to back after all are green.
 
 ## Alternatives rejected
 
