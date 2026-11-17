@@ -15,7 +15,7 @@ One PR per service repo (AIFactory, PFactory, TFactory; base `dev`). The
 
 New `memory/locking.py`: `locked(memory_dir, wait=2.0)` is a context manager that
 takes `fcntl.flock(LOCK_EX | LOCK_NB)` on the sidecar `<memory_dir>/.memory.lock`,
-retrying every 20 ms until `wait` seconds pass, then raises `LockTimeout`
+retrying every 20 ms until `wait` seconds pass, then raises `LockTimeoutError`
 (a subclass of `OSError`). It is re-entrant per thread (a thread-local set of
 held directories), because `flock` on a second descriptor in the same process
 would otherwise deadlock `promote` -> `confirm`. Where `fcntl` is missing (not a
@@ -23,7 +23,7 @@ supported pod platform) it does nothing.
 
 Fail toward not writing: every caller already catches `OSError`
 (`scratchpad.observe`, `record_dead_end`, `retention.confirm`) or `Exception`
-(`gates.promote`, the `record_gotcha` tool); `LockTimeout` therefore skips the
+(`gates.promote`, the `record_gotcha` tool); `LockTimeoutError` therefore skips the
 write and logs. Locked sections: `scratchpad.observe`, `record_dead_end`,
 `retention.confirm`, `gates.promote` (whole run), `patterns.append_gotcha` /
 `append_pattern`, the `record_gotcha` tool (read, repeat check, append), and the
@@ -53,7 +53,7 @@ the existing Graphiti call:
 counts writes per memory directory per process against `CAPS[session_type]`
 (the same scope as the `record_gotcha` tool counter: one process, one session).
 `append_gotcha` / `append_pattern` catch `OSError` around the locked section and
-log, so `LockTimeout` never reaches a caller.
+log, so `LockTimeoutError` never reaches a caller.
 
 ### (a) Project pool for PFactory and TFactory (#3795)
 

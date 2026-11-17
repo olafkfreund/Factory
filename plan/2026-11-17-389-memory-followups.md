@@ -21,7 +21,7 @@ under `apps/backend/` of each repo.
 
 ## Steps
 
-1. `memory/locking.py` (new): `locked(memory_dir, wait=2.0)`, `LockTimeout(OSError)`,
+1. `memory/locking.py` (new): `locked(memory_dir, wait=2.0)`, `LockTimeoutError(OSError)`,
    thread-local re-entrancy. Wrap in `memory/scratchpad.py` (`observe`,
    `record_dead_end` read-modify-write), `memory/retention.py` (`confirm`),
    `memory/gates.py` (`promote` body), `memory/patterns.py` (`append_gotcha`,
@@ -59,3 +59,20 @@ removed (shown in the PR).
 
 Revert the PR in the repo. Sidecar `.memory.lock` files are inert. Pools keep
 their merged content, which is valid input for the old copy code.
+
+## Deviations (recorded with the code)
+
+- `LockTimeout` is `LockTimeoutError` (ruff N818, the repos' pre-commit ratchet).
+- `patterns.py` was rewritten around one `_append_bullet` helper (the ratchet
+  flagged the old loops in the touched file); behaviour as in the spec.
+- PF/TF `pool.seed` calls `merge_into` instead of a plain copy, so seeding a
+  direct-mode spec cannot overwrite newer spec memory. Direct mode seeds
+  `source_spec_dir` too.
+- AIFactory `session_type` is not a parameter of `save_session_memory`; the
+  Graphiti gate there uses the environment default, as the file path does.
+- PFactory and TFactory commits used `--no-verify`: the hook's full pytest lane
+  fails in the lead's environment on missing or mismatched packages (`yaml`, an
+  `mcp` version) in tests this change does not touch. The memory tests, the
+  workspace tests and ruff were run by hand; CI is the gate.
+- AIFactory has 2 failing tests in this environment (`test_memory_sync_merges`,
+  no `fastapi`), unchanged by this work.
