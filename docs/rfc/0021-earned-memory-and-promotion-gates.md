@@ -239,9 +239,9 @@ being re-observed is usually stale but occasionally just rare.
   in 30 days (not loaded after 90); nothing is deleted from disk.
 - **Phase 3 — the scratchpad and signals.** Observation layer; `dead_end`
   recording. The largest change, and the one worth doing last, once the store
-  is no longer drowning.
-- **Phase 4 — validation and trust gates.** Requires Phase 3's signals.
-- **Phase 5 — retrieval quality.** Rank by confidence and recency at read time.
+  is no longer drowning. Done (2026-11-17): AIFactory#2091, PFactory#1039, TFactory#1540.
+- **Phase 4 — validation and trust gates.** Requires Phase 3's signals. Done (2026-11-17): same three PRs.
+- **Phase 5 — retrieval quality.** Rank by confidence and recency at read time. Done (2026-11-17): same three PRs.
   First scoped to age-based ranking (recency, `confirmed.json` age); ranking on
   validation or trust signals waits for Phases 3-4.
 
