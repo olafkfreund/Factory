@@ -12,7 +12,7 @@ author: olafkfreund
 
 ## Proposed outcome
 
-`HttpGitHubProvider` satisfies `WorkItemProvider` over REST with an explicit token, with tests for each new member. The VCS half stays deliberately unimplemented.
+`HttpGitHubProvider` satisfies `WorkItemProvider` over HTTP (REST, plus the GraphQL endpoint for the Copilot assignment alias) with an explicit token, with tests for each new member. The VCS half stays deliberately unimplemented.
 
 ## Affected users and systems
 
