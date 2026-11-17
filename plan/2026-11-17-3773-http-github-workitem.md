@@ -21,6 +21,11 @@ Approved decisions (spec `spec/2026-11-17-3773-http-github-workitem.md`): add `a
    Traps: token never in repr or logs; `follow_redirects=False` stays; URL-quote label names; `isinstance(HttpGitHubProvider(...), WorkItemProvider)` must be true.
 3. Open the PR to main with the artifacts; wait for green; the coordinator merges. Closing #3773 happens after merge.
 
+## Deviations (recorded with the code that made them)
+
+- Step 1: the moved algorithm is not strictly verbatim. A null issue node (`repository.issue: null`) used to raise `AttributeError`; it is now the no-op the surrounding code already intended (`if not assignable_id: return`). Covered by `test_missing_issue_node_skips_the_mutation` on both transports.
+- Step 2: `HttpGitHubProvider._graphql` raises when the response carries an `errors` array, because GraphQL failures arrive as HTTP 200 (Codex review finding, confirmed); `gh api graphql` already fails on those. Covered by `test_a_graphql_error_in_a_200_response_is_raised_not_swallowed`.
+
 ## Tests
 
 Full hub suite as in `.github/workflows/contracts.yml`; new tests assert method, path, body and `Authorization` header per member, 422-then-PATCH label create, 404-tolerant label removal, Copilot disabled no-op, a non-`already_exists` 422 raising, `list_labels` spanning two pages, `close_issue` returning `False` on a 5xx.

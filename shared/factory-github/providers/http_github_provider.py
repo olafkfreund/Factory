@@ -244,7 +244,13 @@ class HttpGitHubProvider:
             resp = await client.post(url, json={"query": query, "variables": variables})
             resp.raise_for_status()
             payload = resp.json()
-        return dict(payload) if isinstance(payload, dict) else {}
+        result = dict(payload) if isinstance(payload, dict) else {}
+        # GraphQL reports failures (FORBIDDEN, NOT_FOUND...) with HTTP 200 and an
+        # `errors` array; `gh api graphql` exits non-zero on those, so the two
+        # transports must both raise rather than let a failed mutation look done.
+        if result.get("errors"):
+            raise RuntimeError(f"GitHub GraphQL error: {result['errors']}")
+        return result
 
     # ── labels ───────────────────────────────────────────────────────────────
 

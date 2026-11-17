@@ -429,3 +429,25 @@ async def test_graphql_on_github_enterprise_drops_the_v3_segment():
     await provider.assign_to_user(7, ["alice"])
 
     assert urls == ["https://github.acme.internal/api/graphql"]
+
+
+@pytest.mark.asyncio
+async def test_a_graphql_error_in_a_200_response_is_raised_not_swallowed():
+    """MUTATION GUARD: a FORBIDDEN mutation must not look like a completed assignment."""
+    answers = [
+        {"data": {"repository": {"suggestedActors": {"nodes": [_BOT]}}}},
+        {"data": {"repository": {"issue": {"id": "ISSUE_ID"}}}},
+        {"data": None, "errors": [{"type": "FORBIDDEN", "message": "no"}]},
+    ]
+
+    def handler(_request: Any) -> Any:
+        return httpx.Response(200, json=answers.pop(0))
+
+    provider = HttpGitHubProvider(_repo=_REPO, _token=_FAKE_TOKEN, _transport=_transport(handler))
+
+    with pytest.raises(RuntimeError, match="FORBIDDEN"):
+        await provider.assign_to_user(7, ["Copilot"])
+    assert answers == [], "all three requests were made before the failure surfaced"
+
+
+_BOT = {"login": "copilot-swe-agent", "__typename": "Bot", "id": "BOT_ID"}
