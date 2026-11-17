@@ -23,7 +23,16 @@ from pathlib import Path
 
 from gate_evidence import digest
 
-CANONICAL_FILES: tuple[str, ...] = ("__init__.py", "env.py", "git_pins.py", "policy.py")
+CANONICAL_FILES: tuple[str, ...] = (
+    "__init__.py",
+    "env.py",
+    "git_metadata.py",
+    "git_pins.py",
+    "policy.py",
+)
+
+# Files an older pinned canonical may lack; every other listed file is mandatory.
+_ADDED_LATER = frozenset({"git_metadata.py"})
 
 _DEFAULT_CANONICAL = Path(__file__).resolve().parent.parent / "shared/factory-sandbox/agent_sandbox"
 _EXIT_BAD_CANONICAL = 2
@@ -43,6 +52,8 @@ def check_drift(canonical_root: Path, service_root: Path) -> list[str]:
     ]
     for rel in CANONICAL_FILES:
         mine = service_root / rel
+        if rel in _ADDED_LATER and not (canonical_root / rel).is_file():
+            continue  # an older pinned canonical predates this file (#3737)
         if not mine.is_file():
             problems.append(f"{rel}: present in canonical, missing in service copy")
         elif mine.read_bytes() != (canonical_root / rel).read_bytes():
@@ -59,6 +70,8 @@ def run_check(canonical_root: Path, service_root: Path) -> int:
     _emit(f"factory-sandbox: {service_root} vs {canonical_root}")
     for rel in CANONICAL_FILES:
         c, s = canonical_root / rel, service_root / rel
+        if rel in _ADDED_LATER and not c.is_file():
+            continue
         _emit(f"  - {rel} [canonical {digest(c)} | service {digest(s)}]")
     if problems:
         _emit("factory-sandbox drift:")
@@ -92,6 +105,17 @@ def _self_test() -> int:
         (service / "env.py").unlink()
         if not any("missing" in p for p in check_drift(canonical, service)):
             failures.append("missing file must be reported")
+        (canonical / "git_metadata.py").unlink()
+        (service / "git_metadata.py").unlink()
+        (service / "env.py").write_text("# env.py\n")
+        if check_drift(canonical, service):
+            failures.append("a file absent from an older canonical must be skipped")
+        (canonical / "env.py").unlink()
+        (service / "env.py").unlink()
+        if not check_drift(canonical, service):
+            failures.append("a mandatory file absent from the canonical must be reported")
+        (canonical / "env.py").write_text("# env.py\n")
+        (service / "env.py").write_text("# env.py\n")
         (canonical / "new.py").write_text("y = 1\n")
         if not any("not listed" in p for p in check_drift(canonical, canonical)):
             failures.append("unlisted canonical file must be reported")
