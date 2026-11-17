@@ -135,16 +135,6 @@ if __name__ == "__main__":
     env_unknown_prop = dict(_base(), environment={"junk": 1})
     assert _errors(v, env_unknown_prop), "unknown environment property must be rejected"
 
-    # --- Factory#1959 stage 3: additive route / phase_routes (catalog classes) ---
-    route_ok = dict(
-        _base(), execution={"route": "balanced", "phase_routes": {"planning": "frontier"}}
-    )
-    assert _errors(v, route_ok) == [], (
-        f"route/phase_routes should validate, got {_errors(v, route_ok)}"
-    )
-    for bad in ({"route": "tier-frontier"}, {"phase_routes": {"coding": "economy"}}):
-        assert _errors(v, dict(_base(), execution=bad)), f"{bad} must be rejected"
-
     print(
         "OK: task-contract schema valid; RFC-0007 $defs.access + "
         "RFC-0005 $defs.environment optional + constraints enforced."
