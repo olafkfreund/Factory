@@ -19,7 +19,8 @@ structured observations during a session instead of re-reading transcripts.
   count, last seen). No LLM in the hot path.
 - A `record_dead_end` agent tool and a `dead_ends` store, recalled by
   `get_session_context` under a "do not retry" heading.
-- Failed subtask attempts feed `error_fingerprint` counters.
+- Failed tool calls feed `error_fingerprint` counters (a `PostToolUseFailure`
+  hook; amended 2026-11-17, was `record_attempt`, whose errors are status text).
 - Repeated-failure recall test: after a dead end is recorded, a later session on
   the same project retrieves it.
 - A test that the pool path derives from the project directory only (no
@@ -29,7 +30,7 @@ structured observations during a session instead of re-reading transcripts.
 ## Affected users and systems
 
 AIFactory, PFactory, TFactory `apps/backend/memory/` (new `scratchpad.py`),
-`agents/tools_pkg/tools/memory.py`, `services/recovery.py`. Vendored tree: all
+`agents/tools_pkg/tools/memory.py`, `memory/hooks.py`, `core/client.py`. Vendored tree: all
 three or none. PFactory and TFactory have no project pool, so their dead-end
 store is the spec memory dir only; the cross-project test there asserts that no
 path outside the spec dir is read.
