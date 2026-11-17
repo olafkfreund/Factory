@@ -75,9 +75,11 @@ observations or marks; PF/TF recall is same-spec only (no project pool).
    read (two project dirs; project B's dead end never appears for A; assert the
    pool dir is `project/.aifactory/memory`); untrusted-only dead end not recalled;
    `record_dead_end` abandon window; failure hook observes and never raises;
-   `core/client.py` source registers `make_failure_hook`; store growth per
-   session (bytes after 1, 5, 20 sessions of the same recurring failure stay
-   flat after the first). Mutations (each red): drop recall block; seed from the
+   `core/client.py` source registers `make_failure_hook`; an interrupt
+   failure records nothing; store growth per session: after 1, 5 and 20 sessions
+   of the same recurring failure plus distinct noise, assert key count <= 100 per
+   kind and `scratchpad.json` < 20 KB; report the whole `memory/` byte growth per
+   session, not asserted zero (each save writes a session file). Mutations (each red): drop recall block; seed from the
    wrong directory; drop eviction; drop the `n - bad` filter; drop the hook
    registration. Check: `pytest tests/test_memory_scratchpad.py -q`.
 5. PFactory: port steps 1-4; `DEFAULT_SESSION_TYPE` there is `planning` (cap 5).
