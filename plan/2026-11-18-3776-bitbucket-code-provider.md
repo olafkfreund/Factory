@@ -2,7 +2,7 @@
 status: draft
 issue: 3776
 spec: spec/2026-11-18-3776-bitbucket-code-provider.md
-coders:
+coders:   # you = the lead (Claude) does the step itself
   1: you
   2: codex
   3: codex
@@ -74,7 +74,7 @@ diff (`codex review --base origin/main`). Agy is off by owner decision.
 2. `shared/factory-github/providers/factory.py`, `scripts/check_factory_github_drift.py`:
    `get_code_provider`, flag helper, `list_available_providers`,
    `is_provider_available`, the `get_provider` message; add the file to
-   `CANONICAL_FILES`. -> verify by `python scripts/check_factory_github_drift.py --self-test`.
+   `CANONICAL_FILES`. -> verify by `python scripts/check_factory_github_drift.py --self-test` and `python -m pytest tests/test_check_factory_github_drift.py -q`.
    Traps: keep `get_provider` return type `GitProvider`; flag read at call time.
 3. `tests/test_bitbucket_provider.py` (new): `httpx.MockTransport` fixtures,
    no network. Cover: pagination via `next`; cross-origin `next` and diff
