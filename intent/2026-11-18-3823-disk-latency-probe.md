@@ -26,10 +26,17 @@ related: [3829, 3831, 3832, 3560]
 
 - `restart-watchdog` records `sdd` await and utilisation on every run, in a
   stable schema, and puts the same numbers in every issue it opens or updates,
-  so the next restart issue carries disk evidence. Observe-only, no
-  privileges, no host write, no new volume.
+  so the next restart issue carries disk evidence. Each sample is an
+  observation-time measurement (timestamp, device, 5 s interval, explicit
+  "unavailable" values), not stall-time proof: the watchdog runs every 30 min
+  and reads terminations up to 6 h old. Run after run it builds a baseline;
+  only a sample that overlaps a stall (or the owner's `iostat`) can confirm the
+  hypothesis, and host-wide latency shows correlation, not that SQLite is the
+  cause. Observe-only, no privileges, no host write, no new volume.
 - The agent probe stops raising a false critical, and the runbook says why and
-  what to do if the taint is lifted. Findings are on Factory#3832.
+  what to do if the taint is lifted. The resulting gap is stated: no sentinel
+  covers agent-0, which today runs desktop VMs only; new task pods cannot be
+  scheduled there. Findings are on Factory#3832.
 
 ## Affected users and systems
 
