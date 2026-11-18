@@ -22,6 +22,7 @@ The canonical set is exactly the deduped layer — nothing service-specific:
 | `providers/github_provider.py` | GitHub implementation. |
 | `providers/gitlab_provider.py` | GitLab implementation. |
 | `providers/azure_devops_provider.py` | Azure DevOps implementation. |
+| `providers/bitbucket_provider.py` | Bitbucket Cloud code provider (`CodeProvider` only; off unless `FACTORY_BITBUCKET_ENABLED`). |
 | `providers/__init__.py` | Package init / re-exports. |
 
 Service-specific files that live alongside the layer in some repos (for example

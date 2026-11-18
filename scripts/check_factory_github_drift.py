@@ -60,6 +60,7 @@ CANONICAL_FILES: tuple[str, ...] = (
     "providers/github_provider.py",
     "providers/gitlab_provider.py",
     "providers/azure_devops_provider.py",
+    "providers/bitbucket_provider.py",
     "providers/_github_json.py",
     "providers/http_github_provider.py",
 )
@@ -96,6 +97,8 @@ def check_drift(canonical_root: Path, service_root: Path) -> list[str]:
     ]
     for rel in CANONICAL_FILES:
         canonical_file = canonical_root / rel
+        if not canonical_file.is_file():
+            continue
         service_file = service_root / rel
         canonical_bytes = canonical_file.read_bytes()
         if not service_file.is_file():
@@ -108,10 +111,16 @@ def check_drift(canonical_root: Path, service_root: Path) -> list[str]:
 
 def compared_evidence(canonical_root: Path, service_root: Path) -> list[str]:
     """One line per file this run compared, each carrying the bytes it read."""
-    return [
-        f"{rel} [canonical {digest(canonical_root / rel)} | service {digest(service_root / rel)}]"
-        for rel in CANONICAL_FILES
-    ]
+    evidence = []
+    for rel in CANONICAL_FILES:
+        if not (canonical_root / rel).is_file():
+            evidence.append(f"{rel}: not in this canonical (pin predates it)")
+            continue
+        evidence.append(
+            f"{rel} [canonical {digest(canonical_root / rel)} | "
+            f"service {digest(service_root / rel)}]"
+        )
+    return evidence
 
 
 def run_check(canonical_root: Path, service_root: Path) -> int:
@@ -235,6 +244,18 @@ def _self_test() -> int:
             run_check(root / "does-not-exist", identical) == _EXIT_BAD_CANONICAL,
             "run_check must return 2 when the canonical tree is absent",
         )
+
+        # Case 6: an older canonical predates a newly listed file.
+        bitbucket = "providers/bitbucket_provider.py"
+        (canonical / bitbucket).unlink()
+        (identical / bitbucket).unlink()
+        expect(check_drift(canonical, identical) == [], "older canonical must not drift")
+        expect(
+            f"{bitbucket}: not in this canonical (pin predates it)"
+            in compared_evidence(canonical, identical),
+            "older canonical must report the skipped file",
+        )
+        expect(run_check(canonical, identical) == 0, "older canonical must pass")
 
     if failures:
         _emit("SELF-TEST FAILED:")

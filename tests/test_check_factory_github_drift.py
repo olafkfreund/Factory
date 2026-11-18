@@ -71,6 +71,29 @@ def test_missing_file_is_flagged(tmp_path: Path) -> None:
     assert any("providers/protocol.py" in p and "missing" in p for p in problems)
 
 
+def test_old_canonical_without_bitbucket_is_clean(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    canonical = _make_canonical(tmp_path)
+    service = _copy_tree(canonical, tmp_path / "service")
+    bitbucket = "providers/bitbucket_provider.py"
+    (canonical / bitbucket).unlink()
+    (service / bitbucket).unlink()
+
+    assert gate.check_drift(canonical, service) == []
+    assert gate.run_check(canonical, service) == 0
+    assert f"{bitbucket}: not in this canonical (pin predates it)" in capsys.readouterr().out
+
+
+def test_new_canonical_without_service_bitbucket_reports_drift(tmp_path: Path) -> None:
+    canonical = _make_canonical(tmp_path)
+    service = _copy_tree(canonical, tmp_path / "service")
+    (service / "providers/bitbucket_provider.py").unlink()
+
+    problems = gate.check_drift(canonical, service)
+    assert any("providers/bitbucket_provider.py" in p and "missing" in p for p in problems)
+
+
 def test_run_check_exit_codes(tmp_path: Path) -> None:
     canonical = _make_canonical(tmp_path)
     service = _copy_tree(canonical, tmp_path / "service")
