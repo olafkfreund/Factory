@@ -11,7 +11,7 @@ reviewers:
 
 # Plan: Close out epic checklists after the 2026-11-18 merges
 
-Approved spec decisions are the per-issue bullets in the spec Design section. No code is touched; no issue is closed.
+Deviation recorded at implementation: the #1959 hot-reloadable ConfigMap box was NOT ticked (its acceptance is the unchanged-pod-UID proof, owner's record run); it is annotated only. Also #324 matrix box was ticked (docs/compliance/control-matrix.md exists on main), and a status comment was added to #3701/#1959/#1958/#3775/#3776, with a body Status block for #312/#324/#310/#314. Approved spec decisions are the per-issue bullets in the spec Design section. No code is touched; no issue is closed.
 
 ## Steps
 
