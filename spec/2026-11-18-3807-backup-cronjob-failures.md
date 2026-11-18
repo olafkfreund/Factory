@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3807
 intent: intent/2026-11-18-3807-backup-cronjob-failures.md
 ---
