@@ -21,7 +21,12 @@ work-item half.
 - A `BitbucketProvider` in the hub `factory-github` package implements
   `CodeProvider` only (Bitbucket Cloud REST 2.0): repository info and default
   branch, pull requests (get, list, diff, close/decline, merge with strategies),
-  PR comments (`fetch_pr_comments`), posting a review, and a permission check.
+  PR comments (`fetch_pr_comments`), posting a review, a permission check, and
+  `enable_auto_merge` (a required `CodeProvider` member) raising a clear
+  `NotImplementedError` because Bitbucket Cloud has no such API.
+- The factory hands it out through a new `get_code_provider()` typed
+  `CodeProvider`. `get_provider()` stays typed `GitProvider` and never returns
+  Bitbucket, so no existing caller is promised work-item methods it lacks.
 - It authenticates with the existing opaque credential kind (a Bitbucket Cloud
   app password or repository access token). No credential-store change.
 - The provider kind is registered but disabled by default behind a feature flag,
