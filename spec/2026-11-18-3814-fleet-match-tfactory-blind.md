@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3814
 intent: intent/2026-11-18-3814-fleet-match-tfactory-blind.md
 ---
