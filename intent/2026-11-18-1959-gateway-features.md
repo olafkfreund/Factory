@@ -9,7 +9,7 @@ author: olafkfreund
 ## Problem
 
 The first-party model gateway (AIFactory `apps/model-gateway/gateway.py`, about 170
-lines) resolves class routes and answers `X-Model-Route`, and nothing else. Epic
+lines) authenticates callers, swaps the upstream key, resolves class routes and answers `X-Model-Route`, but has no quota, accounting, failover or telemetry. Epic
 Factory#1959 (child of #1958) still needs, per the 2026-11-18 closeout comment: a
 per-route quota, spend attribution per route and calling service, provider failover
 in both directions with recovery, and telemetry normalised in the gateway. Without
@@ -37,6 +37,7 @@ Callers: CFactory, TFactory, AIFactory Jobs once the owner switches them on.
 
 ## Constraints
 
+- Preserve today's behaviour: 503 unconfigured, 401, 400/413, `/healthz`, upstream error passthrough, 502 on unreachable.
 - Stdlib only, single file in the image; no new dependency.
 - Default off: unchanged config means unchanged responses. Keep the CR/LF header
   strip (AIFactory#2114) and the no-redirect opener.
@@ -48,5 +49,11 @@ Callers: CFactory, TFactory, AIFactory Jobs once the owner switches them on.
 
 ## Open questions
 
-None. Owner delegation 2026-11-18 takes the recommended option for each design choice
-(recorded in the spec).
+Resolved under owner delegation 2026-11-18 (Codex review of this draft, decisions recorded in the spec):
+quota covers class routes only, concrete-model requests are metered but exempt;
+service identity is the self-declared `X-Caller-Service` header (one shared client
+token), so attribution is advisory and label cardinality is capped; token quota is
+checked against tokens already consumed in a fixed window (concurrent in-flight
+requests may overshoot) and missing usage is counted, not guessed; streaming means
+parsing buffered SSE, true streaming stays out; failover accepts duplicate execution
+and uses a per-upstream key from an env var name.
