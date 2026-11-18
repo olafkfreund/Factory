@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3776
 intent: intent/2026-11-18-3776-mixed-tenant-config.md
 ---
