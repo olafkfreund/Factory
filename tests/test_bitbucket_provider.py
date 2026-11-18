@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import pytest
@@ -38,7 +39,7 @@ def _provider(handler, **kwargs) -> BitbucketProvider:
     )
 
 
-def _pr(number: int, state: str = "OPEN", updated: str = "2026-11-18T12:00:00Z") -> dict:
+def _pr(number: int, state: str = "OPEN", updated: str = "2026-11-18T12:00:00Z") -> dict[str, Any]:
     return {"id": number, "state": state, "updated_on": updated}
 
 
@@ -334,7 +335,7 @@ def test_labels_return_empty_without_request() -> None:
 
 
 def test_comments_are_filtered_sorted_and_keep_avatar() -> None:
-    def comment(number, date, deleted=False):
+    def comment(number: int, date: str, deleted: bool = False) -> dict[str, Any]:
         return {
             "id": number,
             "deleted": deleted,
@@ -429,7 +430,7 @@ def test_post_review_body_inline_and_action(event: str, action: str | None) -> N
     review = ReviewData(pr_number=7, event=event, body="Summary", findings=[finding])
     assert asyncio.run(_provider(handler).post_review(7, review)) == 42
     assert seen[0][1] == {"content": {"raw": "Summary"}}
-    assert seen[1][1]["inline"] == {"path": "a.py", "to": 8}
+    assert (seen[1][1] or {})["inline"] == {"path": "a.py", "to": 8}
     assert [path.rsplit("/", 1)[-1] for path, _ in seen] == ["comments", "comments"] + (
         [action] if action else []
     )
