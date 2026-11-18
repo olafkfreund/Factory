@@ -419,10 +419,7 @@ class BitbucketProvider:
         return comment_id
 
     async def merge_pr(
-        self,
-        pr_number: int,
-        merge_method: str = "merge",
-        commit_title: str | None = None,
+        self, pr_number: int, merge_method: str = "merge", commit_title: str | None = None
     ) -> bool:
         """Merge. ``False`` on a conflict or failed merge check (409/400)."""
         strategy = _MERGE_STRATEGIES.get(merge_method)
