@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3776
 spec: spec/2026-11-18-3776-mixed-tenant-config.md
 coders:
