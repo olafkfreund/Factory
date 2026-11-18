@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: olafkfreund/AIFactory#2134
 intent: intent/2026-11-18-2134-orphan-worktree-cleanup.md
 ---
