@@ -7,12 +7,13 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-_SHARED = Path(__file__).resolve().parents[1] / "shared" / "factory-github"
-if str(_SHARED) not in sys.path:
-    sys.path.insert(0, str(_SHARED))
+_SHARED = str(Path(__file__).resolve().parents[1] / "shared" / "factory-github")
+if _SHARED not in sys.path:
+    sys.path.insert(0, _SHARED)
 
 httpx = pytest.importorskip("httpx")
 
@@ -39,7 +40,7 @@ _BASE = "https://jira.example.test"
 _ISSUE = "/rest/api/3/issue/PROJ-7"
 
 
-def _provider(handler) -> JiraProvider:
+def _provider(handler: Any) -> JiraProvider:
     return JiraProvider(
         _repo="PROJ",
         _email=_EMAIL,
@@ -49,7 +50,23 @@ def _provider(handler) -> JiraProvider:
     )
 
 
-def _issue(key: str = "PROJ-7", category: str | None = "new") -> dict:
+def _transition_handler(
+    transitions: list[dict[str, Any]], seen: list[Any], post: Any = None
+) -> Any:
+    """An issue that is not Done, its transition list, and the answer to the transition POST."""
+
+    def handler(request: Any) -> Any:
+        seen.append(request)
+        if request.url.path == _ISSUE:
+            return httpx.Response(200, json=_issue())
+        if request.method == "GET":
+            return httpx.Response(200, json={"transitions": transitions})
+        return post or httpx.Response(204)
+
+    return handler
+
+
+def _issue(key: str = "PROJ-7", category: str | None = "new") -> dict[str, Any]:
     status = {} if category is None else {"statusCategory": {"key": category}}
     return {"key": key, "fields": {"summary": "A task", "status": status}}
 
@@ -80,7 +97,7 @@ def test_protocol_factory_and_redacted_repr():
 async def test_fetch_issue_keeps_string_key_and_maps_category(category, expected):
     seen = []
 
-    def handler(request):
+    def handler(request: Any) -> Any:
         seen.append(request)
         return httpx.Response(200, json=_issue(category=category))
 
@@ -107,7 +124,7 @@ async def test_invalid_key_never_reaches_transport(key):
 async def test_search_fields_jql_token_pagination_and_limit():
     requests = []
 
-    def handler(request):
+    def handler(request: Any) -> Any:
         requests.append(request)
         if len(requests) == 1:
             return httpx.Response(200, json={"issues": [_issue("PROJ-1")], "nextPageToken": "next"})
@@ -131,7 +148,7 @@ async def test_search_fields_jql_token_pagination_and_limit():
 async def test_create_issue_reads_back_and_assigns_account_id():
     seen = []
 
-    def handler(request):
+    def handler(request: Any) -> Any:
         seen.append(request)
         if request.method == "POST":
             return httpx.Response(201, json={"key": "PROJ-7"})
@@ -153,25 +170,13 @@ async def test_create_issue_reads_back_and_assigns_account_id():
 async def test_close_chooses_done_transition_and_sends_comment_in_same_post():
     seen = []
 
-    def handler(request):
-        seen.append(request)
-        if request.url.path == _ISSUE:
-            return httpx.Response(200, json=_issue())
-        if request.method == "GET":
-            return httpx.Response(
-                200,
-                json={
-                    "transitions": [
-                        {
-                            "id": "1",
-                            "name": "Review",
-                            "to": {"statusCategory": {"key": "indeterminate"}},
-                        },
-                        {"id": "2", "name": "Finish", "to": {"statusCategory": {"key": "done"}}},
-                    ]
-                },
-            )
-        return httpx.Response(204)
+    handler = _transition_handler(
+        [
+            {"id": "1", "name": "Review", "to": {"statusCategory": {"key": "indeterminate"}}},
+            {"id": "2", "name": "Finish", "to": {"statusCategory": {"key": "done"}}},
+        ],
+        seen,
+    )
 
     assert await _provider(handler).close_issue("PROJ-7", "finished") is True
     assert [(r.method, r.url.path) for r in seen] == [
@@ -188,7 +193,7 @@ async def test_close_chooses_done_transition_and_sends_comment_in_same_post():
 async def test_already_done_needs_no_transition_post():
     seen = []
 
-    def handler(request):
+    def handler(request: Any) -> Any:
         seen.append(request)
         return httpx.Response(200, json=_issue(category="done"))
 
@@ -198,7 +203,7 @@ async def test_already_done_needs_no_transition_post():
 
 @pytest.mark.asyncio
 async def test_no_done_transition_names_available_choices():
-    def handler(request):
+    def handler(request: Any) -> Any:
         if request.url.path == _ISSUE:
             return httpx.Response(200, json=_issue())
         return httpx.Response(200, json={"transitions": [{"id": "1", "name": "Review"}]})
@@ -209,19 +214,11 @@ async def test_no_done_transition_names_available_choices():
 
 @pytest.mark.asyncio
 async def test_required_transition_field_is_reported():
-    def handler(request):
-        if request.url.path == _ISSUE:
-            return httpx.Response(200, json=_issue())
-        if request.method == "GET":
-            return httpx.Response(
-                200,
-                json={
-                    "transitions": [
-                        {"id": "2", "name": "Finish", "to": {"statusCategory": {"key": "done"}}}
-                    ]
-                },
-            )
-        return httpx.Response(400, json={"errors": {"resolution": "required"}})
+    handler = _transition_handler(
+        [{"id": "2", "name": "Finish", "to": {"statusCategory": {"key": "done"}}}],
+        [],
+        post=httpx.Response(400, json={"errors": {"resolution": "required"}}),
+    )
 
     with pytest.raises(JiraTransitionError, match="resolution"):
         await _provider(handler).close_issue("PROJ-7")
@@ -231,7 +228,7 @@ async def test_required_transition_field_is_reported():
 async def test_comment_write_read_pages_since_and_bulk():
     seen = []
 
-    def handler(request):
+    def handler(request: Any) -> Any:
         seen.append(request)
         if request.method == "POST":
             return httpx.Response(201, json={"id": "42"})
@@ -255,7 +252,7 @@ async def test_comment_write_read_pages_since_and_bulk():
 
 @pytest.mark.asyncio
 async def test_comment_page_failure_is_not_a_partial_thread():
-    def handler(request):
+    def handler(request: Any) -> Any:
         if request.url.params["startAt"] == "0":
             return httpx.Response(200, json={"comments": [{"id": "1"}], "total": 2})
         return httpx.Response(500, json={"errorMessages": ["failed"]})
@@ -268,7 +265,7 @@ async def test_comment_page_failure_is_not_a_partial_thread():
 async def test_assignment_label_members_and_project_info():
     seen = []
 
-    def handler(request):
+    def handler(request: Any) -> Any:
         seen.append(request)
         if request.url.path.endswith("/label"):
             return httpx.Response(200, json={"values": ["bug"], "isLast": True})
@@ -340,7 +337,7 @@ async def test_http_errors_are_redacted_and_keep_status(status, caplog):
 async def test_redirect_does_not_forward_basic_auth():
     seen = []
 
-    def handler(request):
+    def handler(request: Any) -> Any:
         seen.append(request)
         return httpx.Response(302, headers={"Location": "https://other.example.test/steal"})
 
@@ -403,7 +400,7 @@ def test_adf_flattens_nested_content_and_round_trips_multiline_text():
     assert adf_to_text(to_adf("first\nsecond")) == "first\nsecond\n"
 
 
-def _list(*items: str) -> dict:
+def _list(*items: str) -> dict[str, Any]:
     return {
         "type": "bulletList",
         "content": [
@@ -424,7 +421,7 @@ def test_adf_sibling_list_items_stay_separate():
 async def test_error_detail_reflecting_the_credential_is_redacted(caplog):
     echo = {"errorMessages": [f"bad auth {_EMAIL}:{_TOKEN}"], "errors": {"labels": _TOKEN}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: Any) -> Any:
         return httpx.Response(403 if request.method == "PUT" else 401, json=echo)
 
     provider = _provider(handler)
@@ -439,7 +436,7 @@ async def test_error_detail_reflecting_the_credential_is_redacted(caplog):
 async def test_since_is_sent_as_epoch_millis_not_a_timezone_dependent_date():
     seen: list[str] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: Any) -> Any:
         seen.append(request.url.params["jql"])
         return httpx.Response(200, json={"issues": []})
 

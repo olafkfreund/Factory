@@ -66,6 +66,7 @@ _PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 # What the parser reads. The enhanced search returns ids only without it.
 _FIELDS = "summary,description,status,labels,assignee,reporter,created,updated"
 _DONE = "done"
+_Names = list[str] | None
 _DEGRADED_LABEL_STATUSES = (HTTPStatus.BAD_REQUEST, HTTPStatus.FORBIDDEN)
 
 
@@ -229,11 +230,11 @@ class JiraProvider(FanoutCommentsMixin):
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
+            headers={"Accept": "application/json"},
+            auth=httpx.BasicAuth(self._email or "", self._api_token or ""),
             base_url=self._base_url,
             timeout=_TIMEOUT_SECONDS,
             transport=self._transport,
-            headers={"Accept": "application/json"},
-            auth=httpx.BasicAuth(self._email or "", self._api_token or ""),
             # The Basic credential must not follow a redirect to another host.
             follow_redirects=False,
         )
@@ -308,9 +309,10 @@ class JiraProvider(FanoutCommentsMixin):
         self,
         title: str,
         body: str,
-        labels: list[str] | None = None,
-        assignees: list[str] | None = None,
+        labels: _Names = None,
+        assignees: _Names = None,
     ) -> IssueData:
+        """Create in this project, then read it back so the caller gets the canonical record."""
         fields: dict[str, Any] = {
             "project": {"key": self._repo},
             "summary": title,
