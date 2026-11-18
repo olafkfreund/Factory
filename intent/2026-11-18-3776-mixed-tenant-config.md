@@ -20,6 +20,11 @@ connection with nothing configured for the work-item side behaves exactly as
 today, so no existing row needs a migration to keep working. Every CFactory
 path that reads or writes issues uses the work-item side, and the code side is
 used for repository verification and the AIFactory build project. The
+work-item side has its own project address per repository, so issue
+creation, import and sync consistently address it while builds keep the code
+repository. The work-item reference must belong to the same tenant, and a
+configured work-item target that disappears fails loudly (deleting a referenced
+connection is refused); it never silently falls back to the code provider. The
 connection API and OpenAPI file expose the new field additively. Azure DevOps
 (Boards and Repos) stays one provider.
 
@@ -36,6 +41,9 @@ with team rfc22-jira (structured credentials, `jira` kind) and rfc22-bitbucket
 - Migration reversible and tested. API change additive only.
 - Credentials never cross: each side authenticates with its own connection's
   credential and nothing is read from the other.
+- Out of scope: widening CFactory's numeric `IssueRef` to string keys
+  (`PROJ-123`); that lands with the Jira provider (rfc22-jira). Until then only
+  kinds with numeric issues can be a work-item side.
 - No Jira code here (flag owned by rfc22-jira); the UI selector is hidden until
   more than one work-item kind is enabled.
 - No live cluster or deploy changes.
