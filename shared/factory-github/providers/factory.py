@@ -152,6 +152,7 @@ def get_code_provider(
         raise NotImplementedError(
             "GitHub code operations with an explicit token are not implemented"
         )
+    return get_provider(provider_type, repo, **kwargs)
 
 
 def get_work_item_provider(
