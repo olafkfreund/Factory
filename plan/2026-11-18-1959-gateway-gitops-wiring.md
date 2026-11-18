@@ -41,8 +41,8 @@ Repo factory-gitops (base `main`, branch `feat/1959-gateway-gitops-wiring`), wor
    trailing slash); a policy class with no resolvable model is an error. Unlisted classes unchanged strings.
    Test additions: positive fixture (quota + two ordered upstreams, primary first), the rejection cases (non-positive
    quota, no requests/tokens, non-http URL, `key_env` `GATEWAY_UPSTREAM99_API_KEY` and `PATH`, unknown class, unknown
-   field), empty policy output identical to no policy file. Check: `bash scripts/test-gen-model-routes.sh` and the
-   pinned-catalog `--check` from the existing plan (output unchanged).
+   field), empty policy output identical to no policy file. Check: `bash scripts/test-gen-model-routes.sh` and
+   `curl -fsSL "https://raw.githubusercontent.com/olafkfreund/Factory/$(tr -d '[:space:]' < apps/model-gateway/hub-catalog.sha)/apis/model-catalog.json" -o "$TMPDIR/cat.json" && python3 scripts/gen-model-routes.py --catalog "$TMPDIR/cat.json" --check` (exit 0, ConfigMap unchanged).
    Traps: stdlib only; keep script executable; fixtures use example hostnames and no keys; the committed ConfigMap must not change.
 2. `apps/model-gateway/manifests/manifests.yaml`: image tag; the four env entries after `GATEWAY_ROUTES_PATH` with a
    comment on activation + restart; new `allow-otlp-egress` NetworkPolicy after `allow-provider-egress`. Check:
@@ -53,16 +53,21 @@ Repo factory-gitops (base `main`, branch `feat/1959-gateway-gitops-wiring`), wor
    `GATEWAY_OTLP_ENDPOINT|GATEWAY_OTLP_HEADERS|GATEWAY_UPSTREAM2_API_KEY` missing, duplicated, with a literal `value`, or
    not an optional `model-gateway-secrets` ref with key equal to its name; any `*_API_KEY|*TOKEN` env on the container
    that is not optional; a route in `model-routes` `routes.json` that is an object (default must be strings only; the
-   test sets `ALLOW_ROUTE_POLICY=1` is NOT supported: this guard is for the committed default); `allow-otlp-egress` not
-   exactly one egress rule with one peer (namespace `factory` AND pod `app=observe`) on TCP 5080 only. Negative mutations
-   for each rule (reuse the existing `mutate` pattern, run against a separate rendered gateway JSON). Check:
+   test sets `ALLOW_ROUTE_POLICY=1` is NOT supported: this guard is for the committed default); `allow-otlp-egress` is
+   not exactly one policy in ns `gateway` with `spec.podSelector` `app=model-gateway`, `policyTypes` `[Egress]` and one
+   egress rule with one peer (namespace `factory` AND pod `app=observe`) on TCP 5080 only. Negative mutations
+   for each rule, including a wrong source selector (reuse the existing `mutate` pattern, run against a separate rendered gateway JSON). Check:
    `bash scripts/test-gateway-wiring.sh` prints all `pass` lines and `gateway wiring tests passed`; `shellcheck`.
    Traps: existing client-Deployment checks and mutations stay unchanged; needs kustomize, yq, jq (already in CI).
 4. `docs/model-gateway.md`: new section "Gateway features (3.17.0)": what is wired and off, enabling checklist for the
    owner (seed three keys with the exact `kubectl create secret ... --from-file` shape only if it fits the existing
    Secret procedure; flip metrics via PR; restart), `/metrics` check (port-forward per pod, token from a file, sum),
-   quota per pod and AC-3 conditions, route-policy example and the regenerate command, OTLP finding with the unverified
-   status, and update the "Not done yet" list. Check: `grep` for no secret values; mkdocs nav unchanged.
+   quota per pod (a request quota is up to 2x fleet-wide; a token quota is only an admission threshold charged after
+   completion, so it can overshoot more than 2x) and the AC-3 conditions (sum both pods before and after; `GATEWAY_METRICS`
+   on; exercised models priced in the catalog; `gateway_usage_missing_total` and `gateway_unpriced_total` did not rise; no
+   pod restart during the run), route-policy example and the regenerate command, OTLP finding with the unverified
+   status (endpoint `http://observe.factory.svc.cluster.local:5080/api/default`, `GATEWAY_OTLP_HEADERS` =
+   `Authorization=Basic <base64 of user:password>`, content type JSON; if the live ingest fails, file an AIFactory issue), and update the "Not done yet" list. Check: `grep` for no secret values; mkdocs nav unchanged.
    Traps: examples contain placeholders only; never print a token.
 
 ## Tests
