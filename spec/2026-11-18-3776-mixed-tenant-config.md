@@ -42,12 +42,14 @@ own structured credential. Least risky to operate; reuses #373.
 - A connection that other connections reference cannot take a reference of its
   own, and cannot be deleted while referenced (400 naming the referrer). These
   checks and the write run in ONE transaction that locks the two connection
-  rows in id order (`SELECT ... FOR UPDATE` on PostgreSQL; SQLite serialises
-  writers), so a concurrent reference/delete or two chain-forming updates
+  rows in id order, taking the lock with a no-op `UPDATE` of both rows before
+  reading any invariant (a row lock on PostgreSQL, the database write lock on
+  SQLite), so a concurrent reference/delete or two chain-forming updates
   serialise on the referenced row. A dangling reference (manual DB edit) resolves
-  to a nested target with `provider=""`; `sync_enabled` treats that as ON so
-  the call fails inside the existing never-raises handlers ("unknown git
-  provider") and the reason lands on the card or the import result. Resolution
+  to a nested target with `provider="unresolved"` (not a kind, and not the
+  empty string, which `build_provider` maps to GitHub); `sync_enabled` treats
+  that as ON so `build_provider` raises "unknown git provider" inside the
+  existing never-raises handlers, before any credential fetch or network call and the reason lands on the card or the import result. Resolution
   itself never raises, and nothing falls back to the code provider.
 - **Existing cards.** A card's `issue_ref` project is interpreted by the
   resolved side, so switching a repository between providers would re-point
