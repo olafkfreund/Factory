@@ -20,6 +20,11 @@ variable "region" {
   type    = string
   default = "eu-west-2"
 }
+variable "connector_subnet_ids" {
+  type        = list(string)
+  default     = []
+  description = "Private subnets for the App Runner VPC connector. Empty falls back to the default VPC subnets (demo only: App Runner expects private subnets, add a NAT for internet egress)."
+}
 variable "image" {
   type = string # ECR image ref built by CI
 }
@@ -78,7 +83,7 @@ resource "aws_elasticache_subnet_group" "redis" {
 
 resource "aws_apprunner_vpc_connector" "app" {
   vpc_connector_name = "factory-ttt-connector"
-  subnets            = data.aws_subnets.default.ids
+  subnets            = length(var.connector_subnet_ids) > 0 ? var.connector_subnet_ids : data.aws_subnets.default.ids
   security_groups    = [aws_security_group.connector.id]
 }
 
