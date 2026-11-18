@@ -16,7 +16,7 @@ v0.8.5 is live, a hard CFactory card plans with HTTP 2xx, PFactory#1053 is close
 PFactory deployment `factory/pfactory`, CFactory card flow, plan registry in the pfactory pod.
 
 ## Constraints
-No live-cluster writes (read-only `kubectl`). No owner signature by an agent.
+No Kubernetes writes (read-only `kubectl`); application-level test data (one card, one plan session) is allowed. No owner signature by an agent.
 
 ## Open questions
 None.
