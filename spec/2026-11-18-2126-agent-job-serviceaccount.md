@@ -17,7 +17,9 @@ factory-gitops (`apps/aifactory/manifests/manifests.yaml`, next to the existing
   of `aifactory-sandbox` (jobs create/get/list/watch/delete, pods
   get/list/watch, pods/log get). The build Job dispatches gate Jobs through the
   API; this keeps that working under its own identity. The rules are copied, not
-  narrowed: no evidence yet which verbs the gate path can drop.
+  narrowed. Codex read of kube_sandbox.py shows the gate path uses only jobs
+  create/get/delete, pods list and pods/log get (watch unused), but other
+  code in the build pod was not audited; narrowing is a recorded follow-up.
 - Phase 2 (separate PR, merged last): on the aifactory Deployment set
   `AIFACTORY_BUILD_SA=aifactory-build-job` and `AIFACTORY_JOB_SA=aifactory-agent-job`.
 
@@ -25,7 +27,7 @@ AIFactory (`apps/web-server/server/services`):
 
 - `build_backend._job_service_account()` returns `AIFACTORY_JOB_SA` if set, else
   `AIFACTORY_BUILD_SA`, else `aifactory-sandbox`. `spec_job_backend` and
-  `agent_job_backend` call it instead of reading `AIFACTORY_BUILD_SA`. The build
+  `agent_job_backend` (apply-correction, PR-review and clarification Jobs) call it instead of reading `AIFACTORY_BUILD_SA`. The build
   Job keeps reading `AIFACTORY_BUILD_SA`. Both Jobs keep their token behaviour
   (spec and agent Jobs: `automount_service_account_token=False` already; the
   build Job: mounted only when gates dispatch Jobs).
@@ -46,7 +48,7 @@ Jobs write them, so changing the Job uid would break workspace writes.
 
 - One new SA for all three Jobs, tokenless: breaks gate dispatch from builds
   (found in Codex review of the intent).
-- Narrowing the build Role now: no evidence; a wrong guess breaks every build.
+- Narrowing the build Role now: only the gate path is audited; a wrong guess breaks every build.
 - A new setting that replaces `AIFACTORY_BUILD_SA`: breaks anyone using it.
 - Selecting Kyverno/NetworkPolicy by SA: they are label-based on purpose
   (Factory#502).
@@ -63,7 +65,8 @@ Jobs write them, so changing the Job uid would break workspace writes.
 
 - AIFactory: pytest for the three builders (new tests in
   `tests/test_build_backend_kubejob.py` and siblings), `job_dispatch` selftest.
-- factory-gitops: `kyverno test apps/kyverno-policies/tests`, kustomize build +
+- factory-gitops: `kyverno test apps/kyverno-policies/tests -f kyverno-test-gate-task-pods-on-network-policy.yaml`
+  (input pod, expected patched pod and result entry for the new SA), kustomize build +
   kubeconform as in `manifest-validate.yml`, the automount expected-value gate.
 - After deploy (owner or coordinator, not in this change): a spec Job's pod has
   `serviceAccountName: aifactory-agent-job` and no token volume.
