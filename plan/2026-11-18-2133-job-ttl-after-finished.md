@@ -60,3 +60,7 @@ apps/web-server/tests/test_correction_job_backend.py` all pass; `ruff check` cle
 
 Revert the PR; unset env is byte-identical to today, so the env var can also
 simply be removed from factory-gitops.
+
+## Deviations
+
+- Step 2: the sweep classification lives in two module helpers, `_job_finish_time` and `_sweep_candidates`, instead of inline, to pass the ruff ratchet (PLR0912). Behaviour as specified.
