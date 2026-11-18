@@ -63,20 +63,24 @@ teardown(){
   fi
   # App Runner creates /aws/apprunner/<svc>/<id>/{application,service} CloudWatch
   # log groups that destroy/delete-service does NOT remove — sweep them here.
-  local lgs lg
-  lgs=$(aws logs describe-log-groups --region "$REGION" \
-      --log-group-name-prefix "/aws/apprunner/factory-${SPEC}-" \
-      --query 'logGroups[].logGroupName' --output text) || { cleanup_failed=1; echo "✗ log group listing FAILED" >&2; lgs=""; }
-  for lg in $lgs; do
-    aws logs delete-log-group --log-group-name "$lg" --region "$REGION" || { cleanup_failed=1; echo "✗ delete $lg FAILED" >&2; }
+  local lgs lg svc
+  for svc in frontend scoreboard; do   # exact service paths: SPEC=demo must not match SPEC=demo-other
+    lgs=$(aws logs describe-log-groups --region "$REGION" \
+        --log-group-name-prefix "/aws/apprunner/factory-${SPEC}-${svc}/" \
+        --query 'logGroups[].logGroupName' --output text) || { cleanup_failed=1; echo "✗ log group listing FAILED" >&2; lgs=""; }
+    for lg in $lgs; do
+      aws logs delete-log-group --log-group-name "$lg" --region "$REGION" || { cleanup_failed=1; echo "✗ delete $lg FAILED" >&2; }
+    done
   done
   echo "App Runner services tagged spec=$SPEC remaining:"
   aws apprunner list-services --region "$REGION" \
     --query "ServiceSummaryList[?contains(ServiceName,'factory-${SPEC}')].ServiceName" --output json || cleanup_failed=1
-  echo "App Runner log groups for factory-${SPEC}- remaining:"
-  aws logs describe-log-groups --region "$REGION" \
-    --log-group-name-prefix "/aws/apprunner/factory-${SPEC}-" \
-    --query 'logGroups[].logGroupName' --output json || cleanup_failed=1
+  echo "App Runner log groups for factory-${SPEC}-{frontend,scoreboard}/ remaining:"
+  for svc in frontend scoreboard; do
+    aws logs describe-log-groups --region "$REGION" \
+      --log-group-name-prefix "/aws/apprunner/factory-${SPEC}-${svc}/" \
+      --query 'logGroups[].logGroupName' --output json || cleanup_failed=1
+  done
   if [ "$rc" -eq 0 ] && [ "$cleanup_failed" = "1" ]; then
     echo "✗ teardown failed, AWS resources may remain (check the output above)" >&2; exit 1
   fi
@@ -88,6 +92,11 @@ teardown(){
 # (the account restriction only shows up at apply).
 aws apprunner list-services --region "$REGION" --max-items 1 >/dev/null 2>&1 \
   || die "pre-flight failed: cannot list App Runner services in $REGION for account $ACCT (permissions or region)"
+# A kept (or half-torn-down) run leaves state in $INFRA; wiping it would orphan
+# the live resources, so refuse and say how to destroy them.
+if grep -qs '"type"' "$INFRA/terraform.tfstate"; then
+  die "state with resources found in $INFRA (earlier --keep or failed teardown): run terraform -chdir=$INFRA destroy -auto-approve first"
+fi
 trap teardown EXIT
 trap 'exit 130' INT TERM
 

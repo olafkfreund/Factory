@@ -168,3 +168,15 @@ def test_preflight_preserves_existing_workspace(
     assert "GREEN" not in result.stdout + result.stderr
     assert " destroy " not in calls
     assert marker.read_text() == "keep"
+
+
+def test_existing_state_is_not_wiped(run_conductor: RunConductor, tmp_path: Path) -> None:
+    infra = tmp_path / "w" / "infra"
+    infra.mkdir(parents=True)
+    state = infra / "terraform.tfstate"
+    state.write_text('{"resources":[{"type":"aws_apprunner_service"}]}')
+    result, calls = run_conductor()
+    assert result.returncode != 0
+    assert "destroy -auto-approve first" in result.stderr
+    assert " destroy " not in calls
+    assert state.exists()
