@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 1573
 intent: intent/2026-11-18-1573-runner-image-missing-not-run.md
 ---
