@@ -18,8 +18,11 @@ per pod (2 replicas), which changes what AC-3 can prove.
 
 ## Proposed outcome
 
-- The gateway runs the 3.17.0 image and the manifests carry every new knob, but nothing changes live until the owner
-  seeds Secret `model-gateway-secrets`: metrics off, no OTLP endpoint, no quota, no second upstream.
+- The gateway runs the 3.17.0 image and the manifests carry every new knob, with every feature explicitly off: metrics
+  `off`, no OTLP endpoint, no quota, no second upstream (empty route policy). Features turn on only when the owner
+  seeds `model-gateway-secrets` (OTLP, second key) or merges a route-policy or metrics PR. Argo CD auto-syncs, prunes
+  and self-heals, so two live effects happen on merge and are accepted: the 2 pods roll once for the image bump, and
+  one additive NetworkPolicy allowing egress to OpenObserve takes effect (it only matters once an OTLP endpoint is set).
 - A route's quota and upstreams can be expressed in git and flow into the `model-routes` ConfigMap through the same
   generator as today; with the committed (empty) policy the rendered ConfigMap is byte-identical to today's.
 - A cluster-free test fails if a later change turns any of it on by default.
@@ -31,7 +34,7 @@ per pod (2 replicas), which changes what AC-3 can prove.
 
 factory-gitops `apps/model-gateway`, `scripts/gen-model-routes.py`, `scripts/test-gateway-wiring.sh`,
 `docs/model-gateway.md`; namespace `gateway` (2 pods roll once on the image bump); OpenObserve (`observe`, ns `factory`)
-as a future OTLP target. Argo CD syncs this repo live.
+as a future OTLP target. Argo CD syncs this repo live (auto-sync, prune, self-heal).
 
 ## Constraints
 
@@ -43,4 +46,5 @@ as a future OTLP target. Argo CD syncs this repo live.
 
 ## Open questions
 
-None. Decisions are recorded in the spec (owner delegation 2026-11-18).
+None for approval. OpenObserve OTLP JSON acceptance stays marked unverified: the docs may record only what the
+pinned OpenObserve version's source shows (v0.90.3), and a live ingest proof is an owner step once an endpoint is set.
