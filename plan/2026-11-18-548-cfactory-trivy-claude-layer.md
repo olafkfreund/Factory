@@ -57,14 +57,24 @@ image `/usr/local/lib/python3.15/site-packages/claude_agent_sdk/_bundled/claude`
 4. (codex) `tests/test_trivy_gates.py` additions and new
    `tests/test_verify_claude_bundle.py` as listed in the spec (no skip flags,
    `--timeout` on image scans, `--image-src docker` in deploy, exact pin equals
-   lock, verify step present and before cosign sign in deploy, stub-`docker`
-   cases: match, wrong sha, wrong version, missing lock, malformed lock, docker
-   failure). -> verify by `python -m pytest tests/test_trivy_gates.py
+   lock; order in deploy.yml is pull -> verify -> trivy image scans -> cosign
+   sign; the verify step targets `${BACKEND_TAG}` in image-build.yml and
+   `${BACKEND_IMAGE}@<backend digest>` in deploy.yml and has no
+   `continue-on-error`; stub-`docker` cases: match, wrong sha, wrong version,
+   missing lock, malformed lock, docker failure (non-zero exit propagates),
+   non-amd64 image, missing binary). -> verify by `python -m pytest tests/test_trivy_gates.py
    tests/test_verify_claude_bundle.py -q`.
    Traps: repo ruff config (`ruff.toml`); keep tests offline.
-5. Evidence (lead): rebuild backend image, run the verify script green; red with
-   an edited lock; run trivy negative test (`urllib3==1.26.4` fixture, JSON
-   shows the advisory) and clean-image control; collect CI before/after timings.
+5. Evidence (lead), copied from the spec's Verification: (a) rebuild the backend
+   image; verify script exits 0 on the real lock and 1 on an edited sha256 and an
+   edited version. (b) Negative scan: build a fixture image installing
+   `urllib3==1.26.4`; run `trivy image --image-src docker --severity HIGH,CRITICAL
+   --ignore-unfixed --exit-code 1 --format json`; pass only if exit is 1 AND the
+   JSON lists `urllib3` 1.26.4 with HIGH/CRITICAL severity and a non-empty
+   FixedVersion; control: clean backend image exits 0 with no vulnerabilities.
+   (c) Deploy-equivalent timing: push-less local run of docker pull (or
+   `docker save`/load of the digest) + verify + trivy scan, with wall times; plus
+   CI step timings of the PR run vs the baseline runs (8-12 s) for the PR body.
 
 ## Tests
 
