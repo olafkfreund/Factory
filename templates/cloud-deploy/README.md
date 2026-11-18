@@ -45,3 +45,5 @@ These templates close the "no GCP/Azure deploy pattern" gap. Making the Factory
 emit them **without a human** still needs: PFactory PaaS-target detection (RFC-0013
 service layer) and an AIFactory deploy-codegen step that picks the right template
 from the contract's `deployment` block.
+
+**AWS note:** the AWS template targets App Runner, which AWS has closed to new services on some accounts (Factory#3839). See [docs/aws-app-runner-restriction.md](../../docs/aws-app-runner-restriction.md).
