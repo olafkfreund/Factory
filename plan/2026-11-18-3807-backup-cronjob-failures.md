@@ -21,8 +21,9 @@ in factory-gitops (base main). No live-cluster action.
 ## Steps
 
 1. `apps/backups/drill/drill.sh`: change the default `EXPECTED_DBS`
-   and `TABLE_DBS` lines, and the error filter
-   `role "factory" already exists` -> `role ".*" does not exist|role "factory" already exists`.
+   and `TABLE_DBS` lines, and strip `DROP ROLE` lines from the replay stream (`sed '/^DROP ROLE /d'`).
+   Deviation (Codex review): a blanket `role ... does not exist` error filter was
+   rejected, it hid failed ALTER OWNER/GRANT; test.sh gains a `missing-owner` case.
    → verify by step 2.
    Traps: filter lives inside `grep -vcE`; keep `|| true`.
 2. `apps/backups/drill/test.sh`: build the source like production (databases

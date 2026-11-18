@@ -29,8 +29,7 @@ finished in 4 s). Rejected suspects: missing bucket object (fetch OK), credentia
 (fetch and evidence OK), emit (worked as designed).
 
 Fix in `apps/backups/drill/drill.sh`:
-1. Ignore `role ".*" does not exist` (generalise the existing `role "factory"
-   already exists` style filter).
+1. Delete `DROP ROLE` lines from the replayed stream (see Risks).
 2. Default `EXPECTED_DBS` = `pfactory tfactory aifactory cfactory` (drop the
    non-existent bootstrap `factory`).
 3. Default `TABLE_DBS` = `pfactory tfactory aifactory`; `cfactory` must exist
@@ -64,8 +63,7 @@ after this change, raise the limit then.
 
 The drill is looser on `cfactory` content and on non-bootstrap role drops; both
 are properties of this cluster, and the total `no_rows` check cannot see lost cfactory content while other
-databases hold rows. Suppressing every `role ... does not exist` also hides it for
-ALTER/GRANT lines, but a failed CREATE ROLE still reports a different, counted error.
+databases hold rows. Deleting `DROP ROLE` lines from the replay stream (not filtering errors) keeps failed ALTER OWNER/GRANT counted; a test case proves it.
 `--max-workers 4` makes the snapshot slower (53 s today; the 3600 s deadline is
 far away).
 
