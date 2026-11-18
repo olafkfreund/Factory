@@ -23,6 +23,7 @@ Per-service reference lives with each product:
 |---|---|
 | [Onboarding]({{ '/guides/onboarding/' | relative_url }}) | Get from nothing to a first verified change |
 | [Working as a team]({{ '/guides/teams/' | relative_url }}) | Set up roles, approval gates and shared conventions |
+| [Bitbucket code provider]({{ '/guides/bitbucket-code-provider/' | relative_url }}) | Bitbucket Cloud pull requests as a code provider (flag off by default) |
 | [Boards and work items]({{ '/guides/boards/' | relative_url }}) | Drive work from GitHub, GitLab or Azure DevOps issues |
 | [Demo runbook]({{ '/guides/demo-runbook/' | relative_url }}) | Drive a card through plan, code and test without touching anything mid-demo |
 

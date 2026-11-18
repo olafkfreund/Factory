@@ -7,7 +7,7 @@ status: Proposed
 
 # RFC-0022 — Work-Item and Code Seams
 
-> **Status:** Accepted (2026-11-16, option C, see Decision) · **Created:** 2026-07-27 · **Owner:** Factory hub (`shared/factory-github/`), consumed by all four services ·
+> **Status:** Accepted (2026-11-16, option C, see Decision); Phase 5 (Bitbucket code provider) implemented behind `FACTORY_BITBUCKET_ENABLED`, off by default · **Created:** 2026-07-27 · **Owner:** Factory hub (`shared/factory-github/`), consumed by all four services ·
 > **Extends:**
 > [RFC-0003](./0003-github-agentic-integration.md) (GitHub as the record of truth — this RFC has to qualify that claim),
 > [RFC-0020](./0020-multi-provider-git-integration-and-tenant-configured-projects.md) (multi-provider git — this is the seam RFC-0020 Phase 5 could not cross),
@@ -202,6 +202,9 @@ rather than an appendix.
   work-item provider distinct from its code provider, extending the
   multi-connection model shipped in Factory#373.
 - **Phase 5 — Bitbucket** as a code provider, which the split makes small.
+  *Implemented (Factory#3776):* `BitbucketProvider`, a `CodeProvider` only, additive with no
+  protocol change, registered but disabled by default. See
+  [the provider guide](../guides/bitbucket-code-provider.md).
 
 Phases 1 and 2 have value with no Jira at all: they remove a lie from an
 interface every service depends on. If this RFC stalls after Phase 2, the fleet
