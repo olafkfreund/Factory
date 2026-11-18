@@ -62,6 +62,7 @@ CANONICAL_FILES: tuple[str, ...] = (
     "providers/azure_devops_provider.py",
     "providers/_github_json.py",
     "providers/http_github_provider.py",
+    "providers/jira_provider.py",
 )
 
 # Default canonical root, relative to the repo that contains this script.
@@ -94,9 +95,15 @@ def check_drift(canonical_root: Path, service_root: Path) -> list[str]:
         "the gate cannot check it, and the service workflow will not fetch it"
         for rel in _missing_from_contract(canonical_root)
     ]
+    if not any((canonical_root / rel).is_file() for rel in CANONICAL_FILES):
+        problems.append("the canonical tree contains none of the CANONICAL_FILES")
     for rel in CANONICAL_FILES:
         canonical_file = canonical_root / rel
         service_file = service_root / rel
+        if not canonical_file.is_file():
+            # The checker runs from main against a consumer's PINNED canonical,
+            # which may predate this file; there is nothing to compare yet.
+            continue
         canonical_bytes = canonical_file.read_bytes()
         if not service_file.is_file():
             problems.append(f"{rel}: present in canonical, missing in service copy")
@@ -111,6 +118,7 @@ def compared_evidence(canonical_root: Path, service_root: Path) -> list[str]:
     return [
         f"{rel} [canonical {digest(canonical_root / rel)} | service {digest(service_root / rel)}]"
         for rel in CANONICAL_FILES
+        if (canonical_root / rel).is_file()
     ]
 
 
