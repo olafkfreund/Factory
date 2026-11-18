@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: olafkfreund/AIFactory#2134
 author: olafkfreund
 ---
