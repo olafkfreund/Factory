@@ -168,7 +168,7 @@ async def test_create_issue_reads_back_and_assigns_account_id():
 
 @pytest.mark.asyncio
 async def test_close_chooses_done_transition_and_sends_comment_in_same_post():
-    seen = []
+    seen: list[Any] = []
 
     handler = _transition_handler(
         [
