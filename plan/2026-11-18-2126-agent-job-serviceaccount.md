@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: olafkfreund/AIFactory#2126
 spec: spec/2026-11-18-2126-agent-job-serviceaccount.md
 coders:
