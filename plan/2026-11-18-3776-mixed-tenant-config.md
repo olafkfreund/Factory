@@ -154,3 +154,22 @@ The feature is inert unless a connection sets `work_item_connection_id`.
   stop issue sync and import (`CFACTORY_IMPORT_POLL=false`, and stop card sync
   by clearing the work-item connection's credential), keep the columns in place
   (no downgrade), and forward-fix instead of rolling back past this change.
+
+## Deviations (recorded at implementation, 2026-11-18)
+
+- Step 7 tests live in `tests/test_git_mixed_resolution.py` (lead); Codex's step 3
+  migration tests are in `tests/test_git_mixed_tenant.py`. Same coverage as planned.
+- Codex final review (2 rounds) added, beyond the plan: connection updates re-check
+  referrers and the existing-card guard inside the locked transaction; existing
+  `intake_project` and `work_item_project` paths are validated against the new
+  issue-side provider on attach/replace (`_assert_paths_fit`); the repository
+  guard covers `project`, `intake_project` and `work_item_project`; repository
+  writes lock and re-read the connection (`_assert_side_unchanged`); an import
+  discards issues if the side was re-pointed while the provider call was in flight.
+- Known residual: on PostgreSQL a card insert by an unrelated writer can still
+  land between the existing-card guard and the commit (the guard locks the
+  connection rows, not the cards table). The import-time revalidation closes the
+  import path; a manual card create naming an `issue_ref` in the window is not
+  covered. Operationally negligible (admin-only reconfiguration).
+- `openapi.yaml` is the curated subset with no git-connections paths; the live
+  `/openapi.json` carries the new fields, so the curated file is unchanged.
