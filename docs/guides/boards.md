@@ -19,23 +19,20 @@ adopting a second backlog nobody looks at.
 | **GitHub** | shipped | yes | issues, PRs, reviews, comments |
 | **GitLab** | shipped | yes | issues, MRs, notes |
 | **Azure DevOps** | shipped | yes | work items, PRs |
-| Bitbucket | **not implemented** | — | — |
+| Bitbucket | code provider, **disabled by default** ([guide]({{ '/guides/bitbucket-code-provider/' | relative_url }})) | yes (PRs) | none (Bitbucket issues are out of scope) |
 | Gitea | **not implemented** | — | — |
 | Jira | **not implemented** | n/a | — |
 
-Bitbucket and Gitea appear in the `ProviderType` enum but raise
-`NotImplementedError` when constructed:
-
-```
-NotImplementedError: Bitbucket provider not yet implemented.
-See providers/bitbucket_provider.py.stub for interface.
-```
+Gitea appears in the `ProviderType` enum but raises `NotImplementedError` when
+constructed. Bitbucket Cloud is implemented as a code-only provider and stays
+off until `FACTORY_BITBUCKET_ENABLED` is set; `get_provider("bitbucket")` still
+raises, by design, because it is not a work-item provider.
 
 An enum member is not a capability. Jira has no implementation at all; it is
 tracked under RFC-0022 as a work-item seam, because Jira has work items and no
 repositories, which is a different shape from the three that are shipped.
 
-If you need Bitbucket, Gitea or Jira today, the honest answer is that Factory
+If you need Gitea or Jira today, the honest answer is that Factory
 cannot drive them yet.
 
 ---
