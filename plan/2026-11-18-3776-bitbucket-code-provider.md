@@ -35,6 +35,22 @@ diff (`codex review --base origin/main`). Agy is off by owner decision.
   `merge_pr` -> `False` on 409/400; `check_permissions` -> `"none"` on 403/404
   (explicit grants only; group-only access reads `"none"`), raises on 401/429;
   comment reads wrap failures in `ProviderCommentError`. No 429 retry.
+- Members (all under `/repositories/{ws}/{slug}` on `_base_url`):
+  `get_repository_info` = `GET` repo JSON (clone URLs in `links.clone`);
+  `get_default_branch` = `mainbranch.name`, else `"main"`; `fetch_pr` = `GET
+  /pullrequests/{id}` + paged `/diffstat` (files, additions = `lines_added`,
+  deletions = `lines_removed`) + `fetch_pr_diff` (`GET /pullrequests/{id}/diff`);
+  PRData: number=id, body=description, author=`author.nickname` else
+  `display_name`, url=`links.html.href`, created/updated from `created_on` /
+  `updated_on`, reviewers from `participants` with role REVIEWER, `is_draft`
+  from `draft`, provider BITBUCKET, `raw_data` the PR JSON.
+- Checker tolerance (found by Codex plan review, P1): all four service workflows
+  take the checker from hub `main` but the canonical from their old `HUB_SHA`.
+  Adding the file to `CANONICAL_FILES` would raise `FileNotFoundError` for every
+  service until it bumps. So `check_drift` and `compared_evidence` treat a
+  listed file that is absent from the canonical tree as "pin predates this file"
+  (skip, and print it as `not in this canonical`), never a crash and never a
+  silent pass of a file the canonical does have.
 - State map: OPEN->open, MERGED->merged, DECLINED/SUPERSEDED->closed, other ->
   `unknown` + warning. `mergeable` left at default.
 - `fetch_prs`: `q` for author/base/head (quotes escaped), `since`/`limit`
@@ -74,8 +90,15 @@ diff (`codex review --base origin/main`). Agy is off by owner decision.
 2. `shared/factory-github/providers/factory.py`, `scripts/check_factory_github_drift.py`:
    `get_code_provider`, flag helper, `list_available_providers`,
    `is_provider_available`, the `get_provider` message; add the file to
-   `CANONICAL_FILES`. -> verify by `python scripts/check_factory_github_drift.py --self-test` and `python -m pytest tests/test_check_factory_github_drift.py -q`.
-   Traps: keep `get_provider` return type `GitProvider`; flag read at call time.
+   `CANONICAL_FILES`; make `check_drift`/`compared_evidence` tolerate a listed
+   file absent from an older canonical (see Checker tolerance), and add
+   regression tests in `tests/test_check_factory_github_drift.py` for an old
+   canonical (no bitbucket file, service lacks it too -> no problems, no
+   crash) and a new one (file present, service missing it -> problem).
+   -> verify by `python scripts/check_factory_github_drift.py --self-test` and `python -m pytest tests/test_check_factory_github_drift.py -q`.
+   Traps: keep `get_provider` return type `GitProvider`; flag read at call time;
+   `_missing_from_contract` must keep failing for a canonical file NOT listed.
+   Coordinate: rfc22-jira edits the same list; rebase on whichever merges first.
 3. `tests/test_bitbucket_provider.py` (new): `httpx.MockTransport` fixtures,
    no network. Cover: pagination via `next`; cross-origin `next` and diff
    redirect refused; same-origin diff redirect followed; 401/403/404/429; merge
@@ -91,8 +114,15 @@ diff (`codex review --base origin/main`). Agy is off by owner decision.
    `docs/guides/boards.md`), link from `docs/guides/index.md`;
    `docs/rfc/0022-work-item-and-code-seams.md`: Status line and Phase 5 note
    (implemented behind `FACTORY_BITBUCKET_ENABLED`, flag off);
-   `shared/factory-github/README.md`: one line for the new file.
-   -> verify by `mkdocs`-free check: links resolve, markdown renders (grep).
+   `docs/guides/boards.md` lines 22-31: replace the claim that Bitbucket is
+   unimplemented and the stub error text; `shared/factory-github/README.md`:
+   one line for the new file. The guide covers: credential kinds (API token via
+   Basic `email:token`, access token via Bearer; app passwords retired), the
+   flag and how to enable it, the member table, limits (permissions explicit
+   only, no auto-merge, no statuses/issues), and the live-smoke checklist.
+   -> verify by a python check that every relative link in the new/edited docs
+   resolves to a file and the front matter has `layout`, `title`, `permalink`;
+   no MkDocs nav change (`mkdocs.yml` covers `techdocs/` only).
    Traps: no secrets, no real workspace names.
 5. Re-vendor (after the hub PR is open and green; pins need the hub merge SHA):
    copy the two files to the four service repos in their own worktrees, bump
@@ -104,10 +134,13 @@ diff (`codex review --base origin/main`). Agy is off by owner decision.
 ## Tests
 
 `python -m pytest tests/test_bitbucket_provider.py tests/test_provider_redirect_posture.py tests/test_provider_credential_repr.py tests/test_provider_protocol_split.py tests/test_provider_comments.py -q` green;
-`ruff check shared tests scripts` and `ruff format --check` on touched files;
-`python scripts/check_factory_github_drift.py --self-test` exit 0; the hub's
-jscpd budget check (`scripts/check_jscpd_budget.py`) if CI runs it for
-`shared/factory-github`.
+the CI ratchets: `python scripts/ratchet_lint.py --base origin/main --package scripts`
+and `... --package tests` (ruff), the same with `--tool mypy`, plus `ruff check`
+and `mypy --strict`-free spot check on `bitbucket_provider.py`, and `ruff format --check`
+on the touched files; `python scripts/check_factory_github_drift.py --self-test`
+exit 0; clone budget (mandatory): `npx --yes jscpd@4 --config .jscpd.json .`
+then `python scripts/check_jscpd_budget.py`, existing budget and exclusions
+unchanged.
 
 ## Rollback
 
