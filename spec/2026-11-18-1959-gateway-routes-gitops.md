@@ -49,8 +49,8 @@ All code lands in olafkfreund/factory-gitops (base `main`); artifacts live here.
    (namespace `factory`) and EVERY Job carrying a `factory.io/kind` label (build, task, verify) in that namespace.
    For each pod template: (a) env var names matching the model-provider key list (`OPENAI_API_KEY
    OPENAI_COMPATIBLE_API_KEY GEMINI_API_KEY GOOGLE_API_KEY OLLAMA_API_KEY ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
-   CLAUDE_CODE_OAUTH_TOKEN`) are classified: a `secretKeyRef` to key `MODEL_GATEWAY_CLIENT_TOKEN` or
-   `model-gateway-token` is `GATEWAY-REF` (the gateway integration deliberately puts the client token in
+   CLAUDE_CODE_OAUTH_TOKEN`) are classified: a `secretKeyRef` to Secret `factory-secrets` key `MODEL_GATEWAY_CLIENT_TOKEN` (the only
+   gateway reference the manifests use; the same key under any other Secret name is a `VIOLATION`) is `GATEWAY-REF` (the gateway integration deliberately puts the client token in
    `OPENAI_COMPATIBLE_API_KEY`); any other `secretKeyRef`/`configMapKeyRef` is `VIOLATION`; a literal value equal to the token in
    `--gateway-token-file` (compared in memory, never printed) is `GATEWAY-REF`; any other literal is `VIOLATION`; a literal
    when no token file was given is `UNVERIFIED`; (b) any `envFrom` entry is `UNVERIFIED` (names only); (c) volumes
@@ -104,4 +104,4 @@ All code lands in olafkfreund/factory-gitops (base `main`); artifacts live here.
 
 ## Verification
 
-`python3 scripts/gen-model-routes.py --check --catalog <pinned catalog>`; the three `scripts/test-*.sh`; `kustomize build apps/model-gateway/manifests` + kubeconform (as `manifest-validate`); CI green on the PR head SHA; read-only `kubectl` observation of the live gateway (no apply). Live AC-1 run output is pasted in the PR as current violations.
+`python3 scripts/gen-model-routes.py --check --catalog <pinned catalog>`; the three `scripts/test-*.sh`; `kustomize build apps/model-gateway/manifests` + kubeconform (as `manifest-validate`); `cosign verify` of the new image tag against issuer `https://token.actions.githubusercontent.com` and subject `^https://github.com/olafkfreund/AIFactory/` (done pre-merge: signed; `manifest-validate` does not fetch signatures); CI green on the PR head SHA; read-only `kubectl` observation of the live gateway (no apply). Live AC-1 run output is pasted in the PR as current violations.
