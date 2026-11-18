@@ -71,9 +71,7 @@ def test_missing_file_is_flagged(tmp_path: Path) -> None:
     assert any("providers/protocol.py" in p and "missing" in p for p in problems)
 
 
-def test_old_canonical_without_bitbucket_is_clean(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_old_canonical_without_bitbucket_is_clean(tmp_path: Path) -> None:
     canonical = _make_canonical(tmp_path)
     service = _copy_tree(canonical, tmp_path / "service")
     bitbucket = "providers/bitbucket_provider.py"
@@ -82,7 +80,6 @@ def test_old_canonical_without_bitbucket_is_clean(
 
     assert gate.check_drift(canonical, service) == []
     assert gate.run_check(canonical, service) == 0
-    assert f"{bitbucket}: not in this canonical (pin predates it)" in capsys.readouterr().out
 
 
 def test_new_canonical_without_service_bitbucket_reports_drift(tmp_path: Path) -> None:
@@ -92,6 +89,25 @@ def test_new_canonical_without_service_bitbucket_reports_drift(tmp_path: Path) -
 
     problems = gate.check_drift(canonical, service)
     assert any("providers/bitbucket_provider.py" in p and "missing" in p for p in problems)
+
+
+def test_old_pin_skips_new_file_but_empty_canonical_still_fails(tmp_path: Path) -> None:
+    canonical = _make_canonical(tmp_path)
+    service = _copy_tree(canonical, tmp_path / "service")
+    jira = "providers/jira_provider.py"
+    (canonical / jira).unlink()
+    (service / jira).unlink()
+
+    assert gate.check_drift(canonical, service) == []
+    assert all(jira not in line for line in gate.compared_evidence(canonical, service))
+    assert gate.run_check(canonical, service) == 0
+
+    for rel in gate.CANONICAL_FILES:
+        (canonical / rel).unlink(missing_ok=True)
+    assert any("contains none" in p for p in gate.check_drift(canonical, service))
+
+    (canonical / jira).write_text("# new canonical file\n")
+    assert any(jira in p and "missing" in p for p in gate.check_drift(canonical, service))
 
 
 def test_run_check_exit_codes(tmp_path: Path) -> None:
