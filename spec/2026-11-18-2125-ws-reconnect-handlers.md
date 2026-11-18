@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 2125
 intent: intent/2026-11-18-2125-ws-reconnect-handlers.md
 ---
