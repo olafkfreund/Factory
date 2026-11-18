@@ -8,14 +8,19 @@ Supports dynamic provider registration for extensibility.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
 
 from .github_provider import GitHubProvider
-from .protocol import GitProvider, ProviderType, WorkItemProvider
+from .protocol import CodeProvider, GitProvider, ProviderType, WorkItemProvider
 
 # Provider registry for dynamic registration
 _PROVIDER_REGISTRY: dict[ProviderType, Callable[..., GitProvider]] = {}
+
+
+def _bitbucket_enabled() -> bool:
+    return os.getenv("FACTORY_BITBUCKET_ENABLED", "").lower() in {"1", "true", "yes"}
 
 
 def register_provider(
@@ -75,6 +80,12 @@ def get_provider(
     if provider_type in _PROVIDER_REGISTRY:
         return _PROVIDER_REGISTRY[provider_type](repo=repo, **kwargs)
 
+    if provider_type == ProviderType.BITBUCKET:
+        raise NotImplementedError(
+            "Bitbucket work items are not implemented; use get_code_provider with "
+            "FACTORY_BITBUCKET_ENABLED=1 for code operations."
+        )
+
     # Built-in providers
     if provider_type == ProviderType.GITHUB:
         # Factory#370: an EXPLICIT token selects the REST provider, and the
@@ -113,12 +124,6 @@ def get_provider(
         raise ValueError("jira is a work-item provider only: use get_work_item_provider()")
 
     # Future providers (not yet implemented)
-    if provider_type == ProviderType.BITBUCKET:
-        raise NotImplementedError(
-            "Bitbucket provider not yet implemented. "
-            "See providers/bitbucket_provider.py.stub for interface."
-        )
-
     if provider_type == ProviderType.GITEA:
         raise NotImplementedError(
             "Gitea provider not yet implemented. "
@@ -126,6 +131,28 @@ def get_provider(
         )
 
     raise ValueError(f"Unsupported provider type: {provider_type}")
+
+
+def get_code_provider(
+    provider_type: ProviderType | str,
+    repo: str,
+    **kwargs: Any,
+) -> CodeProvider:
+    """Get a provider for repository and pull-request operations."""
+    kind = provider_type.lower() if isinstance(provider_type, str) else provider_type
+    if kind == ProviderType.BITBUCKET:
+        if not _bitbucket_enabled():
+            raise NotImplementedError(
+                "Bitbucket code provider requires FACTORY_BITBUCKET_ENABLED=1"
+            )
+        from .bitbucket_provider import BitbucketProvider
+
+        return BitbucketProvider(_repo=repo, **kwargs)
+    if kind == ProviderType.GITHUB and "token" in kwargs:
+        raise NotImplementedError(
+            "GitHub code operations with an explicit token are not implemented"
+        )
+    return get_provider(provider_type, repo, **kwargs)
 
 
 def get_work_item_provider(
@@ -159,9 +186,14 @@ def list_available_providers() -> list[ProviderType]:
         ProviderType.JIRA,
     ]  # Built-in
 
+    if _bitbucket_enabled():
+        available.append(ProviderType.BITBUCKET)
+
     # Add registered providers
     for provider_type in _PROVIDER_REGISTRY:
-        if provider_type not in available:
+        if provider_type not in available and (
+            provider_type != ProviderType.BITBUCKET or _bitbucket_enabled()
+        ):
             available.append(provider_type)
 
     return available
@@ -187,6 +219,8 @@ def is_provider_available(provider_type: ProviderType | str) -> bool:
     if provider_type == ProviderType.GITHUB:
         return True
 
+    if provider_type == ProviderType.BITBUCKET:
+        return _bitbucket_enabled()
     if provider_type == ProviderType.JIRA:
         return True
 

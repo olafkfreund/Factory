@@ -60,6 +60,7 @@ CANONICAL_FILES: tuple[str, ...] = (
     "providers/github_provider.py",
     "providers/gitlab_provider.py",
     "providers/azure_devops_provider.py",
+    "providers/bitbucket_provider.py",
     "providers/_github_json.py",
     "providers/http_github_provider.py",
     "providers/jira_provider.py",
@@ -243,6 +244,17 @@ def _self_test() -> int:
             run_check(root / "does-not-exist", identical) == _EXIT_BAD_CANONICAL,
             "run_check must return 2 when the canonical tree is absent",
         )
+
+        # Case 6: an older canonical predates a newly listed file.
+        bitbucket = "providers/bitbucket_provider.py"
+        (canonical / bitbucket).unlink()
+        (identical / bitbucket).unlink()
+        expect(check_drift(canonical, identical) == [], "older canonical must not drift")
+        expect(
+            all(bitbucket not in line for line in compared_evidence(canonical, identical)),
+            "older canonical must not claim to have compared the skipped file",
+        )
+        expect(run_check(canonical, identical) == 0, "older canonical must pass")
 
     if failures:
         _emit("SELF-TEST FAILED:")

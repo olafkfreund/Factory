@@ -22,6 +22,7 @@ The canonical set is exactly the deduped layer — nothing service-specific:
 | `providers/github_provider.py` | GitHub implementation. |
 | `providers/gitlab_provider.py` | GitLab implementation. |
 | `providers/azure_devops_provider.py` | Azure DevOps implementation. |
+| `providers/bitbucket_provider.py` | Bitbucket Cloud code provider (`CodeProvider` only; off unless `FACTORY_BITBUCKET_ENABLED`). |
 | `providers/jira_provider.py` | Jira Cloud REST v3, work-item seam only (RFC-0022 Phase 3). |
 | `providers/__init__.py` | Package init / re-exports. |
 
