@@ -31,7 +31,9 @@ Self-contained summary of the approved spec decisions (spec/2026-11-18-3776-mixe
   `WORK_ITEM_PROVIDERS`, referrer kind in `CODE_PROVIDERS` (both
   `SUPPORTED_PROVIDERS` for now); referenced connection cannot be deleted or
   take a reference of its own while referenced; checks and write in one
-  transaction locking the two rows in id order. On a mixed connection
+  transaction that first runs a no-op `UPDATE git_connection SET
+  updated_at = updated_at WHERE id IN (...)` over the two rows in id order, then
+  reads the invariants (row lock on PostgreSQL, write lock on SQLite). On a mixed connection
   `work_item_project` and `intake_project` follow the work-item provider's path
   rules, `project` the code provider's. Clearing the reference clears the
   repositories' `work_item_project`.
@@ -43,8 +45,11 @@ Self-contained summary of the approved spec decisions (spec/2026-11-18-3776-mixe
   stored credential or install. If `connection_credential` yields
   `source == "env"` for it, use an empty `Credential()` instead (no deployment
   token to another provider). Unmixed connections keep the env fallback.
-- Dangling reference: nested target with `provider=""`; `sync_enabled` is True
-  for it so `build_provider` raises inside the existing never-raises handlers.
+- Dangling reference: nested target with `provider="unresolved"` (constant
+  `UNRESOLVED_PROVIDER`; NOT the empty string, which `build_provider` maps to
+  GitHub); `sync_enabled` is True for it so `build_provider` raises "unknown git
+  provider" before any credential fetch or network call, inside the existing
+  never-raises handlers.
   Resolution never raises; no fallback to the code provider.
 - `resolve_repository(project=...)` also matches `work_item_project`.
 - API: additive optional fields `work_item_connection_id` (connection
@@ -61,7 +66,7 @@ Self-contained summary of the approved spec decisions (spec/2026-11-18-3776-mixe
    `git_connections.py` (GitConnectionRow ~l.88, GitRepositoryRow ~l.123,
    `target_from_repository` ~l.322, wire models, `repository_fields/patch`):
    add `WORK_ITEM_PROVIDERS`, `CODE_PROVIDERS`; columns; `GitTarget.work_item` and
-   `work_item_side`; `target_from_repository(..., work_item=None)` building the
+   `work_item_side`; `UNRESOLVED_PROVIDER`; `target_from_repository(..., work_item=None)` building the
    nested target (project = `work_item_project`, `import_project =
    intake_project or work_item_project`, default_labels copied); wire fields;
    validators take an optional work-item provider kind. Lead.
@@ -80,7 +85,10 @@ Self-contained summary of the approved spec decisions (spec/2026-11-18-3776-mixe
    test in `tests/test_git_mixed_tenant.py::test_migration_*`: upgrade head,
    columns exist and NULL, downgrade one revision drops them, single head,
    `create_all` and migrations agree (existing `tests/test_schema_bootstrap.py`
-   keeps passing).
+   keeps passing). Also extend the guard rewind test in
+   `tests/test_schema_bootstrap.py` (the `late` map ~l.154) with
+   `git_connection` and `git_repository` so both new guards are exercised
+   (columns absent, guards run, schema equals `create_all`, rows preserved).
    Check: `PYTHONPATH=apps/backend pytest tests/test_schema_bootstrap.py tests/test_git_mixed_tenant.py -k "migration or bootstrap or agree" -q`.
    Traps: do not edit existing migrations; keep one head.
 4. Codex. `github_sync.py`: `sync_enabled` checks `target.work_item_side`
@@ -114,24 +122,35 @@ Self-contained summary of the approved spec decisions (spec/2026-11-18-3776-mixe
    single-provider identical resolution; mixed resolution and project matching;
    validation (cross-tenant, self, chain, delete referenced, bad kind);
    existing-card refusal; env token never used for the work-item side;
-   dangling reference fails visibly with zero calls to the code host; sync and
+   dangling reference fails visibly with zero outbound calls (no host, no
+   credential fetch); sync and
    import call only the work-item host with only its token while verify and
    dispatch use only the code host (recording `httpx.MockTransport` per host);
-   interleaved-transaction check. Then final review: `codex review --base
+   interleaved-transaction check with two independent engines on a FILE
+   SQLite database (second writer blocks or times out until the first commits;
+   chain and referenced-delete races leave one winner). Then final review: `codex review --base
    origin/dev`, own read against this plan, max 2 rounds. Lead.
-   Check: `PYTHONPATH=apps/backend pytest -q` (full), per-file `ruff check`,
-   `ruff format --check`, `mypy --strict` on changed files.
+   Check: `PYTHONPATH=apps/backend pytest -q` (full), 
+   `ruff check apps/backend/cfactory scripts` (blocking whole-tree gate),
+   `ruff format --check` on changed files, and the ratchets exactly as CI runs
+   them: `python scripts/ratchet_lint.py --base origin/dev --package
+   apps/backend/cfactory --package scripts` and the same with `--tool mypy`.
 
 ## Tests
 
 Full backend suite `PYTHONPATH=apps/backend pytest`; `cd apps/frontend-web &&
 npm run typecheck && npm run build`; `scripts/dump_api_contract.py --check`;
-per-file ruff + `mypy --strict` as in `.github/workflows/code-quality.yml`.
+the two ratchet commands above (`.github/workflows/code-quality.yml`).
 Expected: all green, no change to any existing test's expectation.
 
 ## Rollback
 
-Revert the PR. Schema: `alembic downgrade b8d47e1f2a63` drops the two columns;
-all added columns are nullable and unread by older code, so deployment rollback
-without downgrade is also safe. Feature is inert unless a connection sets
-`work_item_connection_id`.
+The feature is inert unless a connection sets `work_item_connection_id`.
+
+- No mixed connection exists: revert the PR; `alembic downgrade b8d47e1f2a63`
+  drops the two nullable columns (or leave them, older code ignores them).
+- A mixed connection exists: older code would read its cards' work-item
+  `issue_ref`s through the CODE connection (unrelated issues). Before reverting:
+  stop issue sync and import (`CFACTORY_IMPORT_POLL=false`, and stop card sync
+  by clearing the work-item connection's credential), keep the columns in place
+  (no downgrade), and forward-fix instead of rolling back past this change.
