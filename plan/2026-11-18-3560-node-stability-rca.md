@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3560
 spec: spec/2026-11-18-3560-node-stability-rca.md
 coders:
