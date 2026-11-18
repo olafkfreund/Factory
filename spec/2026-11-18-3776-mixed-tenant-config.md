@@ -40,11 +40,31 @@ own structured credential. Least risky to operate; reuses #373.
   `CODE_PROVIDERS`. Both tuples equal `SUPPORTED_PROVIDERS` today; Jira joins
   the first and Bitbucket the second when those teams land.
 - A connection that other connections reference cannot take a reference of its
-  own, and cannot be deleted while referenced (400 naming the referrer). A
-  reference therefore cannot dangle; if the row is gone anyway (manual DB
-  edit) the work-item side resolves to an unconfigured side and issue
-  operations stop with the existing visible error. They never fall back to the
-  code provider.
+  own, and cannot be deleted while referenced (400 naming the referrer). These
+  checks and the write run in ONE transaction that locks the two connection
+  rows in id order (`SELECT ... FOR UPDATE` on PostgreSQL; SQLite serialises
+  writers), so a concurrent reference/delete or two chain-forming updates
+  serialise on the referenced row. A dangling reference (manual DB edit) resolves
+  to a nested target with `provider=""`; `sync_enabled` treats that as ON so
+  the call fails inside the existing never-raises handlers ("unknown git
+  provider") and the reason lands on the card or the import result. Resolution
+  itself never raises, and nothing falls back to the code provider.
+- **Existing cards.** A card's `issue_ref` project is interpreted by the
+  resolved side, so switching a repository between providers would re-point
+  tracked issues at an unrelated project. Policy: setting, replacing or clearing
+  a connection's reference, or changing a repository's `work_item_project`, is
+  REFUSED (400, count named) while any non-deleted card of the tenant holds an
+  `issue_ref` whose project is one of that connection's repositories'
+  `project`, `intake_project` or `work_item_project`. Detach or finish those
+  cards first. Re-pointing in place is a follow-up, not Phase 4.
+- **No deployment-token fallback on the work-item side.** The referenced
+  connection's credential must be its own stored credential or install: when
+  `connection_credential` would return the deployment's environment token
+  (`source == "env"`) for a work-item side, the nested target gets an
+  unconfigured credential instead, so a GitHub deployment token is never sent
+  to another provider. An unconfigured work-item side reads as "sync not
+  configured" exactly like a single connection with no credential. Unmixed
+  connections keep the env fallback unchanged.
 - On a mixed connection `work_item_project` and `intake_project` are validated
   against the WORK-ITEM provider's path rules; `project` against the code
   provider's. Clearing the reference clears `work_item_project` on its
@@ -68,12 +88,13 @@ connection.
 | Site | Operation | Side |
 |---|---|---|
 | github_sync.py `_provider` (used by `_open_issue`, `_fetch_issue`) | create_issue, fetch_issue | work-item |
+| github_sync.py `_open_issue` (`target.project`, labels, stored `IssueRef`) | which project the issue is filed in | work-item (project and ref both from the work-item side) |
 | github_sync.py `sync_enabled`, `maybe_sync` (`target.project`) | is issue sync on / is there a project | work-item |
 | issue_import.py `import_issues` (`build_provider`, `import_project`) | fetch_issues | work-item |
-| issue_import.py poll loop lease key (`intake_project or project`) | scheduling key | work-item |
-| github_sync.py comment fetch via `fetch_comments*` (same `_provider`) | comments | work-item |
+| issue_import.py poll loop lease key (`intake_project or work_item_project or project`) | scheduling key | work-item |
+| issue_import.py `_sync_comments` (`fetch_comments_bulk` on the provider `import_issues` built) | comments | work-item |
 | git_config_ops.py `_verify_target` | get_repository_info | code (the work-item connection verifies itself as its own connection) |
-| card_intake.py `aifactory_project_id` (lines 200-230) | build project | code |
+| card_intake.py `repo_ref`, `card_clone_url`, `aifactory_project_id` (lines 190-230) | dispatch repo, clone URL, build project | code (target, not `work_item_side`) |
 | cards.py `git_target*`, `resolve_repository` | resolution | both (see above) |
 There are no PR, branch or merge calls in CFactory; "a code event does not call
 the work-item provider" is asserted on verify and build-project paths.
@@ -87,6 +108,9 @@ the work-item provider" is asserted on verify and build-project paths.
   (`scripts/dump_api_contract.py`). The curated `openapi.yaml` has no
   git-connections paths; the live `/openapi.json` carries the fields, so
   nothing is added to the curated file.
+- The repository editor gains a "Work-item project" field, shown when its
+  connection has a work-item reference (independent of the flag below), so a
+  referenced connection can be completed from the cockpit.
 - `GitConnections` response gains `mixed_providers_enabled: bool` from a new
   setting `CFACTORY_MIXED_TENANT_UI` (default false). The connection editor
   shows a "Work items from" select (another connection of this tenant, or "same
@@ -125,6 +149,10 @@ Bitbucket (rfc22-bitbucket) only adds to `CODE_PROVIDERS`.
 New tests in `tests/test_git_mixed_tenant.py`: single-provider connection
 resolves identically (work_item None, same provider/credential/project);
 mixed resolution; validation (cross-tenant, self, chain, referenced delete);
+setting/clearing a reference or `work_item_project` is refused while cards
+track issues there; the env token is never used for a work-item side; a
+dangling reference fails visibly and never calls the code host; referenced
+delete and chain checks (incl. an interleaved-transaction check on SQLite);
 issue sync/import hit only the work-item host with only its token, verify hits
 only the code host with only its token (recording transports, no cross-leak);
 migration upgrade/downgrade on SQLite incl. single head; contract and zod tests;
