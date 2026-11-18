@@ -27,8 +27,8 @@ work-item half.
 - The factory hands it out through a new `get_code_provider()` typed
   `CodeProvider`. `get_provider()` stays typed `GitProvider` and never returns
   Bitbucket, so no existing caller is promised work-item methods it lacks.
-- It authenticates with the existing opaque credential kind (a Bitbucket Cloud
-  app password or repository access token). No credential-store change.
+- It authenticates with the existing opaque credential kind (a Bitbucket API
+  token or repository access token; app passwords are retired by Atlassian). No credential-store change.
 - The provider kind is registered but disabled by default behind a feature flag,
   so nothing changes for any tenant until the owner has a Bitbucket workspace to
   test against.

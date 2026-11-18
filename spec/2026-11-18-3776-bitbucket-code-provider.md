@@ -18,12 +18,14 @@ change and no tenant-visible behaviour.
 `CodeProvider` is asserted in tests). It deliberately has no work-item members.
 
 Fields: `_repo` (`workspace/repo_slug`), `_token` (`repr=False`), `_username`
-(optional, `repr=False` not needed but kept out of logs), `_base_url`
+(optional, `repr=False`), `_base_url`
 (default `https://api.bitbucket.org/2.0`), `_transport` (tests only).
 
-**Auth (D).** One opaque string credential, as today. With `_username` the
-header is HTTP Basic `username:token` (Bitbucket app password); without it the
-header is `Bearer <token>` (repository/workspace access token). The header is
+**Auth (D).** One opaque string credential, as today. Atlassian has retired
+app passwords, so the supported kinds are a Bitbucket API token and a
+repository/workspace access token. With `_username` (the Atlassian account
+email) the header is HTTP Basic `email:token` (API token); without it the header
+is `Bearer <token>` (access token, or an API token used as Bearer). The header is
 built once in `_client()` and never logged or placed in `repr`/exception text.
 
 **Transport.** A single `_client()` building `httpx.AsyncClient(...,
@@ -49,14 +51,14 @@ fail closed) and still raises on 401/429; comment reads wrap any failure in
 | `get_repository_info` | `GET /repositories/{ws}/{slug}` (clone URLs are in `links.clone`) |
 | `get_default_branch` | `mainbranch.name`, else `main` |
 | `fetch_pr` | `GET .../pullrequests/{id}` + paged `diffstat` + `fetch_pr_diff` |
-| `fetch_prs` | `GET .../pullrequests` paged via `next`; `state` mapped, `base_branch`/`head_branch`/`author` via `q`, `since` and `limit` applied client-side; `labels` ignored (Bitbucket PRs have none) |
+| `fetch_prs` | `GET .../pullrequests` paged via `next`; `state` mapped, `base_branch`/`head_branch`/`author` via `q`, `since` and `limit` applied client-side; Bitbucket PRs have no labels, so a non-empty `labels` filter returns `[]` (it can match nothing) rather than silently widening |
 | `fetch_pr_diff` | `GET .../pullrequests/{id}/diff` (same-origin redirect followed) |
 | `fetch_pr_comments` | `GET .../pullrequests/{id}/comments` paged, deleted comments dropped, `since` client-side, oldest first, page cap raises `ProviderCommentError` |
 | `post_review` | body comment (`POST /comments`), inline findings as `inline` comments, then `approve` or `request-changes` for those events; returns the body comment id |
-| `merge_pr` | `POST .../merge`; `merge`->`merge_commit`, `squash`->`squash`, `rebase`->`rebase_fast_forward`, other values raise `ValueError`; a 202 (async merge) re-reads the PR and returns whether it is merged |
+| `merge_pr` | `POST .../merge`; `merge`->`merge_commit`, `squash`->`squash`, `rebase`->`rebase_fast_forward`, other values raise `ValueError`; a 202 (async merge) follows the same-origin task-status `Location`, polling at most 5 times at 1s: `SUCCESS` -> `True`, a terminal failure -> `False`, still `PENDING` after the cap -> `BitbucketMergePending` (distinct, so the caller does not read "pending" as "failed") |
 | `close_pr` | optional comment, then `POST .../decline` |
 | `enable_auto_merge` | raises `NotImplementedError` (no Bitbucket Cloud API; same stance as GitLab) |
-| `check_permissions` | `GET /repositories/{ws}/{slug}/permissions-config/users/{username}` (`username` must be the account id or `{uuid}`; needs repo admin, so a 403 reads as `"none"`) |
+| `check_permissions` | `GET /repositories/{ws}/{slug}/permissions-config/users/{username}` (`username` must be the account id or `{uuid}`; needs repo admin, so a 403 reads as `"none"`). The endpoint returns EXPLICIT user grants only: a user with access solely through a group reads as `"none"`. Documented limitation, fail closed, tested |
 
 State mapping: `OPEN`->`open`, `MERGED`->`merged`, `DECLINED` and `SUPERSEDED`->
 `closed`, anything else -> `unknown` with a warning (Factory#431 precedent).
@@ -73,6 +75,10 @@ issues, auto-merge, Bitbucket Server/Data Center.
   branch plus delegation to `get_provider()` for the others (a `GitProvider` is
   a `CodeProvider`). The Bitbucket branch raises `NotImplementedError` unless
   `FACTORY_BITBUCKET_ENABLED` is `1`/`true`/`yes`.
+- Other kinds delegate to `get_provider()`, except GitHub with a `token`
+  kwarg: that selects `HttpGitHubProvider`, which has no code half, so
+  `get_code_provider` raises `NotImplementedError` for it instead of returning
+  a provider whose `fetch_pr` raises. Tested.
 - `get_provider("bitbucket")` keeps raising `NotImplementedError`, now with a
   message naming `get_code_provider` and the flag, so its `GitProvider` return
   type stays honest.
@@ -110,8 +116,8 @@ table, limits, live-smoke checklist) and RFC-0022 status/Phase 5 updated.
 - Bitbucket API shapes are recorded from public docs, not a live workspace;
   fixtures may drift from reality until the owner's smoke test. Mitigated by
   the flag defaulting off.
-- `check_permissions` needs repo-admin to answer; non-admin callers get
-  `"none"` (fail closed), which may under-report.
+- `check_permissions` needs repo-admin and sees explicit grants only (not
+  group-inherited); otherwise `"none"` (fail closed), which may under-report.
 - Four copies must stay byte-identical; the drift gate enforces it.
 - The new client site changes the redirect-posture test's site count (5 -> 6).
 
@@ -119,11 +125,11 @@ table, limits, live-smoke checklist) and RFC-0022 status/Phase 5 updated.
 
 - Hub: `tests/test_bitbucket_provider.py` (mock transport, recorded-shape JSON
   fixtures): pagination via `next`, cross-origin `next`/redirect refusal,
-  401/403/404/429, merge strategies and 409/202, state mapping, comments,
+  401/403/404/429, merge strategies, 409, and 202 with multi-read task polling (success, failure, pending cap), state mapping, comments,
   repr/headers never expose the credential, `isinstance(.., CodeProvider)`,
-  flag off/on in the factory. Existing `test_provider_redirect_posture.py`,
+  flag off/on in the factory, GitHub-with-token rejected by `get_code_provider`, empty-label filter, group-only permission limitation. Existing `test_provider_redirect_posture.py`,
   `test_provider_credential_repr.py`, `test_provider_protocol_split.py` and the
   drift checker self-test stay green.
 - `ruff` and the hub's CI checks on the PR head SHA.
 - Re-vendor PRs: `check_factory_github_drift.py` against the hub merge SHA.
-- Live: not run; needs a Bitbucket workspace and app password (owner step).
+- Live: not run; needs a Bitbucket workspace and an API token or repository access token (owner step).
