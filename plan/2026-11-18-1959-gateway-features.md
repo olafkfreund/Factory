@@ -66,6 +66,15 @@ ok)` called once per request, built as `_Telemetry(endpoint, headers_str)` in `m
    /app/model-catalog.json`; docstring of gateway.py lists the new env; `CHANGELOG.md` line
    (lead). → `docker` not run; check `git diff`, and that `.dockerignore` does not exclude it.
 
+## Deviations (recorded with the code)
+
+- Routes validation is strict only for object entries; legacy scalar junk (empty or
+  non-string values, unknown keys) is still ignored per entry, so old files behave as before.
+- Codex final review (2 rounds) fixed: a 4xx or 5xx whose body read fails keeps its status
+  (4xx terminal, 5xx fails over); tokens are charged to the window current at completion
+  regardless of its length.
+- Step 2 was done by Codex via herdr-team; the lead added the request-level span test.
+
 ## Tests
 
 `pytest tests/model_gateway -q` all green; `python apps/model-gateway/gateway.py --self-test`
