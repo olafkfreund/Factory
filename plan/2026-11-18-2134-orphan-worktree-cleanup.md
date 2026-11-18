@@ -35,9 +35,9 @@ daemon. Do not touch sandbox/gVisor code.
    `task_control`. NEW `tests/test_worktree_cleanup.py` with real git covering
    finished removed, deleted-spec (dir gone) deregistered, running untouched,
    unreadable (corrupt task_control.json) untouched, outside data root untouched,
-   locked untouched, same spec under other project not protected, standalone
+   locked untouched, same spec under other project not protected, colon-less active id protects any project, standalone
    clone directory survives, second run no-op
-   → `cd /mnt/code/.../AIFactory && python -m pytest tests/test_worktree_cleanup.py tests/test_build_clone_worktree_isolation.py -q`
+   → from the AIFactory worktree root `python -m pytest tests/test_worktree_cleanup.py tests/test_build_clone_worktree_isolation.py -q`
    Traps: ruff and standards/ruff.toml disagree on `as` aliases in
    parenthesised imports: plain names; sys.path setup as in
    tests/test_build_clone_worktree_isolation.py; never print secrets.
@@ -45,7 +45,9 @@ daemon. Do not touch sandbox/gVisor code.
    `_report_orphaned_worktrees` async taking the active id set; add a
    `KubejobMixin` helper that builds it (running_tasks keys, store running and
    queued ids; any exception -> None -> skip with WARNING); `await` it at the
-   two call sites; drop the ERROR text in favour of the module's logging
+   two call sites; update the sync one-arg lambda patch at
+   `tests/test_agent_service_kubejob_backend.py:495` to an async two-arg stub and
+   add a test that an unreadable active set skips cleanup; drop the ERROR text in favour of the module's logging
    → run step 1 tests plus `ruff check`/`ruff format --check` and `mypy` on
    touched files per `.github/workflows` and pyproject.
    Traps: generated autonomy matrix not touched; mixin methods called via
@@ -55,7 +57,7 @@ daemon. Do not touch sandbox/gVisor code.
 
 `python -m pytest tests/test_worktree_cleanup.py tests/test_build_clone_worktree_isolation.py -q`
 all pass; repo ruff and mypy clean on touched files; plus any existing
-agent_kubejob tests.
+`tests/test_agent_service_kubejob_backend.py`.
 
 ## Rollback
 
