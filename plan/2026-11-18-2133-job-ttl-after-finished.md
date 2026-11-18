@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 2133
 spec: spec/2026-11-18-2133-job-ttl-after-finished.md
 coders:
