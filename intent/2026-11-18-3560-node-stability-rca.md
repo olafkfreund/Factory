@@ -13,15 +13,20 @@ reopened 2026-11-18.
 
 ## Problem
 
-Seven leader-electing controllers restart repeatedly (exit 0 or 1) and the watchdog
-reports 34 containers killed at once with exit 255. Nobody has established whether
-these are one fault or seven, or whether the repo can fix any of it. Earlier
+Six leader-electing controllers restart repeatedly (exit 0 or 1) and the watchdog
+reports 34 containers with exit 255 (`runtime_lost`) on the server node. That
+classification is the watchdog's reading, not a confirmed mechanism: event time versus
+detection time and a shared versus independent cause are still to be established.
+Nobody has shown whether these are one fault, several, or partly shared, or whether the
+repo can fix any of it. Earlier
 closures (Factory#561, #571, #582) were each a node fault; this one has no verdict yet.
 
 ## Proposed outcome
 
 - One evidence-backed verdict per issue, posted as an issue comment.
-- Every repo-fixable contributor fixed by PR in factory-gitops.
+- Every repo-fixable contributor identified; those that the repo can express are fixed
+  by a separate PR in factory-gitops (implementation is gated by the spec and plan).
+- An inconclusive verdict is allowed where the evidence cannot establish causality.
 - Every host-only step written as an exact owner command, not performed by an agent.
 
 ## Affected users and systems
