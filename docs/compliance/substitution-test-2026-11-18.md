@@ -8,27 +8,26 @@ re-read. Nothing here changes branch protection, a cluster or a secret.
 
 | # | Question | State | Depends on |
 |---|---|---|---|
-| 1 | Context in AGENTS.md | Yes once the hub and CFactory PRs merge | merge of the two PRs |
-| 2 | Procedures as Agent Skills | Partial | more procedure skills (below) |
+| 1 | Context in AGENTS.md | Yes | none (Factory#3827, CFactory#553 merged) |
+| 2 | Procedures as Agent Skills | Partial | skills over the three hub runbooks (below) |
 | 3 | Tools via allowlisted MCP | Partial | a central reviewed allowlist (below) |
 | 4 | Model calls via our gateway | No | #1959 (owner: Secret, egress, live checks, key rotation) |
 | 5 | Routes, not model names | Partial | #1959, consumers preferring routes |
 | 6 | Deterministic enforcement outside the agent | Yes | none |
 | 7 | OTel normalised at a collector | No | #1959, a collector |
 | 8 | Approval gates in CI/VCS | Partial | owner confirmation of the by-design exceptions (below) |
-| 9 | Agent identity distinct from human | Partial | PFactory signature identity (`agent_identity`, `originator` null) |
+| 9 | Agent identity distinct from human | Partial | live proof of PFactory#1074 (fix deployed, no emit since) |
 | 10 | Eval suite to qualify a model in a day | No | owner: runner and `BENCH_ENABLED` (#3713) |
 | 11 | Artifact chain in our repos | Yes | none |
-| 12 | Signed evidence trail for a production change | No | PFactory signature identity, deploy-to-plan join |
+| 12 | Signed evidence trail for a production change | No | `Plan-Slug` trailer in the factory-gitops bump commit, live emit |
 
-Sources for rows not read in this pass: Q4, Q5, Q7, Q9 and Q12 are carried from the
+Sources for rows not read in the first pass (the evening re-score below re-read Q1, Q2, Q9 and Q12): Q4, Q5, Q7, Q9 and Q12 are carried from the
 2026-11-18 re-score and the 2026-11-18 gap (a) comments on #1958 (live reads on the
 k3d-factory cluster, not repeated here); Q6 from the issue body (review lenses, required
 checks, Kyverno, cosign, Trivy; not re-read today); Q11 from `intent/`, `spec/`, `plan/` in
-this repo and the registry rows named in #1958. They are not re-verified by this pass.
+this repo and the registry rows named in #1958. The others are not re-verified.
 
-Tally: 3 yes (after the Q1 merges), 5 partial, 4 no. Below 10, so epic acceptance item 1
-stays unticked.
+Tally: 3 yes, 5 partial, 4 no. Below 10, so epic acceptance item 1 stays unticked.
 
 ## Q2: Agent Skill coverage
 
@@ -98,3 +97,29 @@ shows no run. Owner steps (`docs/benchmarks/nightly-eval.md`, "Owner steps to en
 runner, the repo variables, agree the cost, run `workflow_dispatch` once, set
 `BENCH_ENABLED`. Until a run has produced a scored result, the family cannot show a model
 qualified in a day, so Q10 stays no.
+
+## Re-score, 2026-11-18 evening (Factory#1958 closeout)
+
+Read-only; slug `2026-11-18-1958-closeout`. Result: 3 yes, 5 partial, 4 no, unchanged in
+total; Q1 is now a firm yes.
+
+- Q1 Yes: `AGENTS.md` is at the root of Factory `main` and of AIFactory, PFactory, TFactory
+  and CFactory `dev` (`git ls-tree origin/<base>`); Factory#3827 and CFactory#553 merged.
+- Q2 Partial: `.claude/skills` on `origin/dev` now AIFactory 3 (`deployment-runbook`,
+  AIFactory#2136), PFactory 11 (`rbac-enforce-runbook`, PFactory#1075), TFactory 10,
+  CFactory 0; hub 1. No skill exists yet over the three hub runbooks, and TFactory and
+  CFactory have no runbook to wrap.
+- Q3 Partial: no central allowlist file or drift check has landed.
+- Q9 Partial: PFactory#1076 (v0.8.7) fills `originator`, `agent_identity` and
+  `autonomy_tier` at emit; the pod runs `sha-7b7325a`, which contains it. The registry's
+  only schema-2 row (session 219) predates the fix and still shows nulls and
+  `autonomy_tier: unknown`. Yes needs one emit after the deploy.
+- Q12 No: no factory-gitops commit carries a `Plan-Slug` trailer
+  (`git log origin/main | grep -c Plan-Slug` is 0), so the deploy-to-plan join cannot match.
+- Q4, Q5, Q7 unchanged (gateway quota, failover and telemetry are code-complete in
+  AIFactory#2138 but off, with no consumer routed). Q8 and Q10 unchanged: `enforce_admins`
+  exceptions await owner acceptance; `bench-nightly.yml` has no run and no `BENCH_ENABLED`
+  variable.
+
+Remaining to reach 10: gateway live (Q4, Q5, Q7), bench runner (Q10), owner acceptance of
+the branch-protection exceptions (Q8), the `Plan-Slug` bump and one live emit (Q12), one live emit (Q9), the allowlist (Q3).
