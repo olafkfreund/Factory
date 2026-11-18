@@ -175,6 +175,42 @@ def test_accepted_merge_polls_task(monkeypatch, statuses: list[str], expected: b
     assert statuses == []
 
 
+@pytest.mark.parametrize("status", [400, 409])
+def test_accepted_merge_task_conflict_returns_false(monkeypatch, status: int) -> None:
+    monkeypatch.setattr(bitbucket_module, "_MERGE_POLL_DELAY", 0)
+
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(202, headers={"Location": f"{BASE}/tasks/7"})
+        return httpx.Response(status)
+
+    assert asyncio.run(_provider(handler).merge_pr(7)) is False
+
+
+def test_credential_edges_are_stripped() -> None:
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers["authorization"])
+        return httpx.Response(200, json={})
+
+    asyncio.run(_provider(handler).get_repository_info())
+    provider = BitbucketProvider(
+        _repo="acme/widgets",
+        _token=f"{TOKEN}\n",
+        _transport=httpx.MockTransport(handler),
+    )
+    asyncio.run(provider.get_repository_info())
+    assert seen == [f"Bearer {TOKEN}"] * 2
+
+
+@pytest.mark.parametrize("bad", ["ab\ncd", "ab cd", "ab\x00cd", "tökén"])
+def test_unusable_credential_is_rejected_without_echo(bad: str) -> None:
+    with pytest.raises(ValueError) as excinfo:
+        BitbucketProvider(_repo="acme/widgets", _token=bad)
+    assert bad not in str(excinfo.value)
+
+
 def test_accepted_merge_still_pending_after_five_polls(monkeypatch) -> None:
     monkeypatch.setattr(bitbucket_module, "_MERGE_POLL_DELAY", 0)
     polls = []

@@ -146,3 +146,14 @@ unchanged.
 
 Flag off is the default, so a bad merge is inert. To undo: revert the hub PR
 and the four re-vendor PRs (additive new file plus factory.py).
+
+## Deviations (recorded with the code)
+
+- Final Codex review round 1: (a) the credential is stripped of edge whitespace
+  and a value still containing whitespace, control or non-ASCII characters is
+  rejected with a credential-free `ValueError` (httpx otherwise quotes the whole
+  header value in its error); (b) a merge task poll answering 400/409 returns
+  `False` like the merge call itself. Tests added for both.
+- Step 2 as done by Codex was amended by the lead: no `noqa`/`from None` churn
+  in `factory.py`, and the Bitbucket guard in `get_provider` sits after the
+  registry lookup so a registered Bitbucket factory still wins.

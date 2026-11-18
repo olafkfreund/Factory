@@ -125,6 +125,14 @@ class BitbucketProvider:
         workspace, _, slug = self._repo.partition("/")
         if not workspace or not slug or "/" in slug:
             raise ValueError("Bitbucket repo must be 'workspace/repo_slug'")
+        # A pasted or mounted secret often carries a trailing newline; httpx then
+        # fails with an error that quotes the whole header value. Strip the edges
+        # and refuse anything still unusable, naming no part of the value.
+        self._token = self._token.strip() if self._token else self._token
+        self._username = self._username.strip() if self._username else self._username
+        for secret in (self._token, self._username):
+            if secret and not (secret.isascii() and secret.isprintable() and " " not in secret):
+                raise ValueError("Bitbucket credential contains whitespace or control characters")
         self._base_url = self._base_url.rstrip("/")
         self._repo_path = f"/repositories/{quote(workspace, safe='')}/{quote(slug, safe='')}"
         self._headers: dict[str, str] = {}
@@ -452,6 +460,8 @@ class BitbucketProvider:
             if attempt:
                 await asyncio.sleep(_MERGE_POLL_DELAY)
             resp = await client.get(target)
+            if resp.status_code in (_BAD_REQUEST, _CONFLICT):
+                return False  # the task reports a merge conflict / failed check
             resp.raise_for_status()
             status = resp.json().get("task_status")
             if status == "SUCCESS":
