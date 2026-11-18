@@ -14,10 +14,10 @@ In `apps/fleet-match/manifests/manifests.yaml` (embedded `match.py`), make
 (`retry-after` header or `x-ratelimit-remaining: 0`). Other 4xx (404, 401,
 real 403) fail at once. POST/PATCH are never retried (issue creation is not
 idempotent). Retries share one job-wide budget: no retry starts once
-\`RETRY_DEADLINE\` (120s) has passed since the job began, so a persistent timeout
+`RETRY_DEADLINE` (120s) has passed since the job began, so a persistent timeout
 storm costs at most ~120s plus one 30s attempt per remaining call
-(12 sequential reads), under the 600s period (\`concurrencyPolicy: Forbid\`). A
-\`Retry-After\` value is honoured only if it fits in the budget and is at most
+(12 sequential reads), under the 600s period (`concurrencyPolicy: Forbid`). A
+`Retry-After` value is honoured only if it fits in the budget and is at most
 30s; otherwise the call fails at once and stays a blind spot.
 
 When a read finally fails, `repo_state()` logs `HTTP <code> <body[:200]>` so
@@ -26,7 +26,9 @@ the cause survives in the log. `runs=None` still maps to `unevaluable`.
 Selftest additions: (1) a fake `urlopen` that fails twice with 502 then
 succeeds returns the data; (2) a persistent 404 is not retried and raises;
 (3) `assess(..., runs=None, ...)` for a repo target gives `["unevaluable"]`
-and never `matches_main`.
+and not `matches_main`; (4) three 502s exhaust the retries and raise; (5) POST is
+attempted once; (6) a 403 with `retry-after` inside the budget is retried, one
+outside it is not; (7) once the deadline has passed a 502 is not retried.
 
 ## Alternatives rejected
 
