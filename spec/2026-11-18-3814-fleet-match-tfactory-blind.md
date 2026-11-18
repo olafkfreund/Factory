@@ -13,8 +13,12 @@ In `apps/fleet-match/manifests/manifests.yaml` (embedded `match.py`), make
 `URLError`/timeout and HTTP 5xx, 429, and 403 with a rate-limit signal
 (`retry-after` header or `x-ratelimit-remaining: 0`). Other 4xx (404, 401,
 real 403) fail at once. POST/PATCH are never retried (issue creation is not
-idempotent). Worst case added per call is 7s; the job takes ~20s to 90s against
-a 600s period.
+idempotent). Retries share one job-wide budget: no retry starts once
+\`RETRY_DEADLINE\` (120s) has passed since the job began, so a persistent timeout
+storm costs at most ~120s plus one 30s attempt per remaining call
+(12 sequential reads), under the 600s period (\`concurrencyPolicy: Forbid\`). A
+\`Retry-After\` value is honoured only if it fits in the budget and is at most
+30s; otherwise the call fails at once and stays a blind spot.
 
 When a read finally fails, `repo_state()` logs `HTTP <code> <body[:200]>` so
 the cause survives in the log. `runs=None` still maps to `unevaluable`.
@@ -34,8 +38,8 @@ and never `matches_main`.
 
 ## Risks
 
-A retry storm during a GitHub outage: bounded (3 attempts, ~25 calls per run).
-Slower job: bounded as above.
+A retry storm during a GitHub outage: bounded by 3 attempts and the 120s budget.
+The jobs-read fallback (unknown counts as built) is unchanged and out of scope.
 
 ## Verification
 

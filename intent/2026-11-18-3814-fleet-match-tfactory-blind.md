@@ -15,7 +15,8 @@ issue itself. The same single-run blind spot opened and closed for cfactory
 (#3685, #3686, #3662), tfactory (#3660, #3618), aifactory and pfactory
 (2026-10-22). Checked live on 2026-11-18: the TFactory `deploy.yml` runs read
 fine (30 runs, newest a success on ea68416), so the workflow name, the token
-scope and the branch filter are all correct. The failure is transient, and the
+scope and the branch filter are all correct. The most likely cause is a transient transport failure (parse errors also map to
+`runs=None`, so this is a hypothesis until the log line below exists), and the
 checker has no retry: one slow or failed GitHub call (timeout, 5xx, secondary
 rate limit) becomes a warning issue. The error that caused it is logged as
 `repr(e)` in a Job pod that is garbage-collected, so each time the cause is lost.

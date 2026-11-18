@@ -13,7 +13,7 @@ reviewers:
 
 Approved decisions (spec): retry GET only, 3 attempts, 2s/5s waits, on
 URLError/timeout, 5xx, 429, rate-limited 403; never retry other 4xx or
-non-GET; log HTTP code and body[:200] on a final failure; `runs=None` stays
+non-GET; one job-wide \`RETRY_DEADLINE\` of 120s, honour \`Retry-After\` (<=30s, within budget); log HTTP code and body[:200] on a final failure; `runs=None` stays
 `unevaluable`. Code lives in factory-gitops
 `apps/fleet-match/manifests/manifests.yaml` (Python in a ConfigMap, 4-space
 YAML block indent). Artifacts live in Factory; the code PR is in factory-gitops.
