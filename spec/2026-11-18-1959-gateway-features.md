@@ -21,26 +21,38 @@ file: a class value may stay a string, or become an object
 "upstreams": [{"url", "key_env", "model"}]}`. `key_env` names an env var; no key is
 ever in the ConfigMap. The file is re-read per request, so every field is hot-reload.
 
+**Concurrency and reload.** One lock guards quota windows, counters, service labels
+and health; it is held only for admission, rollover and bookkeeping, never across
+upstream I/O. The routes file is validated as a whole (object entries need a string
+`model`, positive numeric quota fields, http(s) upstream urls, string `key_env`); a
+file that fails to read, parse or validate leaves the last valid config in force, so a
+bad reload cannot drop a quota. With no valid config ever seen, behaviour is today's
+(forward unchanged). A string-only file behaves exactly as today.
+
 **Quota.** Fixed window per class route (state survives reloads, window length read
 from config). Admission increments the request count; over the request or token limit
 answers 429 `{"error":"route quota exceeded"}` with `Retry-After` (seconds to window
 end, minimum 1). Tokens are added after the response from upstream usage. Decisions:
 concrete-model (non-class) requests are metered but exempt from quota; concurrent
 in-flight requests may overshoot a token limit by their own size; missing usage adds
-zero tokens and increments `gateway_usage_missing_total`.
+zero tokens and increments `gateway_usage_missing_total`. Tokens are charged to the
+window current at completion, not at admission; a changed `window_s` starts a new window.
 
 **Accounting.** Token usage is read from the buffered body: JSON `usage`, or the last
 `usage` in an SSE stream (when metrics are on and the request streams, the gateway adds
 `stream_options.include_usage` if absent). Cost = tokens times catalog `price`
-(`metered` only). Counters, Prometheus text on `GET /metrics` (404 unless enabled,
+(`metered` only); a model with no metered price counts `gateway_unpriced_total{route}`
+so free and unpriced are distinguishable. Counters, Prometheus text on `GET /metrics` (404 unless enabled,
 bearer-authenticated): `gateway_requests_total{route,service,outcome}`,
 `gateway_tokens_total{route,service,kind}`, `gateway_cost_usd_total{route,service}`,
 `gateway_failovers_total{route}`, `gateway_usage_missing_total{route}`,
-`gateway_upstream_up{upstream}`. Route is the class or `direct`. Service is the
+`gateway_unpriced_total{route}`, `gateway_upstream_up{upstream}` (the label is
+`host[:port]` only, never userinfo, path or query, and only for upstreams in the current
+valid config, so obsolete series disappear). Route is the class or `direct`. Service is the
 self-declared `X-Caller-Service` header (`[a-z0-9._-]{1,64}`, else `unknown`; at most
 32 distinct values, the rest `other`): attribution is advisory because all callers
 share one client token. `python gateway.py --self-test` runs a loopback fake upstream
-through the gateway and exits non-zero unless the scraped counters are non-zero; this
+through the gateway and exits non-zero unless the scraped request, token and cost counters are all non-zero against a controlled priced model; this
 is the "assert non-zero count" check for AC-3.
 
 **Failover.** Per route an ordered upstream list; the default list is the single
@@ -48,13 +60,14 @@ is the "assert non-zero count" check for AC-3.
 never on 4xx. A failed upstream is cooled down for `GATEWAY_COOLDOWN_S`; ordering puts
 healthy upstreams first in configured order, cooled ones last. After the cooldown the
 primary is first again and the next real request is the recovery probe (success marks
-it up, failure restarts the cooldown); there is no background prober. The last
+it up, failure restarts the cooldown); there is no background prober. Each attempt uses its own entry's `key_env` key (no key when absent); the global
+`GATEWAY_UPSTREAM_API_KEY` goes only to the default upstream, never to another host. The last
 attempt's response is returned as today (5xx passthrough, 502 when unreachable). A
 failover adds `X-Model-Failover-From: <host>`. Duplicate execution after a timeout is
 accepted; only the answering attempt is accounted.
 
 **Telemetry.** One span per request, exported by a stdlib OTLP/HTTP JSON client on a
-bounded queue and a daemon thread (drops when full, swallows errors). Attributes:
+bounded queue and a daemon thread through the same no-redirect opener (so OTLP headers cannot follow a redirect) (drops when full, swallows errors). Attributes:
 `factory.genai.{route,caller_service,resolved_model,provider,prompt_tokens,
 completion_tokens,cost_usd,latency_ms,outcome,failover_from}` and `gen_ai.{operation.name,
 request.model,response.model,usage.input_tokens,usage.output_tokens}`. No prompt or
@@ -78,7 +91,7 @@ be accepted by OpenObserve (unverified live). All inert until the owner sets con
 
 ## Verification
 
-`pytest tests/model_gateway` with fake upstreams: quota 429 and Retry-After and window
+`pytest tests/model_gateway` with fake upstreams: concurrent admission never exceeds the limit, invalid reload keeps the last valid quota, keys not sent across hosts, quota 429 and Retry-After and window
 reset (fake clock), hot reload of a quota, token quota; usage and cost from JSON and SSE,
 `/metrics` text, self-test; failover on 5xx, timeout and connection error, no failover on
 4xx, recover after cooldown, both directions; OTLP span to a fake collector; unchanged
