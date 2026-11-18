@@ -31,6 +31,7 @@ Not proven against a real Jira yet: the owner supplies a test site (Factory#3775
 
 from __future__ import annotations
 
+import base64
 import logging
 import re
 from dataclasses import dataclass, field
@@ -85,6 +86,14 @@ class JiraTransitionError(RuntimeError):
     """The issue cannot be moved to Done (no such transition, or it needs fields)."""
 
 
+def _redact(text: str, secrets: tuple[str, ...]) -> str:
+    """Jira can echo a request back in an error; never let that carry the credential."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "[redacted]")
+    return text
+
+
 def _detail(resp: httpx.Response) -> str:
     """Jira's own explanation (``errorMessages`` and per-field ``errors``), bounded."""
     try:
@@ -98,11 +107,11 @@ def _detail(resp: httpx.Response) -> str:
     return "; ".join(parts)[:500]
 
 
-def _raise_for_status(resp: httpx.Response, what: str) -> None:
+def _raise_for_status(resp: httpx.Response, what: str, secrets: tuple[str, ...] = ()) -> None:
     if resp.is_success:
         return
     code = resp.status_code
-    detail = _detail(resp)
+    detail = _redact(_detail(resp), secrets)
     if code == HTTPStatus.UNAUTHORIZED:
         message = f"Jira rejected the credential (401) on {what}"
     elif code == HTTPStatus.FORBIDDEN:
@@ -146,7 +155,12 @@ def adf_to_text(node: Any) -> str:  # noqa: PLR0911
         return ""
     kind = node.get("type")
     if kind == "text":
-        return str(node.get("text") or "")
+        text = str(node.get("text") or "")
+        for mark in node.get("marks") or []:
+            href = (mark.get("attrs") or {}).get("href") if isinstance(mark, dict) else None
+            if mark.get("type") == "link" and href and href != text:
+                return f"{text} ({href})"
+        return text
     if kind == "hardBreak":
         return "\n"
     if kind == "mention":
@@ -155,7 +169,10 @@ def adf_to_text(node: Any) -> str:  # noqa: PLR0911
         return str((node.get("attrs") or {}).get("url") or "")
     children = node.get("content") or []
     if kind == "listItem":
-        return "- " + "".join(adf_to_text(c) for c in children).strip()
+        inner = "\n".join(adf_to_text(c).rstrip("\n") for c in children)
+        return "- " + inner.replace("\n", "\n  ")
+    if kind in {"bulletList", "orderedList"}:
+        return "\n".join(adf_to_text(c).rstrip("\n") for c in children) + "\n"
     inner = "".join(adf_to_text(c) for c in children)
     if kind in {"paragraph", "heading", "codeBlock", "blockquote", "bulletList", "orderedList"}:
         return inner.rstrip("\n") + "\n" if kind in {"paragraph", "heading", "codeBlock"} else inner
@@ -221,12 +238,16 @@ class JiraProvider(FanoutCommentsMixin):
             follow_redirects=False,
         )
 
+    def _secrets(self) -> tuple[str, ...]:
+        basic = base64.b64encode(f"{self._email}:{self._api_token}".encode()).decode()
+        return (self._api_token or "", self._email or "", basic)
+
     async def _request(
         self, method: str, path: str, what: str, *, expect_json: bool = True, **kwargs: Any
     ) -> Any:
         async with self._client() as client:
             resp = await client.request(method, f"/rest/api/3{path}", **kwargs)
-        _raise_for_status(resp, what)
+        _raise_for_status(resp, what, self._secrets())
         if not expect_json or not resp.content:
             return None
         return resp.json()
@@ -261,8 +282,9 @@ class JiraProvider(FanoutCommentsMixin):
         if filters.author:
             clauses.append(f"reporter = {_jql_quote(filters.author)}")
         if filters.since is not None:
-            since = to_utc(filters.since).astimezone(UTC).strftime("%Y-%m-%d %H:%M")
-            clauses.append(f"updated >= {_jql_quote(since)}")
+            # Epoch milliseconds: a formatted date is read in the ACCOUNT's timezone.
+            millis = int(to_utc(filters.since).timestamp() * 1000)
+            clauses.append(f"updated >= {millis}")
         jql = " AND ".join(clauses) + " ORDER BY created ASC"
 
         issues: list[IssueData] = []

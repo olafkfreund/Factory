@@ -397,7 +397,52 @@ def test_adf_flattens_nested_content_and_round_trips_multiline_text():
     }
     rendered = adf_to_text(node)
     assert "hello\n@Ada" in rendered
-    assert "linkhttps://example.test/card" in rendered
+    assert "link (https://example.test)https://example.test/card" in rendered
     assert "- outer" in rendered and "- inner" in rendered
     assert adf_to_text(None) == ""
     assert adf_to_text(to_adf("first\nsecond")) == "first\nsecond\n"
+
+
+def _list(*items: str) -> dict:
+    return {
+        "type": "bulletList",
+        "content": [
+            {
+                "type": "listItem",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": i}]}],
+            }
+            for i in items
+        ],
+    }
+
+
+def test_adf_sibling_list_items_stay_separate():
+    assert adf_to_text(_list("alpha", "beta")) == "- alpha\n- beta\n"
+
+
+@pytest.mark.asyncio
+async def test_error_detail_reflecting_the_credential_is_redacted(caplog):
+    echo = {"errorMessages": [f"bad auth {_EMAIL}:{_TOKEN}"], "errors": {"labels": _TOKEN}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403 if request.method == "PUT" else 401, json=echo)
+
+    provider = _provider(handler)
+    with pytest.raises(JiraError) as read:
+        await provider.fetch_issue("PROJ-7")
+    await provider.apply_labels("PROJ-7", ["x"])  # 403 degrades and logs
+    for text in (str(read.value), caplog.text):
+        assert _TOKEN not in text and _EMAIL not in text
+
+
+@pytest.mark.asyncio
+async def test_since_is_sent_as_epoch_millis_not_a_timezone_dependent_date():
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params["jql"])
+        return httpx.Response(200, json={"issues": []})
+
+    since = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    await _provider(handler).fetch_issues(IssueFilters(since=since))
+    assert f"updated >= {int(since.timestamp() * 1000)}" in seen[0]
