@@ -11,50 +11,54 @@ Issue: olafkfreund/CFactory#548 (follow-up to CFactory#540).
 ## Problem
 
 CFactory#540 raised the Trivy image-scan timeout to 20m after deploy run
-44220569439 (main ea31539) failed in the backend image scan. The failing file
-was `usr/local/lib/python3.15/site-packages/claude_agent_sdk/_bundled/claude`,
-the ~200 MB claude binary that the `claude-agent-sdk` wheel bundles
-(`apps/backend/requirements.txt` has it unpinned: `>=0.1.16`). The error was a
-registry stream error (`stream ID 17; PROTOCOL_ERROR`) after 7m41s.
+44220569439 (main ea31539) failed in the backend image scan. Trivy died while
+reading `usr/local/lib/python3.15/site-packages/claude_agent_sdk/_bundled/claude`
+(the ~356 MiB uncompressed claude binary inside the `claude-agent-sdk` wheel)
+with `stream error: stream ID 17; PROTOCOL_ERROR` after 7m41s.
 
-The issue title says the scan is slow. The data says otherwise: successful
-scans of the same layer take 8-12 s (deploy runs 44291915848, 44223811886,
-44189364641; PR run 44295467707). One failure in the last 30 deploy runs. The 20m
-timeout only lets a stuck stream sit longer. Meanwhile that one binary is both
-the only thing that trips the scan and the one thing in the image with no
-version or checksum pin: a floating `>=` SDK ships whatever binary PyPI
-serves that day.
+What the evidence supports, and what it does not:
+
+- The scan is not slow. Backend scan steps of successful runs take 8-12 s
+  (deploy runs 44291915848, 44223811886, 44189364641; PR run 44295467707).
+- The failure is a transient HTTP/2 transport error. The deploy scan reads the
+  image from the registry (`trivy image <ref>@<digest>`, `deploy.yml`), while the
+  PR scan reads a locally loaded image. The 20m timeout only lets a stuck
+  stream sit longer.
+- A `--skip-files` entry would not remove that transfer: Trivy walks the layer
+  tar, so the skipped file's bytes are still consumed from the stream (Codex
+  review of the first draft, Trivy v0.73.0 `walker/tar.go`). It would also
+  remove the one large third-party binary from the vulnerability gate.
+- The SDK is declared `claude-agent-sdk>=0.1.16`, so the image ships whatever
+  binary PyPI serves that day (0.2.183 one run, 0.2.184 the next). That is a
+  supply-chain gap of its own, independent of the scan failure.
 
 ## Proposed outcome
 
-- The Trivy image scans no longer read that one file through the registry
-  stream; every other path (OS packages, python and node deps) stays under the
-  same HIGH/CRITICAL, fixable-only gate.
-- The binary is covered by a separate check instead: SDK version and the
-  binary's sha256 are pinned in the repo, CI fails on a mismatch, and the
-  extracted binary is scanned by `trivy fs` with the same gate.
-- The existing Syft SBOM + cosign attestation in `deploy.yml` stays the SBOM
-  mechanism (no new one).
-- Trivy timeout goes back near the measured need, with headroom.
-- Proven by before/after CI timings and a negative test: a planted fixable HIGH
-  outside the skipped path still fails the gate.
+- The deploy image scans read the image from the local Docker daemon after a
+  retried `docker pull`, not from a raw registry stream. Gate flags unchanged,
+  no skips of any kind. Scan timeout back to the Trivy default (5m): the
+  measured need is about 12 s.
+- The SDK version and the binary's sha256 are pinned in the repo; CI fails on
+  a mismatch (PR gate and deploy).
+- The existing Syft SBOM + cosign attestation stays the SBOM mechanism.
+- Proven by before/after CI timings and a negative test: a planted fixable
+  HIGH still fails the gate with the same flags.
 
 ## Affected users and systems
 
-CFactory `Dockerfile`, `apps/backend/requirements.txt`,
-`.github/workflows/{image-build,deploy}.yml`, `tests/test_trivy_gates.py`.
-Maintainers who bump `claude-agent-sdk` now also update one lock file.
+CFactory `apps/backend/requirements.txt`, `.github/workflows/{image-build,deploy}.yml`,
+a new lock file and verify script, `tests/test_trivy_gates.py`. Maintainers who
+bump `claude-agent-sdk` also update one lock file.
 
 ## Constraints
 
-- No blanket `.trivyignore`; no weakening of the gate for any other path.
-- Do not merge; coordinator merges. No live-cluster changes.
-- A skip must not leave the binary unwatched: the replacement check ships in
-  the same PR.
+- No `--skip-files`, `--skip-dirs`, or `.trivyignore`; no weakening for any path.
+- Do not merge; the coordinator merges. No live-cluster changes.
 
 ## Open questions
 
-None. Delegated decisions (owner delegation 2026-11-18): scope the skip to the
-exact SDK path rather than a broader glob; reuse the existing Syft/cosign steps
-for the SBOM; treat "slow scan" as "fragile registry stream" since the
-measurement shows the former is false.
+None. Delegated decision (owner delegation 2026-11-18): the issue asked for a
+`--skip-files` for the binary. The measurement and the Codex review show that
+does not fix the failure and loses coverage, so the least risky option that
+meets the issue's goal (no more failed or slow scans, binary tracked) is to fix
+image acquisition, keep full scan coverage, and add the pin + checksum check.
