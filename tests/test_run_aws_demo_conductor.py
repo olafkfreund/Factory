@@ -17,6 +17,7 @@ STUB = r"""#!/usr/bin/env bash
 tool=${0##*/}
 printf '%s %s\n' "$tool" "$*" >> "$STUB_LOG"
 case "$tool" in
+  docker) [ "$1" = login ] && cat > /dev/null; exit 0 ;;  # drain stdin: no SIGPIPE race under pipefail
   python3)
     if [ "${1:-}" = -m ] && [ "${2:-}" = pytest ]; then
       [ "${STUB_PYTEST_FAIL:-0}" != 1 ]
