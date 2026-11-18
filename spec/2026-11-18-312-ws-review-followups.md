@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 312
 intent: intent/2026-11-18-312-ws-review-followups.md
 ---
