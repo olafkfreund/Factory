@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3823
 spec: spec/2026-11-18-3823-disk-latency-probe.md
 coders:
