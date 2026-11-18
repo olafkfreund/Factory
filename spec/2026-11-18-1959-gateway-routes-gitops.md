@@ -21,7 +21,7 @@ All code lands in olafkfreund/factory-gitops (base `main`); artifacts live here.
    `price.mode == "metered"` and no `<` in the id; pick the lowest `in_per_mtok + out_per_mtok`,
    ties broken by larger `caps.context` then id. `local` has no concrete candidate and is omitted.
    Overrides win per class and must be a known class with a non-empty string. Output:
-   `apps/model-gateway/manifests/model-routes.yaml`, ConfigMap `model-routes` (namespace
+   `apps/model-gateway/manifests/model-routes.yaml` (added to that directory's `kustomization.yaml`; the test asserts it), ConfigMap `model-routes` (namespace
    `gateway`, fixed name, no hash suffix), key `routes.json`, a header comment naming the catalog
    SHA. Today: `cheap=claude-haiku-4-5-20251001`, `balanced=claude-sonnet-5`,
    `frontier=claude-opus-4-8`. `--check` renders to memory and exits 1 on any difference
@@ -44,31 +44,40 @@ All code lands in olafkfreund/factory-gitops (base `main`); artifacts live here.
    `/etc/model-routes` as a directory (no `subPath`). `AIFACTORY_PHASE_ROUTES`/`AIFACTORY_RUNTIMES`
    not touched. Replicas, probes, NetworkPolicies, securityContext unchanged. The pod template
    change rolls the two replicas once (PDB `minAvailable: 1`).
-5. **`scripts/verify-no-provider-keys.sh`** (AC-1; bash + `kubectl --context ${KUBE_CONTEXT:-k3d-factory}` + `jq`, read-only, no
-   secret objects are read, only workload specs). For `aifactory pfactory tfactory cfactory`
-   (namespace `factory`): (a) env var names of every container/initContainer that match the model-provider
-   key list (`OPENAI_API_KEY OPENAI_COMPATIBLE_API_KEY GEMINI_API_KEY GOOGLE_API_KEY OLLAMA_API_KEY ANTHROPIC_API_KEY
-   ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN`); (b) volumes whose secret is `factory-cli-creds` or whose name matches `cli-creds`;
-   (c) the newest Job per `factory.io/kind` in `build|task|verify`, same env check on the Job's pod template.
-   Output lists each violation as `VIOLATION <where> <name>` (names only, never values) and
-   `ACCEPTED` for volumes named with `--accept-volume NAME` (Plane C residual, per the 2026-11-16
-   decision). Exit 0 by default (reports); `--strict` exits 1 on any violation, and also when a
-   required inspection could not run (no kubectl, no Job found): a gate that cannot run fails.
+5. **`scripts/verify-no-provider-keys.sh`** (AC-1; bash + `kubectl --context ${KUBE_CONTEXT:-k3d-factory}` + `jq`, read-only; no
+   Secret object is ever read, only workload specs). Targets: Deployments `aifactory pfactory tfactory cfactory`
+   (namespace `factory`) and EVERY Job carrying a `factory.io/kind` label (build, task, verify) in that namespace.
+   For each pod template: (a) env var names matching the model-provider key list (`OPENAI_API_KEY
+   OPENAI_COMPATIBLE_API_KEY GEMINI_API_KEY GOOGLE_API_KEY OLLAMA_API_KEY ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+   CLAUDE_CODE_OAUTH_TOKEN`) are classified: a `secretKeyRef` to key `MODEL_GATEWAY_CLIENT_TOKEN` or
+   `model-gateway-token` is `GATEWAY-REF` (the gateway integration deliberately puts the client token in
+   `OPENAI_COMPATIBLE_API_KEY`); any other `secretKeyRef`/`configMapKeyRef` is `VIOLATION`; a literal value equal to the token in
+   `--gateway-token-file` (compared in memory, never printed) is `GATEWAY-REF`; any other literal is `VIOLATION`; a literal
+   when no token file was given is `UNVERIFIED`; (b) any `envFrom` entry is `UNVERIFIED` (names only); (c) volumes
+   whose secret is `factory-cli-creds` or matches `cli-creds` are `VIOLATION`, or `ACCEPTED` when named with
+   `--accept-volume NAME` (Plane C residual, 2026-11-16 decision). Output is `<CLASS> <workload> <container|volume> <name>`, names only, never values.
+   Exit 0 by default (reports current state); `--strict` exits 1 on any VIOLATION or UNVERIFIED, and on any inspection that
+   could not run (kubectl or jq missing, kubectl error, malformed JSON, a Deployment missing, zero Jobs found): a gate that cannot run fails.
    The gateway's own upstream key and third-party keys (LANGCHAIN, RAPIDAPI) are out of scope.
-6. **`scripts/verify-route-hot-reload.sh`** (AC-2). `record` stores, per gateway pod, name, UID and the
-   sha256 plus content of the routes file the pod sees (`kubectl exec ... python3 -c 'print(open(path).read())'`,
-   read-only, falls back to the ConfigMap data when exec fails) into a state file; the owner then
-   changes `route-overrides.json` or the catalog pin through a PR and Argo syncs; `check`
-   polls (default 180 s, kubelet projection takes up to about 60-90 s) until every pod shows the new content, then
-   prints old vs new route per class and requires every UID unchanged; exit 1 if content never
-   changes or any UID changed (a restart would fake a hot reload). `X-Model-Route` is not used: it
-   carries the class, not the model.
-7. **Tests** (cluster-free, a fake `kubectl` first in `PATH` serving canned JSON, same style as
-   `test-verify-model-gateway.sh`): `scripts/test-gen-model-routes.sh` (python unit-style: rule, tie-break, local
-   omitted, override wins, bad override rejected, `--check` fails on drift), `test-verify-no-provider-keys.sh`
-   (clean fixture exits 0 with `--strict`; env key, volume, Job violations reported; default mode exits 0; accept-volume;
-   missing Job under `--strict` fails; no values printed), `test-verify-route-hot-reload.sh` (changed content +
-   same UID passes; same content times out; changed UID fails).
+6. **`scripts/verify-route-hot-reload.sh`** (AC-2). `record <state>` stores, per gateway pod (label `app=model-gateway`, namespace
+   `gateway`): name, UID, container restart count, and the routes file as the pod sees it
+   (`kubectl exec ... -- python3 -c 'print(open(path).read())'`; read-only). An exec failure fails the run: there is no
+   fallback to ConfigMap data, since that would prove API state, not propagation. The owner then changes
+   `route-overrides.json` or the catalog pin in a PR and Argo syncs (never `kubectl edit`: selfHeal reverts it).
+   `check <state> [timeout]` polls (default 180 s; kubelet projection takes up to about 90 s) until EVERY recorded pod shows the
+   same content, equal to the live ConfigMap `routes.json` and different from the recorded content; then requires every recorded pod to
+   still exist with the same UID and the same restart count, and prints old vs new route per class. Fails on a
+   missing pod, divergent pods, no change within the timeout, a changed UID or restart count (a restart would fake hot reload), or any exec failure.
+   `X-Model-Route` is not used: it carries the class, not the model.
+7. **Tests** (cluster-free; a fake `kubectl` first in `PATH` that serves canned JSON for the exact expected argument vectors and exits 97 on
+   anything else, so a wrong selector or JSON path cannot pass silently; same style as `test-verify-model-gateway.sh`).
+   `scripts/test-gen-model-routes.sh`: rule, tie-break, local omitted, override wins, bad override rejected, `--check` fails on drift,
+   the kustomization lists `model-routes.yaml` and `kustomize build` output (if kustomize is present; CI always has it) contains `name: model-routes`.
+   `test-verify-no-provider-keys.sh`: clean fixture passes `--strict`; env key, secretKeyRef, `envFrom`, volume, Job violations; gateway-ref by
+   secretKeyRef and by literal+token-file under the SAME variable name; accept-volume; default mode exits 0; `--strict` fails on zero Jobs,
+   kubectl failure, malformed JSON, missing Deployment, missing jq; no value printed. `test-verify-route-hot-reload.sh`: all pods converge
+   with same UIDs passes; same content times out; ConfigMap changed but exec fails never passes; divergent pods, missing pod, changed UID and
+   restart-count change each fail.
 8. **Docs** `docs/model-gateway.md`: routes section (rule, overrides, residual that Claude ids do not run
    against the Ollama Cloud upstream until overrides pin concrete ids), AC-1/AC-2 usage, and the Plane B
    bench test as an owner checklist (throwaway `HOME`, token from a file via `claude setup-token`, a loopback
