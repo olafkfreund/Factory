@@ -24,8 +24,11 @@ New code in the embedded `watchdog.py`, all stdlib:
 - `disk_metrics(a, b, interval_s, device, ts)` computes over the delta:
   `await_ms = (d_read_ms + d_write_ms) / (d_reads + d_writes)`,
   `util_pct = min(100, d_io_ms / (interval_s*1000) * 100)`.
-- `disk_probe(device, interval_s)` reads twice, `interval_s` apart. Any error
-  returns `status: "unavailable"` with a short `error`; it never raises.
+- `disk_probe(device, interval_s)` reads twice, `interval_s` apart, and divides
+  by the measured monotonic elapsed time (recorded as `interval_s`), not the
+  requested sleep. Configuration is parsed inside the same try block: a
+  non-numeric, non-finite or out-of-range (not 1..30 s) `DISK_INTERVAL_SECONDS`
+  yields `status: "unavailable"` with a short `error`. It never raises.
 - Stable record (schema `disk_probe/v1`), one JSON line per run on stderr
   prefixed `DISKPROBE `:
 
@@ -35,7 +38,11 @@ New code in the embedded `watchdog.py`, all stdlib:
    "ios":<int|null>,"error":<str|null>}
   ```
 
-  `no_io` = zero completed I/Os in the interval (await undefined, util still
+  `await_ms` is mean read+write await; flushes and discards are counted
+  separately by the kernel and are excluded (relevant to SQLite fsync latency,
+  so a healthy value does not exonerate the disk). `util_pct` is kernel
+  io_ticks and does not prove saturation. `no_io` = zero completed reads and
+  writes in the interval (await undefined, util still
   reported). Counter wrap/regression (negative delta) is `unavailable`.
 - Every issue body, opened, reopened, escalated or renotified, gets a
   `## Node disk at observation time` section with the same fields and the
@@ -43,7 +50,8 @@ New code in the embedded `watchdog.py`, all stdlib:
 - Flag `DISK_PROBE` = `observe` (default, set explicitly in the CronJob) or
   `off`; `DISK_DEVICE` default `sdd`; `DISK_INTERVAL_SECONDS` default 5.
   Probe failure never changes the exit code, suppresses or delays an alert.
-  The sample runs once per run, before notifying, and costs ~5 s.
+  The sample runs once per run, before notifying, and delays
+  notification by at most the bounded interval (<= 30 s, default 5 s).
 
 Recording: the log line (readable from the 3 retained successful Jobs; no log
 collector is deployed, so it is not durable) plus the issue text (durable).
@@ -100,10 +108,13 @@ removed. job-watchdog closes its issue when the CronJob is gone.
 - Selftest in the embedded script (cluster-free): `parse_diskstats` on real
   lines, `disk_metrics` for ok / no_io / negative delta / missing device,
   `disk_probe` with an injected reader that raises, issue body contains the
-  section only when a sample is present, `DISK_PROBE=off` yields no sample.
+  section only when a sample is present, `DISK_PROBE=off` yields no sample, an overslept interval (elapsed 10 s for a
+  5 s request) is divided by 10, a bad `DISK_INTERVAL_SECONDS` gives
+  `unavailable` and notification still runs.
   Run in CI by `job-watchdog-test.yml` (extract + `selftest`).
 - `python3 .github/scripts/extract_embedded_script.py ... && python3 x.py selftest`.
 - manifest-validate CI green; `kubectl kustomize apps/netpol-node-probe/manifests`
   renders only the server CronJob.
-- After merge (owner/coordinator): next restart-watchdog run logs a
-  `DISKPROBE` line.
+- After merge (owner/coordinator): the next restart-watchdog pod's log shows a
+  `DISKPROBE` line with `status` `ok` or `no_io` and `device` `sdd`; the node
+  check above does not itself prove the pod's procfs view.
