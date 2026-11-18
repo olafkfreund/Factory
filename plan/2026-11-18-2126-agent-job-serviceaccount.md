@@ -39,7 +39,10 @@ PR C (step 4, factory-gitops env flip). Artifacts: PR D in Factory.
    pass list and `ensure-init-containers-array` pass list in
    `kyverno-test-gate-task-pods-on-network-policy.yaml`.
    → verify: kyverno test apps/kyverno-policies/tests -f kyverno-test-gate-task-pods-on-network-policy.yaml
-   (kyverno CLI v1.18.2; if unavailable locally, CI runs it).
+   The CLI has no local install and v1.18.2 panics on the policy's
+   `webhookConfiguration.matchConditions`: CI strips that field from a copy
+   (manifest-validate.yml ~995-1083) before running; the committed policy is not
+   edited. The CI job is the authority for this step.
    Traps: patched file must be byte-identical in the gate body to the other patched pods.
 3. AIFactory `apps/web-server/server/services/build_backend.py` (near
    `_ENV_SERVICE_ACCOUNT`, ~169/202): add `_ENV_JOB_SERVICE_ACCOUNT =
@@ -47,12 +50,15 @@ PR C (step 4, factory-gitops env flip). Artifacts: PR D in Factory.
    default; strip, blank = unset). `spec_job_backend.py` (~82) and
    `agent_job_backend.py` (~75): call it instead of the inline BUILD_SA read.
    Build Job path unchanged. Tests in `tests/test_build_backend_kubejob.py` (and
-   the spec/agent job test files that exist): BUILD_SA only -> all three use it;
+   `tests/test_spec_job_backend.py` and `apps/web-server/tests/test_agent_job_backend.py`): BUILD_SA only -> all three use it;
    JOB_SA set -> spec/agent use it, build keeps BUILD_SA; nothing set ->
    `aifactory-sandbox`; spec/agent pod `automountServiceAccountToken is False`.
    Docs: row for `AIFACTORY_JOB_SA` in `docs/docs/environment-reference.md` and a
    comment line in `apps/web-server/.env.example`.
-   → verify: pytest on those test files, ruff check/format --check.
+   → verify: pytest on those three files in the project venv (the web-server
+   test dir needs `-o asyncio_mode=auto`, as ci.yml:218), ruff check/format --check,
+   and `python3 scripts/cq_ratchet.py --base origin/dev --ruff <ruff> --config
+   standards/ruff.toml --paths 'apps/backend/*.py' 'apps/web-server/*.py' 'scripts/*.py'`.
    Traps: ruff and standards/ruff.toml disagree on "as" aliases in parenthesised
    imports: use plain names. Do not touch vendored job_dispatch.py (byte-checked).
 4. factory-gitops (new branch off main, PR C): on the aifactory Deployment env
@@ -65,7 +71,7 @@ PR C (step 4, factory-gitops env flip). Artifacts: PR D in Factory.
 
 ## Tests
 
-- AIFactory: pytest of the touched test files; `python3 apps/backend/core/job_dispatch.py` untouched.
+- AIFactory: pytest of the touched test files; `python3 apps/backend/core/job_dispatch.py` (selftest, must still pass).
 - factory-gitops: kustomize + kubeconform, kyverno test with `-f` for the gate suite.
 - Final: `codex review --base origin/<base>` per repo.
 
