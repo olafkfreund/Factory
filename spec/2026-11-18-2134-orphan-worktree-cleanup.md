@@ -53,8 +53,9 @@ Decision (owner delegation 2026-11-18): the terminal set is
 ## Alternatives rejected
 
 - Background sweeper daemon: the issue forbids it; completion already runs.
-- `git worktree prune`/`remove --force`: repo-wide / fails on these candidates (see above); prune also does not clear registrations whose directory
-  exists as a standalone clone (#1467), and is repo-wide.
+- `git worktree prune` or `remove --force`: prune is repo-wide and does not
+  clear a registration whose directory exists as a standalone clone (#1467);
+  `remove --force` fails on that case (see Design).
 - Keep report-only: leaves the lock-holding registrations forever.
 
 ## Risks
@@ -66,6 +67,6 @@ existing check.
 ## Verification
 
 Real-git pytest: finished-task worktree removed; deleted-task registration
-pruned; running-task untouched; unreadable state untouched; path outside the
+deregistered (directory gone); running-task untouched; unreadable state untouched; path outside the
 data root untouched; locked untouched; second run is a no-op; same spec id under another project is not protected by this project's active job; corrupt task_control.json is skipped; a standalone clone's directory survives deregistration. Ruff and mypy on
 touched files. Read-only before/after count on aifactory-demo if readable.
