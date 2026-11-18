@@ -46,6 +46,23 @@ live, tested API on **real AWS App Runner**, then is **torn down**. One command.
    Deliver the GIF with SendUserFile. (agg isn't installed by default; `nix run nixpkgs#asciinema-agg` fetches it.)
 5. **Report**: live URLs, the curl results, the pytest verdict (`5 passed`), and the teardown confirmation.
 
+## Fails closed
+The conductor runs with `set -euo pipefail`: a failed init, validate, apply,
+empty URL output or failed AC test stops the run with a non-zero exit and the
+AWS error quoted. "GREEN" is printed only when pytest passed against non-empty
+URLs, and a failed teardown also exits non-zero. A read-only pre-flight
+(`aws apprunner list-services`) runs first. Canonical copy of this skill:
+`.claude/skills/run-aws-demo/` in the Factory hub (tests:
+`tests/test_run_aws_demo_conductor.py`); `~/.claude/skills/run-aws-demo/` is
+a synced copy.
+
+## Known blocker: App Runner account restriction
+`InvalidRequestException: Account <id> can't create new App Runner services`
+means AWS closed App Runner to new services on that account (seen on
+533267307120, 2026-11-18, Factory#3839). It is not fixable from here: the owner
+opens an AWS support case to enable App Runner service creation, or uses
+another account. Details: `docs/aws-app-runner-restriction.md` in the hub.
+
 ## Options
 - `bash conductor.sh --keep` — leave the services running (skip teardown). Remind the user to destroy later: `terraform -chdir=/tmp/run-aws-demo/infra destroy -auto-approve`.
 - `ENVRC=/path REGION=eu-west-1 SPEC=mydemo bash conductor.sh` — override creds/region/name.
