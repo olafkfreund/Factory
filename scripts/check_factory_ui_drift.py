@@ -10,8 +10,9 @@ silently diverging from the hub canonical.
 The canonical set is exactly the shared portal chrome shipped by the portal UX
 program:
 
-    CommandPalette.tsx   the cross-portal command palette (Cmd-K)
-    PortalSwitcher.tsx   the topbar portal switcher
+    CommandPalette.tsx     the cross-portal command palette (Cmd-K)
+    PortalSwitcher.tsx     the topbar portal switcher
+    ProjectBreadcrumb.tsx  the topbar project breadcrumb (searchable switch list)
 
 The check is **byte-exact and directional** (hub canonical -> portal copy): for
 every canonical file a portal vendors, the matching file in the portal tree must
@@ -55,7 +56,16 @@ from gate_evidence import digest
 CANONICAL_MODULES: tuple[str, ...] = (
     "CommandPalette.tsx",
     "PortalSwitcher.tsx",
+    "ProjectBreadcrumb.tsx",
 )
+
+# Modules a portal's *pinned* canonical may not contain yet. The checker floats
+# at hub main while the canonical is read at each portal's pinned SHA, so a new
+# module would otherwise fail every portal until it re-vendors and bumps the pin.
+# A module listed here is skipped only while the pinned canonical lacks it; once
+# the pin includes it, the vendored copy is required and byte-checked. Remove an
+# entry when every portal has adopted it.
+NOT_YET_PINNED: tuple[str, ...] = ("ProjectBreadcrumb.tsx",)
 
 # Per-portal vendored layout: {canonical_file: path-relative-to-portal-root}.
 # The three Tailwind portals vendor both files at the same relative path.
@@ -97,6 +107,7 @@ def compared_evidence(service: str, root: Path, canonical: Path) -> list[str]:
     return [
         f"{module} -> {rel} [canonical {digest(canonical / module)} | portal {digest(root / rel)}]"
         for module, rel in sorted(SERVICE_LAYOUTS.get(service, {}).items())
+        if (canonical / module).is_file()
     ]
 
 
@@ -127,6 +138,8 @@ def check_service(service: str, root: Path, canonical: Path) -> list[str]:
     for module, rel in layout.items():
         canonical_file = canonical / module
         if not canonical_file.is_file():
+            if module in NOT_YET_PINNED:
+                continue
             problems.append(f"canonical missing: {canonical_file}")
             continue
         service_file = root / rel
