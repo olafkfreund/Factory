@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3858
 intent: intent/2026-11-19-3858-factory-ui-breadcrumb.md
 ---
