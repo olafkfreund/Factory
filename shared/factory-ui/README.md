@@ -17,7 +17,15 @@ the Factory family already uses for `verification-core` and `factory-contracts`.
 | `CommandPalette.tsx` | ⌘K palette: fuzzy jump to views/tasks + run actions | The host assembles the flat `commands` list and supplies the task lane either as a local `tasks` list (filtered here) or via an async `onSearch(q)` that returns ranked results (federated search, #149). The component carries no portal-specific data, so it is already identical everywhere. |
 | `PortalSwitcher.tsx` | Topbar switcher: the four portals, current one active, others link out | The host passes a single `current` prop (`'plan' \| 'build' \| 'test' \| 'cockpit'`) and an optional `needsCount` (fleet human-blocked count → badge on the Cockpit chip). Sibling URLs come from `VITE_*_URL` with live-portal fallbacks. |
 
-Both are framework-light React + Tailwind that consume the shared shadcn/HSL
+| `ProjectBreadcrumb.tsx` | Topbar `Project / <name> ▾` with a searchable switch list; no delete or add (those live on the host's Projects page) | `projects: {slug, name}[]`, `currentSlug`, `onSelect(slug)`, optional `onViewAll()`. Router-neutral: the host navigates. |
+
+`CommandPalette` also takes optional `projects` + `onSwitchProject` (adds a
+"Switch project..." action), and `PortalSwitcher` an optional
+`project={{ slug, portals }}` that keeps `/p/<slug>` on the named sibling
+portals (the rest keep linking to their root until they have `/p/` routes).
+Hosts that pass none of these render exactly as before.
+
+All are framework-light React + Tailwind that consume the shared shadcn/HSL
 token contract (`border`, `bg-card`, `bg-popover`, `bg-muted`, `text-foreground`,
 `text-muted-foreground`, `primary`). They render correctly in any portal on that
 contract with no extra CSS.
@@ -25,8 +33,10 @@ contract with no extra CSS.
 ## Who vendors this
 
 The three Tailwind portals — **PFactory** (`current="plan"`), **AIFactory**
-(`current="build"`), **TFactory** (`current="test"`) — vendor both files
-byte-identical.
+(`current="build"`), **TFactory** (`current="test"`) — vendor these files
+byte-identical. `ProjectBreadcrumb.tsx` is new: the drift gate tolerates it
+(`NOT_YET_PINNED` in `scripts/check_factory_ui_drift.py`) until a portal's
+`HUB_PIN_SHA` includes it, after which the vendored copy is required.
 
 **CFactory is intentionally not a consumer** of these files: the cockpit is
 hand-rolled CSS on its own token set (design-system Drift B), so it keeps its own

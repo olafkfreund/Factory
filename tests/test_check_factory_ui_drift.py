@@ -105,3 +105,24 @@ def test_completeness_guard_is_wired_into_check_service(tmp_path: Path) -> None:
         "check_service() ignored a canonical component that CANONICAL_MODULES "
         "does not list - the completeness guard is not wired in."
     )
+
+
+def test_module_absent_from_pinned_canonical_is_tolerated_only_when_listed(tmp_path: Path) -> None:
+    """A portal pinned before ProjectBreadcrumb.tsx existed keeps passing; once the
+    pinned canonical has it, the vendored copy is required (and byte-checked)."""
+    canonical = _make_canonical(tmp_path)
+    service = _make_service(canonical, tmp_path / "svc")
+    new = "ProjectBreadcrumb.tsx"
+    assert new in gate.NOT_YET_PINNED
+    # old pin: canonical lacks it, the portal has not vendored it -> pass
+    (canonical / new).unlink()
+    (service / gate._VENDOR_DIR / new).unlink()
+    assert gate.check_service("aifactory", service, canonical) == []
+    # an unlisted module missing from canonical is still a hard failure
+    (canonical / "PortalSwitcher.tsx").unlink()
+    assert any("canonical missing" in p for p in gate.check_service("aifactory", service, canonical))
+    # new pin: canonical has it -> vendored copy is now required
+    (canonical / "PortalSwitcher.tsx").write_text("// PortalSwitcher.tsx\nexport const x = 1;\n")
+    (service / gate._VENDOR_DIR / "PortalSwitcher.tsx").write_bytes((canonical / "PortalSwitcher.tsx").read_bytes())
+    (canonical / new).write_text("// new\n")
+    assert any("vendored copy missing" in p for p in gate.check_service("aifactory", service, canonical))
