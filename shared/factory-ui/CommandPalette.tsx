@@ -65,6 +65,11 @@ export function CommandPalette({
     }
   }, [open]);
 
+  // Entering project mode unmounts the clicked "Switch project..." button: put focus back on the input.
+  useEffect(() => {
+    if (projectMode) inputRef.current?.focus();
+  }, [projectMode]);
+
   // Federated mode (#149): when the host supplies onSearch, debounce the query
   // and render its ranked results; a stale in-flight response is discarded so
   // the list always reflects the latest keystroke. No-op when onSearch is unset
