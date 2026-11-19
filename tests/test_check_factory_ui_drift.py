@@ -120,9 +120,15 @@ def test_module_absent_from_pinned_canonical_is_tolerated_only_when_listed(tmp_p
     assert gate.check_service("aifactory", service, canonical) == []
     # an unlisted module missing from canonical is still a hard failure
     (canonical / "PortalSwitcher.tsx").unlink()
-    assert any("canonical missing" in p for p in gate.check_service("aifactory", service, canonical))
+    assert any(
+        "canonical missing" in p for p in gate.check_service("aifactory", service, canonical)
+    )
     # new pin: canonical has it -> vendored copy is now required
     (canonical / "PortalSwitcher.tsx").write_text("// PortalSwitcher.tsx\nexport const x = 1;\n")
-    (service / gate._VENDOR_DIR / "PortalSwitcher.tsx").write_bytes((canonical / "PortalSwitcher.tsx").read_bytes())
+    (service / gate._VENDOR_DIR / "PortalSwitcher.tsx").write_bytes(
+        (canonical / "PortalSwitcher.tsx").read_bytes()
+    )
     (canonical / new).write_text("// new\n")
-    assert any("vendored copy missing" in p for p in gate.check_service("aifactory", service, canonical))
+    assert any(
+        "vendored copy missing" in p for p in gate.check_service("aifactory", service, canonical)
+    )
