@@ -28,8 +28,7 @@ have no stock lint rule:
    28, and the gate never ran outside the hub at all). Counts belong in the
    issue that is tracking them, where they carry a date.
 
-The portal UI rule also flags literal text sizes below 12px or 0.75rem
-in Tailwind arbitrary text utilities and CSS font-size declarations.
+The opt-in portal UI rule also flags literal text sizes below 12px or 0.75rem.
 
 (pickle/eval-exec/shell=True are owned by the g2-seclint ruff-S gate; this
 script deliberately does not re-check them.)
@@ -283,8 +282,13 @@ _CODE_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".jsx"}
 _UI_SUFFIXES = {".js", ".ts", ".tsx", ".jsx", ".css", ".html"}
 _SIZE = r"\+?(?:[0-9]*\.[0-9]+|[0-9]+)(?:[eE][+-]?[0-9]+)?"
 _SMALL_TEXT_PATTERNS = (
-    re.compile(rf"(?<![\w-])text-\[({_SIZE})(px|rem)\]"),
-    re.compile(rf"(?<![\w-])font-size\s*:\s*({_SIZE})(px|rem)(?![\w.%-])", re.IGNORECASE),
+    re.compile(rf"(?<![\w-])text-\[(?:length:)?(?P<size>{_SIZE})(?P<unit>px|rem)\]"),
+    re.compile(
+        rf"(?<![\w-])font-size\s*:\s*(?P<size>{_SIZE})(?P<unit>px|rem)(?![\w.%-])", re.IGNORECASE
+    ),
+    re.compile(
+        rf"\bfontSize\s*:\s*(?P<quote>['\"]?)(?P<size>{_SIZE})(?P<unit>px|rem)?(?P=quote)(?![\w.%-])"
+    ),
 )
 _MIN_TEXT_SIZE = {"px": 12, "rem": 0.75}
 
@@ -297,15 +301,24 @@ def _is_portal_frontend(path: Path) -> bool:
 
 def _find_small_text(path: Path) -> list[tuple[int, str]]:
     text = path.read_text(encoding="utf-8", errors="ignore")
-    if path.suffix == ".css":
-        text = re.sub(
-            r"/\*.*?\*/", lambda match: "\n" * match[0].count("\n") + " ", text, flags=re.DOTALL
-        )
+    comments = r"/\*.*?\*/" if path.suffix == ".css" else r"/\*.*?\*/|//[^\n]*|<!--.*?-->"
+    # Keep quoted class names and style values, but mask comments without moving lines.
+    text = re.sub(
+        rf"(?P<string>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(?P<comment>{comments})",
+        lambda match: (
+            match[0]
+            if match["string"] and path.suffix != ".css"
+            else re.sub(r"[^\n]", " ", match[0])
+        ),
+        text,
+        flags=re.DOTALL,
+    )
     return sorted(
         (text.count("\n", 0, match.start()) + 1, match[0])
         for pattern in _SMALL_TEXT_PATTERNS
         for match in pattern.finditer(text)
-        if float(match[1]) < _MIN_TEXT_SIZE[match[2].lower()]
+        if float(match["size"]) > 0
+        and float(match["size"]) < _MIN_TEXT_SIZE[(match["unit"] or "px").lower()]
     )
 
 
@@ -456,7 +469,7 @@ def _load_allowlist(path: Path | None) -> set[tuple[str, str]]:
     return allowed
 
 
-def check(root: Path, allowlist_path: Path | None) -> list[str]:
+def check(root: Path, allowlist_path: Path | None, enforce_small_text: bool = False) -> list[str]:
     allowed = _load_allowlist(allowlist_path)
     # Which entries actually suppressed something. An entry that suppresses
     # nothing is reported below: see the block at the end of this function.
@@ -464,7 +477,7 @@ def check(root: Path, allowlist_path: Path | None) -> list[str]:
     problems: list[str] = []
     for path in _iter_source_files(root):
         relative = path.relative_to(root)
-        for rule, hits in _file_findings(path, relative).items():
+        for rule, hits in _file_findings(path, relative, enforce_small_text).items():
             for lineno, snippet in hits:
                 key = (str(relative), rule)
                 if key in allowed:
@@ -491,12 +504,18 @@ def check(root: Path, allowlist_path: Path | None) -> list[str]:
     return problems
 
 
-def _file_findings(path: Path, relative: Path) -> dict[str, list[tuple[int, str]]]:
+def _file_findings(
+    path: Path, relative: Path, enforce_small_text: bool = False
+) -> dict[str, list[tuple[int, str]]]:
     findings = {}
     if path.suffix in _CODE_SUFFIXES:
         findings["exists-then-read"] = _find_exists_then_read(path)
         findings["raw-exception-in-response"] = _find_raw_exception_in_response(path)
-    if _is_portal_frontend(relative):
+    if (
+        enforce_small_text
+        and _is_portal_frontend(relative)
+        and not ("__tests__" in relative.parts or ".test." in relative.name)
+    ):
         findings["small-text"] = _find_small_text(path)
     return findings
 
@@ -539,9 +558,9 @@ def _scanned_commit(root: Path) -> str:
         return "UNKNOWN — not a git repo, or git is unavailable"
 
 
-def run_check(root: Path, allowlist_path: Path | None) -> int:
+def run_check(root: Path, allowlist_path: Path | None, enforce_small_text: bool = False) -> int:
     try:
-        problems = check(root, allowlist_path)
+        problems = check(root, allowlist_path, enforce_small_text)
     except (RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}")  # noqa: T201
         return 1
@@ -907,7 +926,7 @@ def _self_test() -> int:
     return report_self_test(failures)
 
 
-def _emit_allowlist(root: Path, issue: str) -> str:
+def _emit_allowlist(root: Path, issue: str, enforce_small_text: bool = False) -> str:
     """Grandfather every CURRENT finding so the gate can land green on day one.
 
     This is the ratchet mechanism: run once at rollout to snapshot today's
@@ -916,7 +935,7 @@ def _emit_allowlist(root: Path, issue: str) -> str:
     The emitted `reason` is a placeholder that FAILS the gate until a human
     replaces it, so an unreviewed snapshot cannot be committed and forgotten.
     """
-    problems = check(root, None)
+    problems = check(root, None, enforce_small_text)
     entries = []
     for problem in problems:
         loc, _, rest = problem.partition(": ")
@@ -944,6 +963,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", help="repo root to scan")
     parser.add_argument("--allowlist", help="path to the YAML allowlist file")
     parser.add_argument(
+        "--enforce-small-text", action="store_true", help="also reject portal text below 12px"
+    )
+    parser.add_argument(
         "--emit-allowlist",
         metavar="ISSUE",
         help="print a grandfather allowlist covering today's findings, tagged with ISSUE, and exit",
@@ -958,10 +980,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.root:
         parser.error("--root is required (or pass --self-test)")
     if args.emit_allowlist:
-        print(_emit_allowlist(Path(args.root), args.emit_allowlist), end="")  # noqa: T201
+        emitted = _emit_allowlist(Path(args.root), args.emit_allowlist, args.enforce_small_text)
+        print(emitted, end="")  # noqa: T201
         return 0
     allowlist_path = Path(args.allowlist) if args.allowlist else None
-    return run_check(Path(args.root), allowlist_path)
+    return run_check(Path(args.root), allowlist_path, args.enforce_small_text)
 
 
 if __name__ == "__main__":

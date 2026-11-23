@@ -1,4 +1,4 @@
-/* @factory/ui — Tailwind v4 @theme inline bridge to tokens.css.
+/* @factory/ui — Tailwind v4 bridge to tokens.css.
    Maps shadcn utility names, font stacks, type scale and radius to --f-* tokens.
    Vendored byte-identical into each Tailwind portal (see README.md). */
 
@@ -44,10 +44,6 @@
   --color-sidebar-border: var(--f-border-subtle);
   --color-sidebar-ring: var(--f-accent);
 
-  /* Font stacks */
-  --font-sans: var(--f-font-sans);
-  --font-mono: var(--f-font-mono);
-
   /* Type scale */
   --text-xs: var(--f-text-caption);
   --text-xs--line-height: var(--f-leading-caption);
@@ -75,6 +71,14 @@
   --text-page--line-height: var(--f-leading-page);
   --text-stat: var(--f-text-stat);
   --text-stat--line-height: var(--f-leading-stat);
+
+}
+
+@theme {
+  /* Font stacks */
+  --font-sans: var(--f-font-sans);
+  --font-display: 'Archivo', 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--f-font-mono);
 
   /* Radius */
   --radius-sm: var(--f-radius-badge);

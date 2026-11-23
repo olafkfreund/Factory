@@ -41,10 +41,15 @@ def _relative_luminance(value: str) -> float:
     )
 
 
-def _mode_luminances(css: str, selector: str) -> dict[str, float]:
+def _declarations(css: str, selector: str) -> dict[str, str]:
     declarations: dict[str, str] = {}
     for block in re.findall(rf"(?m)^\s*{re.escape(selector)}\s*\{{([^}}]*)\}}", css):
         declarations.update(re.findall(r"--f-([\w-]+)\s*:\s*([^;]+)", block))
+    return declarations
+
+
+def _mode_luminances(css: str, selector: str) -> dict[str, float]:
+    declarations = _declarations(css, selector)
     luminances = {}
     for name in (*_SURFACES, *_TEXT, *_ACCENTS, *_STATUSES, "border-strong", "on-accent"):
         if name not in declarations:
@@ -60,11 +65,17 @@ def check(css: str) -> list[str]:
     """Return missing, invalid, or low-contrast token diagnostics."""
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     pairs = [
-        (foreground, surface, 4.5) for foreground in (*_TEXT, *_ACCENTS) for surface in _SURFACES
+        (foreground, surface, 4.5)
+        for foreground in (*_TEXT, *_ACCENTS, *_STATUSES)
+        for surface in _SURFACES
     ]
     pairs.extend(("border-strong", surface, 3.0) for surface in _SURFACES)
     pairs.extend(("on-accent", fill, 4.5) for fill in (*_ACCENTS, *_STATUSES))
     problems = []
+    for selector in (":root", *(f':root[data-portal="{name}"]' for name in _ACCENTS)):
+        alias = _declarations(css, selector).get("accent", "").strip()
+        if alias not in {f"var(--f-{name})" for name in _ACCENTS}:
+            problems.append(f"{selector}: --f-accent must reference a checked accent token")
     for mode, selector in (("light", ":root"), ("dark", ".dark")):
         try:
             luminances = _mode_luminances(css, selector)

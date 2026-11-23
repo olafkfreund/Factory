@@ -14,7 +14,7 @@ drift-gate convention the Factory family uses for `verification-core` and
 | File | What it is | Consumers / input |
 |------|------------|-------------------|
 | `tokens.css` | Plain-CSS OKLCH token ramp (`--f-*` with hex comments): light on `:root`, dark on `.dark`, per-portal `--f-accent` selection via `:root[data-portal=plan\|build\|test\|cockpit\|meet]`, plus shared type sizes, font stacks (`--f-font-sans`, `--f-font-mono`), radius and 4px spacing grid | Vendored by all five portals (`pfactory`, `aifactory`, `tfactory`, `cfactory`, `rfactory`). Plain-CSS portals alias their local variables to `var(--f-*)`. |
-| `tailwind-theme.css` | Tailwind v4 `@theme inline` bridge mapping shadcn utility names (`--color-background`, `--color-foreground`, `--color-card`, `--color-popover`, `--color-muted`, `--color-secondary`, `--color-accent`, `--color-border`, `--color-input`, `--color-primary`, `--color-ring`, `--color-destructive`, status and sidebar names), `--font-sans`/`--font-mono`, `--text-*` and `--radius-*` to `--f-*` tokens | Vendored by the three Tailwind portals (`pfactory`, `aifactory`, `tfactory`) alongside `tokens.css` under `apps/frontend-web/src/styles/`. |
+| `tailwind-theme.css` | Tailwind v4 bridge mapping shadcn color utility names to `--f-*` tokens in `@theme inline`; font stacks and radii in `@theme` keep their CSS variables available to portal styles | Vendored by the three Tailwind portals (`pfactory`, `aifactory`, `tfactory`) alongside `tokens.css` under `apps/frontend-web/src/styles/`. |
 | `CommandPalette.tsx` | Cmd-K palette: fuzzy jump to views/tasks + run actions | The host assembles the flat `commands` list and supplies the task lane either as a local `tasks` list (filtered here) or via an async `onSearch(q)` that returns ranked results (federated search, #149). |
 | `PortalSwitcher.tsx` | Topbar switcher: the five portals (`plan`, `build`, `test`, `cockpit`, `meet`), current one active, others link out with `var(--f-<portal>)` accent dots | The host passes `current` (`'plan' \| 'build' \| 'test' \| 'cockpit' \| 'meet'`), optional `needsCount` (fleet human-blocked count badge on Cockpit), and optional `project={{ slug, portals }}`. Sibling URLs come from `VITE_*_URL` with live-portal fallbacks. |
 | `ProjectBreadcrumb.tsx` | Topbar `Project / <name>` with a searchable switch list; no delete or add (those live on the host's Projects page) | `projects: {slug, name}[]`, `currentSlug`, `onSelect(slug)`, optional `onViewAll()`. Router-neutral: the host navigates. |
@@ -44,6 +44,14 @@ verified WCAG 2.2 AA contrast:
 `text-primary-foreground`, `ring-ring`, etc.) resolve directly to `--f-*`
 without changing component class names.
 
+## C2 adoption notes
+
+When a portal adopts the bridge, replace direct legacy color references with
+the named utilities. For example, TFactory's `dropdown-menu.tsx:69` uses
+`hsl(var(--popover))` and `button.tsx:24` uses `var(--success)`; those call
+sites need `bg-popover` and `bg-success` respectively. Check foregrounds too,
+such as `text-popover-foreground`, before removing the old variables.
+
 ## Vendoring subsets and destinations
 
 Each portal vendors a declared subset of `shared/factory-ui/`:
@@ -63,17 +71,18 @@ Three hub gates enforce the design system contract:
    - Verifies byte-exact vendoring of each portal's declared subset (`.tsx` into
      `src/components/`, `.css` into `src/styles/` or `web/public/`).
    - Guards against unlisted `*.tsx` and `*.css` files in `shared/factory-ui/`.
-   - Tolerates newly added files listed in `NOT_YET_PINNED` while a portal's
-     pinned `HUB_PIN_SHA` predates them.
+   - Tolerates newly added files listed in `NOT_YET_PINNED` while a React
+     portal's pinned `HUB_PIN_SHA` predates them. Token-only portals require a
+     pin containing `tokens.css`.
 2. **Token contrast self-test (`scripts/check_token_contrast.py`):**
    - Pure stdlib check that parses `tokens.css` and asserts WCAG contrast ratios
      for all text/accent/status tokens against `--f-bg` and `--f-surface-1..3`
      (>= 4.5:1), `--f-border-strong` (>= 3:1), and `--f-on-accent` on all accent
      and status fills (>= 4.5:1) in both light and dark modes.
 3. **Small-text ratchet (`scripts/check_banned_constructs.py`):**
-   - Rejects sub-12px text in portal frontends (`text-[Npx]` with `N < 12`,
-     `text-[0.Nrem]` below `0.75rem`, and CSS `font-size` below `12px` /
-     `0.75rem`), ratcheted so new occurrences fail CI immediately.
+   - Opt in with `--enforce-small-text` after the C2.5 codemod. Default portal
+     gate runs leave this rule off while existing small text is migrated.
+     When enabled, it rejects sub-12px Tailwind, inline style and CSS text sizes.
 
 ## Vendoring contract (same as verification-core)
 

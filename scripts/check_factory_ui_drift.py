@@ -143,7 +143,7 @@ def check_service(service: str, root: Path, canonical: Path) -> list[str]:
     for module, rel in layout.items():
         canonical_file = canonical / module
         if not canonical_file.is_file():
-            if module in NOT_YET_PINNED:
+            if module in NOT_YET_PINNED and service not in _TOKEN_ONLY_SERVICES:
                 continue
             problems.append(f"canonical missing: {canonical_file}")
             continue

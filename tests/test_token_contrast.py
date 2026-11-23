@@ -40,4 +40,28 @@ def test_weakened_dark_token_fails_without_changing_hex_comments(
 
 def test_missing_mode_fails() -> None:
     css = gate.TOKENS.read_text(encoding="utf-8")
-    assert gate.check(css.partition(".dark {")[0]) == [".dark: missing --f-bg"]
+    assert gate.check(css.replace(".dark {", ".missing {", 1)) == [".dark: missing --f-bg"]
+
+
+def test_status_text_on_dark_surface_is_checked() -> None:
+    css = gate.TOKENS.read_text(encoding="utf-8")
+    before, marker, after = css.rpartition("--f-danger: oklch(0.745")
+    assert marker
+    weakened = f"{before}--f-danger: oklch(0.725{after}"
+    assert any("dark: --f-danger on --f-surface-3" in p for p in gate.check(weakened))
+
+
+@pytest.mark.parametrize("portal", [None, *gate._ACCENTS])
+def test_active_accent_must_reference_checked_accent(portal: str | None) -> None:
+    css = gate.TOKENS.read_text(encoding="utf-8")
+    target = "build" if portal is None else portal
+    selector = ":root" if portal is None else f':root[data-portal="{portal}"]'
+    original = f"--f-accent: var(--f-{target});"
+    if portal is None:
+        broken = css.replace(original, "--f-accent: var(--f-bg);", 1)
+    else:
+        broken = css.replace(
+            f"{selector} {{\n  {original}",
+            f"{selector} {{\n  --f-accent: var(--f-bg);",
+        )
+    assert f"{selector}: --f-accent must reference a checked accent token" in gate.check(broken)

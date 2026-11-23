@@ -53,7 +53,7 @@ export function PortalSwitcher({
             {badge > 0 && (
               <span
                 aria-label={`${String(badge)} need you`}
-                className="ml-0.5 min-w-4 rounded-full bg-primary px-1 text-center text-[0.6rem] font-semibold leading-4 text-primary-foreground"
+                className="ml-0.5 min-w-4 rounded-full bg-primary px-1 text-center text-xs font-semibold leading-4 text-primary-foreground"
               >
                 {badge}
               </span>

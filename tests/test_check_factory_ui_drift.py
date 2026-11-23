@@ -108,6 +108,17 @@ def test_token_only_layouts(
     assert "layout maps it nowhere" in gate.check_service(service, portal, canonical)[0]
 
 
+@pytest.mark.parametrize("service", ["cfactory", "rfactory"])
+def test_token_only_layout_rejects_pre_token_pin(tmp_path: Path, service: str) -> None:
+    canonical = _make_canonical(tmp_path)
+    portal = _make_service(canonical, tmp_path / "svc", service)
+    (canonical / "tokens.css").unlink()
+    assert any(
+        "canonical missing" in problem and "tokens.css" in problem
+        for problem in gate.check_service(service, portal, canonical)
+    )
+
+
 def test_canonical_files_exist_in_repo() -> None:
     canonical = _REPO_ROOT / "shared" / "factory-ui"
     for module in gate.CANONICAL_MODULES:
