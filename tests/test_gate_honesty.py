@@ -108,6 +108,10 @@ _COVERED: dict[str, str] = {
 # Gates deliberately out of scope, each with the reason stated. Named, not
 # omitted: an exemption nobody can see is the same green as a missing check.
 _EXEMPT: dict[str, str] = {
+    "check_token_contrast.py": (
+        "validates one fixed canonical stylesheet. tests/test_token_contrast.py exercises "
+        "the required token pairs with the canonical palette and weakened token values."
+    ),
     "check_deploy_drift.py": (
         "compares one expected sha against one deployed tag. It has no per-item "
         "configuration that can silently shrink, so neither property has a "

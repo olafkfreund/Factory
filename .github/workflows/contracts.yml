@@ -135,6 +135,9 @@ jobs:
           pip install pytest pytest-asyncio "pydantic>=2" jsonschema httpx
           pyyaml "mypy==1.18.2" "ruff==0.15.17"
 
+      - name: Check Factory UI token contrast
+        run: python scripts/check_token_contrast.py
+
       - name: Run the hub test suite
         # WHOLE DIRECTORY, NOT A FILE LIST (Factory#489). This step used to be
         # seven per-file steps, each with a comment explaining the defect its

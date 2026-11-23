@@ -183,7 +183,13 @@ GATES: tuple[Gate, ...] = (
         name="factory-ui",
         workflow=".github/workflows/factory-ui-drift.yml",
         canonical_root="shared/factory-ui",
-        layouts=UI_LAYOUTS,
+        # Factory#3874 declares the token-only layouts before C2 ships their
+        # consumer workflows. Add their pins to this watchdog during adoption.
+        layouts={
+            service: layout
+            for service, layout in UI_LAYOUTS.items()
+            if service not in {"cfactory", "rfactory"}
+        },
         # Path-filtered today, and legitimately so: it is not a required check,
         # so a PR it skips is not blocked. If it is ever made required, the
         # filter has to go first (Factory#525 then #543, in that order).

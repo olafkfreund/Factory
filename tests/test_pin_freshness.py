@@ -337,6 +337,12 @@ def test_only_a_required_gate_is_held_to_an_unfiltered_trigger() -> None:
     assert by_name["factory-ui"].required_check is False
 
 
+def test_factory_ui_pin_watchdog_covers_active_consumers() -> None:
+    gate = next(g for g in pf.GATES if g.name == "factory-ui")
+    assert gate.services() == ["aifactory", "pfactory", "tfactory"]
+    assert "shared/factory-ui/tokens.css" in gate.canonical_paths("aifactory")
+
+
 def test_a_required_gate_must_cover_every_service() -> None:
     """Fleet-wide coverage stopped being enough at the third gate (Factory#547).
 
