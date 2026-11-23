@@ -206,4 +206,7 @@ def test_cfactory_partial_pin_requires_existing_controls(tmp_path: Path) -> None
         (canonical / module).unlink()
         (portal / gate.SERVICE_LAYOUTS["cfactory"][module]).unlink()
     (portal / gate.SERVICE_LAYOUTS["cfactory"]["PortalSwitcher.tsx"]).unlink()
-    assert any("PortalSwitcher.tsx" in problem for problem in gate.check_service("cfactory", portal, canonical))
+    assert any(
+        "PortalSwitcher.tsx" in problem
+        for problem in gate.check_service("cfactory", portal, canonical)
+    )

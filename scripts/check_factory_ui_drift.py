@@ -86,7 +86,9 @@ _REQUIRED_MODULES = {
     "pfactory": CANONICAL_MODULES,
     "aifactory": CANONICAL_MODULES,
     "tfactory": CANONICAL_MODULES,
-    "cfactory": tuple(m for m in CANONICAL_MODULES if m not in ("tailwind-theme.css", "ProjectBreadcrumb.tsx")),
+    "cfactory": tuple(
+        m for m in CANONICAL_MODULES if m not in ("tailwind-theme.css", "ProjectBreadcrumb.tsx")
+    ),
     "rfactory": ("tokens.css", "shell.css"),
 }
 SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
