@@ -50,4 +50,4 @@ jobs:
         run: python3 scripts/check_codeql_exclude_pairing.py --repo .
 
       - name: Gate 5 — banned constructs (blocking on new occurrences; allowlist ratchets down)
-        run: python3 scripts/check_banned_constructs.py --root . --allowlist banned-constructs-allowlist.yaml
+        run: python3 scripts/check_banned_constructs.py --root . --allowlist banned-constructs-allowlist.yaml --enforce-small-text

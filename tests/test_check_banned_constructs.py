@@ -24,6 +24,7 @@ import pytest
         ("apps/frontend-web/src/ui.css", ".label { FONT-SIZE: .7REM }", "FONT-SIZE: .7REM"),
         ("web/public/index.html", '<span class="text-[10px]">', "text-[10px]"),
         ("web/public/ui.css", ".label { font-size: 0.625rem }", "font-size: 0.625rem"),
+        ("shared/factory-ui/shell.css", ".label { font-size: 11px }", "font-size: 11px"),
     ],
 )
 def test_portal_small_text_is_reported(

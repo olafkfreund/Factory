@@ -273,7 +273,7 @@ def _iter_source_files(root: Path) -> list[Path]:
             continue
         if _is_skippable(path.relative_to(root)):
             continue
-        if path.suffix in _CODE_SUFFIXES or _is_portal_frontend(path.relative_to(root)):
+        if path.suffix in _CODE_SUFFIXES or _is_ui_source(path.relative_to(root)):
             out.append(path)
     return out
 
@@ -293,9 +293,10 @@ _SMALL_TEXT_PATTERNS = (
 _MIN_TEXT_SIZE = {"px": 12, "rem": 0.75}
 
 
-def _is_portal_frontend(path: Path) -> bool:
+def _is_ui_source(path: Path) -> bool:
     return path.suffix in _UI_SUFFIXES and (
-        path.parts[:2] == ("apps", "frontend-web") or path.parts[:1] == ("web",)
+        path.parts[:2] in {("apps", "frontend-web"), ("shared", "factory-ui")}
+        or path.parts[:1] == ("web",)
     )
 
 
@@ -513,7 +514,7 @@ def _file_findings(
         findings["raw-exception-in-response"] = _find_raw_exception_in_response(path)
     if (
         enforce_small_text
-        and _is_portal_frontend(relative)
+        and _is_ui_source(relative)
         and not ("__tests__" in relative.parts or ".test." in relative.name)
     ):
         findings["small-text"] = _find_small_text(path)
