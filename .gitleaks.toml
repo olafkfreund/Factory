@@ -11,3 +11,12 @@ description = "Factory-specific false positives"
 # generic-api-key rule on entropy alone; it is prose, not a credential.
 regexes = ['''API schemas, .*aggregated/anonymised metrics''']
 paths = ['''docs/compliance/policies/data-governance\.md''']
+# Not secrets: PR #3879 commits 2d89a14 and 4725bdc carried fake canary keys
+# ("acw_CANARY...", "acw_SECRET...", a "ghp_1234..." dummy) in
+# shared/factory-cli/tests, used to prove the CLI never prints a key. A later
+# commit builds them by concatenation so no literal remains in the tree; the
+# squash merge to main carries only that final tree.
+commits = [
+  "2d89a14ee99e7723a912ce82ae341f0e4e490079",
+  "4725bdc9516ab5de756f5a225ac1d72d2cfbb52b",
+]
