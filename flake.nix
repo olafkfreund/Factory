@@ -15,8 +15,43 @@
         "aarch64-darwin"
         "x86_64-darwin"
       ];
+
+      mkFactoryCli =
+        pkgs:
+        pkgs.python3Packages.buildPythonApplication {
+          pname = "factory-cli";
+          version = "0.1.0";
+          pyproject = true;
+          src = ./shared/factory-cli;
+          build-system = [ pkgs.python3Packages.setuptools ];
+          dependencies = with pkgs.python3Packages; [
+            pyyaml
+            mcp
+          ];
+          doCheck = false;
+        };
     in
     {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          factoryCli = mkFactoryCli pkgs;
+        in
+        {
+          factory-cli = factoryCli;
+          default = factoryCli;
+        }
+      );
+
+      apps = forAllSystems (system: {
+        factory = {
+          type = "app";
+          program = "${self.packages.${system}.factory-cli}/bin/factory";
+        };
+        default = self.apps.${system}.factory;
+      });
+
       devShells = forAllSystems (
         system:
         let
@@ -27,6 +62,8 @@
             ps: with ps; [
               pyyaml
               requests
+              mcp
+              pytest
             ]
           );
         in

@@ -18,6 +18,7 @@
   ],
   "output": "reports/jscpd",
   "ignore": [
+    "shared/factory-cli/factory_cli/_vendor/**",
     "scripts/languages/**",
     "**/node_modules/**",
     "**/.git/**",

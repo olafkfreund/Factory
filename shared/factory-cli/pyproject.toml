@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "factory-cli"
+version = "0.1.0"
+description = "Unified CLI and MCP front door for the Factory fleet"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0,<7.0",
+    "mcp>=1.0,<3.0",
+]
+
+[project.scripts]
+factory = "factory_cli.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["factory_cli*"]
+
+[tool.mypy]
+exclude = ["^factory_cli/_vendor/"]
+python_version = "3.11"
+strict = true

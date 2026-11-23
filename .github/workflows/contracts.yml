@@ -133,7 +133,7 @@ jobs:
         #             is the Factory#489 shape again.
         run: >-
           pip install pytest pytest-asyncio "pydantic>=2" jsonschema httpx
-          pyyaml "mypy==1.18.2" "ruff==0.15.17"
+          pyyaml "mcp>=1.0,<3.0" "mypy==1.18.2" "ruff==0.15.17"
 
       - name: Check Factory UI token contrast
         run: python scripts/check_token_contrast.py
@@ -169,7 +169,13 @@ jobs:
         #
         # No new dependencies. Both files insert their own package root on
         # sys.path and are stdlib-only apart from pytest itself.
-        run: pytest -v tests/ shared/factory-common/tests/ shared/factory-sandbox/tests/ scripts/benchmarks/
+        run: pytest -v tests/ shared/factory-common/tests/ shared/factory-sandbox/tests/ shared/factory-cli/tests/ scripts/benchmarks/
+
+      - name: Lint shared/factory-cli (ruff + mypy --strict)
+        run: |
+          ruff check shared/factory-cli
+          ruff format --check shared/factory-cli
+          mypy --strict shared/factory-cli/factory_cli
 
       - name: Guard the shared job-dispatch policy surface
         # Factory#483. scripts/job_dispatch.py carries a self-test with the rules
