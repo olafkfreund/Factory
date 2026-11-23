@@ -4,30 +4,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any, Literal
+from typing import Any
 
+from factory_cli import config
+from factory_cli._common import CommandOutcome
 from factory_cli._vendor.factory_common.client_errors import InputRejectedError
-from factory_cli.config import (
-    PORTAL_NAMES,
-    PortalName,
-    RuntimeContext,
-    collect_known_secrets,
-    resolve_portal_key,
-    resolve_portal_url,
-)
 from factory_cli.submit import EXIT_OK, EXIT_PRECONDITION, EXIT_REJECTED
 from factory_cli.transport import PortalTransport, redact_structure, redact_text
 
 _HTTP_OK = int(HTTPStatus.OK)
 
-_HEALTH_PATHS: dict[PortalName, str] = {
+_HEALTH_PATHS: dict[config.PortalName, str] = {
     "pfactory": "/api/health",
     "aifactory": "/api/health",
     "tfactory": "/api/health",
     "cfactory": "/health",
 }
 
-_PROTECTED_READ_PATHS: dict[PortalName, str] = {
+_PROTECTED_READ_PATHS: dict[config.PortalName, str] = {
     "pfactory": "/api/mcp-stdio/projects",
     "aifactory": "/api/mcp-stdio/projects",
     "tfactory": "/api/mcp-stdio/projects",
@@ -36,29 +30,24 @@ _PROTECTED_READ_PATHS: dict[PortalName, str] = {
 
 
 @dataclass(frozen=True)
-class DoctorOutcome:
+class DoctorOutcome(CommandOutcome):
     """Result of `factory doctor`."""
-
-    exit_code: int
-    outcome: Literal["ok", "rejected", "unknown"]
-    payload: dict[str, Any]
-    lines: tuple[str, ...]
 
 
 def run_doctor(  # noqa: PLR0912, PLR0915
     *,
-    ctx: RuntimeContext | None = None,
+    ctx: config.RuntimeContext | None = None,
 ) -> DoctorOutcome:
     """Check URL, key source, key kind, health version, and protected read on each portal."""
-    rt = ctx or RuntimeContext()
-    secrets = collect_known_secrets(env=rt.env, home=rt.home)
+    rt = ctx or config.RuntimeContext()
+    secrets = config.collect_known_secrets(env=rt.env, home=rt.home)
     portal_reports: dict[str, Any] = {}
     lines: list[str] = []
     failed = False
 
-    for portal in PORTAL_NAMES:
+    for portal in config.PORTAL_NAMES:
         try:
-            key = resolve_portal_key(portal, env=rt.env, home=rt.home)
+            key = config.resolve_portal_key(portal, env=rt.env, home=rt.home)
         except ValueError as exc:
             return DoctorOutcome(
                 exit_code=EXIT_PRECONDITION,
@@ -70,7 +59,7 @@ def run_doctor(  # noqa: PLR0912, PLR0915
         key_kind = key.kind if key else "none"
 
         try:
-            url = resolve_portal_url(
+            url = config.resolve_portal_url(
                 portal,
                 env=rt.env,
                 home=rt.home,

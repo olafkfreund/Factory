@@ -7,15 +7,11 @@ import secrets as stdlib_secrets
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
+from factory_cli import config
+from factory_cli._common import CommandOutcome
 from factory_cli._vendor.factory_common.client_errors import InputRejectedError
-from factory_cli.config import (
-    RuntimeContext,
-    collect_known_secrets,
-    resolve_portal_key,
-    resolve_portal_url,
-)
 from factory_cli.gitartifacts import (
     PreconditionError,
     find_repo_root,
@@ -45,13 +41,8 @@ _HTTP_SERVER_ERR = int(HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 @dataclass(frozen=True)
-class TestOutcome:
+class TestOutcome(CommandOutcome):
     """Result of a `factory test` invocation."""
-
-    exit_code: int
-    outcome: Literal["ok", "rejected", "unknown"]
-    payload: dict[str, Any]
-    lines: tuple[str, ...]
 
 
 def _strip_frontmatter(text: str) -> str:
@@ -279,11 +270,11 @@ def run_test(  # noqa: PLR0913
     spec_slug: str | None = None,
     criteria_file: str | None = None,
     pr_number: int | None = None,
-    ctx: RuntimeContext | None = None,
+    ctx: config.RuntimeContext | None = None,
 ) -> TestOutcome:
     """Execute `factory test` against TFactory's scoped ingest endpoint."""
-    rt = ctx or RuntimeContext()
-    secrets = collect_known_secrets(env=rt.env, home=rt.home, portals=("tfactory",))
+    rt = ctx or config.RuntimeContext()
+    secrets = config.collect_known_secrets(env=rt.env, home=rt.home, portals=("tfactory",))
     work_dir = rt.cwd or Path.cwd()
 
     try:
@@ -299,12 +290,12 @@ def run_test(  # noqa: PLR0913
         stem, criteria = _load_criteria(
             root, work_dir, spec_slug=spec_slug, criteria_file=criteria_file
         )
-        tf_key = resolve_portal_key("tfactory", env=rt.env, home=rt.home)
+        tf_key = config.resolve_portal_key("tfactory", env=rt.env, home=rt.home)
         if tf_key is None:
             raise PreconditionError(
                 "TFactory key not configured (set $TFACTORY_MCP_KEY or ~/.tfactory/.mcp-key)"
             )
-        tf_url = resolve_portal_url(
+        tf_url = config.resolve_portal_url(
             "tfactory",
             env=rt.env,
             home=rt.home,

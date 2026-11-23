@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
+from factory_cli._common import CommandOutcome
 from factory_cli._vendor.factory_common.client_errors import InputRejectedError
 from factory_cli.config import (
     RuntimeContext,
@@ -43,13 +44,8 @@ _HTTP_CONFLICT = int(HTTPStatus.CONFLICT)
 
 
 @dataclass(frozen=True)
-class SubmitOutcome:
+class SubmitOutcome(CommandOutcome):
     """Result of a submit run (used by both CLI and MCP)."""
-
-    exit_code: int
-    outcome: Literal["ok", "rejected", "unknown"]
-    payload: dict[str, Any]
-    lines: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -108,6 +104,15 @@ def _extract_hard_failures(ingest_data: dict[str, Any]) -> list[Any]:
     return []
 
 
+def _session_lines(session_id: str | None, correlation_key: str | None) -> list[str]:
+    lines: list[str] = []
+    if session_id:
+        lines.append(f"session_id: pf:{session_id}")
+    if correlation_key:
+        lines.append(f"correlation_key: {correlation_key}")
+    return lines
+
+
 def _rejected(
     detail: str,
     *,
@@ -117,11 +122,7 @@ def _rejected(
     secrets: tuple[str, ...] = (),
 ) -> SubmitOutcome:
     safe_detail = redact_text(detail, secrets)
-    lines: list[str] = []
-    if session_id:
-        lines.append(f"session_id: pf:{session_id}")
-    if correlation_key:
-        lines.append(f"correlation_key: {correlation_key}")
+    lines = _session_lines(session_id, correlation_key)
     lines.append(f"error: {safe_detail}")
     payload: dict[str, Any] = redact_structure(
         {
@@ -148,11 +149,7 @@ def _unknown(
     secrets: tuple[str, ...] = (),
 ) -> SubmitOutcome:
     safe_detail = redact_text(detail, secrets)
-    lines: list[str] = []
-    if session_id:
-        lines.append(f"session_id: pf:{session_id}")
-    if correlation_key:
-        lines.append(f"correlation_key: {correlation_key}")
+    lines = _session_lines(session_id, correlation_key)
     lines.append(f"outcome unknown: {safe_detail}")
     if session_id:
         lines.append(f"reconcile with: factory status pf:{session_id}")

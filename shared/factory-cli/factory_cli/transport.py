@@ -170,21 +170,8 @@ class _SendTrackingHTTPConnection(http.client.HTTPConnection):
         super().send(data)
 
 
-class _SendTrackingHTTPSConnection(http.client.HTTPSConnection):
-    """HTTPSConnection that records when request bytes are sent on a connected socket."""
-
-    def __init__(self, *args: Any, tracker: list[bool], **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._tracker = tracker
-
-    def send(self, data: Any) -> None:
-        if self.sock is None:
-            if self.auto_open:
-                self.connect()
-            else:
-                raise http.client.NotConnected
-        self._tracker[0] = True
-        super().send(data)
+class _SendTrackingHTTPSConnection(_SendTrackingHTTPConnection, http.client.HTTPSConnection):
+    """Track sends while resolving the tracking class's super() through HTTPSConnection."""
 
 
 class _SendTrackingHTTPHandler(urllib.request.HTTPHandler):

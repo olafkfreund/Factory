@@ -213,7 +213,9 @@ def normalize_remote_url(remote_url: str) -> tuple[str, str]:
 
     if "gitlab" in host:
         provider = "gitlab"
-    elif "azure" in host or "visualstudio.com" in host:
+    elif host in {"dev.azure.com", "ssh.dev.azure.com", "vs-ssh.visualstudio.com"} or host.endswith(
+        (".dev.azure.com", ".visualstudio.com")
+    ):
         provider = "azure_devops"
         segments = [seg for seg in path.split("/") if seg]
         if "_git" in segments:

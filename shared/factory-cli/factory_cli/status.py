@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any, Literal
 
+from factory_cli._common import CommandOutcome
 from factory_cli._vendor.factory_common.client_errors import InputRejectedError
 from factory_cli.config import (
     PortalName,
@@ -37,13 +38,8 @@ _STATUS_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._:#-]+$")
 
 
 @dataclass(frozen=True)
-class StatusOutcome:
+class StatusOutcome(CommandOutcome):
     """Result of a `factory status` query."""
-
-    exit_code: int
-    outcome: Literal["ok", "rejected", "unknown"]
-    payload: dict[str, Any]
-    lines: tuple[str, ...]
 
 
 def _validate_and_quote_segment(segment: str, *, label: str = "identifier") -> str:
