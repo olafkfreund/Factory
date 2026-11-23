@@ -22,7 +22,7 @@ AGENTS: tuple[AgentName, ...] = ("claude", "codex", "agy")
 
 _CODEX_BLOCK = '[mcp_servers.factory]\ncommand = "factory"\nargs = ["mcp"]\n'
 _TOML_HEADER_RE = re.compile(r"^\s*(?:\[\[\s*([^\[\]]+?)\s*\]\]|\[\s*([^\[\]]+?)\s*\])\s*(?:#.*)?$")
-_AGY_DIR_PARTS = (".gem" + "ini", "config", "mcp_config.json")
+_AGY_DIR_PARTS = (".gemini", "config", "mcp_config.json")
 _MIN_TABLE_PARTS = 2
 
 

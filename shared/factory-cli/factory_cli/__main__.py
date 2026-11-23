@@ -9,7 +9,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
-from factory_cli.config import PORTAL_NAMES, PortalName, RuntimeContext, collect_known_secrets
+from factory_cli.config import (
+    PORTAL_NAMES,
+    PortalName,
+    RuntimeContext,
+    collect_known_secrets,
+    resolve_portal_key,
+)
 from factory_cli.doctor import run_doctor
 from factory_cli.mcp_config import AGENTS, AgentName, run_mcp_config
 from factory_cli.status import run_status
@@ -164,6 +170,12 @@ def _dispatch_command(
 
     portals = _portals_for_command(args)
     secrets = collect_known_secrets(env=rt.env, home=rt.home, portals=portals)
+    try:
+        for portal in portals:
+            resolve_portal_key(portal, env=rt.env, home=rt.home)
+    except ValueError as exc:
+        _emit(f"error: {exc}", err=True, secrets=secrets)
+        return EXIT_PRECONDITION
 
     if cmd == "submit":
         outcome: Any = run_submit(

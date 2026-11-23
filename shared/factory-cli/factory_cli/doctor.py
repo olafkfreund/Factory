@@ -15,7 +15,7 @@ from factory_cli.config import (
     resolve_portal_key,
     resolve_portal_url,
 )
-from factory_cli.submit import EXIT_OK
+from factory_cli.submit import EXIT_OK, EXIT_PRECONDITION, EXIT_REJECTED
 from factory_cli.transport import PortalTransport, redact_structure, redact_text
 
 _HTTP_OK = int(HTTPStatus.OK)
@@ -45,7 +45,7 @@ class DoctorOutcome:
     lines: tuple[str, ...]
 
 
-def run_doctor(
+def run_doctor(  # noqa: PLR0912, PLR0915
     *,
     ctx: RuntimeContext | None = None,
 ) -> DoctorOutcome:
@@ -54,9 +54,18 @@ def run_doctor(
     secrets = collect_known_secrets(env=rt.env, home=rt.home)
     portal_reports: dict[str, Any] = {}
     lines: list[str] = []
+    failed = False
 
     for portal in PORTAL_NAMES:
-        key = resolve_portal_key(portal, env=rt.env, home=rt.home)
+        try:
+            key = resolve_portal_key(portal, env=rt.env, home=rt.home)
+        except ValueError as exc:
+            return DoctorOutcome(
+                exit_code=EXIT_PRECONDITION,
+                outcome="rejected",
+                payload={"outcome": "rejected", "detail": str(exc)},
+                lines=(f"error: {exc}",),
+            )
         key_source = key.source if key else "none"
         key_kind = key.kind if key else "none"
 
@@ -80,25 +89,34 @@ def run_doctor(
             url_error = redact_text(str(exc), secrets)
 
         health_version = "unreachable"
+        health_failed = True
         if transport is not None:
             try:
                 h_resp = transport.request("GET", _HEALTH_PATHS[portal])
                 if h_resp.status == _HTTP_OK and h_resp.is_json and isinstance(h_resp.data, dict):
                     raw_ver = str(h_resp.data.get("version") or h_resp.data.get("status") or "ok")
                     health_version = redact_text(raw_ver, secrets)
+                    health_failed = False
+                elif h_resp.status == _HTTP_OK:
+                    health_version = "reachable (not JSON)"
+                    health_failed = False
                 elif h_resp.status > 0:
                     health_version = f"http-{h_resp.status}"
             except InputRejectedError:
                 health_version = "blocked"
 
-        read_status = "denied"
+        read_status = "unreachable"
         if transport is not None and key is not None:
             try:
                 r_resp = transport.request("GET", _PROTECTED_READ_PATHS[portal])
                 if r_resp.status == _HTTP_OK:
                     read_status = "ok"
+                elif r_resp.status in (401, 403):
+                    read_status = "denied"
             except InputRejectedError:
-                read_status = "denied"
+                read_status = "unreachable"
+        if read_status != "ok" or health_failed:
+            failed = True
 
         notes: list[str] = []
         if key_kind == "legacy":
@@ -134,7 +152,7 @@ def run_doctor(
     )
     payload = redact_structure(
         {
-            "outcome": "ok",
+            "outcome": "rejected" if failed else "ok",
             "portals": portal_reports,
             "notes": [
                 "a legacy key can only dry-run submit",
@@ -144,8 +162,8 @@ def run_doctor(
         secrets,
     )
     return DoctorOutcome(
-        exit_code=EXIT_OK,
-        outcome="ok",
+        exit_code=EXIT_REJECTED if failed else EXIT_OK,
+        outcome="rejected" if failed else "ok",
         payload=payload,
         lines=tuple(lines),
     )

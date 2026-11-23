@@ -21,11 +21,13 @@ from factory_cli._vendor.factory_common.secrets import PLACEHOLDER, redact as re
 from factory_cli._vendor.factory_common.url_safety import (
     _NoRedirect,
     assert_safe_outbound_url,
-    build_no_redirect_opener,
 )
 
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 _SERVER_ERROR_MIN = int(HTTPStatus.INTERNAL_SERVER_ERROR)
+_ACW_KEY_RE = re.compile(r"acw_[A-Za-z0-9_-]{8,}")
+_ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 # Matches URLs with userinfo (both `scheme://user:pass@host` and `scheme://user@host`)
 # as well as SCP-style `user@host:path` when username is not `git`.
@@ -49,7 +51,9 @@ def redact_text(text: str, secrets: Sequence[str] = ()) -> str:
         if secret:
             cleaned = cleaned.replace(secret, PLACEHOLDER)
     cleaned = redact_url_userinfo(cleaned)
-    return str(redact_patterns(cleaned))
+    return _CONTROL_RE.sub(
+        "", _ANSI_RE.sub("", str(redact_patterns(_ACW_KEY_RE.sub(PLACEHOLDER, cleaned))))
+    )
 
 
 def redact_structure(value: Any, secrets: Sequence[str] = ()) -> Any:
@@ -215,9 +219,6 @@ def _build_tracked_opener(
     tracker: list[bool],
 ) -> urllib.request.OpenerDirector:
     """Build a no-redirect opener that tracks socket sends and ignores env proxies on loopback."""
-    # Call build_no_redirect_opener() from factory_common for parity, and construct
-    # the opener with our send-tracking handlers + _NoRedirect.
-    _ = build_no_redirect_opener()
     handlers: list[urllib.request.BaseHandler] = [
         _NoRedirect(),
         _SendTrackingHTTPHandler(tracker),
@@ -293,9 +294,12 @@ class PortalTransport:
                 status = int(resp.getcode())
         except urllib.error.HTTPError as exc:
             if exc.code in _REDIRECT_CODES:
-                raise InputRejectedError(
-                    redact_text(f"redirect refused (HTTP {exc.code})", self.secrets)
-                ) from exc
+                return TransportResponse(
+                    status=exc.code,
+                    data={},
+                    raw_text=f"redirect refused (HTTP {exc.code})",
+                    after_send=sent_tracker[0],
+                )
             try:
                 err_bytes = exc.read()
             except Exception:  # noqa: BLE001
@@ -318,6 +322,15 @@ class PortalTransport:
                 raw_text=msg,
                 is_json=False,
                 network_error=msg,
+                after_send=sent_tracker[0],
+            )
+        except Exception as exc:  # noqa: BLE001 - never expose a header or token in an exception
+            name = type(exc).__name__
+            return TransportResponse(
+                status=0,
+                data={},
+                raw_text=name,
+                network_error=name,
                 after_send=sent_tracker[0],
             )
 

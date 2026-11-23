@@ -266,7 +266,7 @@ def resolve_repo_identity(
     branch_proc = _run_git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
     branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
     if not branch:
-        branch = "HEAD"
+        raise PreconditionError("detached HEAD: check out a branch before submitting")
 
     remote_proc = _run_git(root, "remote", "get-url", "origin")
     if remote_proc.returncode != 0 or not remote_proc.stdout.strip():
@@ -306,6 +306,16 @@ def resolve_branch_sha(cwd: Path, branch: str) -> str:
         if proc.returncode == 0 and _SHA1_RE.match(proc.stdout.strip()):
             return proc.stdout.strip()
     raise PreconditionError(f"unknown branch: {clean!r}")
+
+
+def remote_branch_warning(identity: RepoIdentity) -> str | None:
+    """Warn when HEAD differs from the known origin branch tip."""
+    proc = _run_git(
+        identity.root, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{identity.branch}"
+    )
+    if proc.returncode != 0 or proc.stdout.strip() != identity.head_sha:
+        return f"warning: HEAD is not on origin/{identity.branch}; push before submitting"
+    return None
 
 
 def _sanitize_author(raw: str) -> str:
@@ -362,7 +372,9 @@ def _find_approval_commit(
             "--end-of-options",
             f"{commit_sha}:{rel_path}",
         )
-        if blob_proc.returncode != 0 or blob_proc.stdout.strip() != head_blob_sha:
+        if blob_proc.returncode != 0:
+            continue
+        if blob_proc.stdout.strip() != head_blob_sha:
             raise PreconditionError(f"re-approve {stage}: {rel_path} was modified after approval")
         curr_status = _status_at_commit(root, commit_sha, rel_path)
         if curr_status != "approved":

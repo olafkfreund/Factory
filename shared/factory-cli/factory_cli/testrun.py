@@ -198,7 +198,11 @@ def _evaluate_test_response(
     if resp.status == _HTTP_NOT_FOUND:
         return _rejected_test("project not found", exit_code=EXIT_REJECTED, secrets=secrets)
 
-    if resp.status == 0 or resp.status >= _HTTP_SERVER_ERR:
+    if (
+        resp.status == 0
+        or resp.status >= _HTTP_SERVER_ERR
+        or int(HTTPStatus.MULTIPLE_CHOICES) <= resp.status < int(HTTPStatus.BAD_REQUEST)
+    ):
         detail = resp.network_error or extract_safe_detail(resp.data, resp.raw_text, secrets)
         if resp.after_send:
             safe_detail = redact_text(detail, secrets)
@@ -328,7 +332,7 @@ def run_test(  # noqa: PLR0913
             },
         )
     except InputRejectedError as exc:
-        return _rejected_test(str(exc), exit_code=EXIT_REJECTED, secrets=secrets)
+        return _rejected_test(str(exc), exit_code=EXIT_PRECONDITION, secrets=secrets)
     return _evaluate_test_response(
         resp,
         project_id=clean_proj,

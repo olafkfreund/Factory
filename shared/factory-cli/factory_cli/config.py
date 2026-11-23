@@ -132,7 +132,7 @@ def _lazy_candidate_sources(
 ) -> list[tuple[str, Callable[[], str]]]:
     if portal == "cfactory":
         return [
-            ("$CFACTORY_API_KEY", lambda: environ.get("CFACTORY_API_KEY", "").strip()),
+            ("$CFACTORY_API_KEY", lambda: environ.get("CFACTORY_API_KEY", "")),
             (
                 "~/.cfactory/.mcp-key",
                 lambda: _read_key_file(home_dir / ".cfactory" / ".mcp-key"),
@@ -154,7 +154,7 @@ def _lazy_candidate_sources(
         return _read_key_file(_resolve_override_path(tok_override, home_dir))
 
     return [
-        (f"${mcp_var}", lambda: environ.get(mcp_var, "").strip()),
+        (f"${mcp_var}", lambda: environ.get(mcp_var, "")),
         (
             f"~/.{portal}/.mcp-key",
             lambda: _read_key_file(home_dir / f".{portal}" / ".mcp-key"),
@@ -183,6 +183,8 @@ def resolve_portal_key(
     for source_name, loader in _lazy_candidate_sources(portal, environ, home_dir):
         value = loader()
         if value:
+            if any(not ch.isprintable() or ch.isspace() for ch in value):
+                raise ValueError(f"invalid key from {source_name}: whitespace or control character")
             return ResolvedKey(portal, value, source_name, _key_kind(value))
     return None
 
@@ -196,7 +198,10 @@ def collect_known_secrets(
     """Gather loaded portal key values for defensive output redaction."""
     values: list[str] = []
     for portal in portals:
-        resolved = resolve_portal_key(portal, env=env, home=home)
+        try:
+            resolved = resolve_portal_key(portal, env=env, home=home)
+        except ValueError:
+            continue
         if resolved and resolved.value and resolved.value not in values:
             values.append(resolved.value)
     return tuple(values)

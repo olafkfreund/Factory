@@ -42,6 +42,7 @@ from factory_cli.config import (  # noqa: E402
     resolve_portal_key,
     resolve_portal_url,
 )
+from factory_cli.doctor import run_doctor  # noqa: E402
 from factory_cli.gitartifacts import (  # noqa: E402
     PreconditionError,
     git_blob_sha1,
@@ -386,8 +387,10 @@ def test_transport_refuses_redirects() -> None:
 
     with _fake_http_server(_redirect) as base_url:
         transport = PortalTransport(base_url, token=CANARY_KEY)
-        with pytest.raises(InputRejectedError, match="redirect refused"):
-            transport.request("GET", "/api/health")
+        resp = transport.request("GET", "/api/health")
+        assert resp.status == 302
+        assert resp.after_send
+        assert "redirect refused" in resp.raw_text
 
 
 # =============================================================================
@@ -807,6 +810,9 @@ def test_factory_doctor_against_fake_server(tmp_path: Path) -> None:
             "TFACTORY_API_URL": base_url,
             "CFACTORY_API_URL": base_url,
             "PFACTORY_MCP_KEY": CANARY_KEY,
+            "AIFACTORY_MCP_KEY": CANARY_KEY,
+            "TFACTORY_MCP_KEY": CANARY_KEY,
+            "CFACTORY_API_KEY": CANARY_KEY,
         }
         doc_json = handle_factory_doctor(ctx=RuntimeContext(env=env, home=tmp_path))
         assert CANARY_KEY not in doc_json
@@ -1154,8 +1160,10 @@ def test_full_ingest_approved_body_shape_and_bounds(tmp_path: Path) -> None:
         assert ".." not in art["path"]
 
 
-def test_emitted_session_rerun_skips_approve_and_calls_emit_contract(
+@pytest.mark.parametrize("session_status", ["approved", "emitted"])
+def test_deduped_session_rerun_skips_approve_and_calls_emit_contract(
     tmp_path: Path,
+    session_status: str,
 ) -> None:
     repo = _init_approved_repo(tmp_path)
     called_paths: list[str] = []
@@ -1170,7 +1178,7 @@ def test_emitted_session_rerun_skips_approve_and_calls_emit_contract(
                 {
                     "session_id": "sess-emitted",
                     "correlation_key": "pf-sess-emitted",
-                    "status": "emitted",
+                    "status": session_status,
                     "deduped": True,
                     "children": [{"key": "C1", "title": "Step 1", "kind": "task"}],
                     "readiness": {"hard_failures": []},
@@ -1258,7 +1266,7 @@ def test_approve_and_emit_4xx_keep_session_id_and_correlation_key(
         assert "correlation_key: pf-sess-4xx" in out_emit.lines
 
 
-def test_exit_codes_redirect_and_url_error_before_send_exit_1(tmp_path: Path) -> None:
+def test_exit_codes_redirect_after_send_unknown_url_error_precondition(tmp_path: Path) -> None:
     repo = _init_approved_repo(tmp_path)
 
     def _redirect(req: http.server.BaseHTTPRequestHandler) -> None:
@@ -1275,10 +1283,10 @@ def test_exit_codes_redirect_and_url_error_before_send_exit_1(tmp_path: Path) ->
         }
         ctx = RuntimeContext(cwd=repo, env=env, home=tmp_path)
         sub_out = run_submit(SLUG, dry_run=True, ctx=ctx)
-        assert sub_out.exit_code == EXIT_REJECTED
+        assert sub_out.exit_code == EXIT_UNKNOWN
 
         test_out = run_test("proj", "feat/3865-demo", spec_slug=SLUG, ctx=ctx)
-        assert test_out.exit_code == EXIT_REJECTED
+        assert test_out.exit_code == EXIT_UNKNOWN
 
     bad_env = {
         "PFACTORY_API_URL": "http://pfactory.freundcloud.org.uk",
@@ -1287,10 +1295,142 @@ def test_exit_codes_redirect_and_url_error_before_send_exit_1(tmp_path: Path) ->
         "TFACTORY_MCP_KEY": CANARY_KEY,
     }
     bad_ctx = RuntimeContext(cwd=repo, env=bad_env, home=tmp_path)
-    assert run_submit(SLUG, dry_run=True, ctx=bad_ctx).exit_code == EXIT_REJECTED
+    assert run_submit(SLUG, dry_run=True, ctx=bad_ctx).exit_code == EXIT_PRECONDITION
     assert run_test("proj", "feat/3865-demo", spec_slug=SLUG, ctx=bad_ctx).exit_code == (
-        EXIT_REJECTED
+        EXIT_PRECONDITION
     )
+
+
+def test_key_with_newline_is_rejected_without_leaking_to_cli_or_mcp(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _init_approved_repo(tmp_path)
+    key = "acw_SECRET12345678\nLEAK_SUFFIX"
+    env = {
+        "PFACTORY_MCP_KEY": key,
+        "AIFACTORY_MCP_KEY": key,
+        "TFACTORY_MCP_KEY": key,
+        "CFACTORY_API_KEY": key,
+    }
+    ctx = RuntimeContext(cwd=repo, env=env, home=tmp_path)
+    commands = (
+        ["status", "af:task"],
+        ["submit", SLUG],
+        ["test", "--project", "p", "--spec", SLUG, "--branch", "feat/3865-demo"],
+        ["doctor"],
+    )
+    for argv in commands:
+        assert main(argv, cwd=repo, env=env, home=tmp_path) == EXIT_PRECONDITION
+        captured = capsys.readouterr()
+        assert key not in captured.out + captured.err
+        assert "LEAK_SUFFIX" not in captured.out + captured.err
+        assert "MCP_KEY" in captured.err or "API_KEY" in captured.err
+
+    mcp_results = (
+        handle_factory_status("af:task", ctx=ctx),
+        handle_factory_submit(SLUG, ctx=ctx),
+        handle_factory_test("p", "feat/3865-demo", spec=SLUG, ctx=ctx),
+        handle_factory_doctor(ctx=ctx),
+    )
+    for result in mcp_results:
+        assert json.loads(result)["outcome"] == "rejected"
+        assert key not in result
+        assert "LEAK_SUFFIX" not in result
+
+
+def test_redaction_strips_server_controls_and_acw_pattern() -> None:
+    assert redact_text("\x1b[31m acw_secret12345\nline") == " ***REDACTED***line"
+
+
+@pytest.mark.parametrize("fail_stage", ["ingest", "approve"])
+def test_submit_5xx_after_send_is_unknown_at_every_stage(tmp_path: Path, fail_stage: str) -> None:
+    repo = _init_approved_repo(tmp_path)
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        _ = _read_req_json(req)
+        if fail_stage == "ingest" or req.path.endswith("/approve"):
+            _send_json(req, 503, {"detail": "temporarily unavailable"})
+        else:
+            _send_json(
+                req,
+                200,
+                {
+                    "session_id": "sess-stage",
+                    "status": "reviewed",
+                    "deduped": False,
+                    "readiness": {"hard_failures": []},
+                },
+            )
+
+    with _fake_http_server(_handler) as base_url:
+        ctx = RuntimeContext(
+            cwd=repo,
+            env={"PFACTORY_API_URL": base_url, "PFACTORY_MCP_KEY": CANARY_KEY},
+            home=tmp_path,
+        )
+        outcome = run_submit(SLUG, ctx=ctx)
+        assert outcome.exit_code == EXIT_UNKNOWN
+        assert outcome.payload["session_id"] == ("sess-stage" if fail_stage == "approve" else None)
+
+
+def test_emit_409_in_progress_is_unknown_with_status_hint(tmp_path: Path) -> None:
+    repo = _init_approved_repo(tmp_path)
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        _ = _read_req_json(req)
+        if req.path.endswith("/emit-contract"):
+            _send_json(req, 409, {"detail": "Emission in progress"})
+        elif req.path.endswith("/approve"):
+            _send_json(req, 200, {"session_id": "sess-busy"})
+        else:
+            _send_json(
+                req,
+                200,
+                {
+                    "session_id": "sess-busy",
+                    "status": "reviewed",
+                    "deduped": False,
+                    "readiness": {"hard_failures": []},
+                },
+            )
+
+    with _fake_http_server(_handler) as base_url:
+        ctx = RuntimeContext(
+            cwd=repo,
+            env={"PFACTORY_API_URL": base_url, "PFACTORY_MCP_KEY": CANARY_KEY},
+            home=tmp_path,
+        )
+        outcome = run_submit(SLUG, ctx=ctx)
+        assert outcome.exit_code == EXIT_UNKNOWN
+        assert "factory status pf:sess-busy" in "\n".join(outcome.lines)
+
+
+def test_doctor_classifies_denied_unreachable_and_non_json(tmp_path: Path) -> None:
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        if req.path.endswith("health"):
+            req.send_response(200)
+            req.end_headers()
+            req.wfile.write(b"healthy")
+        else:
+            _send_json(req, 503 if req.path == "/api/workitems" else 401, {"detail": "unavailable"})
+
+    with _fake_http_server(_handler) as base_url:
+        env = {
+            f"{portal.upper()}_API_URL": base_url
+            for portal in ("pfactory", "aifactory", "tfactory", "cfactory")
+        }
+        env.update(
+            {
+                f"{portal.upper()}_MCP_KEY": CANARY_KEY
+                for portal in ("pfactory", "aifactory", "tfactory")
+            }
+        )
+        env["CFACTORY_API_KEY"] = CANARY_KEY
+        outcome = run_doctor(ctx=RuntimeContext(env=env, home=tmp_path))
+        assert outcome.exit_code != EXIT_OK
+        assert outcome.payload["portals"]["pfactory"]["protected_read"] == "denied"
+        assert outcome.payload["portals"]["cfactory"]["protected_read"] == "unreachable"
+        assert outcome.payload["portals"]["pfactory"]["health_version"] == "reachable (not JSON)"
 
 
 def test_status_validation_3xx_handling_cfactory_401_and_partial_pf_followup(
@@ -1400,6 +1540,24 @@ def test_git_ls_remote_default_base_branch_and_unknown_branch(tmp_path: Path) ->
     bad_branch_out = run_test("proj", "nonexistent-branch-xyz", spec_slug=SLUG, ctx=ctx)
     assert bad_branch_out.exit_code == EXIT_PRECONDITION
     assert "unknown branch" in bad_branch_out.payload["detail"]
+
+
+def test_detached_head_and_deleted_readded_artifact(tmp_path: Path) -> None:
+    repo = _init_approved_repo(tmp_path)
+    spec = repo / "spec" / f"{SLUG}.md"
+    original = spec.read_text()
+    spec.unlink()
+    _git(repo, "add", str(spec.relative_to(repo)))
+    _git(repo, "commit", "-m", "test: delete spec")
+    spec.write_text(original)
+    _git(repo, "add", str(spec.relative_to(repo)))
+    _git(repo, "commit", "-m", "test: restore spec")
+    identity = resolve_repo_identity(repo, base_ref="main")
+    assert len(verify_and_load_artifacts(repo, SLUG, head_sha=identity.head_sha)) == 3
+
+    _git(repo, "checkout", "--detach")
+    with pytest.raises(PreconditionError, match="detached HEAD"):
+        resolve_repo_identity(repo, base_ref="main")
 
 
 def test_verification_heading_exact_match_and_subheadings(tmp_path: Path) -> None:

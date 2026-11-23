@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +17,7 @@ from factory_cli.config import (
 from factory_cli.gitartifacts import (
     PreconditionError,
     parse_slug,
+    remote_branch_warning,
     resolve_repo_identity,
     verify_and_load_artifacts,
 )
@@ -36,6 +37,9 @@ EXIT_UNKNOWN = 3
 
 _HTTP_OK = int(HTTPStatus.OK)
 _HTTP_SERVER_ERR = int(HTTPStatus.INTERNAL_SERVER_ERROR)
+_HTTP_REDIRECT = int(HTTPStatus.MULTIPLE_CHOICES)
+_HTTP_CLIENT_ERR = int(HTTPStatus.BAD_REQUEST)
+_HTTP_CONFLICT = int(HTTPStatus.CONFLICT)
 
 
 @dataclass(frozen=True)
@@ -178,20 +182,29 @@ def _handle_non_200(
     secrets: tuple[str, ...],
 ) -> SubmitOutcome:
     detail = resp.network_error or extract_safe_detail(resp.data, resp.raw_text, secrets)
-    if (
-        is_emit
-        and resp.after_send
-        and (
-            resp.status == 0
-            or resp.status >= _HTTP_SERVER_ERR
-            or (resp.status == _HTTP_OK and (not resp.is_json or not isinstance(resp.data, dict)))
+    if resp.status == -1:
+        return _rejected(
+            detail,
+            exit_code=EXIT_PRECONDITION,
+            session_id=session_id,
+            correlation_key=correlation_key,
+            secrets=secrets,
         )
+    if resp.after_send and (
+        resp.status == 0
+        or resp.status >= _HTTP_SERVER_ERR
+        or _HTTP_REDIRECT <= resp.status < _HTTP_CLIENT_ERR
+        or (resp.status == _HTTP_OK and (not resp.is_json or not isinstance(resp.data, dict)))
     ):
         return _unknown(
             detail,
             session_id=session_id,
             correlation_key=correlation_key,
             secrets=secrets,
+        )
+    if is_emit and resp.status == _HTTP_CONFLICT and "in progress" in detail.lower():
+        return _unknown(
+            detail, session_id=session_id, correlation_key=correlation_key, secrets=secrets
         )
     return _rejected(
         detail,
@@ -296,7 +309,7 @@ def _safe_submit_request(
     except InputRejectedError as exc:
         msg = redact_text(str(exc), secrets)
         return TransportResponse(
-            status=0,
+            status=-1,
             data={},
             raw_text=msg,
             is_json=False,
@@ -349,7 +362,7 @@ def _ingest_and_emit(
             secrets=secrets,
         )
 
-    skip_approve = state.deduped and state.status == "emitted"
+    skip_approve = state.deduped and state.status in ("approved", "emitted")
     if not skip_approve:
         approve_resp = _safe_submit_request(
             transport,
@@ -487,9 +500,9 @@ def run_submit(
     try:
         transport = PortalTransport(pf_url, token=pf_key.value, secrets=secrets)
     except InputRejectedError as exc:
-        return _rejected(str(exc), exit_code=EXIT_REJECTED, secrets=secrets)
+        return _rejected(str(exc), exit_code=EXIT_PRECONDITION, secrets=secrets)
 
-    return _ingest_and_emit(
+    outcome = _ingest_and_emit(
         transport,
         {
             "slug": slug,
@@ -504,3 +517,5 @@ def run_submit(
         dry_run=dry_run,
         secrets=secrets,
     )
+    warning = remote_branch_warning(identity)
+    return replace(outcome, lines=(*outcome.lines, warning)) if warning else outcome

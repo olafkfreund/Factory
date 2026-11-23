@@ -65,7 +65,10 @@ def _make_transport(
     rt: RuntimeContext,
     secrets: tuple[str, ...],
 ) -> tuple[PortalTransport | None, str | None, int]:
-    key = resolve_portal_key(portal, env=rt.env, home=rt.home)
+    try:
+        key = resolve_portal_key(portal, env=rt.env, home=rt.home)
+    except ValueError as exc:
+        return None, str(exc), EXIT_PRECONDITION
     if key is None:
         return None, f"{portal} key not configured", EXIT_PRECONDITION
     try:
@@ -80,7 +83,7 @@ def _make_transport(
     try:
         return PortalTransport(url, token=key.value, secrets=secrets), None, EXIT_OK
     except InputRejectedError as exc:
-        return None, str(exc), EXIT_REJECTED
+        return None, str(exc), EXIT_PRECONDITION
 
 
 def _rejected_status(
@@ -145,7 +148,7 @@ def _follow_aifactory_task(
 
     af_transport, af_transport_err, _ = _make_transport("aifactory", rt, secrets)
     if af_transport is None:
-        if resolve_portal_key("aifactory", env=rt.env, home=rt.home) is not None:
+        if af_transport_err != "aifactory key not configured":
             err_msg = redact_text(af_transport_err or "aifactory error", secrets)
             lines.append(f"aifactory_error: {err_msg}")
             return None, err_msg, lines
@@ -328,13 +331,13 @@ def _status_cf(ident: str, rt: RuntimeContext, secrets: tuple[str, ...]) -> Stat
     except ValueError as exc:
         return _rejected_status(str(exc), exit_code=EXIT_PRECONDITION, secrets=secrets)
 
-    if resolve_portal_key("cfactory", env=rt.env, home=rt.home) is None:
+    cf_transport, err, err_code = _make_transport("cfactory", rt, secrets)
+    if cf_transport is None and err_code == EXIT_PRECONDITION and err and "not configured" in err:
         return _rejected_status(
             "use pf:/af:/tf: ids (no CFactory key configured)",
             exit_code=EXIT_PRECONDITION,
             secrets=secrets,
         )
-    cf_transport, err, err_code = _make_transport("cfactory", rt, secrets)
     if cf_transport is None:
         return _rejected_status(err or "cfactory error", exit_code=err_code, secrets=secrets)
 
