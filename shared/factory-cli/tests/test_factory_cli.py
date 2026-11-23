@@ -1709,3 +1709,11 @@ def test_canary_redaction_everywhere_and_mcp_tools_registration(
     assert inspect.signature(submit_fn).parameters["dry_run"].default is True
 
     assert all(not p.endswith("_vendor") for p in sys.path)
+
+
+def test_wrapped_verification_bullet_keeps_its_continuation() -> None:
+    text = "## Verification\n\n- Return 403 for requests\n  without credentials.\n- Second\n"
+    assert extract_verification_bullets(text, require_verification_heading=True) == [
+        "Return 403 for requests without credentials.",
+        "Second",
+    ]

@@ -100,6 +100,9 @@ def extract_verification_bullets(text: str, *, require_verification_heading: boo
             continue
         match = _BULLET_RE.match(line)
         if not match:
+            # A wrapped line continues the current bullet; dropping it changes the criterion.
+            if bullets and line.strip() and line[:1].isspace():
+                bullets[-1] = f"{bullets[-1]} {line.strip()}"
             continue
         indent = len(match.group(1).expandtabs(2))
         content = _AC_PREFIX_RE.sub("", match.group(2).strip()).rstrip(":").strip()
@@ -203,10 +206,19 @@ def _evaluate_test_response(
                 exit_code=EXIT_UNKNOWN,
                 outcome="unknown",
                 payload=redact_structure(
-                    {"outcome": "unknown", "spec_id": spec_id, "detail": safe_detail},
+                    {
+                        "outcome": "unknown",
+                        "spec_id": spec_id,
+                        "tf_id": f"tf:{project_id}/{spec_id}",
+                        "detail": safe_detail,
+                    },
                     secrets,
                 ),
-                lines=(f"outcome unknown: {safe_detail}",),
+                lines=(
+                    f"outcome unknown: {safe_detail}",
+                    f"tf_id: tf:{project_id}/{spec_id}",
+                    f"check with: factory status tf:{project_id}/{spec_id}",
+                ),
             )
         return _rejected_test(detail, exit_code=EXIT_REJECTED, secrets=secrets)
 
