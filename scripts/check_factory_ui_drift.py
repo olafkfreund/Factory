@@ -97,7 +97,7 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
 }
 
 
-def _pinned_modules(service: str, canonical: Path) -> tuple[str, ...]:
+def _pinned_modules(service: str) -> tuple[str, ...]:
     required = _REQUIRED_MODULES[service]
     return required
 
@@ -133,7 +133,7 @@ def compared_evidence(service: str, root: Path, canonical: Path) -> list[str]:
     return [
         f"{module} -> {rel} [canonical {digest(canonical / module)} | portal {digest(root / rel)}]"
         for module, rel in sorted(SERVICE_LAYOUTS.get(service, {}).items())
-        if module in _pinned_modules(service, canonical) and (canonical / module).is_file()
+        if module in _pinned_modules(service) and (canonical / module).is_file()
     ]
 
 
@@ -149,7 +149,7 @@ def check_service(service: str, root: Path, canonical: Path) -> list[str]:
         for name in _missing_from_contract(canonical)
     ]
     # Factory#523: a missing layout entry must not silently disable comparison.
-    required = _pinned_modules(service, canonical)
+    required = _pinned_modules(service)
     problems.extend(
         f"{module}: canonical, but {service}'s layout maps it nowhere — nothing "
         "compares it in this portal, so it is free to drift"
