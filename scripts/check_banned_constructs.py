@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI on two banned constructs ruff's `S` rules cannot express.
+"""Fail CI on banned constructs ruff's `S` rules cannot express.
 
 Factory security-cleanup review (2026-08-13). Two failure shapes found today
 have no stock lint rule:
@@ -27,6 +27,9 @@ have no stock lint rule:
    prose filter in Factory#762 removed 19, the widening in Factory#781 added
    28, and the gate never ran outside the hub at all). Counts belong in the
    issue that is tracking them, where they carry a date.
+
+The portal UI rule also flags literal text sizes below 12px or 0.75rem
+in Tailwind arbitrary text utilities and CSS font-size declarations.
 
 (pickle/eval-exec/shell=True are owned by the g2-seclint ruff-S gate; this
 script deliberately does not re-check them.)
@@ -271,9 +274,39 @@ def _iter_source_files(root: Path) -> list[Path]:
             continue
         if _is_skippable(path.relative_to(root)):
             continue
-        if path.suffix in (".py", ".js", ".ts", ".tsx", ".jsx"):
+        if path.suffix in _CODE_SUFFIXES or _is_portal_frontend(path.relative_to(root)):
             out.append(path)
     return out
+
+
+_CODE_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".jsx"}
+_UI_SUFFIXES = {".js", ".ts", ".tsx", ".jsx", ".css", ".html"}
+_SIZE = r"\+?(?:[0-9]*\.[0-9]+|[0-9]+)(?:[eE][+-]?[0-9]+)?"
+_SMALL_TEXT_PATTERNS = (
+    re.compile(rf"(?<![\w-])text-\[({_SIZE})(px|rem)\]"),
+    re.compile(rf"(?<![\w-])font-size\s*:\s*({_SIZE})(px|rem)(?![\w.%-])", re.IGNORECASE),
+)
+_MIN_TEXT_SIZE = {"px": 12, "rem": 0.75}
+
+
+def _is_portal_frontend(path: Path) -> bool:
+    return path.suffix in _UI_SUFFIXES and (
+        path.parts[:2] == ("apps", "frontend-web") or path.parts[:1] == ("web",)
+    )
+
+
+def _find_small_text(path: Path) -> list[tuple[int, str]]:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    if path.suffix == ".css":
+        text = re.sub(
+            r"/\*.*?\*/", lambda match: "\n" * match[0].count("\n") + " ", text, flags=re.DOTALL
+        )
+    return sorted(
+        (text.count("\n", 0, match.start()) + 1, match[0])
+        for pattern in _SMALL_TEXT_PATTERNS
+        for match in pattern.finditer(text)
+        if float(match[1]) < _MIN_TEXT_SIZE[match[2].lower()]
+    )
 
 
 def _prose_lines(path: Path, text: str) -> frozenset[int]:
@@ -430,17 +463,14 @@ def check(root: Path, allowlist_path: Path | None) -> list[str]:
     used: set[tuple[str, str]] = set()
     problems: list[str] = []
     for path in _iter_source_files(root):
-        rel = str(path.relative_to(root))
-        for lineno, snippet in _find_exists_then_read(path):
-            if (rel, "exists-then-read") in allowed:
-                used.add((rel, "exists-then-read"))
-                continue
-            problems.append(f"{rel}:{lineno}: exists-then-read — {snippet}")
-        for lineno, snippet in _find_raw_exception_in_response(path):
-            if (rel, "raw-exception-in-response") in allowed:
-                used.add((rel, "raw-exception-in-response"))
-                continue
-            problems.append(f"{rel}:{lineno}: raw-exception-in-response — {snippet}")
+        relative = path.relative_to(root)
+        for rule, hits in _file_findings(path, relative).items():
+            for lineno, snippet in hits:
+                key = (str(relative), rule)
+                if key in allowed:
+                    used.add(key)
+                else:
+                    problems.append(f"{relative}:{lineno}: {rule} — {snippet}")
 
     # A grandfather that no longer covers anything is not harmless housekeeping.
     # Entries are keyed (path, rule) — PATH-level — so a dead entry goes on
@@ -459,6 +489,16 @@ def check(root: Path, allowlist_path: Path | None) -> list[str]:
             "the finding is fixed or the path moved; delete the entry"
         )
     return problems
+
+
+def _file_findings(path: Path, relative: Path) -> dict[str, list[tuple[int, str]]]:
+    findings = {}
+    if path.suffix in _CODE_SUFFIXES:
+        findings["exists-then-read"] = _find_exists_then_read(path)
+        findings["raw-exception-in-response"] = _find_raw_exception_in_response(path)
+    if _is_portal_frontend(relative):
+        findings["small-text"] = _find_small_text(path)
+    return findings
 
 
 def _scanned_commit(root: Path) -> str:
@@ -881,7 +921,7 @@ def _emit_allowlist(root: Path, issue: str) -> str:
     for problem in problems:
         loc, _, rest = problem.partition(": ")
         path, _, _lineno = loc.rpartition(":")
-        rule = "exists-then-read" if "exists-then-read" in rest else "raw-exception-in-response"
+        rule, _, _snippet = rest.partition(" — ")
         entries.append({"path": path, "rule": rule})
     seen: set[tuple[str, str]] = set()
     lines = []
