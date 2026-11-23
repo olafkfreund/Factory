@@ -15,7 +15,7 @@ from pathlib import Path
 import check_factory_ui_drift as gate
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _make_canonical(root: Path) -> Path:
