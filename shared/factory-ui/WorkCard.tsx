@@ -18,7 +18,14 @@ export interface WorkPhase {
   state: 'done' | 'active' | 'failed' | 'pending';
 }
 
+export interface WorkCardLabels {
+  expand(title: string): string;
+  collapse(title: string): string;
+  phaseStates: Record<WorkPhase['state'], string>;
+}
+
 export interface WorkCardProps {
+  labels?: WorkCardLabels | undefined;
   title: string;
   subtitle?: string | undefined;
   status: string;
@@ -58,7 +65,7 @@ function sameCard(a: WorkCardProps, b: WorkCardProps) {
   if (
     a.title !== b.title || a.status !== b.status || a.tone !== b.tone || a.age !== b.age
     || a.onOpen !== b.onOpen || a.onToggle !== b.onToggle || !!a.expanded !== !!b.expanded
-    || isCollapsed(a) !== isCollapsed(b)
+    || isCollapsed(a) !== isCollapsed(b) || a.labels !== b.labels
   ) return false;
   if (isCollapsed(a)) return true;
   if (
@@ -79,7 +86,7 @@ function sameCard(a: WorkCardProps, b: WorkCardProps) {
 }
 
 export const WorkCard = memo(function WorkCard(props: WorkCardProps) {
-  const { title, subtitle, status, tone, age, reason, progress, phases, badges, onOpen, expanded, onToggle, children } = props;
+  const { title, subtitle, status, tone, age, reason, progress, phases, badges, onOpen, expanded, onToggle, children, labels } = props;
   const detailsId = useId();
   const collapsed = isCollapsed(props);
   const failed = tone === 'danger';
@@ -102,7 +109,7 @@ export const WorkCard = memo(function WorkCard(props: WorkCardProps) {
           <button
             type="button"
             className="f-card__chevron"
-            aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
+            aria-label={expanded ? (labels?.collapse(title) ?? `Collapse ${title}`) : (labels?.expand(title) ?? `Expand ${title}`)}
             aria-expanded={!!expanded}
             aria-controls={expanded ? detailsId : undefined}
             onClick={onToggle}
@@ -132,7 +139,7 @@ export const WorkCard = memo(function WorkCard(props: WorkCardProps) {
                   {phases.map(({ key, label, state: phaseState }) => (
                     <span key={key} className={`f-card__phase f-card__phase--${phaseState}`}>
                       <span aria-hidden>{{ done: '✓', active: '◉', failed: '!', pending: '○' }[phaseState]}</span>
-                      <span className="f-sr-only">{phaseState} </span>
+                      <span className="f-sr-only">{labels?.phaseStates[phaseState] ?? phaseState} </span>
                       {label}
                     </span>
                   ))}

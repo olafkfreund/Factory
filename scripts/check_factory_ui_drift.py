@@ -86,7 +86,7 @@ _REQUIRED_MODULES = {
     "pfactory": CANONICAL_MODULES,
     "aifactory": CANONICAL_MODULES,
     "tfactory": CANONICAL_MODULES,
-    "cfactory": tuple(m for m in CANONICAL_MODULES if m != "tailwind-theme.css"),
+    "cfactory": tuple(m for m in CANONICAL_MODULES if m not in ("tailwind-theme.css", "ProjectBreadcrumb.tsx")),
     "rfactory": ("tokens.css", "shell.css"),
 }
 SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
@@ -97,9 +97,6 @@ SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
 
 def _pinned_modules(service: str, canonical: Path) -> tuple[str, ...]:
     required = _REQUIRED_MODULES[service]
-    if service == "cfactory" and not (canonical / "shell.css").is_file():
-        # Cockpit first vendors the shared React controls with the shell.
-        required = tuple(m for m in required if m not in _LEGACY_COMPONENTS)
     return required
 
 

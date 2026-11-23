@@ -55,14 +55,19 @@ export function CommandPalette({
   const [projectMode, setProjectMode] = useState(false);
   const [results, setResults] = useState<PaletteTask[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
   const listId = useId();
 
   useEffect(() => {
     if (open) {
+      previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setQ('');
       setSel(0);
       setProjectMode(false);
       requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      previousFocus.current?.focus();
     }
   }, [open]);
 
@@ -145,6 +150,14 @@ export function CommandPalette({
     if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
+    } else if (e.key === 'Tab') {
+      const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('input, button:not([tabindex="-1"])') ?? []);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (first && last && (e.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSel((s) => (rows.length ? (s + 1) % rows.length : 0));
@@ -166,7 +179,9 @@ export function CommandPalette({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
+        onKeyDown={onKey}
         aria-modal="true"
         aria-label="Command palette"
         className="f-cmdk"
@@ -177,7 +192,6 @@ export function CommandPalette({
             ref={inputRef}
             value={q}
             onChange={(e) => { setQ(e.target.value); }}
-            onKeyDown={onKey}
             placeholder={projectMode ? 'Switch to project…' : 'Search tasks, or jump to a view…'}
             className="f-cmdk__input"
             role="combobox"
@@ -211,6 +225,7 @@ export function CommandPalette({
                   id={`${listId}-${i}`}
                   type="button"
                   role="option"
+                  tabIndex={-1}
                   aria-selected={selected}
                   className="f-cmdk__row"
                   onMouseMove={() => { setSel(i); }}

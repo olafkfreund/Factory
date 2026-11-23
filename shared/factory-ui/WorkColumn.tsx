@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import type { StageTone } from './PipelineStrip';
 
@@ -40,24 +40,35 @@ function subscribeExpansion(update: () => void) {
 }
 
 function WorkColumnRow({
-  item, itemKey, storageKey, expanded,
+  item, itemKey, storageKey, fleet, expanded,
 }: {
   item: WorkColumnItem;
   itemKey: string;
   storageKey: string;
+  fleet: boolean;
   expanded: boolean;
 }) {
   const onToggle = useCallback(() => {
-    const value = readExpansion(storageKey) === itemKey ? null : itemKey;
+    const activeKey = fleet ? 'factory-ui:work-expansion:fleet' : storageKey;
+    const value = readExpansion(activeKey) === itemKey ? null : itemKey;
     try {
-      if (value === null) window.localStorage.removeItem(storageKey);
-      else window.localStorage.setItem(storageKey, value);
+      if (value === null && !fleet) window.localStorage.removeItem(storageKey);
+      else if (value !== null) window.localStorage.setItem(storageKey, value);
       unsaved.delete(storageKey);
     } catch {
-      unsaved.set(storageKey, value);
+      if (!fleet || value !== null) unsaved.set(storageKey, value);
+    }
+    if (fleet) {
+      try {
+        if (value === null) window.localStorage.removeItem('factory-ui:work-expansion:fleet');
+        else window.localStorage.setItem('factory-ui:work-expansion:fleet', itemKey);
+        unsaved.delete('factory-ui:work-expansion:fleet');
+      } catch {
+        unsaved.set('factory-ui:work-expansion:fleet', value);
+      }
     }
     window.dispatchEvent(new Event(expansionEvent));
-  }, [itemKey, storageKey]);
+  }, [fleet, itemKey, storageKey]);
   return item.render({ expanded, onToggle });
 }
 
@@ -65,17 +76,27 @@ function Column({
   title, tone, projectId, items, emptyLabel, showMoreLabel,
 }: WorkColumnProps) {
   const [showMore, setShowMore] = useState(false);
-  const storageKey = `factory-ui:work-expansion:${JSON.stringify(projectId ?? null)}`;
+  const reveal = useRef<HTMLDivElement>(null);
+  const fleet = projectId === undefined;
+  const storageKey = `factory-ui:work-expansion:${fleet ? 'fleet' : JSON.stringify(projectId)}`;
   const selected = useSyncExternalStore(subscribeExpansion, () => readExpansion(storageKey), () => null);
+  useEffect(() => {
+    if (showMore) {
+      (reveal.current?.querySelector<HTMLElement>('button, a[href], [tabindex="0"]') ?? reveal.current)?.focus();
+    }
+  }, [showMore]);
   const rows = items.map((item) => {
     const key = JSON.stringify([item.projectId, item.id]);
     return { item, key, expanded: key === selected };
   });
   let hidden = 0;
   let collapsed = 0;
-  const visible = rows.filter(({ item, expanded }) => {
-    if (showMore || expanded || !item.collapsedByDefault) return true;
+  let firstHidden: string | undefined;
+  const visible = rows.filter(({ item, key, expanded }) => {
+    if (expanded || !item.collapsedByDefault) return true;
     if (++collapsed <= 8) return true;
+    firstHidden ??= key;
+    if (showMore) return true;
     hidden++;
     return false;
   });
@@ -91,7 +112,9 @@ function Column({
       {!!items.length && (
         <div className="f-column__body">
           {visible.map(({ item, key, expanded }) => (
-            <WorkColumnRow key={key} item={item} itemKey={key} storageKey={storageKey} expanded={expanded} />
+            <div key={key} ref={showMore && key === firstHidden ? reveal : undefined} tabIndex={-1}>
+              <WorkColumnRow item={item} itemKey={key} storageKey={fleet ? `factory-ui:work-expansion:${JSON.stringify(item.projectId)}` : storageKey} fleet={fleet} expanded={expanded} />
+            </div>
           ))}
           {hidden > 0 && (
             <button type="button" className="f-column__more" onClick={() => setShowMore(true)}>{showMoreLabel(hidden)}</button>

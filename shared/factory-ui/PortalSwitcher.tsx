@@ -27,17 +27,22 @@ export function PortalSwitcher({
   current,
   needsCount,
   project,
+  labels,
+  ariaLabel,
 }: {
   current: FactoryPortal;
   needsCount?: number | undefined;
   project?: { slug: string; portals: FactoryPortal[] } | undefined;
+  labels?: Record<FactoryPortal, string> | undefined;
+  ariaLabel?: string | undefined;
 }) {
   return (
     <nav
-      aria-label="Factory portals"
+      aria-label={ariaLabel ?? "Factory portals"}
       className="f-portal-switcher"
     >
       {PORTALS.map((p) => {
+        const label = labels?.[p.key] ?? p.label;
         const badge = p.key === 'cockpit' && needsCount ? needsCount : 0;
         const inner = (
           <>
@@ -46,7 +51,7 @@ export function PortalSwitcher({
               aria-hidden
               style={{ background: p.dot, boxShadow: `0 0 6px ${p.dot}` }}
             />
-            <span className="f-portal-switcher__label">{p.label}</span>
+            <span className="f-portal-switcher__label">{label}</span>
             {badge > 0 && (
               <span
                 aria-label={`${String(badge)} need you`}
@@ -66,7 +71,7 @@ export function PortalSwitcher({
             key={p.key}
             href={project?.portals.includes(p.key) ? `${p.url.replace(/\/+$/, '')}/p/${encodeURIComponent(project.slug)}` : p.url}
             rel="noopener"
-            title={`Open the ${p.label} portal`}
+            title={label}
             className="f-portal-switcher__item"
           >
             {inner}

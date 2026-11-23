@@ -92,7 +92,7 @@ def test_react_portal_styles_live_alongside_components(service: str) -> None:
         ("pfactory", set()),
         ("aifactory", set()),
         ("tfactory", set()),
-        ("cfactory", {"tailwind-theme.css"}),
+        ("cfactory", {"tailwind-theme.css", "ProjectBreadcrumb.tsx"}),
         ("rfactory", set(gate.CANONICAL_MODULES) - {"tokens.css", "shell.css"}),
     ],
 )
@@ -128,10 +128,6 @@ def test_pre_shell_pin_keeps_passing(tmp_path: Path, service: str) -> None:
         (canonical / module).unlink()
         if module in layout:
             (portal / layout[module]).unlink()
-    if service == "cfactory":
-        for module in ("CommandPalette.tsx", "PortalSwitcher.tsx"):
-            (portal / layout[module]).unlink()
-        assert gate.compared_evidence(service, portal, canonical) == []
     assert gate.check_service(service, portal, canonical) == []
 
 
@@ -201,3 +197,13 @@ def test_module_absent_from_pinned_canonical_is_tolerated_only_when_listed(
     assert any(
         "vendored copy missing" in p for p in gate.check_service("aifactory", service, canonical)
     )
+
+
+def test_cfactory_partial_pin_requires_existing_controls(tmp_path: Path) -> None:
+    canonical = _make_canonical(tmp_path)
+    portal = _make_service(canonical, tmp_path / "svc", "cfactory")
+    for module in ("shell.css", *gate._SHELL_COMPONENTS):
+        (canonical / module).unlink()
+        (portal / gate.SERVICE_LAYOUTS["cfactory"][module]).unlink()
+    (portal / gate.SERVICE_LAYOUTS["cfactory"]["PortalSwitcher.tsx"]).unlink()
+    assert any("PortalSwitcher.tsx" in problem for problem in gate.check_service("cfactory", portal, canonical))

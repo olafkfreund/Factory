@@ -34,7 +34,12 @@ export function ProjectSwitcher({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
-  const [recents, setRecents] = useState<string[]>([]);
+  const [recents, setRecents] = useState<string[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(window.localStorage.getItem('factory-ui:recent-projects') ?? '[]');
+      return Array.isArray(saved) ? saved.filter((slug): slug is string => typeof slug === 'string').slice(0, 5) : [];
+    } catch { return []; }
+  });
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -59,6 +64,10 @@ export function ProjectSwitcher({
       setRecents((previous) => [currentProject, ...previous.filter((slug) => slug !== currentProject)].slice(0, 5));
     }
   }, [currentProject]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem('factory-ui:recent-projects', JSON.stringify(recents)); } catch { /* storage is optional */ }
+  }, [recents]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,7 +133,7 @@ export function ProjectSwitcher({
       ref={root}
       className="f-project-switcher"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setOpen(false);
       }}
       onKeyDown={(event) => {
         if (open && event.key === 'Escape' && !event.nativeEvent.isComposing) {

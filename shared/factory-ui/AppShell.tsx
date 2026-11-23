@@ -2,19 +2,14 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { PipelineStrip } from './PipelineStrip';
 import type { PipelineStripLabels, PipelineStripProps } from './PipelineStrip';
+import { PortalSwitcher } from './PortalSwitcher';
+import type { FactoryPortal } from './PortalSwitcher';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import type { ProjectSwitcherLabels, ProjectSwitcherProps } from './ProjectSwitcher';
 
-type Portal = 'plan' | 'build' | 'test' | 'cockpit' | 'meet';
+type Portal = FactoryPortal;
 type Theme = 'light' | 'dark' | 'system';
 
-const portals = {
-  plan: [import.meta.env?.VITE_PFACTORY_URL, 'pfactory'],
-  build: [import.meta.env?.VITE_AIFACTORY_URL, 'aifactory'],
-  test: [import.meta.env?.VITE_TFACTORY_URL, 'tfactory'],
-  cockpit: [import.meta.env?.VITE_CFACTORY_URL, 'cfactory'],
-  meet: [import.meta.env?.VITE_RFACTORY_URL, 'rfactory'],
-} as const;
 const themes = ['light', 'dark', 'system'] as const;
 
 export interface AppShellLabels {
@@ -39,6 +34,7 @@ export interface AppShellLabels {
 
 export interface AppShellProps extends Omit<ProjectSwitcherProps, 'labels'> {
   portal: Portal;
+  portalProject?: { slug: string; portals: FactoryPortal[] } | undefined;
   nav: {
     id: string;
     label: string;
@@ -75,7 +71,7 @@ export interface AppShellProps extends Omit<ProjectSwitcherProps, 'labels'> {
 }
 
 export function AppShell({
-  portal, nav, activeNav, onNavigate, projects, currentProject, onSelectProject, onAllProjects,
+  portal, portalProject, nav, activeNav, onNavigate, projects, currentProject, onSelectProject, onAllProjects,
   onAddProject, projectSubtitle, projectSettings, primaryAction, view, strip, topbarStatus,
   sidebarHeader, sidebarFooter, sidebarCollapsed, onSidebarCollapsedChange, user, theme,
   onTheme, onSearch, needsYou, version, labels, children,
@@ -84,17 +80,58 @@ export function AppShell({
   const drawerToggle = useRef<HTMLButtonElement>(null);
   const sidebar = useRef<HTMLElement>(null);
   const userTrigger = useRef<HTMLElement>(null);
+  const userMenu = useRef<HTMLDetailsElement>(null);
   const sidebarId = useId();
   const sidebarLabel = sidebarCollapsed ? labels.expandSidebar : labels.collapseSidebar;
 
   useEffect(() => {
-    if (drawerOpen) sidebar.current?.focus();
+    if (!drawerOpen) return;
+    sidebar.current?.querySelector<HTMLButtonElement>('.f-side__close')?.focus();
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setDrawerOpen(false);
+        requestAnimationFrame(() => drawerToggle.current?.focus());
+      } else if (event.key === 'Tab') {
+        const controls = Array.from(sidebar.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), [tabindex="0"]') ?? []);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (!first || !last) return;
+        if (event.shiftKey && (document.activeElement === first || !sidebar.current?.contains(document.activeElement))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !sidebar.current?.contains(document.activeElement))) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    const containFocus = (event: FocusEvent) => {
+      if (event.target instanceof Node && !sidebar.current?.contains(event.target)) {
+        sidebar.current?.querySelector<HTMLButtonElement>('.f-side__close')?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('focusin', containFocus);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('focusin', containFocus);
+    };
   }, [drawerOpen]);
+
+  useEffect(() => {
+    if (!user) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !userMenu.current?.contains(event.target) && userMenu.current) userMenu.current.open = false;
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [user]);
 
   const closeDrawer = () => {
     if (drawerOpen) {
       setDrawerOpen(false);
-      drawerToggle.current?.focus();
+      requestAnimationFrame(() => drawerToggle.current?.focus());
     }
   };
 
@@ -117,24 +154,7 @@ export function AppShell({
             <span className="f-brand__mark" aria-hidden>F</span>
             <span className="f-brand__name">{labels.brand}</span>
           </span>
-          <nav className="f-portals" aria-label={labels.portals}>
-            {(Object.keys(portals) as Portal[]).map((key) => {
-              const [url, host] = portals[key];
-              const href = typeof url === 'string' && url ? url : `https://${host}.freundcloud.org.uk`;
-              const label = labels.portalNames[key];
-              const chip = (
-                <>
-                  <span className="f-portals__dot" aria-hidden style={{ background: `var(--f-${key})` }} />
-                  <span className="f-portals__label">{label}</span>
-                </>
-              );
-              return key === portal ? (
-                <span key={key} className="f-portals__item" aria-current="page">{chip}</span>
-              ) : (
-                <a key={key} className="f-portals__item" href={href} title={label}>{chip}</a>
-              );
-            })}
-          </nav>
+          <PortalSwitcher current={portal} project={portalProject} labels={labels.portalNames} ariaLabel={labels.portals} />
         </div>
         <div className="f-topbar__crumbs">
           <ProjectSwitcher
@@ -185,9 +205,10 @@ export function AppShell({
           {version && <span className="f-topbar__version">{version}</span>}
           {user && (
             <details
+              ref={userMenu}
               className="f-user-menu"
               onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+                if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) event.currentTarget.open = false;
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Escape' && event.currentTarget.open) {
@@ -220,9 +241,7 @@ export function AppShell({
           )}
         </div>
       </header>
-      <div className="f-shell__content" onKeyDown={(event) => {
-        if (event.key === 'Escape' && drawerOpen) closeDrawer();
-      }}>
+      <div className="f-shell__content">
         {strip && !projectSettings?.active && <PipelineStrip {...strip} labels={labels.pipeline} />}
         <div className="f-shell__body">
           {drawerOpen && (
@@ -231,9 +250,12 @@ export function AppShell({
           <aside
             ref={sidebar}
             id={sidebarId}
+            role={drawerOpen ? 'dialog' : undefined}
+            aria-modal={drawerOpen || undefined}
             tabIndex={-1}
             className={`f-side${drawerOpen ? ' is-open' : ''}${sidebarCollapsed ? ' f-side--collapsed' : ''}`}
           >
+            <button type="button" className="f-side__close" aria-label={labels.closeNavigation} onClick={closeDrawer}>×</button>
             <button
               type="button"
               className="f-side__toggle"
@@ -294,7 +316,7 @@ export function AppShell({
                     aria-label={primaryAction.label}
                     aria-busy={primaryAction.busy}
                     disabled={primaryAction.disabled || primaryAction.busy}
-                    title={primaryAction.disabledReason ?? primaryAction.label}
+                    title={primaryAction.disabled ? primaryAction.disabledReason ?? primaryAction.label : primaryAction.label}
                     onClick={() => { closeDrawer(); primaryAction.onClick(); }}
                   >
                     <span className="f-side__primary-icon" aria-hidden>+</span>
@@ -304,7 +326,7 @@ export function AppShell({
               </div>
             )}
           </aside>
-          <main className="f-page">{children}</main>
+          <main className="f-page" inert={drawerOpen}>{children}</main>
         </div>
       </div>
     </div>

@@ -19,7 +19,7 @@ export interface PipelineStripProps {
   activeStage?: string | null | undefined;
   onSelectStage(key: string | null): void;
   onSelectFailed?: ((key: string) => void) | undefined;
-  alarm?: string | undefined;
+  alarm?: { key: string; event: string | number } | undefined;
 }
 
 export interface PipelineStripLabels {
@@ -34,7 +34,7 @@ export function PipelineStrip({
 }: PipelineStripProps & { labels: PipelineStripLabels }) {
   const [focused, setFocused] = useState('');
   const controls = stages.flatMap(({ key, failed }) =>
-    failed > 0 && onSelectFailed ? [`stage:${key}`, `failure:${key}`] : [`stage:${key}`],
+    failed > 0 ? [`stage:${key}`, `failure:${key}`] : [`stage:${key}`],
   );
   if (activeStage != null) controls.push('clear');
   const tabStop = controls.includes(focused) ? focused : controls[0];
@@ -82,24 +82,24 @@ export function PipelineStrip({
               >
                 <span className="f-strip__ring">
                   <span className={`f-strip__count${count === 0 ? ' f-strip__count--zero' : ''}`}>{count}</span>
-                  {alarm === key && failed > 0 && <span key={failed} className="f-strip__flare" aria-hidden />}
+                  {alarm?.key === key && failed > 0 && <span key={alarm.event} className="f-strip__flare" aria-hidden />}
                 </span>
                 <span className="f-strip__meta">
                   <span className="f-strip__label">{label}</span>
                   <span className="f-strip__service">{service}</span>
                 </span>
               </button>
-              {failureLabel && (onSelectFailed ? (
+              {failureLabel && (
                 <button
                   type="button"
                   className="f-strip__fail"
                   aria-label={labels.filterFailures(stage)}
-                  onClick={() => onSelectFailed(key)}
+                  onClick={() => onSelectFailed ? onSelectFailed(key) : onSelectStage(key)}
                   {...control(`failure:${key}`)}
                 >
                   {failureLabel}
                 </button>
-              ) : <span className="f-strip__fail">{failureLabel}</span>)}
+              )}
             </div>
           </Fragment>
         );
