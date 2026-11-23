@@ -87,36 +87,52 @@ def test_react_portal_styles_live_alongside_components(service: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("service", "token_path"),
+    ("service", "extras"),
     [
-        ("cfactory", "apps/frontend-web/src/styles/tokens.css"),
-        ("rfactory", "web/public/tokens.css"),
+        ("pfactory", set()),
+        ("aifactory", set()),
+        ("tfactory", set()),
+        ("cfactory", {"tailwind-theme.css"}),
+        ("rfactory", set(gate.CANONICAL_MODULES) - {"tokens.css", "shell.css"}),
     ],
 )
-def test_token_only_layouts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, service: str, token_path: str
+def test_required_subset_at_adoption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, service: str, extras: set[str]
 ) -> None:
-    assert gate.SERVICE_LAYOUTS[service] == {"tokens.css": token_path}
     canonical = _make_canonical(tmp_path)
-    portal = _make_service(canonical, tmp_path / "svc", service)
-    assert gate.check_service(service, portal, canonical) == []
-    (portal / token_path).unlink()
-    assert gate.check_service(service, portal, canonical) == [
-        f"{service}: vendored copy missing: {token_path}"
+    layout = gate.SERVICE_LAYOUTS[service]
+    assert layout.keys() == set(gate.CANONICAL_MODULES) - extras
+    styles = "web/public" if service == "rfactory" else "apps/frontend-web/src/styles"
+    assert layout["shell.css"] == f"{styles}/shell.css"
+    assert layout["tokens.css"] == f"{styles}/tokens.css"
+    for module in gate.NOT_YET_PINNED:
+        if module.endswith(".tsx") and module != "ProjectBreadcrumb.tsx" and module in layout:
+            assert layout[module] == f"apps/frontend-web/src/components/factory-ui/{module}"
+
+    root = tmp_path / "portal"
+    assert gate.check_service(service, root, canonical) == [
+        f"{service}: vendored copy missing: {rel}" for rel in layout.values()
     ]
-    monkeypatch.setitem(gate.SERVICE_LAYOUTS, service, {})
-    assert "layout maps it nowhere" in gate.check_service(service, portal, canonical)[0]
+    _make_service(canonical, root, service)
+    assert gate.check_service(service, root, canonical) == []
+    monkeypatch.delitem(layout, "shell.css")
+    assert "layout maps it nowhere" in gate.check_service(service, root, canonical)[0]
 
 
-@pytest.mark.parametrize("service", ["cfactory", "rfactory"])
-def test_token_only_layout_rejects_pre_token_pin(tmp_path: Path, service: str) -> None:
+@pytest.mark.parametrize("service", list(gate.SERVICE_LAYOUTS))
+def test_pre_shell_pin_keeps_passing(tmp_path: Path, service: str) -> None:
     canonical = _make_canonical(tmp_path)
     portal = _make_service(canonical, tmp_path / "svc", service)
-    (canonical / "tokens.css").unlink()
-    assert any(
-        "canonical missing" in problem and "tokens.css" in problem
-        for problem in gate.check_service(service, portal, canonical)
-    )
+    layout = gate.SERVICE_LAYOUTS[service]
+    for module in gate.NOT_YET_PINNED:
+        (canonical / module).unlink()
+        if module in layout:
+            (portal / layout[module]).unlink()
+    if service == "cfactory":
+        for module in ("CommandPalette.tsx", "PortalSwitcher.tsx"):
+            (portal / layout[module]).unlink()
+        assert gate.compared_evidence(service, portal, canonical) == []
+    assert gate.check_service(service, portal, canonical) == []
 
 
 def test_canonical_files_exist_in_repo() -> None:

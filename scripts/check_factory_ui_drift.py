@@ -7,18 +7,9 @@ The canonical copies of the shared portal chrome and styles live in this hub at
 hand-vendor these components into their frontends. This guard stops those copies
 silently diverging from the hub canonical.
 
-The canonical set is:
-
-    CommandPalette.tsx     the cross-portal command palette (Cmd-K)
-    PortalSwitcher.tsx     the topbar portal switcher
-    ProjectBreadcrumb.tsx  the topbar project breadcrumb (searchable switch list)
-    tokens.css             the light and dark design tokens
-    tailwind-theme.css     the Tailwind bridge to the design tokens
-
 The check is **byte-exact and directional** (hub canonical -> portal copy): for
 every canonical file a portal vendors, the matching file in the portal tree must
-exist and be byte-identical to the hub copy. CFactory and RFactory vendor only
-the plain token stylesheet.
+exist and be byte-identical to the hub copy. Use --list for the per-service layouts.
 
 This mirrors ``scripts/check_verification_core_drift.py``: pure stdlib, no
 third-party imports, hard-fail (exit 1) on real drift.
@@ -54,12 +45,20 @@ from pathlib import Path
 from gate_evidence import digest
 
 # Canonical file names as they live, flat, in the hub's shared/factory-ui/.
+_SHELL_COMPONENTS = (
+    "AppShell.tsx",
+    "ProjectSwitcher.tsx",
+    "PipelineStrip.tsx",
+    "WorkCard.tsx",
+    "WorkColumn.tsx",
+)
+_LEGACY_COMPONENTS = ("CommandPalette.tsx", "PortalSwitcher.tsx", "ProjectBreadcrumb.tsx")
 CANONICAL_MODULES: tuple[str, ...] = (
-    "CommandPalette.tsx",
-    "PortalSwitcher.tsx",
-    "ProjectBreadcrumb.tsx",
+    *_LEGACY_COMPONENTS,
     "tokens.css",
     "tailwind-theme.css",
+    "shell.css",
+    *_SHELL_COMPONENTS,
 )
 
 # Modules a portal's *pinned* canonical may not contain yet. The checker floats
@@ -68,22 +67,40 @@ CANONICAL_MODULES: tuple[str, ...] = (
 # A module listed here is skipped only while the pinned canonical lacks it; once
 # the pin includes it, the vendored copy is required and byte-checked. Remove an
 # entry when every portal has adopted it.
-NOT_YET_PINNED: tuple[str, ...] = ("ProjectBreadcrumb.tsx", "tokens.css", "tailwind-theme.css")
+NOT_YET_PINNED: tuple[str, ...] = (
+    "ProjectBreadcrumb.tsx",
+    "tokens.css",
+    "tailwind-theme.css",
+    "shell.css",
+    *_SHELL_COMPONENTS,
+)
 
 # Per-portal vendored layout: {canonical_file: path-relative-to-portal-root}.
 _FRONTEND_SRC = "apps/frontend-web/src"
 _REACT_LAYOUT = {
-    m: f"{_FRONTEND_SRC}/{'styles' if m.endswith('.css') else 'components'}/{m}"
-    for m in CANONICAL_MODULES
+    **{m: f"{_FRONTEND_SRC}/components/{m}" for m in _LEGACY_COMPONENTS},
+    **{m: f"{_FRONTEND_SRC}/components/factory-ui/{m}" for m in _SHELL_COMPONENTS},
+    **{m: f"{_FRONTEND_SRC}/styles/{m}" for m in CANONICAL_MODULES if m.endswith(".css")},
 }
-_TOKEN_ONLY_SERVICES = {"cfactory", "rfactory"}
+_REQUIRED_MODULES = {
+    "pfactory": CANONICAL_MODULES,
+    "aifactory": CANONICAL_MODULES,
+    "tfactory": CANONICAL_MODULES,
+    "cfactory": tuple(m for m in CANONICAL_MODULES if m != "tailwind-theme.css"),
+    "rfactory": ("tokens.css", "shell.css"),
+}
 SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
-    "pfactory": _REACT_LAYOUT.copy(),
-    "aifactory": _REACT_LAYOUT.copy(),
-    "tfactory": _REACT_LAYOUT.copy(),
-    "cfactory": {"tokens.css": f"{_FRONTEND_SRC}/styles/tokens.css"},
-    "rfactory": {"tokens.css": "web/public/tokens.css"},
+    service: {m: f"web/public/{m}" if service == "rfactory" else _REACT_LAYOUT[m] for m in modules}
+    for service, modules in _REQUIRED_MODULES.items()
 }
+
+
+def _pinned_modules(service: str, canonical: Path) -> tuple[str, ...]:
+    required = _REQUIRED_MODULES[service]
+    if service == "cfactory" and not (canonical / "shell.css").is_file():
+        # Cockpit first vendors the shared React controls with the shell.
+        required = tuple(m for m in required if m not in _LEGACY_COMPONENTS)
+    return required
 
 
 def _emit(message: str) -> None:
@@ -117,7 +134,7 @@ def compared_evidence(service: str, root: Path, canonical: Path) -> list[str]:
     return [
         f"{module} -> {rel} [canonical {digest(canonical / module)} | portal {digest(root / rel)}]"
         for module, rel in sorted(SERVICE_LAYOUTS.get(service, {}).items())
-        if (canonical / module).is_file()
+        if module in _pinned_modules(service, canonical) and (canonical / module).is_file()
     ]
 
 
@@ -133,17 +150,20 @@ def check_service(service: str, root: Path, canonical: Path) -> list[str]:
         for name in _missing_from_contract(canonical)
     ]
     # Factory#523: a missing layout entry must not silently disable comparison.
-    required = ("tokens.css",) if service in _TOKEN_ONLY_SERVICES else CANONICAL_MODULES
+    required = _pinned_modules(service, canonical)
     problems.extend(
         f"{module}: canonical, but {service}'s layout maps it nowhere — nothing "
         "compares it in this portal, so it is free to drift"
         for module in required
         if module not in layout
     )
-    for module, rel in layout.items():
+    for module in required:
+        if module not in layout:
+            continue
+        rel = layout[module]
         canonical_file = canonical / module
         if not canonical_file.is_file():
-            if module in NOT_YET_PINNED and service not in _TOKEN_ONLY_SERVICES:
+            if module in NOT_YET_PINNED:
                 continue
             problems.append(f"canonical missing: {canonical_file}")
             continue
