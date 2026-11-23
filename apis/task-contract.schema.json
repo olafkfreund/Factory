@@ -27,7 +27,42 @@
         "repo": { "type": "string", "description": "The target repo, OPTIONALLY provider-qualified as '<provider>:<path>' (RFC-0020 3.5): 'owner/repo' | 'gitlab:group/subgroup/project' | 'azure_devops:organization/project/repo'. GitHub is the UNQUALIFIED default, so a pre-RFC-0020 contract and every GitHub contract are unchanged and need no backfill; an unqualified value reads as 'github:'. Only a KNOWN provider name is a qualification, so a clone URL and any other colon-bearing path are the whole reference. This is the one place a tenant declares which git HOST its work belongs to: PFactory, AIFactory and TFactory read the host off this reference instead of each choosing from their own environment default, which is what stopped a GitLab tenant's run reconnoitring github.com and opening a GitHub PR. There is deliberately no sibling 'provider' field - two would be two sources of truth."},
         "base_ref": { "type": "string", "description": "RFC-0010 reconnaissance: the branch/tag the plan was built against, e.g. 'main'." },
         "baseline_commit": { "type": "string", "description": "RFC-0010 reconnaissance: the resolved commit SHA the RepoMap was built from. Lets AIFactory/TFactory anchor to the exact tree the human approved and detect drift." },
-        "content_trust": { "$ref": "#/$defs/content_trust" }
+        "content_trust": { "$ref": "#/$defs/content_trust" },
+        "source_artifacts": {
+          "type": "array",
+          "description": "Approved intent/spec/plan triple submitted via `factory submit` (Factory#3865). Commit fields are client-attested.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["stage", "path", "blob_sha", "approve_commit_sha", "approve_commit_author", "attested_by"],
+            "properties": {
+              "stage": { "type": "string", "enum": ["intent", "spec", "plan"] },
+              "path": { "type": "string", "maxLength": 512 },
+              "blob_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+              "approve_commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+              "approve_commit_author": { "type": "string", "maxLength": 200 },
+              "attested_by": { "type": "string", "const": "client" }
+            }
+          }
+        },
+        "human_approval": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Server-recorded human approval on PFactory for an artifact session (Factory#3865).",
+          "required": ["user_id", "approver_display", "auth_kind", "approved_at", "plan_hash"],
+          "properties": {
+            "user_id": { "type": "string" },
+            "approver_display": { "type": "string" },
+            "auth_kind": { "type": "string" },
+            "approved_at": { "type": "string", "format": "date-time" },
+            "plan_hash": { "type": "string" }
+          }
+        },
+        "submission_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 hex of the artifact submission dedupe key for idempotent downstream creation (Factory#3865)."
+        }
       }
     },
     "approval": {
