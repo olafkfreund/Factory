@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
-"""Fail CI when a portal's vendored factory-ui components drift from the hub.
+"""Fail CI when a portal's vendored factory-ui files drift from the hub.
 
-The canonical copies of the shared portal chrome live in this hub at
+The canonical copies of the shared portal chrome and styles live in this hub at
 ``shared/factory-ui/`` (the single source of truth — see
 ``shared/factory-ui/README.md``). PFactory, AIFactory and TFactory each
 hand-vendor these components into their frontends. This guard stops those copies
 silently diverging from the hub canonical.
 
-The canonical set is exactly the shared portal chrome shipped by the portal UX
-program:
-
-    CommandPalette.tsx     the cross-portal command palette (Cmd-K)
-    PortalSwitcher.tsx     the topbar portal switcher
-    ProjectBreadcrumb.tsx  the topbar project breadcrumb (searchable switch list)
-
 The check is **byte-exact and directional** (hub canonical -> portal copy): for
 every canonical file a portal vendors, the matching file in the portal tree must
-exist and be byte-identical to the hub copy. CFactory is intentionally not a
-consumer (hand-rolled CSS on its own token set) and is not listed here.
+exist and be byte-identical to the hub copy. Use --list for the per-service layouts.
 
 This mirrors ``scripts/check_verification_core_drift.py``: pure stdlib, no
 third-party imports, hard-fail (exit 1) on real drift.
@@ -53,10 +45,20 @@ from pathlib import Path
 from gate_evidence import digest
 
 # Canonical file names as they live, flat, in the hub's shared/factory-ui/.
+_SHELL_COMPONENTS = (
+    "AppShell.tsx",
+    "ProjectSwitcher.tsx",
+    "PipelineStrip.tsx",
+    "WorkCard.tsx",
+    "WorkColumn.tsx",
+)
+_LEGACY_COMPONENTS = ("CommandPalette.tsx", "PortalSwitcher.tsx", "ProjectBreadcrumb.tsx")
 CANONICAL_MODULES: tuple[str, ...] = (
-    "CommandPalette.tsx",
-    "PortalSwitcher.tsx",
-    "ProjectBreadcrumb.tsx",
+    *_LEGACY_COMPONENTS,
+    "tokens.css",
+    "tailwind-theme.css",
+    "shell.css",
+    *_SHELL_COMPONENTS,
 )
 
 # Modules a portal's *pinned* canonical may not contain yet. The checker floats
@@ -65,16 +67,39 @@ CANONICAL_MODULES: tuple[str, ...] = (
 # A module listed here is skipped only while the pinned canonical lacks it; once
 # the pin includes it, the vendored copy is required and byte-checked. Remove an
 # entry when every portal has adopted it.
-NOT_YET_PINNED: tuple[str, ...] = ("ProjectBreadcrumb.tsx",)
+NOT_YET_PINNED: tuple[str, ...] = (
+    "ProjectBreadcrumb.tsx",
+    "tokens.css",
+    "tailwind-theme.css",
+    "shell.css",
+    *_SHELL_COMPONENTS,
+)
 
 # Per-portal vendored layout: {canonical_file: path-relative-to-portal-root}.
-# The three Tailwind portals vendor both files at the same relative path.
-_VENDOR_DIR = "apps/frontend-web/src/components"
-SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
-    "pfactory": {m: f"{_VENDOR_DIR}/{m}" for m in CANONICAL_MODULES},
-    "aifactory": {m: f"{_VENDOR_DIR}/{m}" for m in CANONICAL_MODULES},
-    "tfactory": {m: f"{_VENDOR_DIR}/{m}" for m in CANONICAL_MODULES},
+_FRONTEND_SRC = "apps/frontend-web/src"
+_REACT_LAYOUT = {
+    **{m: f"{_FRONTEND_SRC}/components/{m}" for m in _LEGACY_COMPONENTS},
+    **{m: f"{_FRONTEND_SRC}/components/factory-ui/{m}" for m in _SHELL_COMPONENTS},
+    **{m: f"{_FRONTEND_SRC}/styles/{m}" for m in CANONICAL_MODULES if m.endswith(".css")},
 }
+_REQUIRED_MODULES = {
+    "pfactory": CANONICAL_MODULES,
+    "aifactory": CANONICAL_MODULES,
+    "tfactory": CANONICAL_MODULES,
+    "cfactory": tuple(
+        m for m in CANONICAL_MODULES if m not in ("tailwind-theme.css", "ProjectBreadcrumb.tsx")
+    ),
+    "rfactory": ("tokens.css", "shell.css"),
+}
+SERVICE_LAYOUTS: dict[str, dict[str, str]] = {
+    service: {m: f"web/public/{m}" if service == "rfactory" else _REACT_LAYOUT[m] for m in modules}
+    for service, modules in _REQUIRED_MODULES.items()
+}
+
+
+def _pinned_modules(service: str) -> tuple[str, ...]:
+    required = _REQUIRED_MODULES[service]
+    return required
 
 
 def _emit(message: str) -> None:
@@ -88,7 +113,7 @@ def _default_canonical() -> Path:
 
 
 def _missing_from_contract(canonical: Path) -> list[str]:
-    """Canonical component files that CANONICAL_MODULES does not list.
+    """Canonical UI files that CANONICAL_MODULES does not list.
 
     An explicit tuple is the contract, but it ROTS. Factory#397 hit exactly this
     in the factory-github gate: two files were added to the canonical, nothing
@@ -99,15 +124,16 @@ def _missing_from_contract(canonical: Path) -> list[str]:
     if not canonical.is_dir():
         return []
     listed = set(CANONICAL_MODULES)
-    return [p.name for p in sorted(canonical.glob("*.tsx")) if p.name not in listed]
+    candidates = (*canonical.glob("*.tsx"), *canonical.glob("*.css"))
+    return sorted(p.name for p in candidates if p.name not in listed)
 
 
 def compared_evidence(service: str, root: Path, canonical: Path) -> list[str]:
-    """One line per component this run compared, each carrying the bytes it read."""
+    """One line per file this run compared, each carrying the bytes it read."""
     return [
         f"{module} -> {rel} [canonical {digest(canonical / module)} | portal {digest(root / rel)}]"
         for module, rel in sorted(SERVICE_LAYOUTS.get(service, {}).items())
-        if (canonical / module).is_file()
+        if module in _pinned_modules(service) and (canonical / module).is_file()
     ]
 
 
@@ -122,20 +148,18 @@ def check_service(service: str, root: Path, canonical: Path) -> list[str]:
         "the gate cannot check it"
         for name in _missing_from_contract(canonical)
     ]
-    # Factory#523, the same hole in the sibling gate: check_service can only
-    # compare what the layout points it at, so dropping one entry from a portal's
-    # layout removes that component from the gate's world and the run still
-    # reports a match. Every portal here vendors the WHOLE canonical set (the
-    # layouts are written as comprehensions over it precisely because that is the
-    # contract), so total coverage is the invariant to assert — no tree scan
-    # needed, unlike the verification-core gate where subsets are legitimate.
+    # Factory#523: a missing layout entry must not silently disable comparison.
+    required = _pinned_modules(service)
     problems.extend(
         f"{module}: canonical, but {service}'s layout maps it nowhere — nothing "
         "compares it in this portal, so it is free to drift"
-        for module in CANONICAL_MODULES
+        for module in required
         if module not in layout
     )
-    for module, rel in layout.items():
+    for module in required:
+        if module not in layout:
+            continue
+        rel = layout[module]
         canonical_file = canonical / module
         if not canonical_file.is_file():
             if module in NOT_YET_PINNED:
@@ -158,28 +182,23 @@ def _self_test() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         canonical = Path(tmp) / "canonical"
         canonical.mkdir()
-        for m in CANONICAL_MODULES:
-            (canonical / m).write_text(f"// {m}\nexport const x = 1;\n")
-
         root = Path(tmp) / "svc"
-        vend = root / _VENDOR_DIR
-        vend.mkdir(parents=True)
-        for m in CANONICAL_MODULES:
-            (vend / m).write_bytes((canonical / m).read_bytes())
+        layout = SERVICE_LAYOUTS["aifactory"]
+        for module, rel in layout.items():
+            payload = f"/* {module} */\n".encode()
+            (canonical / module).write_bytes(payload)
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
 
-        SERVICE_LAYOUTS["__selftest__"] = {m: f"{_VENDOR_DIR}/{m}" for m in CANONICAL_MODULES}
-        try:
-            if check_service("__selftest__", root, canonical):
-                _emit("self-test FAILED: byte-identical copies reported drift")
-                return 1
-            # introduce a one-byte drift
-            target = vend / CANONICAL_MODULES[0]
-            target.write_text(target.read_text() + " ")
-            if not check_service("__selftest__", root, canonical):
-                _emit("self-test FAILED: drift not detected")
-                return 1
-        finally:
-            del SERVICE_LAYOUTS["__selftest__"]
+        if check_service("aifactory", root, canonical):
+            _emit("self-test FAILED: byte-identical copies reported drift")
+            return 1
+        target = root / layout["tokens.css"]
+        target.write_bytes(target.read_bytes() + b" ")
+        if not check_service("aifactory", root, canonical):
+            _emit("self-test FAILED: drift not detected")
+            return 1
     _emit("self-test OK")
     return 0
 
@@ -232,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             _emit(f"  - {p}")
         return 1
     _emit(
-        f"factory-ui: {args.service} matches the hub canonical — every component "
+        f"factory-ui: {args.service} matches the hub canonical — every file "
         "enumerated above matched."
     )
     return 0

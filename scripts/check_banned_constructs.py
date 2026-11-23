@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI on two banned constructs ruff's `S` rules cannot express.
+"""Fail CI on banned constructs ruff's `S` rules cannot express.
 
 Factory security-cleanup review (2026-08-13). Two failure shapes found today
 have no stock lint rule:
@@ -27,6 +27,8 @@ have no stock lint rule:
    prose filter in Factory#762 removed 19, the widening in Factory#781 added
    28, and the gate never ran outside the hub at all). Counts belong in the
    issue that is tracking them, where they carry a date.
+
+The opt-in portal UI rule also flags literal text sizes below 12px or 0.75rem.
 
 (pickle/eval-exec/shell=True are owned by the g2-seclint ruff-S gate; this
 script deliberately does not re-check them.)
@@ -271,9 +273,54 @@ def _iter_source_files(root: Path) -> list[Path]:
             continue
         if _is_skippable(path.relative_to(root)):
             continue
-        if path.suffix in (".py", ".js", ".ts", ".tsx", ".jsx"):
+        if path.suffix in _CODE_SUFFIXES or _is_ui_source(path.relative_to(root)):
             out.append(path)
     return out
+
+
+_CODE_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".jsx"}
+_UI_SUFFIXES = {".js", ".ts", ".tsx", ".jsx", ".css", ".html"}
+_SIZE = r"\+?(?:[0-9]*\.[0-9]+|[0-9]+)(?:[eE][+-]?[0-9]+)?"
+_SMALL_TEXT_PATTERNS = (
+    re.compile(rf"(?<![\w-])text-\[(?:length:)?(?P<size>{_SIZE})(?P<unit>px|rem)\]"),
+    re.compile(
+        rf"(?<![\w-])font-size\s*:\s*(?P<size>{_SIZE})(?P<unit>px|rem)(?![\w.%-])", re.IGNORECASE
+    ),
+    re.compile(
+        rf"\bfontSize\s*:\s*(?P<quote>['\"]?)(?P<size>{_SIZE})(?P<unit>px|rem)?(?P=quote)(?![\w.%-])"
+    ),
+)
+_MIN_TEXT_SIZE = {"px": 12, "rem": 0.75}
+
+
+def _is_ui_source(path: Path) -> bool:
+    return path.suffix in _UI_SUFFIXES and (
+        path.parts[:2] in {("apps", "frontend-web"), ("shared", "factory-ui")}
+        or path.parts[:1] == ("web",)
+    )
+
+
+def _find_small_text(path: Path) -> list[tuple[int, str]]:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    comments = r"/\*.*?\*/" if path.suffix == ".css" else r"/\*.*?\*/|//[^\n]*|<!--.*?-->"
+    # Keep quoted class names and style values, but mask comments without moving lines.
+    text = re.sub(
+        rf"(?P<string>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(?P<comment>{comments})",
+        lambda match: (
+            match[0]
+            if match["string"] and path.suffix != ".css"
+            else re.sub(r"[^\n]", " ", match[0])
+        ),
+        text,
+        flags=re.DOTALL,
+    )
+    return sorted(
+        (text.count("\n", 0, match.start()) + 1, match[0])
+        for pattern in _SMALL_TEXT_PATTERNS
+        for match in pattern.finditer(text)
+        if float(match["size"]) > 0
+        and float(match["size"]) < _MIN_TEXT_SIZE[(match["unit"] or "px").lower()]
+    )
 
 
 def _prose_lines(path: Path, text: str) -> frozenset[int]:
@@ -423,24 +470,21 @@ def _load_allowlist(path: Path | None) -> set[tuple[str, str]]:
     return allowed
 
 
-def check(root: Path, allowlist_path: Path | None) -> list[str]:
+def check(root: Path, allowlist_path: Path | None, enforce_small_text: bool = False) -> list[str]:
     allowed = _load_allowlist(allowlist_path)
     # Which entries actually suppressed something. An entry that suppresses
     # nothing is reported below: see the block at the end of this function.
     used: set[tuple[str, str]] = set()
     problems: list[str] = []
     for path in _iter_source_files(root):
-        rel = str(path.relative_to(root))
-        for lineno, snippet in _find_exists_then_read(path):
-            if (rel, "exists-then-read") in allowed:
-                used.add((rel, "exists-then-read"))
-                continue
-            problems.append(f"{rel}:{lineno}: exists-then-read — {snippet}")
-        for lineno, snippet in _find_raw_exception_in_response(path):
-            if (rel, "raw-exception-in-response") in allowed:
-                used.add((rel, "raw-exception-in-response"))
-                continue
-            problems.append(f"{rel}:{lineno}: raw-exception-in-response — {snippet}")
+        relative = path.relative_to(root)
+        for rule, hits in _file_findings(path, relative, enforce_small_text).items():
+            for lineno, snippet in hits:
+                key = (str(relative), rule)
+                if key in allowed:
+                    used.add(key)
+                else:
+                    problems.append(f"{relative}:{lineno}: {rule} — {snippet}")
 
     # A grandfather that no longer covers anything is not harmless housekeeping.
     # Entries are keyed (path, rule) — PATH-level — so a dead entry goes on
@@ -459,6 +503,22 @@ def check(root: Path, allowlist_path: Path | None) -> list[str]:
             "the finding is fixed or the path moved; delete the entry"
         )
     return problems
+
+
+def _file_findings(
+    path: Path, relative: Path, enforce_small_text: bool = False
+) -> dict[str, list[tuple[int, str]]]:
+    findings = {}
+    if path.suffix in _CODE_SUFFIXES:
+        findings["exists-then-read"] = _find_exists_then_read(path)
+        findings["raw-exception-in-response"] = _find_raw_exception_in_response(path)
+    if (
+        enforce_small_text
+        and _is_ui_source(relative)
+        and not ("__tests__" in relative.parts or ".test." in relative.name)
+    ):
+        findings["small-text"] = _find_small_text(path)
+    return findings
 
 
 def _scanned_commit(root: Path) -> str:
@@ -499,9 +559,9 @@ def _scanned_commit(root: Path) -> str:
         return "UNKNOWN — not a git repo, or git is unavailable"
 
 
-def run_check(root: Path, allowlist_path: Path | None) -> int:
+def run_check(root: Path, allowlist_path: Path | None, enforce_small_text: bool = False) -> int:
     try:
-        problems = check(root, allowlist_path)
+        problems = check(root, allowlist_path, enforce_small_text)
     except (RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}")  # noqa: T201
         return 1
@@ -867,7 +927,7 @@ def _self_test() -> int:
     return report_self_test(failures)
 
 
-def _emit_allowlist(root: Path, issue: str) -> str:
+def _emit_allowlist(root: Path, issue: str, enforce_small_text: bool = False) -> str:
     """Grandfather every CURRENT finding so the gate can land green on day one.
 
     This is the ratchet mechanism: run once at rollout to snapshot today's
@@ -876,12 +936,12 @@ def _emit_allowlist(root: Path, issue: str) -> str:
     The emitted `reason` is a placeholder that FAILS the gate until a human
     replaces it, so an unreviewed snapshot cannot be committed and forgotten.
     """
-    problems = check(root, None)
+    problems = check(root, None, enforce_small_text)
     entries = []
     for problem in problems:
         loc, _, rest = problem.partition(": ")
         path, _, _lineno = loc.rpartition(":")
-        rule = "exists-then-read" if "exists-then-read" in rest else "raw-exception-in-response"
+        rule, _, _snippet = rest.partition(" — ")
         entries.append({"path": path, "rule": rule})
     seen: set[tuple[str, str]] = set()
     lines = []
@@ -904,6 +964,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", help="repo root to scan")
     parser.add_argument("--allowlist", help="path to the YAML allowlist file")
     parser.add_argument(
+        "--enforce-small-text", action="store_true", help="also reject portal text below 12px"
+    )
+    parser.add_argument(
         "--emit-allowlist",
         metavar="ISSUE",
         help="print a grandfather allowlist covering today's findings, tagged with ISSUE, and exit",
@@ -918,10 +981,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.root:
         parser.error("--root is required (or pass --self-test)")
     if args.emit_allowlist:
-        print(_emit_allowlist(Path(args.root), args.emit_allowlist), end="")  # noqa: T201
+        emitted = _emit_allowlist(Path(args.root), args.emit_allowlist, args.enforce_small_text)
+        print(emitted, end="")  # noqa: T201
         return 0
     allowlist_path = Path(args.allowlist) if args.allowlist else None
-    return run_check(Path(args.root), allowlist_path)
+    return run_check(Path(args.root), allowlist_path, args.enforce_small_text)
 
 
 if __name__ == "__main__":

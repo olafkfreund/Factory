@@ -37,6 +37,11 @@ def _errors(validator: Draft202012Validator, doc: dict) -> list[str]:
     return [e.message for e in validator.iter_errors(doc)]
 
 
+def _require(cond: bool, msg: str) -> None:
+    if not cond:
+        raise AssertionError(msg)
+
+
 if __name__ == "__main__":
     schema = load_schema()
     Draft202012Validator.check_schema(schema)  # the schema is itself valid
@@ -135,7 +140,45 @@ if __name__ == "__main__":
     env_unknown_prop = dict(_base(), environment={"junk": 1})
     assert _errors(v, env_unknown_prop), "unknown environment property must be rejected"
 
+    # --- Factory#3865 provenance fields -------------------------------------
+    sha40 = "a" * 40
+    sha64 = "b" * 64
+    prov_ok = dict(
+        _base(),
+        provenance={
+            "source": "pfactory",
+            "source_artifacts": [
+                {
+                    "stage": "intent",
+                    "path": "intent/2026-11-23-3865-factory-cli.md",
+                    "blob_sha": sha40,
+                    "approve_commit_sha": sha40,
+                    "approve_commit_author": "Dev <dev@example.com>",
+                    "attested_by": "client",
+                }
+            ],
+            "human_approval": {
+                "user_id": "u-1",
+                "approver_display": "Dev",
+                "auth_kind": "user_key",
+                "approved_at": "2026-11-23T09:00:00Z",
+                "plan_hash": sha64,
+            },
+            "submission_id": sha64,
+        },
+    )
+    _require(
+        _errors(v, prov_ok) == [],
+        f"well-formed provenance should validate, got {_errors(v, prov_ok)}",
+    )
+
+    bad_prov_sha = dict(
+        _base(),
+        provenance={"submission_id": "not-a-sha"},
+    )
+    _require(bool(_errors(v, bad_prov_sha)), "malformed submission_id must be rejected")
+
     print(
         "OK: task-contract schema valid; RFC-0007 $defs.access + "
-        "RFC-0005 $defs.environment optional + constraints enforced."
+        "RFC-0005 $defs.environment + Factory#3865 provenance optional + constraints enforced."
     )
