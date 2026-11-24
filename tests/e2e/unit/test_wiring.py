@@ -205,7 +205,7 @@ def test_github_create_and_push_keep_token_out_of_argv(
     monkeypatch.setattr(client, "request", fake_request)
     assert client.create_repo("repo") == {"name": "repo"}
     assert requested == [
-        ("POST", "/user/repos", {"name": "repo", "private": True, "auto_init": False})
+        ("POST", "/user/repos", {"name": "repo", "private": False, "auto_init": False})
     ]
     starter = tmp_path / "starter"
     triple = tmp_path / "triple"

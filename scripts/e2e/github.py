@@ -76,7 +76,11 @@ class GitHub:
             self.request(
                 "POST",
                 "/user/repos",
-                {"name": name, "private": True, "auto_init": False},
+                {
+                    "name": name,
+                    "private": False,
+                    "auto_init": False,
+                },  # Factory#3890: PF/TF cannot clone private repos yet (owner: public for now)
             ),
         )
 
