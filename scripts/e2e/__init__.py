@@ -1,0 +1,1 @@
+"""Guarded Factory campaign harness."""
