@@ -32,7 +32,11 @@ class Registry:
         if kind == "intent":
             valid = service == "github" and target_kind == "repo" and identity == repo_node_id
         elif kind in {"deleted", "retained", "failed", "create_failed"}:
-            valid = target_kind in KIND_SERVICES and service in KIND_SERVICES[target_kind]
+            valid = (
+                isinstance(target_kind, str)
+                and target_kind in KIND_SERVICES
+                and service in KIND_SERVICES[target_kind]
+            )
             valid = valid and (kind != "retained" or target_kind == "session")
             valid = valid and (kind != "create_failed" or target_kind == "repo")
         else:
