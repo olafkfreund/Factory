@@ -33,7 +33,9 @@
     "**/build/**",
     "catalog-info.yaml",
     "product-catalogs/**",
-    ".github/workflows/**"
+    ".github/workflows/**",
+    "tests/e2e/fixtures/**",
+    "tests/e2e/hidden/**"
   ],
   "threshold": 100
 }
