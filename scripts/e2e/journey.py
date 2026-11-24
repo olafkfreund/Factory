@@ -190,7 +190,7 @@ def validate(
         return
     if stage == "S1" and not (
         result.get("registered")
-        and result.get("branch_protection")
+        and (result.get("branch_protection") or result.get("branch_protection_note"))
         and result.get("projects") == {"aifactory": 1, "pfactory": 1, "tfactory": 1}
         and result.get("cards") == 1
     ):

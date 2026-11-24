@@ -404,7 +404,7 @@ def build(  # noqa: PLR0915
             repo["node_id"],
             lambda: operations.push_starter(journey.project, repo["full_name"]),
         )
-        guard.mutate(
+        protection = guard.mutate(
             "github", "repo", repo["node_id"], lambda: operations.protect_main(repo["full_name"])
         )
         issue = guard.mutate(
@@ -444,7 +444,10 @@ def build(  # noqa: PLR0915
         state["card_key"] = str(card["key"])
         return {
             "registered": True,
-            "branch_protection": True,
+            "branch_protection": not (isinstance(protection, dict) and "unavailable" in protection),
+            "branch_protection_note": protection.get("unavailable")
+            if isinstance(protection, dict)
+            else None,
             "projects": dict.fromkeys(("aifactory", "pfactory", "tfactory"), 1),
             "cards": 1,
         }

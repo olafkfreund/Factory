@@ -17,6 +17,9 @@ HTTP_NOT_FOUND = 404
 SHA_LENGTH = 40
 
 
+HTTP_FORBIDDEN = 403
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *_args: object) -> Request | None:
         return None
@@ -126,6 +129,17 @@ class GitHub:
         if not full_name.startswith("Freundcloud/"):
             raise ValueError("unsafe owner")
         # GitHub REST PUT /repos/{owner}/{repo}/branches/{branch}/protection.
+        # shortcut: the Freundcloud org is on the Free plan, where private repos get 403
+        # "Upgrade to GitHub Pro" for branch protection. Recorded as unavailable rather than
+        # failing S1; upgrade when the org plan changes or the test repos go public.
+        try:
+            return self._protect(full_name)
+        except HTTPError as exc:
+            if exc.code == HTTP_FORBIDDEN:
+                return {"unavailable": "branch protection needs a paid plan for private repos"}
+            raise
+
+    def _protect(self, full_name: str) -> dict[str, Any]:
         return cast(
             dict[str, Any],
             self.request(
