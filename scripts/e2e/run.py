@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.e2e.cleanup import LiveDelete, sweep
 from scripts.e2e.config import CAMPAIGN_CAP_USD, HOSTS
 from scripts.e2e.cost import Budget
-from scripts.e2e.evidence import safe_fields
+from scripts.e2e.evidence import redact, safe_fields
 from scripts.e2e.github import GitHub
 from scripts.e2e.guard import Guard
 from scripts.e2e.journey import STAGES, Journey
@@ -311,6 +311,9 @@ def run_live(  # noqa: PLR0915
                     if str(exc) == "journey cap reached; remote stop confirmed"
                     else "failed",
                     "failure": type(exc).__name__,
+                    # Redacted message only (tokens, bearer values); needed to triage live runs.
+                    "failure_detail": str(redact(str(exc)))[:300],
+                    "failure_stage": getattr(exc, "e2e_stage", None),
                 }
                 if operations.hidden_skip_reason:
                     result["status"] = "skipped"
@@ -379,6 +382,8 @@ def main(argv: list[str] | None = None) -> int:
                     "repeat",
                     "status",
                     "failure",
+                    "failure_detail",
+                    "failure_stage",
                     "stage_results",
                     "probes",
                     "expected_stop",
