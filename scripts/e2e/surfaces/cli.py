@@ -75,7 +75,12 @@ class CLI:
                 cwd=cwd,
             )
         if result.returncode and not allow_rejected:
-            raise RuntimeError(f"factory CLI failed with exit {result.returncode}")
+            # The CLI already redacts keys; the caller redacts again before persisting.
+            tail = (result.stderr or result.stdout or "").strip().splitlines()[-3:]
+            raise RuntimeError(
+                f"factory CLI {args[0] if args else ''} failed with exit {result.returncode}: "
+                + " | ".join(tail)[:240]
+            )
         output = result.stderr if result.returncode else result.stdout
         try:
             data = cast(dict[str, Any], json.loads(output))
