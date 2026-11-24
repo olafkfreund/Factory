@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Compute net, VAT, and total invoice amounts."
 requires-python = ">=3.11"
 
+[tool.setuptools]
+packages = ["vatcalc"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

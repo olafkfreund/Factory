@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Deterministically count and rank words in text."
 requires-python = ">=3.11"
 
+[tool.setuptools]
+packages = ["wordfreq"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

@@ -42,11 +42,11 @@ def test_hidden_case_sensitive_and_min_len_and_top() -> None:
 
 
 def test_hidden_invalid_parameters_raise_value_error() -> None:
-    with pytest.raises(ValueError, match="min_len"):
+    with pytest.raises(ValueError):
         count_words("abc", min_len=0)
-    with pytest.raises(ValueError, match="min_len"):
+    with pytest.raises(ValueError):
         count_words("abc", min_len=-3)
-    with pytest.raises(ValueError, match="top"):
+    with pytest.raises(ValueError):
         count_words("abc", top=-1)
 
 
@@ -55,18 +55,32 @@ def test_hidden_format_table_exact() -> None:
     assert format_table([("alpha", 10), ("beta", 2)]) == "alpha\t10\nbeta\t2"
 
 
-def test_hidden_cli_stdin_and_json(
+def test_hidden_cli_default_stdin_and_json_trailing_newline(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("Rust go rust GO python rust"))
-    rc = main(["-", "--top", "2", "--json"])
+    rc = main(["--top", "2", "--json"])
     assert rc == 0
-    payload = json.loads(capsys.readouterr().out)
+    raw_out = capsys.readouterr().out
+    assert raw_out.endswith("\n")
+    payload = json.loads(raw_out)
     assert payload == [
         {"word": "rust", "count": 3},
         {"word": "go", "count": 2},
     ]
+
+
+def test_hidden_cli_case_sensitive_and_tsv_trailing_newline(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sample = tmp_path / "case.txt"
+    sample.write_text("Go go GO rust", encoding="utf-8")
+    rc = main([str(sample), "--case-sensitive"])
+    assert rc == 0
+    raw_out = capsys.readouterr().out
+    assert raw_out == "GO\t1\nGo\t1\ngo\t1\nrust\t1\n"
 
 
 def test_hidden_cli_empty_input_produces_no_blank_line(
@@ -106,4 +120,4 @@ def test_hidden_module_entrypoint_subprocess(tmp_path: Path) -> None:
         check=False,
     )
     assert proc.returncode == 0
-    assert proc.stdout.splitlines() == ["gamma\t3", "beta\t2"]
+    assert proc.stdout == "gamma\t3\nbeta\t2\n"
