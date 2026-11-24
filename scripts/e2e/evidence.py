@@ -2,7 +2,9 @@
 
 import re
 
-SECRET = re.compile(r"(?i)(?:\bBearer\s+|\b(?:acw_|cfk_|ghp_|github_pat_))[A-Za-z0-9_\-.]+")
+SECRET = re.compile(
+    r"(?i)(?:\b(?:Bearer|token)\s+|\b(?:acw_|cfk_|ghp_|gho_|ghs_|ghu_|ghr_|github_pat_))[A-Za-z0-9_\-.]+"
+)
 STAGE_FIELDS = {
     "registered",
     "branch_protection",
@@ -41,6 +43,7 @@ STAGE_FIELDS = {
     "probes",
 }
 PROBE_FIELDS = {"status", "reason", "code", "field", "before", "after"}
+PROBE_KEYS = set("abcdefghijklm")
 
 
 def redact(value: object) -> object:
@@ -65,6 +68,6 @@ def safe_fields(row: dict, allowed: set[str]) -> dict:
         selected["probes"] = {
             probe: safe_fields(result, PROBE_FIELDS)
             for probe, result in selected["probes"].items()
-            if probe in "abcdefghijklm" and isinstance(result, dict)
+            if probe in PROBE_KEYS and isinstance(result, dict)
         }
     return redact(selected)

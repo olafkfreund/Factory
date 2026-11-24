@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Callable
+from datetime import datetime
 
 from scripts.e2e.config import ORG
 from scripts.e2e.registry import KIND_SERVICES, Registry
@@ -29,6 +30,36 @@ class Guard:
         if service not in KIND_SERVICES.get(kind, set()):
             raise GuardRefusalError("unknown resource service or kind")
         entry = self.registry.find(service, kind, identity)
+        if entry is None and service == "github" and kind == "repo":
+            entry = next(
+                (
+                    row
+                    for row in self.registry.entries()
+                    if row["kind"] == "intent" and row["full_name"] == identity
+                ),
+                None,
+            )
+            if entry is None or any(
+                row["kind"] in {"create_failed", "deleted"} and row["id"] == entry["id"]
+                for row in self.registry.entries()
+            ):
+                raise GuardRefusalError("closed or missing repo intent")
+            repo = self.read_repo(identity)
+            try:
+                created = datetime.fromisoformat(repo["created_at"].replace("Z", "+00:00"))
+                intended = datetime.fromisoformat(entry["at"])
+            except (KeyError, TypeError, ValueError, AttributeError):
+                raise GuardRefusalError("repo creation time unavailable") from None
+            if (
+                created.tzinfo is None
+                or created < intended
+                or repo.get("full_name") != identity
+                or repo.get("owner", {}).get("login") != "Freundcloud"
+                or not REPO_NAME.fullmatch(repo.get("name", ""))
+                or "factory-e2e" not in repo.get("topics", [])
+            ):
+                raise GuardRefusalError("orphan repo safety predicates failed")
+            return entry
         if entry is None or entry not in self.registry.active():
             raise GuardRefusalError("unregistered target")
         repo_entry = self.registry.find("github", "repo", entry["repo_node_id"])
@@ -80,7 +111,11 @@ class Guard:
             name=name,
             full_name=full_name,
         )
-        repo = create()
+        try:
+            repo = create()
+        except Exception:
+            self.registry.append("create_failed", name, name, service="github", target_kind="repo")
+            raise
         if (
             repo.get("name") != name
             or repo.get("owner", {}).get("login") != "Freundcloud"

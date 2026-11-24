@@ -16,7 +16,7 @@ KIND_SERVICES = {
     "spec": {"tfactory"},
     "card": {"cfactory"},
 }
-KINDS = {*KIND_SERVICES, "intent", "retained", "deleted"}
+KINDS = {*KIND_SERVICES, "intent", "retained", "deleted", "create_failed", "failed"}
 
 
 class Registry:
@@ -28,9 +28,10 @@ class Registry:
         target_kind = fields.get("target_kind")
         if kind == "intent":
             valid = service == "github" and target_kind == "repo" and identity == repo_node_id
-        elif kind in {"deleted", "retained"}:
+        elif kind in {"deleted", "retained", "failed", "create_failed"}:
             valid = target_kind in KIND_SERVICES and service in KIND_SERVICES[target_kind]
             valid = valid and (kind != "retained" or target_kind == "session")
+            valid = valid and (kind != "create_failed" or target_kind == "repo")
         else:
             valid = kind in KIND_SERVICES and service in KIND_SERVICES[kind] and target_kind is None
         if not valid or not identity or not repo_node_id:

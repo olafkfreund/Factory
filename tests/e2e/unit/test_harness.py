@@ -2,14 +2,16 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
+from urllib.error import HTTPError
 
 import pytest
 
 from scripts.e2e.cleanup import sweep, unregistered_repos
 from scripts.e2e.config import HOSTS
 from scripts.e2e.cost import Budget, StopUnconfirmedError, poll_usage, reconcile, registry_costs
-from scripts.e2e.evidence import redact
-from scripts.e2e.github import GitHub
+from scripts.e2e.evidence import redact, safe_fields
+from scripts.e2e.github import GitHub, NoRedirect
 from scripts.e2e.guard import Guard, GuardRefusalError
 from scripts.e2e.journey import Journey, matrix, validate, write_meta
 from scripts.e2e.probes import PROBES, matches, verify
@@ -314,9 +316,10 @@ def test_every_probe_specific_reason(probe, reason):
         reason,
         after={"total_tokens": 0, "deadline_reached": True}
         if probe == "g"
-        else ("left", "right")
+        else ({"left"}, {"right"})
         if probe == "m"
         else None,
+        before=("left", "right") if probe == "m" else None,
     )
     for status in (302, 401, 403, 404, 405, 407, 408, 429, 500, 503):
         assert not matches(probe, status, reason)
@@ -548,9 +551,30 @@ def test_absence_requires_positive_read_then_404():
             raise item
         return item
 
-    absent(read, "aifactory", "/task", "id", "task-1")
+    deleted = []
+    absent(read, lambda: deleted.append(True), "aifactory", "/task", "id", "task-1")
+    assert deleted
     with pytest.raises(SurfaceMismatchError):
-        absent(lambda *_: {}, "aifactory", "/task", "id", "task-1")
+        absent(lambda *_: {}, lambda: None, "aifactory", "/task", "id", "task-1")
+
+
+@pytest.mark.parametrize("status", [404, 401, 403, 500])
+def test_github_absence_accepts_only_404(status):
+    calls = []
+
+    def read(*_):
+        if not calls:
+            calls.append("read")
+            return {"id": 42}
+        raise HTTPError("", status, "", {}, None)
+
+    if status == 404:
+        absent(read, lambda: calls.append("delete"), "github", "/repos/x", "id", 42)
+        assert calls == ["read", "delete"]
+    else:
+        with pytest.raises(HTTPError) as caught:
+            absent(read, lambda: calls.append("delete"), "github", "/repos/x", "id", 42)
+        assert caught.value.code == status
 
 
 def test_probe_statuses_codes_and_state():
@@ -726,7 +750,7 @@ def test_stage_poll_caps_while_stage_runs(guarded):
     assert called == ["stop"]
 
 
-def test_orphan_repo_swept_by_intent_without_topic(tmp_path):
+def test_orphan_repo_requires_created_at_and_topic(tmp_path):
     registry = Registry("c", tmp_path)
     name = repo()["name"]
     registry.append(
@@ -740,7 +764,8 @@ def test_orphan_repo_swept_by_intent_without_topic(tmp_path):
     )
     old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
     registry.path.write_text(json.dumps({**registry.entries()[0], "at": old}) + "\n")
-    guard = Guard(registry, lambda _: {**repo(), "topics": []}, lambda *_: None)
+    live = {**repo(), "created_at": (datetime.now(UTC) - timedelta(days=9)).isoformat()}
+    guard = Guard(registry, lambda _: live, lambda *_: None)
 
     class Client:
         def __init__(self):
@@ -756,6 +781,13 @@ def test_orphan_repo_swept_by_intent_without_topic(tmp_path):
             raise AssertionError("unexpected")
 
     client = Client()
+    sweep(registry, guard, client, dry_run=False)
+    assert client.deleted == []
+    live["created_at"] = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+    live["topics"] = []
+    sweep(registry, guard, client, dry_run=False)
+    assert client.deleted == []
+    live["topics"] = ["factory-e2e"]
     sweep(registry, guard, client, dry_run=False)
     assert client.deleted == [("github", "repo", repo()["full_name"])]
     sweep(registry, guard, client, dry_run=False)
@@ -792,3 +824,144 @@ def test_probe_rejection_code_and_field():
     assert not matches("f", 200, "empty diff")
     assert matches("c", 409, "generic message", code="artifact_integrity_mismatch")
     assert matches("d", 422, "generic message", code="signed_plan_invalid")
+
+
+def test_failed_create_closes_intent(tmp_path):
+    registry = Registry("c", tmp_path)
+    guard = Guard(registry, lambda _: repo(), lambda *_: None)
+    with pytest.raises(HTTPError):
+        guard.create_repo(
+            repo()["name"],
+            lambda: (_ for _ in ()).throw(HTTPError("", 422, "", {}, None)),
+            lambda *_: None,
+        )
+    assert registry.find("github", "create_failed", repo()["name"])
+
+
+def test_stage_exception_stops_dispatched_service_resource(guarded):
+    registry, guard, _ = guarded
+    registry.append("session", "pf-2", "R_42", service="pfactory")
+    budget = Budget(guard)
+    stopped = []
+
+    def stage(_deadline, poll):
+        poll(("pfactory", "session", "pf-2"))
+        raise RuntimeError("stage failed")
+
+    with pytest.raises(RuntimeError, match="stage failed"):
+        Journey("P1", "cli", "Claude", 1).run(
+            {"S1": stage},
+            budget,
+            "lane",
+            readback=lambda *_: {},
+            remote=(stopped.append, lambda _: {"status": "stopped"}),
+        )
+    assert stopped == ["pf-2"]
+
+
+def test_validation_failure_stops_result_dispatched_resource(guarded):
+    registry, guard, _ = guarded
+    registry.append("session", "pf-2", "R_42", service="pfactory")
+    stopped = []
+    with pytest.raises(AssertionError):
+        Journey("P1", "cli", "Claude", 1).run(
+            {"S1": lambda *_: {"dispatched": ("pfactory", "session", "pf-2")}},
+            Budget(guard),
+            "lane",
+            readback=lambda *_: {},
+            remote=(stopped.append, lambda _: {"status": "stopped"}),
+        )
+    assert stopped == ["pf-2"]
+
+
+@pytest.mark.parametrize("arg", ["550e8400-e29b-41d4-a716-446655440000", "123", "CARD-12"])
+def test_cli_refuses_extra_ids(guarded, arg):
+    with pytest.raises(GuardRefusalError):
+        CLI(guarded[1]).call("aifactory", "task", "task-1", "retry", arg)
+
+
+@pytest.mark.parametrize(
+    "key", ["taskId", "cardKey", "TASK_ID", "sessionId", "specId", "projectId"]
+)
+def test_mcp_refuses_id_keys(guarded, key):
+    with pytest.raises(GuardRefusalError):
+        MCP(guarded[1], lambda *_: {"result": {}}).call(
+            "aifactory", "task", "task-1", "retry", **{key: "other"}
+        )
+
+
+def test_probe_m_requires_only_own_cards():
+    assert matches("m", 200, "", after=({"a"}, {"b"}), before=("a", "b"))
+    assert not matches("m", 200, "", after=({"a", "c"}, {"b"}), before=("a", "b"))
+    assert not matches("m", 200, "", after=({"a", "b"}, {"b"}), before=("a", "b"))
+
+
+def test_github_preserves_status_and_accepts_empty_204(tmp_path):
+    token = tmp_path / "token"
+    token.write_text("secret")
+    with pytest.raises(HTTPError) as caught:
+        GitHub(
+            token, lambda *_args, **_kwargs: (_ for _ in ()).throw(HTTPError("", 404, "", {}, None))
+        ).request("GET", "/repos/Freundcloud/x")
+    assert caught.value.code == 404
+    response = BytesIO(b"")
+    response.status = 204
+    assert (
+        GitHub(token, lambda *_args, **_kwargs: response).request("DELETE", "/repos/Freundcloud/x")
+        == {}
+    )
+    assert NoRedirect().redirect_request(None, None, 302, "", {}, "https://elsewhere") is None
+
+
+def test_sweep_records_failure_and_continues(guarded):
+    registry, guard, _ = guarded
+    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    registry.path.write_text(
+        "".join(json.dumps({**row, "at": old}) + "\n" for row in registry.entries())
+    )
+
+    class Client:
+        def delete(self, _service, kind, _identity):
+            if kind == "task":
+                raise RuntimeError("failed")
+
+        def exists(self, *_):
+            return False
+
+        def close_session(self, *_):
+            pass
+
+    sweep(registry, guard, Client(), dry_run=False)
+    assert registry.find("aifactory", "failed", "task-1")
+    assert registry.find("github", "deleted", "R_42")
+
+
+def test_sweep_404_is_absent_and_401_is_failure(guarded):
+    registry, guard, _ = guarded
+    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    registry.path.write_text(
+        "".join(json.dumps({**row, "at": old}) + "\n" for row in registry.entries())
+    )
+
+    class Client:
+        def delete(self, *_):
+            pass
+
+        def exists(self, _service, kind, _identity):
+            raise HTTPError("", 404 if kind == "task" else 401, "", {}, None)
+
+        def close_session(self, *_):
+            pass
+
+    sweep(registry, guard, Client(), dry_run=False)
+    assert registry.find("aifactory", "deleted", "task-1")
+    assert registry.find("github", "failed", "R_42")
+
+
+def test_redaction_includes_github_token_families():
+    for prefix in ("gho_", "ghs_", "ghu_", "ghr_"):
+        assert prefix + "secret" not in str(redact(prefix + "secret"))
+    assert "secret" not in str(redact("Authorization: token secret"))
+    assert safe_fields(
+        {"probes": {"ab": {"reason": "leak"}, "a": {"reason": "kept"}}}, {"probes"}
+    ) == {"probes": {"a": {"reason": "kept"}}}

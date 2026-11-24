@@ -11,7 +11,10 @@ from pathlib import Path
 from scripts.e2e.config import HOSTS, KEY_FILES
 from scripts.e2e.guard import Guard, GuardRefusalError
 
-ID_SHAPED = re.compile(r"(?:\b(?:af|pf|tf):\S+|\b(?:task|card)-[\w-]+|\b[A-Z]+-\d+\b)")
+ID_SHAPED = re.compile(
+    r"(?:\b(?:af|pf|tf):\S+|\b(?:task|card)-[\w-]+|\b[A-Z]+-\d+\b|\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b|\b\d+\b)",
+    re.I,
+)
 
 
 class CLI:

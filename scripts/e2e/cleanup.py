@@ -3,16 +3,28 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
+from urllib.error import HTTPError
 
 from scripts.e2e.config import SWEEP_AGE_DAYS
-from scripts.e2e.guard import REPO_NAME, Guard, GuardRefusalError
+from scripts.e2e.guard import Guard
 from scripts.e2e.registry import Registry
+
+HTTP_NOT_FOUND = 404
 
 
 class DeleteClient(Protocol):
     def delete(self, service: str, kind: str, identity: str) -> object: ...
     def close_session(self, identity: str) -> object: ...
     def exists(self, service: str, kind: str, identity: str) -> bool: ...
+
+
+def _exists(delete: DeleteClient, service: str, kind: str, identity: str) -> bool:
+    try:
+        return delete.exists(service, kind, identity)
+    except HTTPError as exc:
+        if exc.code == HTTP_NOT_FOUND:
+            return False
+        raise
 
 
 def sweep(  # noqa: PLR0912
@@ -38,35 +50,52 @@ def sweep(  # noqa: PLR0912
             if not repo_due and datetime.fromisoformat(entry["at"]) >= cutoff:
                 continue
             service, kind, identity = entry["service"], entry["kind"], entry["id"]
-            guard.check(service, kind, identity)
             action = "retain" if kind == "session" else "delete"
-            actions.append({"service": service, "kind": kind, "id": identity, "action": action})
-            if dry_run:
-                continue
-            if kind == "session":
-                guard.mutate(
-                    service,
-                    kind,
-                    identity,
-                    lambda identity=identity: delete.close_session(identity),
+            try:
+                guard.check(service, kind, identity)
+                actions.append({"service": service, "kind": kind, "id": identity, "action": action})
+                if dry_run:
+                    continue
+                if kind == "session":
+                    guard.mutate(
+                        service,
+                        kind,
+                        identity,
+                        lambda identity=identity: delete.close_session(identity),
+                    )
+                    registry.append(
+                        "retained",
+                        identity,
+                        entry["repo_node_id"],
+                        service=service,
+                        target_kind=kind,
+                    )
+                else:
+                    guard.mutate(
+                        service,
+                        kind,
+                        identity,
+                        lambda service=service, kind=kind, identity=identity: delete.delete(
+                            service, kind, identity
+                        ),
+                    )
+                    if _exists(delete, service, kind, identity):
+                        raise RuntimeError(f"{kind} deletion unconfirmed")
+                    registry.append(
+                        "deleted",
+                        identity,
+                        entry["repo_node_id"],
+                        service=service,
+                        target_kind=kind,
+                    )
+            except Exception:  # noqa: BLE001
+                actions.append(
+                    {"service": service, "kind": kind, "id": identity, "action": "failed"}
                 )
-                registry.append(
-                    "retained", identity, entry["repo_node_id"], service=service, target_kind=kind
-                )
-            else:
-                guard.mutate(
-                    service,
-                    kind,
-                    identity,
-                    lambda service=service, kind=kind, identity=identity: delete.delete(
-                        service, kind, identity
-                    ),
-                )
-                if delete.exists(service, kind, identity):
-                    raise RuntimeError(f"{kind} deletion unconfirmed")
-                registry.append(
-                    "deleted", identity, entry["repo_node_id"], service=service, target_kind=kind
-                )
+                if not dry_run:
+                    registry.append(
+                        "failed", identity, entry["repo_node_id"], service=service, target_kind=kind
+                    )
     # A failed create can leave a repo without a node ID. Its intent is the only authority.
     finalized = {entry["full_name"] for entry in registry.entries() if entry["kind"] == "repo"}
     ended_intents = {
@@ -78,30 +107,33 @@ def sweep(  # noqa: PLR0912
         if (
             intent["kind"] != "intent"
             or intent["id"] in ended_intents
+            or registry.find("github", "create_failed", intent["id"]) is not None
             or intent["full_name"] in finalized
             or datetime.fromisoformat(intent["at"]) >= cutoff
         ):
             continue
         name = intent["name"]
-        if not REPO_NAME.fullmatch(name) or intent["full_name"] != f"Freundcloud/{name}":
-            raise GuardRefusalError("unsafe repo intent")
-        live = guard.read_repo(intent["full_name"])
-        if live is None:
-            continue
-        if (
-            live.get("full_name") != intent["full_name"]
-            or live.get("owner", {}).get("login") != "Freundcloud"
-            or live.get("name") != name
-        ):
-            raise GuardRefusalError("orphan repo safety predicates failed")
-        actions.append(
-            {"service": "github", "kind": "repo", "id": intent["full_name"], "action": "delete"}
-        )
-        if not dry_run:
-            delete.delete("github", "repo", intent["full_name"])
-            if delete.exists("github", "repo", intent["full_name"]):
-                raise RuntimeError("orphan repo deletion unconfirmed")
-            registry.append("deleted", name, name, service="github", target_kind="repo")
+        try:
+            guard.check("github", "repo", intent["full_name"])
+            actions.append(
+                {"service": "github", "kind": "repo", "id": intent["full_name"], "action": "delete"}
+            )
+            if not dry_run:
+                guard.mutate(
+                    "github",
+                    "repo",
+                    intent["full_name"],
+                    lambda identity=intent["full_name"]: delete.delete("github", "repo", identity),
+                )
+                if _exists(delete, "github", "repo", intent["full_name"]):
+                    raise RuntimeError("orphan repo deletion unconfirmed")
+                registry.append("deleted", name, name, service="github", target_kind="repo")
+        except Exception:  # noqa: BLE001
+            actions.append(
+                {"service": "github", "kind": "repo", "id": intent["full_name"], "action": "failed"}
+            )
+            if not dry_run:
+                registry.append("failed", name, name, service="github", target_kind="repo")
     return actions
 
 

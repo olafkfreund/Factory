@@ -63,6 +63,7 @@ def matches(  # noqa: PLR0913
     *,
     code: str | None = None,
     field: str | None = None,
+    before: object = None,
     after: object = None,
 ) -> bool:
     if status in BANNED or status >= HTTP_SERVER_ERROR or status < HTTP_OK:
@@ -82,7 +83,17 @@ def matches(  # noqa: PLR0913
             and after.get("deadline_reached") is True
         )
     if probe == "m":
-        return isinstance(after, (tuple, list)) and len(after) == PAIR_SIZE and after[0] != after[1]
+        return (
+            isinstance(before, (tuple, list))
+            and len(before) == PAIR_SIZE
+            and before[0] != before[1]
+            and isinstance(after, (tuple, list))
+            and len(after) == PAIR_SIZE
+            and isinstance(after[0], (set, frozenset))
+            and isinstance(after[1], (set, frozenset))
+            and after[0] == {before[0]}
+            and after[1] == {before[1]}
+        )
     if probe == "d" and re.search(
         r"\b(?:auth|unauthori[sz]ed|forbidden|permission)\b", reason, re.I
     ):
@@ -102,7 +113,7 @@ def verify(  # noqa: PLR0913
     code: str | None = None,
     field: str | None = None,
 ) -> None:
-    if not matches(probe, status, reason, code=code, field=field, after=after):
+    if not matches(probe, status, reason, code=code, field=field, before=before, after=after):
         raise AssertionError(f"probe {probe}: expected {PROBES[probe].reason}")
     if probe in REPLAY and (before is None or after is None or before != after):
         raise AssertionError(f"probe {probe}: replay changed resource count")

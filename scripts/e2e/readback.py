@@ -1,12 +1,14 @@
 """Independent REST/remote-MCP and GitHub observations."""
 
 from collections.abc import Callable
+from urllib.error import HTTPError
 
 from scripts.e2e.config import HOSTS
 from scripts.parr_regression import HttpClient, bearer_auth
 
 HTTP_OK = 200
 HTTP_REDIRECT = 300
+HTTP_NOT_FOUND = 404
 
 
 class SurfaceMismatchError(Exception):
@@ -54,15 +56,25 @@ class Readback:
         return observed
 
 
-def absent(
-    read: Callable[[str, str], object], service: str, path: str, key: str, expected: object
+def absent(  # noqa: PLR0913
+    read: Callable[[str, str], object],
+    delete: Callable[[], object],
+    service: str,
+    path: str,
+    key: str,
+    expected: object,
 ) -> None:
     """A positive read of this key must precede a 404 absence check."""
     present = read(service, path)
     if not isinstance(present, dict) or present.get(key) != expected:
         raise SurfaceMismatchError("positive read failed before absence check")
+    delete()
     try:
         read(service, path)
+    except HTTPError as exc:
+        if service == "github" and exc.code == HTTP_NOT_FOUND:
+            return
+        raise
     except SurfaceMismatchError as exc:
         if str(exc) == f"{service} read-back returned HTTP 404":
             return

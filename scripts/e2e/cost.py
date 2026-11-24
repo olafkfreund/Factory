@@ -37,7 +37,7 @@ class Budget:
     def cap(  # noqa: PLR0913
         self,
         lane: str,
-        task_id: str,
+        task_id: str | tuple[str, str, str],
         stop: Callable[[str], object],
         status: Callable[[str], dict],
         *,
@@ -45,11 +45,14 @@ class Budget:
         now: Callable[[], float] = time.monotonic,
         wait: Callable[[float], None] = time.sleep,
     ) -> None:
+        service, kind, identity = (
+            task_id if isinstance(task_id, tuple) else ("aifactory", "task", task_id)
+        )
         try:
-            self.guard.mutate("aifactory", "task", task_id, lambda: stop(task_id))
+            self.guard.mutate(service, kind, identity, lambda: stop(identity))
             deadline = now() + timeout
             while True:
-                if status(task_id).get("status") in TERMINAL_STOPS:
+                if status(identity).get("status") in TERMINAL_STOPS:
                     return
                 if now() >= deadline:
                     raise StopUnconfirmedError("remote stop unconfirmed; lane blocked")

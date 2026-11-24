@@ -3,15 +3,20 @@
 import json
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from scripts.e2e.config import GITHUB_TOKEN_FILE
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *_args):
+        return None
+
+
 class GitHub:
-    def __init__(self, token_file: Path = GITHUB_TOKEN_FILE, open_url=urlopen) -> None:
+    def __init__(self, token_file: Path = GITHUB_TOKEN_FILE, open_url=None) -> None:
         self.token_file = token_file
-        self.open_url = open_url
+        self.open_url = open_url or build_opener(NoRedirect).open
 
     def __repr__(self) -> str:
         return "GitHub()"
@@ -31,8 +36,11 @@ class GitHub:
                 method=method,
             )
             with self.open_url(request, timeout=20) as response:
-                return json.load(response)
-        except (HTTPError, URLError, OSError, ValueError) as exc:
+                body = response.read()
+                return json.loads(body) if body else {}
+        except HTTPError:
+            raise
+        except (URLError, OSError, ValueError) as exc:
             raise RuntimeError(f"GitHub request failed ({type(exc).__name__})") from None
 
     def set_topics(self, full_name: str, topics: list[str]) -> dict:

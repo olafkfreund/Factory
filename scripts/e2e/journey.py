@@ -23,7 +23,7 @@ class Journey:
     repeat: int
     ablation: bool = False
 
-    def run(  # noqa: PLR0913
+    def run(  # noqa: PLR0913, PLR0915
         self,
         stages: dict[str, Callable[[float, Callable[..., None]], dict]],
         budget: Budget,
@@ -43,15 +43,19 @@ class Journey:
         budget.reserve(lane, LIMITS[self.project].usd)
         deadline = now() + LIMITS[self.project].minutes * 60
         results: dict[str, dict] = {}
-        current_task: str | None = None
+        current_task: tuple[str, str, str] | None = None
         spent = 0.0
 
-        def poll(task_id: str | None = None, cost_usd: float | None = None) -> None:
+        def poll(
+            task_id: tuple[str, str, str] | str | None = None, cost_usd: float | None = None
+        ) -> None:
             nonlocal current_task, spent
             if task_id:
-                current_task = task_id
+                current_task = (
+                    task_id if isinstance(task_id, tuple) else ("aifactory", "task", task_id)
+                )
             if usage is not None and current_task:
-                spent = max(spent, float(usage(current_task).get("cost_usd") or 0))
+                spent = max(spent, float(usage(current_task[2]).get("cost_usd") or 0))
             if cost_usd is not None:
                 spent = max(spent, cost_usd)
             timed_out = now() >= deadline
@@ -60,37 +64,55 @@ class Journey:
                 if remote is None or current_task is None:
                     budget.blocked.add(lane)
                     raise TimeoutError("deadline or cap reached without a confirmable remote stop")
-                budget.cap(lane, current_task, *remote)
+                resource = current_task
+                current_task = None
+                budget.cap(lane, resource, *remote)
                 if timed_out:
                     raise TimeoutError("deadline reached; remote stop confirmed")
                 raise ValueError("journey cap reached; remote stop confirmed")
 
-        for stage in STAGES:
-            poll()
-            result = stages[stage](deadline, poll)
-            if result.get("task_id"):
-                current_task = result["task_id"]
-            spent = max(
-                spent, sum(float(row.get("cost_usd") or 0) for row in (*results.values(), result))
-            )
-            poll()
-            observed = readback(stage, result)
-            validate(stage, result, self.project, observed)
-            results[stage] = observed
-            if self.project == "P5" and observed.get("needs_you"):
-                result = stages["X"](deadline, poll)
+        completed = False
+        try:
+            for stage in STAGES:
                 poll()
-                observed = readback("X", result)
-                validate("X", result, self.project, observed)
-                results["X"] = observed
-                return {
-                    "project": self.project,
-                    "surface": self.surface,
-                    "model": self.model,
-                    "repeat": self.repeat,
-                    "stage_results": results,
-                    "expected_stop": True,
-                }
+                result = stages[stage](deadline, poll)
+                if result.get("dispatched"):
+                    current_task = tuple(result["dispatched"])
+                elif result.get("task_id"):
+                    current_task = ("aifactory", "task", result["task_id"])
+                spent = max(
+                    spent,
+                    sum(float(row.get("cost_usd") or 0) for row in (*results.values(), result)),
+                )
+                poll()
+                observed = readback(stage, result)
+                validate(stage, result, self.project, observed)
+                results[stage] = observed
+                if self.project == "P5" and observed.get("needs_you"):
+                    result = stages["X"](deadline, poll)
+                    poll()
+                    observed = readback("X", result)
+                    validate("X", result, self.project, observed)
+                    results["X"] = observed
+                    completed = True
+                    return {
+                        "project": self.project,
+                        "surface": self.surface,
+                        "model": self.model,
+                        "repeat": self.repeat,
+                        "stage_results": results,
+                        "expected_stop": True,
+                    }
+            completed = True
+        finally:
+            if not completed and current_task is not None:
+                if remote is None:
+                    budget.blocked.add(lane)
+                else:
+                    try:
+                        budget.cap(lane, current_task, *remote)
+                    except Exception:  # noqa: BLE001
+                        budget.blocked.add(lane)
         return {
             "project": self.project,
             "surface": self.surface,
