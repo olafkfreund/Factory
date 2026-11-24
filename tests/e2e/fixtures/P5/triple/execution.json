@@ -1,0 +1,18 @@
+{
+  "complexity": "simple",
+  "model": "sonnet",
+  "runtime": "claude",
+  "phase_models": {
+    "coding": "claude-sonnet-4-6",
+    "qa": "claude-opus-4-7",
+    "qa_fixer": "claude-sonnet-4-6"
+  },
+  "phase_thinking": {
+    "coding": "low",
+    "qa": "medium",
+    "qa_fixer": "low"
+  },
+  "parallel": false,
+  "workers": 1,
+  "skip_planning": true
+}
