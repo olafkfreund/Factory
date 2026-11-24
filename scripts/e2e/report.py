@@ -3,6 +3,7 @@
 import json
 import statistics
 from pathlib import Path
+from typing import Any, cast
 
 from scripts.benchmarks.report import load_file, to_run
 from scripts.e2e.evidence import safe_fields
@@ -16,7 +17,7 @@ GAPS = (
 )
 
 
-def summarize(records: list[dict]) -> dict:
+def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     records = [
         safe_fields(
             row,
@@ -36,7 +37,7 @@ def summarize(records: list[dict]) -> dict:
         for row in records
     ]
     costs = [
-        to_run(row).cost_usd
+        cast(float, to_run(row).cost_usd)
         for row in records
         if row.get("hidden_green") is True
         and to_run(row).passed

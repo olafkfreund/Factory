@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from scripts.e2e.config import HOSTS, LIMITS
 from scripts.e2e.cost import Budget
@@ -25,15 +26,15 @@ class Journey:
 
     def run(  # noqa: PLR0913, PLR0915
         self,
-        stages: dict[str, Callable[[float, Callable[..., None]], dict]],
+        stages: dict[str, Callable[[float, Callable[..., None]], dict[str, Any]]],
         budget: Budget,
         lane: str,
         *,
-        readback: Callable[[str, dict], dict],
-        usage: Callable[[str], dict] | None = None,
+        readback: Callable[[str, dict[str, Any]], dict[str, Any]],
+        usage: Callable[[str], dict[str, Any]] | None = None,
         now: Callable[[], float] = time.monotonic,
-        remote: tuple[Callable[[str], object], Callable[[str], dict]] | None = None,
-    ) -> dict:
+        remote: tuple[Callable[[str], object], Callable[[str], dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
         if (
             self.project not in LIMITS
             or self.surface not in {"cli", "mcp", "ui"}
@@ -42,7 +43,7 @@ class Journey:
             raise ValueError("invalid journey")
         budget.reserve(lane, LIMITS[self.project].usd)
         deadline = now() + LIMITS[self.project].minutes * 60
-        results: dict[str, dict] = {}
+        results: dict[str, dict[str, Any]] = {}
         current_task: tuple[str, str, str] | None = None
         spent = 0.0
 
@@ -141,7 +142,7 @@ def matrix() -> list[Journey]:
     return runs
 
 
-def write_meta(path: Path, result: dict) -> None:
+def write_meta(path: Path, result: dict[str, Any]) -> None:
     """Record the pinned endpoints alongside one journey's evidence."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -171,7 +172,9 @@ def write_meta(path: Path, result: dict) -> None:
     )
 
 
-def validate(stage: str, result: dict, project: str, observed: dict | None = None) -> None:
+def validate(
+    stage: str, result: dict[str, Any], project: str, observed: dict[str, Any] | None = None
+) -> None:
     if observed is None:
         raise AssertionError("independent read-back required")
     result = observed

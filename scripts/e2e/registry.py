@@ -4,6 +4,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from scripts.e2e.evidence import safe_fields
 
@@ -23,7 +24,9 @@ class Registry:
     def __init__(self, campaign: str, root: Path = Path("evidence")) -> None:
         self.path = root / campaign / "registry.jsonl"
 
-    def append(self, kind: str, identity: str, repo_node_id: str, **fields: object) -> dict:
+    def append(
+        self, kind: str, identity: str, repo_node_id: str, **fields: object
+    ) -> dict[str, Any]:
         service = fields.get("service")
         target_kind = fields.get("target_kind")
         if kind == "intent":
@@ -50,12 +53,12 @@ class Registry:
             os.fsync(out.fileno())
         return entry
 
-    def entries(self) -> list[dict]:
+    def entries(self) -> list[dict[str, Any]]:
         if not self.path.exists():
             return []
         return [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines()]
 
-    def find(self, service: str, kind: str, identity: str) -> dict | None:
+    def find(self, service: str, kind: str, identity: str) -> dict[str, Any] | None:
         return next(
             (
                 entry
@@ -65,7 +68,7 @@ class Registry:
             None,
         )
 
-    def active(self) -> list[dict]:
+    def active(self) -> list[dict[str, Any]]:
         entries = self.entries()
         ended = {
             (entry["service"], entry["repo_node_id"], entry["target_kind"], entry["id"])

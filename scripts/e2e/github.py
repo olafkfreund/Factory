@@ -1,7 +1,9 @@
 """Minimal GitHub repo client; token is read only for a request."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -9,19 +11,23 @@ from scripts.e2e.config import GITHUB_TOKEN_FILE
 
 
 class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, *_args):
+    def redirect_request(self, *_args: object) -> Request | None:
         return None
 
 
 class GitHub:
-    def __init__(self, token_file: Path = GITHUB_TOKEN_FILE, open_url=None) -> None:
+    def __init__(
+        self, token_file: Path = GITHUB_TOKEN_FILE, open_url: Callable[..., Any] | None = None
+    ) -> None:
         self.token_file = token_file
         self.open_url = open_url or build_opener(NoRedirect).open
 
     def __repr__(self) -> str:
         return "GitHub()"
 
-    def request(self, method: str, path: str, payload: dict | None = None) -> dict:
+    def request(
+        self, method: str, path: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         if not path.startswith("/") or "//" in path or not path.startswith("/repos/"):
             raise ValueError("invalid GitHub path")
         try:
@@ -43,7 +49,7 @@ class GitHub:
         except (URLError, OSError, ValueError) as exc:
             raise RuntimeError(f"GitHub request failed ({type(exc).__name__})") from None
 
-    def set_topics(self, full_name: str, topics: list[str]) -> dict:
+    def set_topics(self, full_name: str, topics: list[str]) -> dict[str, Any]:
         if not full_name.startswith("Freundcloud/"):
             raise ValueError("unsafe owner")
         return self.request("PUT", f"/repos/{full_name}/topics", {"names": topics})

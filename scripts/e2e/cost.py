@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Callable
+from typing import Any
 
 from scripts.e2e.config import CAMPAIGN_CAP_USD, CAMPAIGN_HOURS, MAX_LANES
 from scripts.e2e.guard import Guard
@@ -39,7 +40,7 @@ class Budget:
         lane: str,
         task_id: str | tuple[str, str, str],
         stop: Callable[[str], object],
-        status: Callable[[str], dict],
+        status: Callable[[str], dict[str, Any]],
         *,
         timeout: float = STOP_TIMEOUT,
         now: Callable[[], float] = time.monotonic,
@@ -64,12 +65,12 @@ class Budget:
 
 def poll_usage(
     task_id: str,
-    read: Callable[[str], dict],
+    read: Callable[[str], dict[str, Any]],
     deadline: float,
     *,
     now: Callable[[], float] = time.monotonic,
     wait: Callable[[float], None] = time.sleep,
-) -> tuple[dict, list[str]]:
+) -> tuple[dict[str, Any], list[str]]:
     """Poll AIF /api/tasks/{id}/token-usage until nonzero or deadline."""
     while True:
         usage = read(task_id)
@@ -80,7 +81,7 @@ def poll_usage(
         wait(1)
 
 
-def registry_costs(rows: list[dict], registered_ids: set[str]) -> float:
+def registry_costs(rows: list[dict[str, Any]], registered_ids: set[str]) -> float:
     return sum(
         float(row.get("cost_usd") or 0) for row in rows if row.get("task_id") in registered_ids
     )

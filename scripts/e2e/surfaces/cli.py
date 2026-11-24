@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from scripts.e2e.config import HOSTS, KEY_FILES
 from scripts.e2e.guard import Guard, GuardRefusalError
@@ -28,7 +29,7 @@ class CLI:
         self.run = run
         self.key_files = KEY_FILES if key_files is None else key_files
 
-    def call(self, service: str, kind: str, identity: str, verb: str, *args: str) -> dict:
+    def call(self, service: str, kind: str, identity: str, verb: str, *args: str) -> dict[str, Any]:
         if any(
             ID_SHAPED.search(arg)
             or arg.startswith(("--config", "--api-url", "--token", "--key", "--home"))
@@ -36,7 +37,7 @@ class CLI:
         ):
             raise GuardRefusalError("caller supplied another target")
 
-        def action() -> dict:
+        def action() -> dict[str, Any]:
             with tempfile.TemporaryDirectory(prefix="factory-e2e-") as home:
                 env = {
                     "PATH": os.environ.get("PATH", os.defpath),
@@ -55,6 +56,6 @@ class CLI:
                 )
             if result.returncode:
                 raise RuntimeError(f"factory CLI failed with exit {result.returncode}")
-            return json.loads(result.stdout)
+            return cast(dict[str, Any], json.loads(result.stdout))
 
-        return self.guard.mutate(service, kind, identity, action)
+        return cast(dict[str, Any], self.guard.mutate(service, kind, identity, action))

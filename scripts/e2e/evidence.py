@@ -1,6 +1,7 @@
 """Persist only known evidence fields, with credential redaction."""
 
 import re
+from typing import Any, cast
 
 SECRET = re.compile(
     r"(?i)(?:\b(?:Bearer|token)\s+|\b(?:acw_|cfk_|ghp_|gho_|ghs_|ghu_|ghr_|github_pat_))[A-Za-z0-9_\-.]+"
@@ -56,7 +57,7 @@ def redact(value: object) -> object:
     return value
 
 
-def safe_fields(row: dict, allowed: set[str]) -> dict:
+def safe_fields(row: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
     selected = {key: row[key] for key in allowed if key in row}
     if "stage_results" in selected:
         selected["stage_results"] = {
@@ -70,4 +71,4 @@ def safe_fields(row: dict, allowed: set[str]) -> dict:
             for probe, result in selected["probes"].items()
             if probe in PROBE_KEYS and isinstance(result, dict)
         }
-    return redact(selected)
+    return cast(dict[str, Any], redact(selected))

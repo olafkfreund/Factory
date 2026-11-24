@@ -2,7 +2,8 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from functools import partial
+from typing import Any, Protocol
 from urllib.error import HTTPError
 
 from scripts.e2e.config import SWEEP_AGE_DAYS
@@ -34,9 +35,9 @@ def sweep(  # noqa: PLR0912
     *,
     dry_run: bool = True,
     now: datetime | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     cutoff = (now or datetime.now(UTC)) - timedelta(days=SWEEP_AGE_DAYS)
-    groups: dict[str, list[dict]] = {}
+    groups: dict[str, list[dict[str, Any]]] = {}
     for entry in registry.active():
         groups.setdefault(entry["repo_node_id"], []).append(entry)
     actions = []
@@ -61,7 +62,7 @@ def sweep(  # noqa: PLR0912
                         service,
                         kind,
                         identity,
-                        lambda identity=identity: delete.close_session(identity),
+                        partial(delete.close_session, identity),
                     )
                     registry.append(
                         "retained",
@@ -75,9 +76,7 @@ def sweep(  # noqa: PLR0912
                         service,
                         kind,
                         identity,
-                        lambda service=service, kind=kind, identity=identity: delete.delete(
-                            service, kind, identity
-                        ),
+                        partial(delete.delete, service, kind, identity),
                     )
                     if _exists(delete, service, kind, identity):
                         raise RuntimeError(f"{kind} deletion unconfirmed")
@@ -123,7 +122,7 @@ def sweep(  # noqa: PLR0912
                     "github",
                     "repo",
                     intent["full_name"],
-                    lambda identity=intent["full_name"]: delete.delete("github", "repo", identity),
+                    partial(delete.delete, "github", "repo", intent["full_name"]),
                 )
                 if _exists(delete, "github", "repo", intent["full_name"]):
                     raise RuntimeError("orphan repo deletion unconfirmed")
@@ -137,7 +136,9 @@ def sweep(  # noqa: PLR0912
     return actions
 
 
-def unregistered_repos(registry: Registry, list_repos: Callable[[], list[dict]]) -> list[str]:
+def unregistered_repos(
+    registry: Registry, list_repos: Callable[[], list[dict[str, Any]]]
+) -> list[str]:
     registered = {
         entry["full_name"] for entry in registry.entries() if entry["kind"] in {"repo", "intent"}
     }

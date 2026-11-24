@@ -1,8 +1,11 @@
 """Offline safety and oracle tests for the campaign harness."""
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from email.message import Message
 from io import BytesIO
+from typing import Any, cast
 from urllib.error import HTTPError
 
 import pytest
@@ -21,8 +24,27 @@ from scripts.e2e.report import summarize
 from scripts.e2e.surfaces.cli import CLI
 from scripts.e2e.surfaces.mcp import MCP
 
+KINDS = [
+    ("repo", "R_42"),
+    ("project", "aif-1"),
+    ("session", "pf-1"),
+    ("task", "task-1"),
+    ("spec", "tf-1"),
+    ("card", "card-1"),
+]
+SERVICES = {
+    "repo": "github",
+    "project": "aifactory",
+    "session": "pfactory",
+    "task": "aifactory",
+    "spec": "tfactory",
+    "card": "cfactory",
+}
 
-def repo(name="e2e-20261124-P1-1", owner="Freundcloud", topics=None):
+
+def repo(
+    name: str = "e2e-20261124-P1-1", owner: str = "Freundcloud", topics: list[str] | None = None
+) -> dict[str, Any]:
     return {
         "id": 42,
         "node_id": "R_42",
@@ -31,6 +53,18 @@ def repo(name="e2e-20261124-P1-1", owner="Freundcloud", topics=None):
         "owner": {"login": owner},
         "topics": ["factory-e2e"] if topics is None else topics,
     }
+
+
+def age_registry(registry: Registry) -> None:
+    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    registry.path.write_text(
+        "".join(json.dumps({**row, "at": old}) + "\n" for row in registry.entries())
+    )
+
+
+def record(items: list[Any], value: Any, result: Any) -> Any:
+    items.append(value)
+    return result
 
 
 @pytest.fixture
@@ -72,27 +106,13 @@ def guarded(tmp_path):
 
 @pytest.mark.parametrize(
     "kind,identity",
-    [
-        ("repo", "R_42"),
-        ("project", "aif-1"),
-        ("session", "pf-1"),
-        ("task", "task-1"),
-        ("spec", "tf-1"),
-        ("card", "card-1"),
-    ],
+    KINDS,
 )
 def test_guard_accepts_registered_live_resource(guarded, kind, identity):
     _, guard, _ = guarded
     assert (
         guard.check(
-            {
-                "repo": "github",
-                "project": "aifactory",
-                "session": "pfactory",
-                "task": "aifactory",
-                "spec": "tfactory",
-                "card": "cfactory",
-            }[kind],
+            SERVICES[kind],
             kind,
             identity,
         )["id"]
@@ -112,28 +132,14 @@ def test_guard_accepts_registered_live_resource(guarded, kind, identity):
 )
 @pytest.mark.parametrize(
     "kind,identity",
-    [
-        ("repo", "R_42"),
-        ("project", "aif-1"),
-        ("session", "pf-1"),
-        ("task", "task-1"),
-        ("spec", "tf-1"),
-        ("card", "card-1"),
-    ],
+    KINDS,
 )
 def test_guard_refuses_unsafe_repo_for_every_service(guarded, change, kind, identity):
     _, guard, live = guarded
     live["repo"] = {**live["repo"], **change}
     with pytest.raises(GuardRefusalError):
         guard.check(
-            {
-                "repo": "github",
-                "project": "aifactory",
-                "session": "pfactory",
-                "task": "aifactory",
-                "spec": "tfactory",
-                "card": "cfactory",
-            }[kind],
+            SERVICES[kind],
             kind,
             identity,
         )
@@ -154,14 +160,16 @@ def test_created_identity_is_durable_before_return(tmp_path):
     created = guard.create_repo(
         repo()["name"], lambda: {**repo(), "topics": []}, lambda _name, _topics: None
     )
-    assert registry.find("github", "repo", created["node_id"])["repo_id"] == created["id"]
+    saved_repo = registry.find("github", "repo", created["node_id"])
+    assert saved_repo is not None and saved_repo["repo_id"] == created["id"]
     project = guard.create_resource(
         "project",
         "aifactory",
         created["node_id"],
         lambda: {"id": "aif-1", "repo_node_id": "R_42", "org": "factory-e2e"},
     )
-    assert registry.find("aifactory", "project", project["id"])["service"] == "aifactory"
+    saved_project = registry.find("aifactory", "project", project["id"])
+    assert saved_project is not None and saved_project["service"] == "aifactory"
 
 
 def test_surface_mutations_always_use_guard(guarded):
@@ -181,7 +189,7 @@ def test_surface_mutations_always_use_guard(guarded):
 def test_cap_requires_confirmed_remote_stop(guarded):
     budget = Budget(guarded[1])
     budget.reserve("lane", 15)
-    stopped = []
+    stopped: list[str] = []
     budget.cap("lane", "task-1", stopped.append, lambda _: {"status": "stopped"})
     assert stopped == ["task-1"]
     with pytest.raises(StopUnconfirmedError):
@@ -197,7 +205,7 @@ def test_cap_requires_confirmed_remote_stop(guarded):
 
 
 def test_cap_cannot_stop_unregistered_task(guarded):
-    stopped = []
+    stopped: list[str] = []
     with pytest.raises(GuardRefusalError):
         Budget(guarded[1]).cap(
             "lane", "other-task", stopped.append, lambda _: {"status": "stopped"}
@@ -240,7 +248,7 @@ def test_run_meta_records_pinned_hosts(tmp_path):
 
 
 def test_journey_cap_stops_before_next_stage(guarded):
-    called = []
+    called: list[str] = []
     stages = {
         "S1": lambda _deadline, _poll: {
             "registered": True,
@@ -256,7 +264,7 @@ def test_journey_cap_stops_before_next_stage(guarded):
             "task_id": "task-1",
             "cost_usd": 15,
         },
-        "S3": lambda _deadline, _poll: called.append("S3"),
+        "S3": lambda _deadline, _poll: record(called, "S3", None),
     }
     with pytest.raises(ValueError, match="remote stop confirmed"):
         Journey("P1", "cli", "Claude", 1).run(
@@ -383,15 +391,12 @@ def test_sweeper_dry_run_only_old_registered(guarded):
 
 def test_sweeper_live_confirms_absence(guarded):
     registry, guard, _ = guarded
-    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
-    registry.path.write_text(
-        "".join(json.dumps({**row, "at": old}) + "\n" for row in registry.entries())
-    )
+    age_registry(registry)
 
     class FakeDelete:
-        def __init__(self):
-            self.deleted = set()
-            self.closed = []
+        def __init__(self) -> None:
+            self.deleted: set[tuple[str, str, str]] = set()
+            self.closed: list[str] = []
 
         def delete(self, service, kind, identity):
             self.deleted.add((service, kind, identity))
@@ -409,11 +414,11 @@ def test_sweeper_live_confirms_absence(guarded):
 
 
 def test_surface_target_is_constructed_and_other_ids_refused(guarded, tmp_path):
-    seen = []
+    seen: list[Any] = []
     cli = CLI(
         guarded[1],
-        lambda argv, **kw: (
-            seen.append((argv, kw)) or __import__("subprocess").CompletedProcess(argv, 0, "{}")
+        lambda argv, **kw: record(
+            seen, (argv, kw), __import__("subprocess").CompletedProcess(argv, 0, "{}")
         ),
         key_files={"aifactory": tmp_path / "key"},
     )
@@ -421,8 +426,8 @@ def test_surface_target_is_constructed_and_other_ids_refused(guarded, tmp_path):
     assert seen[0][0] == ["factory", "retry", "task-1", "--json"]
     with pytest.raises(GuardRefusalError):
         cli.call("aifactory", "task", "task-1", "retry", "af:other")
-    seen_mcp = []
-    mcp = MCP(guarded[1], lambda _method, params: seen_mcp.append(params) or {"result": {}})
+    seen_mcp: list[Any] = []
+    mcp = MCP(guarded[1], lambda _method, params: record(seen_mcp, params, {"result": {}}))
     mcp.call("cfactory", "card", "card-1", "card.move", column="Done")
     assert seen_mcp == [{"column": "Done", "key": "card-1"}]
     with pytest.raises(GuardRefusalError):
@@ -435,11 +440,11 @@ def test_cli_environment_is_pinned_and_isolated(guarded, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", "/secret/home")
     token = tmp_path / "token"
     token.write_text("temp-test-token")
-    seen = []
+    seen: list[Any] = []
     CLI(
         guarded[1],
-        lambda argv, **kw: (
-            seen.append(kw["env"]) or __import__("subprocess").CompletedProcess(argv, 0, "{}")
+        lambda argv, **kw: record(
+            seen, kw["env"], __import__("subprocess").CompletedProcess(argv, 0, "{}")
         ),
         {"aifactory": token},
     ).call("aifactory", "task", "task-1", "retry")
@@ -560,13 +565,13 @@ def test_absence_requires_positive_read_then_404():
 
 @pytest.mark.parametrize("status", [404, 401, 403, 500])
 def test_github_absence_accepts_only_404(status):
-    calls = []
+    calls: list[str] = []
 
     def read(*_):
         if not calls:
             calls.append("read")
             return {"id": 42}
-        raise HTTPError("", status, "", {}, None)
+        raise HTTPError("", status, "", cast(Message, {}), None)
 
     if status == 404:
         absent(read, lambda: calls.append("delete"), "github", "/repos/x", "id", 42)
@@ -608,8 +613,8 @@ def test_sweeper_repo_last_includes_young_child(guarded):
     )
 
     class Client:
-        def __init__(self):
-            self.order = []
+        def __init__(self) -> None:
+            self.order: list[str] = []
 
         def delete(self, _service, kind, _identity):
             self.order.append(kind)
@@ -652,9 +657,11 @@ def test_reconcile_findings():
 def test_journey_run_happy_deadline_and_p5(guarded):
     budget = Budget(guarded[1])
 
-    def stages(p5=False):
-        def stage(name):
-            def run(_deadline, poll):
+    def stages(
+        p5: bool = False,
+    ) -> dict[str, Callable[[float, Callable[..., None]], dict[str, Any]]]:
+        def stage(name: str) -> Callable[[float, Callable[..., None]], dict[str, Any]]:
+            def run(_deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
                 poll()
                 if name == "S2" and p5:
                     return {"needs_you": True, "review_findings": 1}
@@ -664,7 +671,7 @@ def test_journey_run_happy_deadline_and_p5(guarded):
 
         return {name: stage(name) for name in ("S1", "S2", "S3", "S4", "S5", "X")}
 
-    observations = {
+    observations: dict[str, dict[str, Any]] = {
         "S1": {
             "registered": True,
             "branch_protection": True,
@@ -768,8 +775,8 @@ def test_orphan_repo_requires_created_at_and_topic(tmp_path):
     guard = Guard(registry, lambda _: live, lambda *_: None)
 
     class Client:
-        def __init__(self):
-            self.deleted = []
+        def __init__(self) -> None:
+            self.deleted: list[tuple[str, str, str]] = []
 
         def delete(self, service, kind, identity):
             self.deleted.append((service, kind, identity))
@@ -832,45 +839,52 @@ def test_failed_create_closes_intent(tmp_path):
     with pytest.raises(HTTPError):
         guard.create_repo(
             repo()["name"],
-            lambda: (_ for _ in ()).throw(HTTPError("", 422, "", {}, None)),
+            lambda: (_ for _ in ()).throw(HTTPError("", 422, "", cast(Message, {}), None)),
             lambda *_: None,
         )
     assert registry.find("github", "create_failed", repo()["name"])
 
 
+def assert_failed_stage_stops(
+    guarded: Any,
+    stage: Any,
+    error: type[Exception],
+    stopped: list[str],
+    match: str | None = None,
+) -> None:
+    with pytest.raises(error, match=match):
+        Journey("P1", "cli", "Claude", 1).run(
+            {"S1": stage},
+            Budget(guarded[1]),
+            "lane",
+            readback=lambda *_: {},
+            remote=(stopped.append, lambda _: {"status": "stopped"}),
+        )
+
+
 def test_stage_exception_stops_dispatched_service_resource(guarded):
-    registry, guard, _ = guarded
+    registry, _, _ = guarded
     registry.append("session", "pf-2", "R_42", service="pfactory")
-    budget = Budget(guard)
-    stopped = []
+    stopped: list[str] = []
 
     def stage(_deadline, poll):
         poll(("pfactory", "session", "pf-2"))
         raise RuntimeError("stage failed")
 
-    with pytest.raises(RuntimeError, match="stage failed"):
-        Journey("P1", "cli", "Claude", 1).run(
-            {"S1": stage},
-            budget,
-            "lane",
-            readback=lambda *_: {},
-            remote=(stopped.append, lambda _: {"status": "stopped"}),
-        )
+    assert_failed_stage_stops(guarded, stage, RuntimeError, stopped, "stage failed")
     assert stopped == ["pf-2"]
 
 
 def test_validation_failure_stops_result_dispatched_resource(guarded):
-    registry, guard, _ = guarded
+    registry, _, _ = guarded
     registry.append("session", "pf-2", "R_42", service="pfactory")
-    stopped = []
-    with pytest.raises(AssertionError):
-        Journey("P1", "cli", "Claude", 1).run(
-            {"S1": lambda *_: {"dispatched": ("pfactory", "session", "pf-2")}},
-            Budget(guard),
-            "lane",
-            readback=lambda *_: {},
-            remote=(stopped.append, lambda _: {"status": "stopped"}),
-        )
+    stopped: list[str] = []
+    assert_failed_stage_stops(
+        guarded,
+        lambda *_: {"dispatched": ("pfactory", "session", "pf-2")},
+        AssertionError,
+        stopped,
+    )
     assert stopped == ["pf-2"]
 
 
@@ -901,11 +915,15 @@ def test_github_preserves_status_and_accepts_empty_204(tmp_path):
     token.write_text("secret")
     with pytest.raises(HTTPError) as caught:
         GitHub(
-            token, lambda *_args, **_kwargs: (_ for _ in ()).throw(HTTPError("", 404, "", {}, None))
+            token,
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                HTTPError("", 404, "", cast(Message, {}), None)
+            ),
         ).request("GET", "/repos/Freundcloud/x")
     assert caught.value.code == 404
+
     response = BytesIO(b"")
-    response.status = 204
+    cast(Any, response).status = 204
     assert (
         GitHub(token, lambda *_args, **_kwargs: response).request("DELETE", "/repos/Freundcloud/x")
         == {}
@@ -915,10 +933,7 @@ def test_github_preserves_status_and_accepts_empty_204(tmp_path):
 
 def test_sweep_records_failure_and_continues(guarded):
     registry, guard, _ = guarded
-    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
-    registry.path.write_text(
-        "".join(json.dumps({**row, "at": old}) + "\n" for row in registry.entries())
-    )
+    age_registry(registry)
 
     class Client:
         def delete(self, _service, kind, _identity):
@@ -938,17 +953,14 @@ def test_sweep_records_failure_and_continues(guarded):
 
 def test_sweep_404_is_absent_and_401_is_failure(guarded):
     registry, guard, _ = guarded
-    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
-    registry.path.write_text(
-        "".join(json.dumps({**row, "at": old}) + "\n" for row in registry.entries())
-    )
+    age_registry(registry)
 
     class Client:
         def delete(self, *_):
             pass
 
         def exists(self, _service, kind, _identity):
-            raise HTTPError("", 404 if kind == "task" else 401, "", {}, None)
+            raise HTTPError("", 404 if kind == "task" else 401, "", cast(Message, {}), None)
 
         def close_session(self, *_):
             pass

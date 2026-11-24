@@ -3,6 +3,7 @@
 import re
 from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 from scripts.e2e.config import ORG
 from scripts.e2e.registry import KIND_SERVICES, Registry
@@ -19,14 +20,14 @@ class Guard:
     def __init__(
         self,
         registry: Registry,
-        read_repo: Callable[[str], dict | None],
-        read_resource: Callable[[str, str, str], dict | None],
+        read_repo: Callable[[str], dict[str, Any] | None],
+        read_resource: Callable[[str, str, str], dict[str, Any] | None],
     ) -> None:
         self.registry = registry
         self.read_repo = read_repo
         self.read_resource = read_resource
 
-    def check(self, service: str, kind: str, identity: str) -> dict:
+    def check(self, service: str, kind: str, identity: str) -> dict[str, Any]:
         if service not in KIND_SERVICES.get(kind, set()):
             raise GuardRefusalError("unknown resource service or kind")
         entry = self.registry.find(service, kind, identity)
@@ -45,6 +46,8 @@ class Guard:
             ):
                 raise GuardRefusalError("closed or missing repo intent")
             repo = self.read_repo(identity)
+            if repo is None:
+                raise GuardRefusalError("repo creation time unavailable")
             try:
                 created = datetime.fromisoformat(repo["created_at"].replace("Z", "+00:00"))
                 intended = datetime.fromisoformat(entry["at"])
@@ -97,8 +100,11 @@ class Guard:
         return operation()
 
     def create_repo(
-        self, name: str, create: Callable[[], dict], set_topics: Callable[[str, list[str]], object]
-    ) -> dict:
+        self,
+        name: str,
+        create: Callable[[], dict[str, Any]],
+        set_topics: Callable[[str, list[str]], object],
+    ) -> dict[str, Any]:
         if not REPO_NAME.fullmatch(name):
             raise GuardRefusalError("unsafe repo name")
         full_name = f"Freundcloud/{name}"
@@ -136,8 +142,12 @@ class Guard:
         return repo
 
     def create_resource(
-        self, kind: str, service: str, repo_node_id: str, create: Callable[[], dict]
-    ) -> dict:
+        self,
+        kind: str,
+        service: str,
+        repo_node_id: str,
+        create: Callable[[], dict[str, Any]],
+    ) -> dict[str, Any]:
         if service not in KIND_SERVICES.get(kind, set()):
             raise GuardRefusalError("invalid resource service")
         self.check("github", "repo", repo_node_id)
