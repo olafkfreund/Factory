@@ -7,8 +7,10 @@ from typing import Any, Protocol
 from urllib.error import HTTPError
 
 from scripts.e2e.config import SWEEP_AGE_DAYS
+from scripts.e2e.github import GitHub
 from scripts.e2e.guard import Guard
 from scripts.e2e.registry import Registry
+from scripts.e2e.services import Services
 
 HTTP_NOT_FOUND = 404
 
@@ -17,6 +19,25 @@ class DeleteClient(Protocol):
     def delete(self, service: str, kind: str, identity: str) -> object: ...
     def close_session(self, identity: str) -> object: ...
     def exists(self, service: str, kind: str, identity: str) -> bool: ...
+
+
+class LiveDelete:
+    def __init__(self, services: Services, github: GitHub) -> None:
+        self.services = services
+        self.github = github
+
+    def delete(self, service: str, kind: str, identity: str) -> object:
+        if (service, kind) == ("github", "repo"):
+            return self.github.delete_repo(identity)
+        return self.services.delete(service, kind, identity)
+
+    def close_session(self, identity: str) -> object:
+        return self.services.close_session(identity)
+
+    def exists(self, service: str, kind: str, identity: str) -> bool:
+        if (service, kind) == ("github", "repo"):
+            return self.github.read_repo(identity) is not None
+        return self.services.exists(service, kind, identity)
 
 
 def _exists(delete: DeleteClient, service: str, kind: str, identity: str) -> bool:
@@ -46,12 +67,27 @@ def sweep(  # noqa: PLR0912
         if repo is None:
             continue
         repo_due = datetime.fromisoformat(repo["at"]) < cutoff
-        ordered = sorted(entries, key=lambda entry: entry["kind"] == "repo")
+        order = {
+            "card": 0,
+            "session": 1,
+            "spec": 2,
+            "task": 2,
+            "repository": 3,
+            "project": 4,
+            "repo": 5,
+        }
+        ordered = sorted(entries, key=lambda entry: order[entry["kind"]])
         for entry in ordered:
             if not repo_due and datetime.fromisoformat(entry["at"]) >= cutoff:
                 continue
             service, kind, identity = entry["service"], entry["kind"], entry["id"]
-            action = "retain" if kind == "session" else "delete"
+            action = (
+                "retain"
+                if kind == "session"
+                else "archive"
+                if kind in {"task", "spec"}
+                else "delete"
+            )
             try:
                 guard.check(service, kind, identity)
                 actions.append({"service": service, "kind": kind, "id": identity, "action": action})

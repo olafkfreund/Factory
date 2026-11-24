@@ -9,10 +9,12 @@ from typing import Any, cast
 
 import pytest
 
-from scripts.e2e import run, services, stages
+from scripts.e2e import github, run, services, stages
 from scripts.e2e.config import HOSTS
 from scripts.e2e.guard import Guard
 from scripts.e2e.journey import Journey
+from scripts.e2e.registry import Registry
+from scripts.e2e.surfaces import mcp
 
 
 def test_mvr_dry_run_never_opens_network(
@@ -33,13 +35,23 @@ def test_mvr_dry_run_never_opens_network(
     assert len(json.loads(meta.read_text())["journeys"]) == 5
 
 
-def test_live_fails_before_network_or_artifacts(
+def test_live_writes_results_from_injected_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(socket.socket, "connect", lambda *_: pytest.fail("network call"))
-    with pytest.raises(NotImplementedError, match="ownership"):
-        run.main(["--slice", "mvr", "--live", "--evidence-root", str(tmp_path)])
-    assert list(tmp_path.iterdir()) == []
+    seen: list[Journey] = []
+
+    def fake_live(runs: list[Journey], _campaign: str, _root: Path) -> list[dict[str, Any]]:
+        seen.extend(runs)
+        return [
+            {"status": "failed", "probes": {"c": {"status": "skipped", "reason": "no safe seam"}}}
+        ]
+
+    monkeypatch.setattr(run, "run_live", fake_live)
+    assert run.main(["--slice", "mvr", "--live", "--evidence-root", str(tmp_path)]) == 1
+    assert len(seen) == 5
+    meta = next(tmp_path.glob("*/run.meta.json"))
+    assert json.loads(meta.read_text())["journeys"][0]["probes"]["c"]["status"] == "skipped"
 
 
 def test_service_reads_key_at_each_call_without_printing_it(
@@ -57,14 +69,23 @@ def test_service_reads_key_at_each_call_without_printing_it(
 
         def request(self, _method: str, _path: str, _body: object) -> Any:
             seen.append(self.auth()["Authorization"])
-            return SimpleNamespace(status=200, json={"id": "task-1"})
+            body: object = [] if _path == "/api/mcp-stdio/projects" else {"id": "task-1"}
+            return SimpleNamespace(status=200, json=body)
 
     monkeypatch.setattr(services, "HttpClient", FakeHttpClient)
     client = services.Services({"aifactory": key})
-    assert client.read_resource("aifactory", "task", "task-1") == {"id": "task-1"}
+    assert client.read_resource("aifactory", "task", "task-1") == {
+        "id": "task-1",
+        "repo_node_id": None,
+        "org": "default",
+    }
     key.write_text("secret-two")
-    assert client.read_resource("aifactory", "task", "task-1") == {"id": "task-1"}
-    assert seen == ["Bearer secret-one", "Bearer secret-two"]
+    assert client.read_resource("aifactory", "task", "task-1") == {
+        "id": "task-1",
+        "repo_node_id": None,
+        "org": "default",
+    }
+    assert seen == ["Bearer secret-one"] * 2 + ["Bearer secret-two"] * 2
     captured = capsys.readouterr()
     assert "secret-" not in captured.out + captured.err
 
@@ -73,7 +94,335 @@ def test_unknown_mutation_route_never_sends_request(monkeypatch: pytest.MonkeyPa
     client = services.Services({})
     monkeypatch.setattr(client, "_request", lambda *_: pytest.fail("unguarded request"))
     with pytest.raises(NotImplementedError, match="delete route"):
-        client.delete("tfactory", "project", "project-1")
+        client.delete("pfactory", "task", "task-1")
+
+
+def test_service_ownership_fields_and_routes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = Registry("campaign", tmp_path)
+    registry.append(
+        "repo", "R1", "R1", service="github", repo_id=1, full_name="Freundcloud/e2e-20261124-P1-1"
+    )
+    client = services.Services({}, registry)
+    responses: dict[tuple[str, str], object] = {
+        ("aifactory", "/api/mcp-stdio/projects"): [
+            {"id": "a1", "repoIdentity": "github.com/freundcloud/e2e-20261124-p1-1"}
+        ],
+        ("pfactory", "/api/mcp-stdio/projects"): [{"id": "p1", "repo": None}],
+        ("tfactory", "/api/mcp-stdio/projects"): [
+            {"id": "t1", "repoLabel": "Freundcloud/e2e-20261124-P1-1"}
+        ],
+        ("pfactory", "/api/mcp-stdio/plan/sessions/s1"): {
+            "session_id": "s1",
+            "repo": "Freundcloud/e2e-20261124-P1-1",
+            "org_id": "o1",
+        },
+        ("aifactory", "/api/mcp-stdio/tasks/a1%3Aspec"): {"id": "a1:spec"},
+        ("tfactory", "/api/mcp-stdio/tasks/t1%3Aspec"): {"task_id": "t1:spec"},
+        ("cfactory", "/api/cards/C-1"): {
+            "card_key": "C-1",
+            "tenant_id": "default",
+            "repository_id": 7,
+        },
+        ("cfactory", "/api/tenants/default/git-repositories"): {
+            "repositories": [{"id": 7, "project": "Freundcloud/e2e-20261124-P1-1"}]
+        },
+    }
+
+    def fake_request(service: str, method: str, path: str, _body: object = None) -> Any:
+        assert method == "GET"
+        return responses[service, path]
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    for service, kind, identity, field, expected in (
+        ("aifactory", "project", "a1", "repo_node_id", "R1"),
+        ("pfactory", "project", "p1", "org", "default"),
+        ("tfactory", "project", "t1", "repo_node_id", "R1"),
+        ("pfactory", "session", "s1", "org", "o1"),
+        ("aifactory", "task", "a1:spec", "repo_node_id", "R1"),
+        ("tfactory", "spec", "t1:spec", "repo_node_id", "R1"),
+        ("cfactory", "card", "C-1", "repo_node_id", "R1"),
+    ):
+        resource = client.read_resource(service, kind, identity)
+        assert resource is not None and resource[field] == expected
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+    "case",
+    [
+        ("DELETE", "aifactory", "project", "a1", "/api/projects/a1", None),
+        ("DELETE", "pfactory", "project", "p1", "/api/projects/p1", None),
+        ("DELETE", "tfactory", "project", "t1", "/api/projects/t1", None),
+        ("DELETE", "cfactory", "card", "C-1", "/api/cards/C-1", None),
+        ("DELETE", "cfactory", "repository", "7", "/api/tenants/default/git-repositories/7", None),
+        (
+            "POST",
+            "tfactory",
+            "spec",
+            "t1:s1",
+            "/api/mcp-stdio/projects/t1/tasks/archive",
+            {"taskIds": ["t1:s1"]},
+        ),
+        (
+            "POST",
+            "aifactory",
+            "task",
+            "a1:s1",
+            "/api/mcp-stdio/projects/a1/tasks/archive",
+            {"taskIds": ["a1:s1"]},
+        ),
+    ],
+)
+def test_cleanup_routes(
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str, str, str, str, str, object],
+) -> None:
+    method, service, kind, identity, path, body = case
+    client = services.Services({})
+    seen: list[object] = []
+    monkeypatch.setattr(client, "_request", lambda *args: seen.append(args))
+    client.delete(service, kind, identity)
+    expected = (service, method, path, body) if body is not None else (service, method, path)
+    assert seen == [expected]
+
+
+def test_github_create_and_push_keep_token_out_of_argv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("test-secret")
+    client = github.GitHub(token)
+    requested: list[object] = []
+
+    def fake_request(*args: object) -> dict[str, str]:
+        requested.append(args)
+        return {"name": "repo"}
+
+    monkeypatch.setattr(client, "request", fake_request)
+    assert client.create_repo("repo") == {"name": "repo"}
+    assert requested == [
+        ("POST", "/orgs/Freundcloud/repos", {"name": "repo", "private": True, "auto_init": False})
+    ]
+    starter = tmp_path / "starter"
+    triple = tmp_path / "triple"
+    starter.mkdir()
+    triple.mkdir()
+    (starter / "a.txt").write_text("a")
+    for stage in ("intent", "spec", "plan"):
+        folder = triple / stage
+        folder.mkdir()
+        (folder / "test.md").write_text("---\nstatus: approved\n---\n")
+    (triple / "execution.json").write_text("{}")
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> None:
+        calls.append((argv, kwargs["env"]))
+
+    monkeypatch.setattr("scripts.e2e.github.subprocess.run", fake_run)
+    client.push_starter(starter, triple, "Freundcloud/repo", tmp_path / "work")
+    assert len(calls) == 18
+    assert all("test-secret" not in str(argv) for argv, _ in calls)
+    assert all(env["GIT_CONFIG_VALUE_0"] == "AUTHORIZATION: bearer test-secret" for _, env in calls)
+    assert (tmp_path / "work" / "a.txt").read_text() == "a"
+    assert (tmp_path / "work" / "execution.json").read_text() == "{}"
+    assert (tmp_path / "work" / "plan" / "test.md").read_text() == ("---\nstatus: approved\n---\n")
+
+
+def test_mcp_surface_uses_isolated_stdio_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> Any:
+        seen.append((argv, kwargs))
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "error": False,
+                    "content": [json.dumps({"outcome": "ok", "result": {"id": "p1"}})],
+                }
+            ),
+        )
+
+    monkeypatch.setattr("scripts.e2e.surfaces.mcp.shutil.which", lambda _: "/bin/uv")
+    assert (
+        mcp.invoke(
+            "factory_project_add", {"portal": "pfactory"}, cwd=tmp_path, key_files={}, run=fake_run
+        )["result"]["id"]
+        == "p1"
+    )
+    argv, kwargs = seen[0]
+    assert argv[:4] == ["/bin/uv", "run", "--no-project", "--with-editable"]
+    assert json.loads(kwargs["input"])["tool"] == "factory_project_add"
+    assert kwargs["env"]["HOME"] != str(Path.home())
+
+
+def test_aif_usage_maps_wire_cost_for_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = services.Services({})
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda *_: {
+            "totalTokens": 42,
+            "totalCostUsd": 1.25,
+        },
+    )
+    assert client.usage("a1:s1")["cost_usd"] == 1.25
+    assert client.usage("a1:s1")["total_tokens"] == 42
+
+
+def test_status_readback_and_session_close_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = services.Services({})
+    calls: list[tuple[object, ...]] = []
+
+    def fake_request(*args: object) -> Any:
+        calls.append(args)
+        path = str(args[2])
+        if path.endswith("/status"):
+            return {"is_running": False, "queued": False}
+        if path.endswith("/tasks?project_id=a1"):
+            return {"tasks": [{"id": "a1:s1"}]}
+        if path.endswith("/verdicts.json?project_id=t1"):
+            return {"verdicts": []}
+        if path.endswith("/api/tokens"):
+            return {"by_work_item": []}
+        if path.endswith("/api/anomalies"):
+            return {"anomalies": []}
+        return {"source_sha": "a" * 40}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    assert client.task_ids("a1") == {"a1:s1"}
+    assert client.stop_status("a1:s1") == {"status": "stopped"}
+    verdict = client.verdict("t1:s1")
+    assert verdict is not None and verdict["verdict_sha"] == "a" * 40
+    assert client.qa_report("a1:s1") is not None
+    assert client.timeline("card") is not None
+    assert client.workitem("card") is not None
+    assert client.tokens() == {"by_work_item": []}
+    assert client.anomalies() == []
+    client.stop("a1:s1")
+    client.close_session("s1")
+    paths = {str(call[2]) for call in calls}
+    assert {
+        "/api/mcp-stdio/tasks?project_id=a1",
+        "/api/mcp-stdio/tasks/a1%3As1/status",
+        "/api/tfactory/tasks/s1?project_id=t1",
+        "/api/tfactory/tasks/s1/verdicts.json?project_id=t1",
+        "/api/mcp-stdio/tasks/a1%3As1/qa-report",
+        "/api/workitems/card/timeline",
+        "/api/workitems/card",
+        "/api/tokens",
+        "/api/anomalies",
+        "/api/tasks/a1%3As1/stop",
+        "/api/plan/sessions/s1/discard",
+    } <= paths
+
+
+def test_emitted_pf_session_is_retained_without_discard(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = services.Services({})
+    monkeypatch.setattr(
+        client,
+        "read_resource",
+        lambda *_: {"id": "s1", "status": "emitted", "org": "default"},
+    )
+    monkeypatch.setattr(client, "_request", lambda *_: pytest.fail("emitted session discarded"))
+    assert client.close_session("s1") == {"retained": True}
+
+
+def test_cf_repository_and_card_creation_routes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = Registry("campaign", tmp_path)
+    registry.append(
+        "repo", "R1", "R1", service="github", repo_id=1, full_name="Freundcloud/e2e-20261124-P1-1"
+    )
+    client = services.Services({}, registry)
+    calls: list[tuple[object, ...]] = []
+
+    def fake_request(service: str, method: str, path: str, body: object = None) -> Any:
+        calls.append((service, method, path, body))
+        if path.endswith("/git-connections"):
+            return {"connections": [{"id": 2, "provider": "github", "status": "verified"}]}
+        if path.endswith("/repositories") and method == "POST":
+            return {"id": 7}
+        if path.endswith("/git-repositories"):
+            return {"repositories": [{"id": 7, "project": "Freundcloud/e2e-20261124-P1-1"}]}
+        if path == "/api/cards":
+            return {"card_key": "C-1"}
+        if path == "/api/cards/C-1":
+            return {"card_key": "C-1", "repository_id": 7, "tenant_id": "default"}
+        return None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    repo = client.register_cf_repository("Freundcloud/e2e-20261124-P1-1", "a1")
+    assert repo["repo_node_id"] == "R1"
+    card = client.create_card("C-1", "Freundcloud/e2e-20261124-P1-1", 1)
+    assert card["repo_node_id"] == "R1"
+    assert (
+        "cfactory",
+        "POST",
+        "/api/cards",
+        {
+            "card_key": "C-1",
+            "title": "C-1",
+            "repository_id": 7,
+            "correlation_key": "1",
+            "issue_ref": "Freundcloud/e2e-20261124-P1-1#1",
+        },
+    ) in calls
+
+
+def test_github_pr_issue_protection_and_delete_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = github.GitHub()
+    calls: list[tuple[object, ...]] = []
+
+    def fake_request(*args: object) -> Any:
+        calls.append(args)
+        if str(args[1]).endswith("/pulls?state=all"):
+            return [{"number": 3}]
+        return {"number": 3}
+
+    monkeypatch.setattr(client, "request", fake_request)
+    full = "Freundcloud/e2e-20261124-P1-1"
+    client.pull_request(full)
+    client.pull_files(full, 3)
+    client.check_runs(full, "a" * 40)
+    client.protect_main(full)
+    client.main_protection(full)
+    client.create_issue(full, "test")
+    client.delete_repo(full)
+    assert ("GET", f"/repos/{full}/pulls/3") in calls
+    assert ("DELETE", f"/repos/{full}") in calls
+    assert ("POST", f"/repos/{full}/issues", {"title": "test"}) in calls
+
+
+def test_probe_request_keeps_rejection_status_and_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("test-secret")
+    seen: list[object] = []
+
+    class FakeHttpClient:
+        def __init__(self, **kwargs: Any) -> None:
+            seen.append(kwargs["auth"]()["Authorization"])
+
+        def request(self, method: str, path: str, body: object) -> Any:
+            seen.append((method, path, body))
+            return SimpleNamespace(status=422, json={"detail": "intent blob SHA mismatch"})
+
+    monkeypatch.setattr(services, "HttpClient", FakeHttpClient)
+    response = services.Services({"pfactory": token}).probe_request(
+        "pfactory", "POST", "/api/mcp-stdio/plan/sessions/ingest-approved", {"x": 1}
+    )
+    assert response == {
+        "status": 422,
+        "reason": "intent blob SHA mismatch",
+        "body": {"detail": "intent blob SHA mismatch"},
+    }
+    assert seen[0] == "Bearer test-secret"
 
 
 def test_stages_use_guard_for_every_mutation() -> None:
@@ -111,11 +460,29 @@ def test_stages_use_guard_for_every_mutation() -> None:
         def push_starter(self, *_: object) -> None:
             return None
 
+        def protect_main(self, *_: object) -> None:
+            return None
+
+        def create_issue(self, *_: object) -> dict[str, Any]:
+            return {"number": 1}
+
+        def create_card(self, *_: object) -> dict[str, Any]:
+            return {"key": "c1"}
+
+        def register_cf_repository(self, *_: object) -> dict[str, Any]:
+            return {"id": 7}
+
         def onboard(self, service: str, *_: object) -> dict[str, Any]:
             return {"id": service + "-1"}
 
         def submit(self, *_: object) -> dict[str, Any]:
-            return {"session_id": "s1", "task_id": "t1", "card_key": "c1"}
+            return {"session_id": "s1", "task_id": "t1"}
+
+        def probe_c(self, *_: object) -> dict[str, Any]:
+            return {"status": 422, "reason": "intent blob SHA mismatch"}
+
+        def probe_e(self, *_: object) -> dict[str, Any]:
+            return {"status": 200, "reason": "deduplicated", "before": 1, "after": 1}
 
         def read_resource(self, _service: str, kind: str, identity: str) -> dict[str, Any]:
             return {"key" if kind == "card" else "id": identity}
@@ -131,11 +498,16 @@ def test_stages_use_guard_for_every_mutation() -> None:
     assert calls == [
         ("github", "create"),
         ("github", "repo"),
+        ("github", "repo"),
+        ("github", "repo"),
         ("aifactory", "project"),
         ("pfactory", "project"),
         ("tfactory", "project"),
+        ("cfactory", "repository"),
+        ("cfactory", "card"),
+        ("pfactory", "project"),
         ("pfactory", "project"),
         ("pfactory", "session"),
         ("aifactory", "task"),
-        ("cfactory", "card"),
+        ("pfactory", "project"),
     ]

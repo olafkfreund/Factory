@@ -424,7 +424,7 @@ def test_surface_target_is_constructed_and_other_ids_refused(guarded, tmp_path):
         key_files={"aifactory": tmp_path / "key"},
     )
     cli.call("aifactory", "task", "task-1", "retry")
-    assert seen[0][0] == ["factory", "retry", "task-1", "--json"]
+    assert seen[0][0][-5:] == ["python", "-m", "factory_cli", "retry", "task-1"]
     with pytest.raises(GuardRefusalError):
         cli.call("aifactory", "task", "task-1", "retry", "af:other")
     seen_mcp: list[Any] = []
@@ -490,6 +490,8 @@ def test_guard_requires_org_and_active_repo(guarded):
     live["resource"]["org"] = "another-org"
     with pytest.raises(GuardRefusalError):
         guard.check("aifactory", "task", "task-1")
+    with pytest.raises(GuardRefusalError):
+        guard.check("cfactory", "card", "card-1")
     live["resource"]["org"] = "factory-e2e"
     registry.append("deleted", "R_42", "R_42", service="github", target_kind="repo")
     with pytest.raises(GuardRefusalError):

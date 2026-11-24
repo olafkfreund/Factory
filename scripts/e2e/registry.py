@@ -16,6 +16,7 @@ KIND_SERVICES = {
     "task": {"aifactory"},
     "spec": {"tfactory"},
     "card": {"cfactory"},
+    "repository": {"cfactory"},
 }
 KINDS = {*KIND_SERVICES, "intent", "retained", "deleted", "create_failed", "failed"}
 

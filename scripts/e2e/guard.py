@@ -10,6 +10,10 @@ from scripts.e2e.registry import KIND_SERVICES, Registry
 
 REPO_NAME = re.compile(r"^e2e-\d{8}-P[1-5]-\d+$")
 RESOURCE_KINDS = set(KIND_SERVICES)
+# PF's project response has no clone repo (routes/projects.py:373-382,743-755).
+# Its guard uses registry identity plus a live existence check. CF cards resolve
+# their repository_id through routes_git_config.py:591-603.
+NO_REPO_LINK = {("pfactory", "project")}
 
 
 class GuardRefusalError(Exception):
@@ -87,11 +91,12 @@ class Guard:
             if (
                 resource is None
                 or str(resource.get("key" if kind == "card" else "id", "")) != identity
-                or resource.get("repo_node_id") != repo_entry["id"]
                 or (
-                    service in {"aifactory", "pfactory", "tfactory"}
-                    and (not entry.get("org") or resource.get("org") != entry["org"])
+                    (service, kind) not in NO_REPO_LINK
+                    and resource.get("repo_node_id") != repo_entry["id"]
                 )
+                or not entry.get("org")
+                or resource.get("org") != entry["org"]
             ):
                 raise GuardRefusalError("resource ownership changed or unavailable")
         return entry
@@ -158,11 +163,11 @@ class Guard:
         identity = str(resource.get("key" if kind == "card" else "id", ""))
         if (
             not identity
-            or resource.get("repo_node_id") != repo_node_id
             or (
-                service in {"aifactory", "pfactory", "tfactory"}
-                and (not resource.get("org") or (ORG and resource.get("org") != ORG))
+                (service, kind) not in NO_REPO_LINK and resource.get("repo_node_id") != repo_node_id
             )
+            or not resource.get("org")
+            or (service in {"aifactory", "pfactory", "tfactory"} and ORG and resource["org"] != ORG)
         ):
             raise GuardRefusalError("created resource ownership mismatch")
         self.registry.append(
