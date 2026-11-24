@@ -312,7 +312,7 @@ def run_live(  # noqa: PLR0915
                     else "failed",
                     "failure": type(exc).__name__,
                     # Redacted message only (tokens, bearer values); needed to triage live runs.
-                    "failure_detail": str(redact(str(exc)))[:300],
+                    "failure_detail": str(redact(str(exc)))[:700],
                     "failure_stage": getattr(exc, "e2e_stage", None),
                 }
                 if operations.hidden_skip_reason:

@@ -76,10 +76,12 @@ class CLI:
             )
         if result.returncode and not allow_rejected:
             # The CLI already redacts keys; the caller redacts again before persisting.
-            tail = (result.stderr or result.stdout or "").strip().splitlines()[-3:]
+            lines = (result.stderr or result.stdout or "").strip().splitlines()
+            # Drop uv's own build chatter so the CLI's message survives the length cap.
+            tail = [ln for ln in lines if not ln.lstrip().startswith(("Built ", "Installed "))][-3:]
             raise RuntimeError(
                 f"factory CLI {args[0] if args else ''} failed with exit {result.returncode}: "
-                + " | ".join(tail)[:240]
+                + " | ".join(tail)[:600]
             )
         output = result.stderr if result.returncode else result.stdout
         try:
