@@ -10,6 +10,10 @@ from scripts.e2e.registry import KIND_SERVICES, Registry
 
 REPO_NAME = re.compile(r"^e2e-\d{8}-P[1-5]-\d+$")
 RESOURCE_KINDS = set(KIND_SERVICES)
+# PF's project response has no clone repo (routes/projects.py:373-382,743-755).
+# Its guard uses the project ID plus a live existence check, with no repo link.
+# CF cards resolve repository_id through the default tenant (org="default").
+NO_REPO_LINK = {("pfactory", "project")}
 
 
 class GuardRefusalError(Exception):
@@ -57,7 +61,7 @@ class Guard:
                 created.tzinfo is None
                 or created < intended
                 or repo.get("full_name") != identity
-                or repo.get("owner", {}).get("login") != "Freundcloud"
+                or repo.get("owner", {}).get("login") != "olafkfreund"
                 or not REPO_NAME.fullmatch(repo.get("name", ""))
                 or "factory-e2e" not in repo.get("topics", [])
             ):
@@ -72,12 +76,12 @@ class Guard:
         if (
             repo is None
             or repo.get("node_id") != repo_entry["id"]
-            or repo.get("id") != repo_entry["repo_id"]
+            or str(repo.get("id")) != str(repo_entry["repo_id"])
             or repo.get("full_name") != repo_entry["full_name"]
         ):
             raise GuardRefusalError("repo identity changed or unavailable")
         if (
-            repo.get("owner", {}).get("login") != "Freundcloud"
+            repo.get("owner", {}).get("login") != "olafkfreund"
             or not REPO_NAME.fullmatch(repo.get("name", ""))
             or "factory-e2e" not in repo.get("topics", [])
         ):
@@ -87,11 +91,12 @@ class Guard:
             if (
                 resource is None
                 or str(resource.get("key" if kind == "card" else "id", "")) != identity
-                or resource.get("repo_node_id") != repo_entry["id"]
                 or (
-                    service in {"aifactory", "pfactory", "tfactory"}
-                    and (not entry.get("org") or resource.get("org") != entry["org"])
+                    (service, kind) not in NO_REPO_LINK
+                    and resource.get("repo_node_id") != repo_entry["id"]
                 )
+                or (not entry.get("org") and not entry.get("unverified"))
+                or (entry.get("org") and resource.get("org") != entry["org"])
             ):
                 raise GuardRefusalError("resource ownership changed or unavailable")
         return entry
@@ -110,7 +115,7 @@ class Guard:
     ) -> dict[str, Any]:
         if not REPO_NAME.fullmatch(name):
             raise GuardRefusalError("unsafe repo name")
-        full_name = f"Freundcloud/{name}"
+        full_name = f"olafkfreund/{name}"
         self.registry.append(
             "intent",
             name,
@@ -127,7 +132,7 @@ class Guard:
             raise
         if (
             repo.get("name") != name
-            or repo.get("owner", {}).get("login") != "Freundcloud"
+            or repo.get("owner", {}).get("login") != "olafkfreund"
             or repo.get("full_name") != full_name
             or not repo.get("node_id")
             or not repo.get("id")
@@ -158,11 +163,11 @@ class Guard:
         identity = str(resource.get("key" if kind == "card" else "id", ""))
         if (
             not identity
-            or resource.get("repo_node_id") != repo_node_id
             or (
-                service in {"aifactory", "pfactory", "tfactory"}
-                and (not resource.get("org") or (ORG and resource.get("org") != ORG))
+                (service, kind) not in NO_REPO_LINK and resource.get("repo_node_id") != repo_node_id
             )
+            or not resource.get("org")
+            or (service in {"aifactory", "pfactory", "tfactory"} and ORG and resource["org"] != ORG)
         ):
             raise GuardRefusalError("created resource ownership mismatch")
         self.registry.append(

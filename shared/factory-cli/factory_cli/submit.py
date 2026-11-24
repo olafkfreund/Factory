@@ -365,7 +365,8 @@ def _ingest_and_emit(
             transport,
             "POST",
             f"/api/mcp-stdio/plan/sessions/{safe_session_id}/approve",
-            body={},
+            # PFactory ApproveBody requires `approver` (Factory#3882 live run: {} -> 500).
+            body={"approver": "factory-cli"},
             secrets=secrets,
         )
         if approve_resp.status != _HTTP_OK:

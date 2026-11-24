@@ -7,6 +7,8 @@ SECRET = re.compile(
     r"(?i)(?:\b(?:Bearer|token)\s+|\b(?:acw_|cfk_|ghp_|gho_|ghs_|ghu_|ghr_|github_pat_))[A-Za-z0-9_\-.]+"
 )
 STAGE_FIELDS = {
+    "status",
+    "reason",
     "registered",
     "branch_protection",
     "projects",

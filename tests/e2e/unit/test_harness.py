@@ -43,7 +43,7 @@ SERVICES = {
 
 
 def repo(
-    name: str = "e2e-20261124-P1-1", owner: str = "Freundcloud", topics: list[str] | None = None
+    name: str = "e2e-20261124-P1-1", owner: str = "olafkfreund", topics: list[str] | None = None
 ) -> dict[str, Any]:
     return {
         "id": 42,
@@ -128,7 +128,7 @@ def test_guard_accepts_registered_live_resource(guarded, kind, identity):
         {"topics": []},
         {"name": "e2e-bad"},
         {"node_id": "R_other"},
-        {"full_name": "Freundcloud/e2e-20261124-P1-2"},
+        {"full_name": "olafkfreund/e2e-20261124-P1-2"},
     ],
 )
 @pytest.mark.parametrize(
@@ -176,7 +176,9 @@ def test_created_identity_is_durable_before_return(tmp_path):
 def test_surface_mutations_always_use_guard(guarded):
     _, guard, _ = guarded
     cli = CLI(
-        guard, lambda *_args, **_kwargs: __import__("subprocess").CompletedProcess([], 0, "{}")
+        guard,
+        lambda *_args, **_kwargs: __import__("subprocess").CompletedProcess([], 0, "{}"),
+        uv="uv",
     )
     mcp = MCP(guard, lambda _method, _params: {"result": {"ok": True}})
     assert cli.call("aifactory", "task", "task-1", "retry") == {}
@@ -422,9 +424,10 @@ def test_surface_target_is_constructed_and_other_ids_refused(guarded, tmp_path):
             seen, (argv, kw), __import__("subprocess").CompletedProcess(argv, 0, "{}")
         ),
         key_files={"aifactory": tmp_path / "key"},
+        uv="uv",
     )
     cli.call("aifactory", "task", "task-1", "retry")
-    assert seen[0][0] == ["factory", "retry", "task-1", "--json"]
+    assert seen[0][0][-5:] == ["python", "-m", "factory_cli", "retry", "task-1"]
     with pytest.raises(GuardRefusalError):
         cli.call("aifactory", "task", "task-1", "retry", "af:other")
     seen_mcp: list[Any] = []
@@ -448,6 +451,7 @@ def test_cli_environment_is_pinned_and_isolated(guarded, tmp_path, monkeypatch):
             seen, kw["env"], __import__("subprocess").CompletedProcess(argv, 0, "{}")
         ),
         {"aifactory": token},
+        uv="uv",
     ).call("aifactory", "task", "task-1", "retry")
     env = seen[0]
     assert env["AIFACTORY_API_URL"] == HOSTS["aifactory"]
@@ -490,6 +494,8 @@ def test_guard_requires_org_and_active_repo(guarded):
     live["resource"]["org"] = "another-org"
     with pytest.raises(GuardRefusalError):
         guard.check("aifactory", "task", "task-1")
+    with pytest.raises(GuardRefusalError):
+        guard.check("cfactory", "card", "card-1")
     live["resource"]["org"] = "factory-e2e"
     registry.append("deleted", "R_42", "R_42", service="github", target_kind="repo")
     with pytest.raises(GuardRefusalError):
@@ -525,7 +531,7 @@ def test_github_client_never_exposes_token(tmp_path):
     )
     assert "github_pat_topsecret" not in repr(client) + str(client)
     with pytest.raises(RuntimeError) as caught:
-        client.request("GET", "/repos/Freundcloud/e2e-20261124-P1-1")
+        client.request("GET", "/repos/olafkfreund/e2e-20261124-P1-1")
     assert "github_pat_topsecret" not in repr(caught.value) + str(caught.value)
 
 
@@ -648,7 +654,7 @@ def test_sweeper_repo_last_includes_young_child(guarded):
 
 def test_unregistered_repos_reports_only_unknown(guarded):
     known = repo()
-    unknown = {**repo("e2e-20261124-P1-2"), "full_name": "Freundcloud/e2e-20261124-P1-2"}
+    unknown = {**repo("e2e-20261124-P1-2"), "full_name": "olafkfreund/e2e-20261124-P1-2"}
     assert unregistered_repos(guarded[0], lambda: [known, unknown]) == [unknown["full_name"]]
 
 
@@ -935,13 +941,13 @@ def test_github_preserves_status_and_accepts_empty_204(tmp_path):
             lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 HTTPError("", 404, "", cast(Message, {}), None)
             ),
-        ).request("GET", "/repos/Freundcloud/x")
+        ).request("GET", "/repos/olafkfreund/x")
     assert caught.value.code == 404
 
     response = BytesIO(b"")
     cast(Any, response).status = 204
     assert (
-        GitHub(token, lambda *_args, **_kwargs: response).request("DELETE", "/repos/Freundcloud/x")
+        GitHub(token, lambda *_args, **_kwargs: response).request("DELETE", "/repos/olafkfreund/x")
         == {}
     )
     assert NoRedirect().redirect_request(None, None, 302, "", {}, "https://elsewhere") is None

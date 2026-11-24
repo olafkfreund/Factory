@@ -1,5 +1,6 @@
 """Budget reservation, source reconciliation and confirmed remote stop."""
 
+import math
 import time
 from collections.abc import Callable
 from typing import Any
@@ -16,10 +17,15 @@ class StopUnconfirmedError(Exception):
 
 
 class Budget:
-    def __init__(self, guard: Guard) -> None:
+    def __init__(self, guard: Guard, cap_usd: float = CAMPAIGN_CAP_USD) -> None:
+        if not math.isfinite(cap_usd) or cap_usd <= 0:
+            raise ValueError("campaign cap must be finite and positive")
         self.guard = guard
+        self.cap_usd = cap_usd
         self.started = time.monotonic()
         self.reserved = 0.0
+        self.spent = 0.0
+        self.allocations: dict[str, float] = {}
         self.lanes: set[str] = set()
         self.blocked: set[str] = set()
 
@@ -28,12 +34,20 @@ class Budget:
             lane in self.blocked
             or time.monotonic() - self.started >= CAMPAIGN_HOURS * 3600
             or amount <= 0
-            or self.reserved + amount > CAMPAIGN_CAP_USD
+            or self.spent + self.reserved + amount > self.cap_usd
             or (lane not in self.lanes and len(self.lanes) >= MAX_LANES)
         ):
             raise ValueError("campaign budget or lane limit reached")
         self.reserved += amount
         self.lanes.add(lane)
+        self.allocations[lane] = self.allocations.get(lane, 0) + amount
+
+    def release(self, lane: str, spent: float) -> None:
+        if lane in self.blocked:
+            return
+        self.reserved -= self.allocations.pop(lane, 0)
+        self.spent += spent
+        self.lanes.discard(lane)
 
     def cap(  # noqa: PLR0913
         self,

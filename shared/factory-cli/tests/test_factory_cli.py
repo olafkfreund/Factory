@@ -444,7 +444,7 @@ def test_submit_exit_0_and_dry_run(tmp_path: Path, capsys: pytest.CaptureFixture
             )
             return
         if req.path == "/api/mcp-stdio/plan/sessions/sess-123/approve":
-            assert body == {}
+            assert body == {"approver": "factory-cli"}
             _send_json(req, 200, {"session_id": "sess-123", "status": "approved"})
             return
         if req.path == "/api/mcp-stdio/plan/sessions/sess-123/emit-contract":
@@ -601,7 +601,7 @@ def test_submit_pfactory_outcome_unknown_exits_3(tmp_path: Path) -> None:
             )
             return
         if req.path == "/api/mcp-stdio/plan/sessions/sess-unk/approve":
-            assert body == {}
+            assert body == {"approver": "factory-cli"}
             _send_json(req, 200, {"session_id": "sess-unk", "status": "approved"})
             return
         if req.path == "/api/mcp-stdio/plan/sessions/sess-unk/emit-contract":

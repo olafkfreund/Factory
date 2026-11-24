@@ -21,7 +21,7 @@ The starter `wordfreq` package only contains stubs that raise `NotImplementedErr
 ## Constraints
 
 - Use the Python standard library only; do not add third-party runtime dependencies.
-- Invalid arguments or missing input files must exit with code `2` and write an error message to `stderr`.
+- Invalid arguments or missing input files must exit with code `2` and write an error text to `stderr`.
 
 ## Open questions
 
