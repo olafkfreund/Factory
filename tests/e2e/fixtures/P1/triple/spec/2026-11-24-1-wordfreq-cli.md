@@ -26,7 +26,7 @@ Implement the word frequency engine and command-line interface in `wordfreq/cli.
    - Output format:
      - Default TSV mode: write `format_table(rows)` followed by a single final newline (`\n`) to `sys.stdout` when `rows` is non-empty; write nothing (`""`, no newline) when `rows` is empty.
      - `--json` mode: write a single-line JSON array of `{"word": word, "count": count}` objects (`json.dumps(...)`) followed by a single final newline (`\n`) to `sys.stdout` (including `[]\n` when `rows` is empty).
-   - Return `0` on success. On invalid CLI arguments (`--min-len < 1`, `--top < 0`, or `argparse` parse errors) or unreadable file paths, write a non-empty error message to `sys.stderr` and return `2`.
+   - Return `0` on success. On invalid CLI arguments (`--min-len < 1`, `--top < 0`, or `argparse` parse errors) or unreadable file paths, write a non-empty error text to `sys.stderr` and return `2`.
 
 ## Alternatives rejected
 

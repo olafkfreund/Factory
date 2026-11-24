@@ -11,7 +11,7 @@ Approved decisions: standard-library implementation in `wordfreq/cli.py` invoked
 ## Steps
 
 1. `wordfreq/cli.py`: implement `count_words`, `format_table`, and `main` supporting default `stdin`, positional `path`, `--top`, `--min-len`, `--case-sensitive`, and `--json` -> verify by `python -m pytest -q`.
-   Traps: standard library only; terminate non-empty TSV and all `--json` output with `\n` but print nothing on empty TSV output; return exit code `2` with a `stderr` message on invalid arguments or missing files.
+   Traps: standard library only; terminate non-empty TSV and all `--json` output with `\n` but print nothing on empty TSV output; return exit code `2` with a `stderr` text on invalid arguments or missing files.
 2. `tests/test_wordfreq.py`: add unit and CLI tests covering tie-breaking, `--case-sensitive`, default `stdin`, argument validation, trailing newlines on TSV and `--json` output, `python -m wordfreq`, and missing-file exit code `2` -> verify by `python -m pytest -q`.
    Traps: none.
 
