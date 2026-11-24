@@ -176,7 +176,9 @@ def test_created_identity_is_durable_before_return(tmp_path):
 def test_surface_mutations_always_use_guard(guarded):
     _, guard, _ = guarded
     cli = CLI(
-        guard, lambda *_args, **_kwargs: __import__("subprocess").CompletedProcess([], 0, "{}")
+        guard,
+        lambda *_args, **_kwargs: __import__("subprocess").CompletedProcess([], 0, "{}"),
+        uv="uv",
     )
     mcp = MCP(guard, lambda _method, _params: {"result": {"ok": True}})
     assert cli.call("aifactory", "task", "task-1", "retry") == {}
@@ -422,6 +424,7 @@ def test_surface_target_is_constructed_and_other_ids_refused(guarded, tmp_path):
             seen, (argv, kw), __import__("subprocess").CompletedProcess(argv, 0, "{}")
         ),
         key_files={"aifactory": tmp_path / "key"},
+        uv="uv",
     )
     cli.call("aifactory", "task", "task-1", "retry")
     assert seen[0][0][-5:] == ["python", "-m", "factory_cli", "retry", "task-1"]
@@ -448,6 +451,7 @@ def test_cli_environment_is_pinned_and_isolated(guarded, tmp_path, monkeypatch):
             seen, kw["env"], __import__("subprocess").CompletedProcess(argv, 0, "{}")
         ),
         {"aifactory": token},
+        uv="uv",
     ).call("aifactory", "task", "task-1", "retry")
     env = seen[0]
     assert env["AIFACTORY_API_URL"] == HOSTS["aifactory"]

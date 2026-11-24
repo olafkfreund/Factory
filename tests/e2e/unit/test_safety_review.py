@@ -19,6 +19,15 @@ from scripts.e2e.journey import Journey
 from scripts.e2e.registry import Registry
 
 
+def _assert_unverified_dispatch(registry: Registry, task_id: str) -> None:
+    row = registry.find("aifactory", "task", task_id)
+    assert row is not None and row["unverified"] is True
+    assert any(
+        row["kind"] == "session" and row["id"] == "s1" and row.get("unverified")
+        for row in registry.entries()
+    )
+
+
 def test_projects_accept_real_http_array_shape(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -353,12 +362,7 @@ def test_s2_tracks_dispatched_task_before_ownership_read_fails(tmp_path: Path) -
     with pytest.raises(RuntimeError, match="task read-back failed"):
         built["S2"](999, lambda task=None: seen.append(task) if task else None)
     assert seen == ["aifactory:t1"]
-    row = registry.find("aifactory", "task", "aifactory:t1")
-    assert row is not None and row["unverified"] is True
-    assert any(
-        row["kind"] == "session" and row["id"] == "s1" and row.get("unverified")
-        for row in registry.entries()
-    )
+    _assert_unverified_dispatch(registry, "aifactory:t1")
 
 
 def test_probe_c_stops_accepted_tampered_dispatch(
@@ -408,12 +412,7 @@ def test_probe_c_stops_accepted_tampered_dispatch(
     with pytest.raises(AssertionError, match="probe c"):
         ops.probe_c(full_name)
     assert stopped == ["a1:t1"]
-    row = registry.find("aifactory", "task", "a1:t1")
-    assert row is not None and row["unverified"] is True
-    assert any(
-        row["kind"] == "session" and row["id"] == "s1" and row.get("unverified")
-        for row in registry.entries()
-    )
+    _assert_unverified_dispatch(registry, "a1:t1")
 
 
 def test_git_fetch_uses_basic_header_and_no_credential_helper(

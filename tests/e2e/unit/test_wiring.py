@@ -18,6 +18,14 @@ from scripts.e2e.registry import Registry
 from scripts.e2e.surfaces import mcp
 
 
+def _registry_with_repo(root: Path) -> Registry:
+    registry = Registry("campaign", root)
+    registry.append(
+        "repo", "R1", "R1", service="github", repo_id=1, full_name="olafkfreund/e2e-20261124-P1-1"
+    )
+    return registry
+
+
 def test_mvr_dry_run_never_opens_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -103,10 +111,7 @@ def test_unknown_mutation_route_never_sends_request(monkeypatch: pytest.MonkeyPa
 def test_service_ownership_fields_and_routes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    registry = Registry("campaign", tmp_path)
-    registry.append(
-        "repo", "R1", "R1", service="github", repo_id=1, full_name="olafkfreund/e2e-20261124-P1-1"
-    )
+    registry = _registry_with_repo(tmp_path)
     client = services.Services({}, registry)
     responses: dict[tuple[str, str], object] = {
         ("aifactory", "/api/mcp-stdio/projects"): [
@@ -151,7 +156,7 @@ def test_service_ownership_fields_and_routes(
         assert resource is not None and resource[field] == expected
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator, unused-ignore]
     "case",
     [
         ("DELETE", "aifactory", "project", "a1", "/api/projects/a1", None),
@@ -254,7 +259,7 @@ def test_mcp_surface_uses_isolated_stdio_transport(
             ),
         )
 
-    monkeypatch.setattr("scripts.e2e.surfaces.mcp.shutil.which", lambda _: "/bin/uv")
+    monkeypatch.setattr("scripts.e2e.surfaces.cli.shutil.which", lambda _: "/bin/uv")
     assert (
         mcp.invoke(
             "factory_project_add", {"portal": "pfactory"}, cwd=tmp_path, key_files={}, run=fake_run
@@ -342,10 +347,7 @@ def test_emitted_pf_session_is_retained_without_discard(monkeypatch: pytest.Monk
 def test_cf_repository_and_card_creation_routes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    registry = Registry("campaign", tmp_path)
-    registry.append(
-        "repo", "R1", "R1", service="github", repo_id=1, full_name="olafkfreund/e2e-20261124-P1-1"
-    )
+    registry = _registry_with_repo(tmp_path)
     client = services.Services({}, registry)
     calls: list[tuple[object, ...]] = []
 

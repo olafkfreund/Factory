@@ -1,8 +1,6 @@
 """Injected stdio transport for factory mcp actions."""
 
 import json
-import re
-import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -11,7 +9,7 @@ from typing import Any, cast
 
 from scripts.e2e.config import KEY_FILES
 from scripts.e2e.guard import Guard, GuardRefusalError
-from scripts.e2e.surfaces.cli import CLI_ROOT, isolated_env
+from scripts.e2e.surfaces.cli import CLI_ROOT, ID_SHAPED, isolated_env, resolve_uv
 
 _MCP_CALL = """
 import asyncio, json, os, sys
@@ -43,9 +41,7 @@ def invoke(  # noqa: PLR0913
 ) -> dict[str, Any]:
     if not tool.startswith("factory_"):
         raise ValueError("unknown factory MCP tool")
-    uv = shutil.which("uv")
-    if uv is None:
-        raise RuntimeError("uv unavailable")
+    uv = resolve_uv()
     with tempfile.TemporaryDirectory(prefix="factory-e2e-") as home:
         result = run(
             [
@@ -75,12 +71,6 @@ def invoke(  # noqa: PLR0913
     if payload.get("outcome") != "ok" and not allow_rejected:
         raise RuntimeError("factory MCP action rejected")
     return cast(dict[str, Any], payload)
-
-
-ID_SHAPED = re.compile(
-    r"(?:\b(?:af|pf|tf):\S+|\b(?:task|card)-[\w-]+|\b[A-Z]+-\d+\b|\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b|\b\d+\b)",
-    re.I,
-)
 
 
 class MCP:

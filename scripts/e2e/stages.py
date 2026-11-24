@@ -338,12 +338,14 @@ class LiveOperations:
                     "/home/sandbox",
                     Path(python).resolve().as_posix(),
                     "-c",
-                    "import glob, sys; "
-                    "v = f'{sys.version_info.major}.{sys.version_info.minor}'; "
-                    "sys.path.extend(glob.glob("
-                    "f'/nix/store/*-python{v}-*/lib/python{v}/site-packages')); "
-                    "import pytest; "
-                    "sys.exit(pytest.main(['/suite', '-q', '-p', 'no:cacheprovider']))",
+                    (
+                        "import glob, sys; "
+                        + "v = f'{sys.version_info.major}.{sys.version_info.minor}'; "
+                        + "sys.path.extend(glob.glob("
+                        + "f'/nix/store/*-python{v}-*/lib/python{v}/site-packages')); "
+                        + "import pytest; "
+                        "sys.exit(pytest.main(['/suite', '-q', '-p', 'no:cacheprovider']))"
+                    ),
                 ],
                 cwd=self.workspace,
                 env={"PATH": "/nix/store", "PYTHONDONTWRITEBYTECODE": "1"},

@@ -358,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if all(row["action"] != "failed" for row in actions) else 1
     if not args.journey and not args.slice and not args.cap_test:
         parser.error("--journey or --slice is required")
+    runs: list[Journey] = []
     try:
         runs = selected(args.journey, args.slice)
     except ValueError as exc:

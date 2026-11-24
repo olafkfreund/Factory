@@ -17,6 +17,13 @@ CLI_ROOT = Path(__file__).resolve().parents[3] / "shared" / "factory-cli"
 CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 
 
+def resolve_uv() -> str:
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError("uv unavailable")
+    return uv
+
+
 def isolated_env(home: str, key_files: dict[str, Path]) -> dict[str, str]:
     env = {
         "PATH": os.environ.get("PATH", os.defpath),
@@ -43,19 +50,19 @@ class CLI:
         guard: Guard,
         run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
         key_files: dict[str, Path] | None = None,
+        uv: str | None = None,
     ) -> None:
         self.guard = guard
         self.run = run
         self.key_files = KEY_FILES if key_files is None else key_files
+        self.uv = uv
 
     def execute(
         self, args: list[str], *, cwd: Path | None = None, allow_rejected: bool = False
     ) -> dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="factory-e2e-") as home:
             env = isolated_env(home, self.key_files)
-            uv = shutil.which("uv")
-            if uv is None:
-                raise RuntimeError("uv unavailable")
+            uv = self.uv or resolve_uv()
             result = self.run(
                 [
                     uv,
