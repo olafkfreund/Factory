@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
+from factory_cli.actions import PROJECT_PORTALS, run_action, run_card, run_project
 from factory_cli.config import (
     PORTAL_NAMES,
     PortalName,
@@ -96,6 +97,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Identifier: pf:<session> | af:<task> | tf:<project>/<spec> | <correlation-key>",
     )
 
+    project_p = sub.add_parser("project", help="List or register projects")
+    project_sub = project_p.add_subparsers(dest="operation", required=True)
+    project_sub.add_parser("list").add_argument("--portal", choices=PROJECT_PORTALS)
+    add_p = project_sub.add_parser("add")
+    add_p.add_argument("portal", choices=PROJECT_PORTALS)
+    add_p.add_argument("git_url")
+    add_p.add_argument("--name")
+    add_p.add_argument("--branch")
+
+    for action in ("approve", "reject", "retry", "archive"):
+        action_p = sub.add_parser(action)
+        action_p.add_argument("target", help="pf:<session>, af:<task>, or tf:<project>/<spec>")
+        if action == "reject":
+            action_p.add_argument("--feedback", required=True)
+
+    card_p = sub.add_parser("card", help="Manage CFactory cards")
+    card_sub = card_p.add_subparsers(dest="operation", required=True)
+    create_p = card_sub.add_parser("create")
+    create_p.add_argument("title")
+    create_p.add_argument("--card-key")
+    create_p.add_argument("--tier")
+    create_p.add_argument("--status")
+    move_p = card_sub.add_parser("move")
+    move_p.add_argument("card_key")
+    move_p.add_argument("status")
+    list_p = card_sub.add_parser("list")
+    list_p.add_argument("--status")
+    list_p.add_argument("--tier")
+    card_sub.add_parser("run").add_argument("card_key")
+
     sub.add_parser(
         "doctor",
         help="Check portal URLs, key sources, key kinds, health versions, and protected reads",
@@ -105,7 +136,8 @@ def build_parser() -> argparse.ArgumentParser:
         "mcp",
         help=(
             "Run the stdio MCP server "
-            "(tools: factory_submit, factory_test, factory_status, factory_doctor)"
+            "(tools: factory_submit, factory_test, factory_status, factory_doctor, "
+            "and action twins)"
         ),
     )
 
@@ -136,15 +168,19 @@ def _portals_for_command(args: argparse.Namespace) -> tuple[PortalName, ...]:
         "submit": ("pfactory",),
         "test": ("tfactory",),
         "doctor": PORTAL_NAMES,
+        "project": (cast(PortalName, args.portal),)
+        if getattr(args, "portal", None)
+        else PROJECT_PORTALS,
+        "card": ("cfactory",),
     }
     if cmd in static_map:
         return static_map[cmd]
     target = str(getattr(args, "target", "")).strip()
     if target.startswith("pf:"):
-        return ("pfactory", "aifactory")
+        return ("pfactory",)
     if target.startswith("af:"):
         return ("aifactory",)
-    return ("tfactory",) if target.startswith("tf:") else ("cfactory",)
+    return ("tfactory",) if target.startswith("tf:") else ()
 
 
 def _dispatch_command(
@@ -173,8 +209,8 @@ def _dispatch_command(
     try:
         for portal in portals:
             resolve_portal_key(portal, env=rt.env, home=rt.home)
-    except ValueError as exc:
-        _emit(f"error: {exc}", err=True, secrets=secrets)
+    except ValueError:
+        _emit("error: invalid portal MCP_KEY or API_KEY", err=True, secrets=secrets)
         return EXIT_PRECONDITION
 
     if cmd == "submit":
@@ -196,6 +232,26 @@ def _dispatch_command(
         )
     elif cmd == "status":
         outcome = run_status(args.target, ctx=rt)
+    elif cmd == "project":
+        outcome = run_project(
+            args.operation,
+            portal=getattr(args, "portal", None),
+            git_url=getattr(args, "git_url", None),
+            name=getattr(args, "name", None),
+            branch=getattr(args, "branch", None),
+            ctx=rt,
+        )
+    elif cmd in ("approve", "reject", "retry", "archive"):
+        outcome = run_action(cmd, args.target, feedback=getattr(args, "feedback", None), ctx=rt)
+    elif cmd == "card":
+        outcome = run_card(
+            args.operation,
+            card_key=getattr(args, "card_key", None),
+            title=getattr(args, "title", None),
+            status=getattr(args, "status", None),
+            tier=getattr(args, "tier", None),
+            ctx=rt,
+        )
     else:
         outcome = run_doctor(ctx=rt)
 
