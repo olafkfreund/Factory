@@ -7,6 +7,9 @@ from pathlib import Path
 from scripts.parr_regression import DEFAULTS
 
 HOSTS = dict(DEFAULTS)
+# Key-authenticated CFactory lives on its MCP host; the portal host sits behind SSO and
+# answers API keys with a 302. Same host the factory CLI uses (factory_cli/config.py).
+HOSTS["cfactory"] = "https://cfactory-mcp.freundcloud.org.uk"
 # Optional org pin (owner amendment 2026-11-24: existing keys, no dedicated org).
 # Empty means each resource must keep the org it was onboarded with.
 ORG = os.environ.get("E2E_ORG", "")
