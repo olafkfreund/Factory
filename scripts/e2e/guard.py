@@ -76,7 +76,7 @@ class Guard:
         if (
             repo is None
             or repo.get("node_id") != repo_entry["id"]
-            or repo.get("id") != repo_entry["repo_id"]
+            or str(repo.get("id")) != str(repo_entry["repo_id"])
             or repo.get("full_name") != repo_entry["full_name"]
         ):
             raise GuardRefusalError("repo identity changed or unavailable")

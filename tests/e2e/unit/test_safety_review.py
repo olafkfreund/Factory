@@ -211,7 +211,7 @@ def test_one_cent_cap_confirms_remote_stop(tmp_path: Path) -> None:
 
     def s2(_deadline: float, poll: Any) -> dict[str, Any]:
         poll("a1:t1", 0.01)
-        pytest.fail("cap did not stop the stage")
+        raise AssertionError("cap did not stop the stage")
 
     stages_by_name: dict[str, Any] = {"S1": lambda *_: {}}
     stages_by_name["S2"] = s2

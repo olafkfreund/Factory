@@ -151,7 +151,7 @@ def test_service_ownership_fields_and_routes(
         assert resource is not None and resource[field] == expected
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     "case",
     [
         ("DELETE", "aifactory", "project", "a1", "/api/projects/a1", None),
