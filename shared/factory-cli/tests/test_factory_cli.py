@@ -37,6 +37,7 @@ if str(_PKG_ROOT) not in sys.path:
 
 from factory_cli.__main__ import main  # noqa: E402
 from factory_cli._vendor.factory_common.client_errors import InputRejectedError  # noqa: E402
+from factory_cli.actions import run_action, run_card  # noqa: E402
 from factory_cli.config import (  # noqa: E402
     RuntimeContext,
     resolve_portal_key,
@@ -57,7 +58,11 @@ from factory_cli.mcp_config import (  # noqa: E402
 )
 from factory_cli.mcp_server import (  # noqa: E402
     build_mcp_server,
+    handle_factory_action,
+    handle_factory_card,
     handle_factory_doctor,
+    handle_factory_project_add,
+    handle_factory_project_list,
     handle_factory_status,
     handle_factory_submit,
     handle_factory_test,
@@ -1864,6 +1869,16 @@ def test_canary_redaction_everywhere_and_mcp_tools_registration(
         "factory_test",
         "factory_status",
         "factory_doctor",
+        "factory_project_list",
+        "factory_project_add",
+        "factory_approve",
+        "factory_reject",
+        "factory_retry",
+        "factory_archive",
+        "factory_card_create",
+        "factory_card_move",
+        "factory_card_list",
+        "factory_card_run",
     }
     submit_fn = recorded_tools["factory_submit"][0]
     assert inspect.signature(submit_fn).parameters["dry_run"].default is True
@@ -1877,3 +1892,170 @@ def test_wrapped_verification_bullet_keeps_its_continuation() -> None:
         "Return 403 for requests without credentials.",
         "Second",
     ]
+
+
+def test_project_commands_and_mcp_twins(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        body = _read_req_json(req) if req.command == "POST" else {}
+        calls.append((req.command, req.path, body))
+        _send_json(
+            req, 201 if req.command == "POST" else 200, {"id": "p1"} if body else [{"id": "p1"}]
+        )
+
+    with _fake_http_server(_handler) as url:
+        env = {
+            f"{portal.upper()}_MCP_KEY": CANARY_KEY
+            for portal in ("AIFACTORY", "PFACTORY", "TFACTORY")
+        }
+        env.update({f"{portal}_API_URL": url for portal in ("AIFACTORY", "PFACTORY", "TFACTORY")})
+        ctx = RuntimeContext(env=env, home=tmp_path)
+        assert main(["project", "list"], env=env, home=tmp_path) == EXIT_OK
+        assert set(json.loads(capsys.readouterr().out)) == {"aifactory", "pfactory", "tfactory"}
+        assert json.loads(handle_factory_project_list(ctx=ctx))["result"]["tfactory"] == [
+            {"id": "p1"}
+        ]
+        assert (
+            main(
+                ["project", "add", "aifactory", "https://github.com/o/r.git", "--branch", "main"],
+                env=env,
+                home=tmp_path,
+            )
+            == EXIT_OK
+        )
+        assert (
+            json.loads(
+                handle_factory_project_add(
+                    "aifactory", "https://github.com/o/r.git", branch="main", ctx=ctx
+                )
+            )["outcome"]
+            == "ok"
+        )
+    assert calls[-1] == (
+        "POST",
+        "/api/mcp-stdio/projects",
+        {"gitUrl": "https://github.com/o/r.git", "branch": "main"},
+    )
+    assert len([call for call in calls if call[0] == "GET"]) == 6
+
+
+@pytest.mark.parametrize(
+    ("action", "target", "path", "body"),
+    [
+        (
+            "approve",
+            "pf:s1",
+            "/api/mcp-stdio/plan/sessions/s1/approve",
+            {"approver": "factory-cli"},
+        ),
+        (
+            "reject",
+            "pf:s1",
+            "/api/mcp-stdio/plan/sessions/s1/reject",
+            {"approver": "factory-cli", "feedback": "revise"},
+        ),
+        ("approve", "af:p1:t1", "/api/mcp-stdio/tasks/p1%3At1/approve-plan", {}),
+        ("reject", "af:p1:t1", "/api/mcp-stdio/tasks/p1%3At1/reject-plan", {"feedback": "revise"}),
+        ("retry", "af:p1:t1", "/api/mcp-stdio/tasks/p1%3At1/recover", {"autoRestart": True}),
+        ("retry", "tf:p1/t1", "/api/mcp-stdio/tasks/p1%3At1/recover", {"autoRestart": True}),
+        ("archive", "af:p1:t1", "/api/mcp-stdio/projects/p1/tasks/archive", {"taskIds": ["p1:t1"]}),
+        ("archive", "tf:p1/t1", "/api/mcp-stdio/projects/p1/tasks/archive", {"taskIds": ["p1:t1"]}),
+    ],
+)
+def test_action_routes_and_twins(
+    tmp_path: Path,
+    action: str,
+    target: str,
+    path: str,
+    body: dict[str, Any],
+) -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        calls.append((req.path, _read_req_json(req)))
+        _send_json(req, 200, {"success": True})
+
+    with _fake_http_server(_handler) as url:
+        env = {f"{portal}_MCP_KEY": CANARY_KEY for portal in ("PFACTORY", "AIFACTORY", "TFACTORY")}
+        env.update({f"{portal}_API_URL": url for portal in ("PFACTORY", "AIFACTORY", "TFACTORY")})
+        ctx = RuntimeContext(env=env, home=tmp_path)
+        assert run_action(action, target, feedback="revise", ctx=ctx).exit_code == EXIT_OK
+        assert (
+            json.loads(handle_factory_action(action, target, "revise", ctx=ctx))["outcome"] == "ok"
+        )
+    assert calls == [(path, body), (path, body)]
+
+
+def test_card_json_rpc_and_errors(tmp_path: Path) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        assert req.path == "/mcp"
+        body = _read_req_json(req)
+        calls.append(body)
+        payload = {"card_key": "FCT-1"}
+        _send_json(
+            req,
+            200,
+            {
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {"content": [{"type": "text", "text": json.dumps(payload)}]},
+            },
+        )
+
+    with _fake_http_server(_handler) as url:
+        ctx = RuntimeContext(
+            env={"CFACTORY_API_URL": url, "CFACTORY_API_KEY": CANARY_KEY}, home=tmp_path
+        )
+        for action, kwargs in (
+            ("create", {"title": "One", "tier": "low"}),
+            ("move", {"card_key": "FCT-1", "status": "ready"}),
+            ("list", {}),
+            ("run", {"card_key": "FCT-1"}),
+        ):
+            assert run_card(action, ctx=ctx, **kwargs).payload["result"] == {"card_key": "FCT-1"}
+            assert json.loads(handle_factory_card(action, ctx=ctx, **kwargs))["result"] == {
+                "card_key": "FCT-1"
+            }
+    assert [call["params"]["name"] for call in calls] == [
+        name
+        for name in (
+            "cfactory_create_card",
+            "cfactory_move_card",
+            "cfactory_list_cards",
+            "cfactory_run_card",
+        )
+        for _ in range(2)
+    ]
+    assert (
+        run_card("move", card_key="FCT-1", ctx=RuntimeContext(env={}, home=tmp_path)).exit_code
+        == EXIT_PRECONDITION
+    )
+    assert (
+        run_action("archive", "pf:s1", ctx=RuntimeContext(env={}, home=tmp_path)).exit_code
+        == EXIT_PRECONDITION
+    )
+
+
+def test_action_client_errors_and_unknown_mutation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    codes = iter((400, 503))
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        _read_req_json(req)
+        _send_json(req, next(codes), {"detail": f"rejected {CANARY_KEY}"})
+
+    with _fake_http_server(_handler) as url:
+        env = {"AIFACTORY_MCP_KEY": CANARY_KEY, "AIFACTORY_API_URL": url}
+        assert main(["approve", "af:p1:t1"], env=env, home=tmp_path) == EXIT_REJECTED
+        assert CANARY_KEY not in capsys.readouterr().err
+        result = run_action("approve", "af:p1:t1", ctx=RuntimeContext(env=env, home=tmp_path))
+        assert result.exit_code == EXIT_UNKNOWN
+        assert CANARY_KEY not in json.dumps(result.payload)
+    assert (
+        run_action("archive", "af:bare", ctx=RuntimeContext(env={}, home=tmp_path)).exit_code
+        == EXIT_PRECONDITION
+    )

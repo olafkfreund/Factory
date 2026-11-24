@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable
 from typing import Any, Literal, Protocol, cast
 
+from factory_cli.actions import run_action, run_card, run_project
 from factory_cli.config import RuntimeContext, collect_known_secrets
 from factory_cli.doctor import run_doctor
 from factory_cli.status import run_status
@@ -118,8 +119,55 @@ def handle_factory_doctor(
     return dump_mcp_json(outcome.payload, ctx=ctx)
 
 
+def handle_factory_project_list(
+    portal: str | None = None, *, ctx: RuntimeContext | None = None
+) -> str:
+    return dump_mcp_json(run_project("list", portal=cast(Any, portal), ctx=ctx).payload, ctx=ctx)
+
+
+def handle_factory_project_add(
+    portal: str,
+    git_url: str,
+    name: str | None = None,
+    branch: str | None = None,
+    *,
+    ctx: RuntimeContext | None = None,
+) -> str:
+    return dump_mcp_json(
+        run_project(
+            "add", portal=cast(Any, portal), git_url=git_url, name=name, branch=branch, ctx=ctx
+        ).payload,
+        ctx=ctx,
+    )
+
+
+def handle_factory_action(
+    action: str,
+    target: str,
+    feedback: str | None = None,
+    *,
+    ctx: RuntimeContext | None = None,
+) -> str:
+    return dump_mcp_json(run_action(action, target, feedback=feedback, ctx=ctx).payload, ctx=ctx)
+
+
+def handle_factory_card(  # noqa: PLR0913 - mirrors the card tool arguments
+    action: str,
+    card_key: str | None = None,
+    title: str | None = None,
+    status: str | None = None,
+    tier: str | None = None,
+    *,
+    ctx: RuntimeContext | None = None,
+) -> str:
+    return dump_mcp_json(
+        run_card(action, card_key=card_key, title=title, status=status, tier=tier, ctx=ctx).payload,
+        ctx=ctx,
+    )
+
+
 def build_mcp_server() -> McpServerProtocol:
-    """Construct the MCP server with the four Factory tools registered."""
+    """Construct the MCP server with Factory tools registered."""
     server = _create_mcp_server("factory")
 
     def factory_submit(
@@ -185,6 +233,62 @@ def build_mcp_server() -> McpServerProtocol:
         name="factory_doctor",
         description="Inspect portal URLs, key sources, key kinds, health versions, and access.",
     )
+
+    def factory_project_list(portal: str | None = None) -> str:
+        return handle_factory_project_list(portal)
+
+    def factory_project_add(
+        portal: str, git_url: str, name: str | None = None, branch: str | None = None
+    ) -> str:
+        return handle_factory_project_add(portal, git_url, name, branch)
+
+    def factory_approve(target: str) -> str:
+        return handle_factory_action("approve", target)
+
+    def factory_reject(target: str, feedback: str) -> str:
+        return handle_factory_action("reject", target, feedback)
+
+    def factory_retry(target: str) -> str:
+        return handle_factory_action("retry", target)
+
+    def factory_archive(target: str) -> str:
+        return handle_factory_action("archive", target)
+
+    def factory_card_create(
+        title: str, card_key: str | None = None, tier: str | None = None, status: str | None = None
+    ) -> str:
+        return handle_factory_card("create", card_key, title, status, tier)
+
+    def factory_card_move(card_key: str, status: str) -> str:
+        return handle_factory_card("move", card_key, status=status)
+
+    def factory_card_list(status: str | None = None, tier: str | None = None) -> str:
+        return handle_factory_card("list", status=status, tier=tier)
+
+    def factory_card_run(card_key: str) -> str:
+        return handle_factory_card("run", card_key)
+
+    for fn, name, description in (
+        (
+            factory_project_list,
+            "factory_project_list",
+            "List registered projects on AIFactory, PFactory, and TFactory.",
+        ),
+        (
+            factory_project_add,
+            "factory_project_add",
+            "Register a Git repository on one Factory portal.",
+        ),
+        (factory_approve, "factory_approve", "Approve a PF session or AF task plan."),
+        (factory_reject, "factory_reject", "Reject a PF session or AF task plan with feedback."),
+        (factory_retry, "factory_retry", "Recover and restart an AF or TF task."),
+        (factory_archive, "factory_archive", "Archive an AF or TF task."),
+        (factory_card_create, "factory_card_create", "Create a CFactory card."),
+        (factory_card_move, "factory_card_move", "Move a CFactory card to another column."),
+        (factory_card_list, "factory_card_list", "List CFactory cards."),
+        (factory_card_run, "factory_card_run", "Run a CFactory card through the pipeline."),
+    ):
+        server.add_tool(fn, name=name, description=description)
     return server
 
 

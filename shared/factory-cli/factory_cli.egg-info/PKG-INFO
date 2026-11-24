@@ -1,0 +1,165 @@
+Metadata-Version: 2.4
+Name: factory-cli
+Version: 0.1.0
+Summary: Unified CLI and MCP front door for the Factory fleet
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pyyaml<7.0,>=6.0
+Requires-Dist: mcp<3.0,>=1.0
+
+# `factory` CLI and MCP Front Door (`shared/factory-cli`)
+
+`factory` is the unified command-line and stdio MCP entry point for the four
+Factory portals (PFactory, AIFactory, TFactory, CFactory).
+
+## Installation
+
+### NixOS / Nix Flakes
+
+Build or run directly from the Factory repository root:
+
+```bash
+nix build .#factory-cli
+./result/bin/factory --help
+
+nix run .#factory -- --help
+```
+
+### Non-NixOS (`uv`)
+
+Install from the local package directory (all required `factory_common` modules
+are vendored under `factory_cli/_vendor/factory_common`):
+
+```bash
+uv tool install --force ./shared/factory-cli
+factory --help
+```
+
+## Configuration and Keys
+
+### Portal URLs
+
+For each portal (`pfactory`, `aifactory`, `tfactory`, `cfactory`), the base URL
+is resolved in order:
+
+1. Environment variable: `PFACTORY_API_URL`, `AIFACTORY_API_URL`,
+   `TFACTORY_API_URL`, `CFACTORY_API_URL`.
+2. `~/.config/factory/config.toml` under `[portals.<portal>] url = "..."`.
+   This configuration file holds URLs only; never store API keys in it.
+3. Defaults:
+   - `https://pfactory.freundcloud.org.uk`
+   - `https://aifactory.freundcloud.org.uk`
+   - `https://tfactory.freundcloud.org.uk`
+   - `https://cfactory-mcp.freundcloud.org.uk`
+
+Only `https://` URLs or `http://` URLs whose host resolves exclusively to a
+loopback IP address (`127.0.0.0/8`, `::1`) are permitted; loopback `http://`
+ignores environment HTTP proxies. URLs with userinfo (`user:pass@host` or
+`user@host`), query strings or fragments on configured base URLs, and HTTP
+redirects are rejected.
+
+### API Keys
+
+For PFactory, AIFactory, and TFactory, keys are resolved in order:
+
+1. `$<PORTAL>_MCP_KEY`
+2. `~/.<portal>/.mcp-key`
+3. `$<PORTAL>_API_TOKEN_FILE` (path to token file)
+4. `~/.<portal>/.token`
+
+For CFactory, keys are resolved in order:
+
+1. `$CFACTORY_API_KEY`
+2. `~/.cfactory/.mcp-key`
+3. `~/.cfactory/.token`
+
+Loaded key values and recognized secret patterns are redacted from all CLI and
+MCP outputs and error messages.
+
+## Commands
+
+### `factory doctor`
+
+Inspects every portal's resolved URL, key source name (never the value), key
+kind (`acw` vs `legacy`), health version (`/api/health`; CFactory `/health`),
+and a protected read (`/api/mcp-stdio/projects`; CFactory `/api/workitems`):
+
+```bash
+factory doctor
+```
+
+Notes reported by `doctor`:
+
+- A legacy shared token on PFactory can only run `factory submit --dry-run`;
+  live contract emission requires a user `acw_` key.
+- A CFactory key has a tenant-wide view across work items.
+
+### `factory mcp-config` and `factory mcp`
+
+Print the secret-free MCP server configuration entry (`command: "factory"`,
+`args: ["mcp"]`) for Claude Code, Codex, or Antigravity (`agy`):
+
+```bash
+factory mcp-config claude
+factory mcp-config codex
+factory mcp-config agy
+```
+
+Pass `--write` to merge the `factory` entry into the agent's configuration file
+(`.mcp.json` for Claude, `~/.codex/config.toml` for Codex, and the user's agy
+`config/mcp_config.json` for `agy`). If an entry already exists, `--write`
+refuses unless `--force` is also passed. When modifying an existing file,
+`factory mcp-config --write` writes a `.bak` backup with mode `0600` and
+atomically replaces the target while preserving its file mode.
+
+To launch the stdio MCP server directly (exposing `factory_submit`,
+`factory_test`, `factory_status`, and `factory_doctor`):
+
+```bash
+factory mcp
+```
+
+Note: `factory_submit` defaults to `dry_run=true` over MCP. A dry-run submission
+still ingests the approved triple and records an approval on the PFactory
+session before running `emit-contract` with `dry_run=true` (so no downstream POST
+is sent to AIFactory).
+
+### `factory submit`
+
+Verify a committed, approved `intent/<slug>.md`, `spec/<slug>.md`, and
+`plan/<slug>.md` triple in a SHA-1 git worktree, ingest it into PFactory,
+record user approval, and emit a signed task contract to AIFactory:
+
+```bash
+factory submit <slug | plan/<slug>.md> [--base REF] [--project ID] [--dry-run]
+```
+
+Exit codes:
+
+- `0`: Contract emitted (or assembled in `--dry-run`) with `contract_result.ok`.
+- `1`: Portal 4xx rejection or readiness hard failure.
+- `2`: Local precondition failure (missing file, uncommitted change, missing
+  `draft` to `approved` commit transition, edit after approval, SHA-256 repo).
+- `3`: Outcome unknown (timeout, disconnect, 5xx after emit was sent, or
+  PFactory `outcome="unknown"`). Reconcile with `factory status pf:<session>`.
+
+### `factory test`
+
+Extract verification bullets from `spec/<slug>.md` (`## Verification`) or a
+criteria file, rewrite them as `## Acceptance Criteria` (`AC1..ACn`), and
+schedule a TFactory verification run without auto-registering unknown projects:
+
+```bash
+factory test --project ID (--spec SLUG | --criteria FILE) --branch B [--pr N]
+```
+
+### `factory status`
+
+Follow status by portal identifier or correlation key:
+
+```bash
+factory status pf:<session-id>
+factory status af:<task-id>
+factory status tf:<project-id>/<spec-id>
+factory status <correlation-key>
+```
