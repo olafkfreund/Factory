@@ -41,7 +41,8 @@ class Journey:
             or self.repeat < 1
         ):
             raise ValueError("invalid journey")
-        budget.reserve(lane, LIMITS[self.project].usd)
+        allocation = min(LIMITS[self.project].usd, budget.cap_usd - budget.spent)
+        budget.reserve(lane, allocation)
         deadline = now() + LIMITS[self.project].minutes * 60
         results: dict[str, dict[str, Any]] = {}
         current_task: tuple[str, str, str] | None = None
@@ -60,7 +61,7 @@ class Journey:
             if cost_usd is not None:
                 spent = max(spent, cost_usd)
             timed_out = now() >= deadline
-            capped = spent >= LIMITS[self.project].usd
+            capped = spent >= allocation
             if timed_out or capped:
                 if remote is None or current_task is None:
                     budget.blocked.add(lane)
@@ -114,6 +115,7 @@ class Journey:
                         budget.cap(lane, current_task, *remote)
                     except Exception:  # noqa: BLE001
                         budget.blocked.add(lane)
+            budget.release(lane, spent)
         return {
             "project": self.project,
             "surface": self.surface,

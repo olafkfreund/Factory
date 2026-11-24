@@ -1,5 +1,6 @@
 """Offline checks for the step 2b adapters and entry point."""
 
+import base64
 import json
 import socket
 from collections.abc import Callable
@@ -41,7 +42,9 @@ def test_live_writes_results_from_injected_runner(
     monkeypatch.setattr(socket.socket, "connect", lambda *_: pytest.fail("network call"))
     seen: list[Journey] = []
 
-    def fake_live(runs: list[Journey], _campaign: str, _root: Path) -> list[dict[str, Any]]:
+    def fake_live(
+        runs: list[Journey], _campaign: str, _root: Path, _cap: float
+    ) -> list[dict[str, Any]]:
         seen.extend(runs)
         return [
             {"status": "failed", "probes": {"c": {"status": "skipped", "reason": "no safe seam"}}}
@@ -148,7 +151,7 @@ def test_service_ownership_fields_and_routes(
         assert resource is not None and resource[field] == expected
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(
     "case",
     [
         ("DELETE", "aifactory", "project", "a1", "/api/projects/a1", None),
@@ -223,7 +226,12 @@ def test_github_create_and_push_keep_token_out_of_argv(
     client.push_starter(starter, triple, "Freundcloud/repo", tmp_path / "work")
     assert len(calls) == 18
     assert all("test-secret" not in str(argv) for argv, _ in calls)
-    assert all(env["GIT_CONFIG_VALUE_0"] == "AUTHORIZATION: bearer test-secret" for _, env in calls)
+    basic = base64.b64encode(b"x-access-token:test-secret").decode()
+    assert all(env["GIT_CONFIG_VALUE_0"] == f"Authorization: basic {basic}" for _, env in calls)
+    assert all(env["GIT_CONFIG_KEY_1"] == "credential.helper" for _, env in calls)
+    assert all(
+        env["GIT_CONFIG_VALUE_1"] == "" and env["GIT_TERMINAL_PROMPT"] == "0" for _, env in calls
+    )
     assert (tmp_path / "work" / "a.txt").read_text() == "a"
     assert (tmp_path / "work" / "execution.json").read_text() == "{}"
     assert (tmp_path / "work" / "plan" / "test.md").read_text() == ("---\nstatus: approved\n---\n")
@@ -427,8 +435,11 @@ def test_probe_request_keeps_rejection_status_and_reason(
 
 def test_stages_use_guard_for_every_mutation() -> None:
     calls: list[tuple[str, str]] = []
+    recorded: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     class FakeGuard:
+        registry = SimpleNamespace(append=lambda *args, **kwargs: recorded.append((args, kwargs)))
+
         def create_repo(
             self,
             _name: str,
@@ -506,8 +517,7 @@ def test_stages_use_guard_for_every_mutation() -> None:
         ("cfactory", "repository"),
         ("cfactory", "card"),
         ("pfactory", "project"),
-        ("pfactory", "project"),
         ("pfactory", "session"),
         ("aifactory", "task"),
-        ("pfactory", "project"),
     ]
+    assert [row[0][0:2] for row in recorded] == [("session", "s1"), ("task", "t1")]

@@ -107,11 +107,10 @@ class Services:
         }
         if kind == "project" and service in {"aifactory", "pfactory", "tfactory"}:
             result = self._request(service, "GET", "/api/mcp-stdio/projects")
-            # All three mcp_stdio/router.py project list handlers return a bare list:
-            # AIF:220-234, PF:232-242, TF:153-167.
-            if not isinstance(result, list):
+            # HttpClient wraps JSON arrays as {"items": [...]}; test doubles may return lists.
+            projects = result.get("items") if isinstance(result, dict) else result
+            if not isinstance(projects, list):
                 raise RuntimeError(f"{service} project list has an unknown shape")
-            projects: list[dict[str, Any]] = result
             row = next(
                 (
                     row
@@ -257,7 +256,10 @@ class Services:
         result = self._request(
             "aifactory", "GET", f"/api/mcp-stdio/tasks?project_id={_segment(project_id)}"
         )
-        return {str(row["id"]) for row in result.get("tasks", [])} if result else set()
+        if result is None:
+            return set()
+        rows = result if isinstance(result, list) else result.get("tasks", result.get("items", []))
+        return {str(row["id"]) for row in rows} if rows else set()
 
     def stop_status(self, task_id: str) -> dict[str, Any]:
         # AIF routes/execution.py:329-365 reports is_running/queued after
@@ -299,7 +301,12 @@ class Services:
     def anomalies(self) -> list[dict[str, Any]]:
         # CF routes_workitems.py:143-146.
         response = self._request("cfactory", "GET", "/api/anomalies")
-        return cast(list[dict[str, Any]], response.get("anomalies", []) if response else [])
+        if isinstance(response, list):
+            return cast(list[dict[str, Any]], response)
+        return cast(
+            list[dict[str, Any]],
+            response.get("anomalies", response.get("items", [])) if response else [],
+        )
 
     def tokens(self) -> dict[str, Any]:
         # CF routes_workitems.py:83-85 and copilot/tools.py:128-176 expose

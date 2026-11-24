@@ -11,8 +11,8 @@ from scripts.e2e.registry import KIND_SERVICES, Registry
 REPO_NAME = re.compile(r"^e2e-\d{8}-P[1-5]-\d+$")
 RESOURCE_KINDS = set(KIND_SERVICES)
 # PF's project response has no clone repo (routes/projects.py:373-382,743-755).
-# Its guard uses registry identity plus a live existence check. CF cards resolve
-# their repository_id through routes_git_config.py:591-603.
+# Its guard uses the project ID plus a live existence check, with no repo link.
+# CF cards resolve repository_id through the default tenant (org="default").
 NO_REPO_LINK = {("pfactory", "project")}
 
 
@@ -95,8 +95,8 @@ class Guard:
                     (service, kind) not in NO_REPO_LINK
                     and resource.get("repo_node_id") != repo_entry["id"]
                 )
-                or not entry.get("org")
-                or resource.get("org") != entry["org"]
+                or (not entry.get("org") and not entry.get("unverified"))
+                or (entry.get("org") and resource.get("org") != entry["org"])
             ):
                 raise GuardRefusalError("resource ownership changed or unavailable")
         return entry

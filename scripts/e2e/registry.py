@@ -18,7 +18,15 @@ KIND_SERVICES = {
     "card": {"cfactory"},
     "repository": {"cfactory"},
 }
-KINDS = {*KIND_SERVICES, "intent", "retained", "deleted", "create_failed", "failed"}
+KINDS = {
+    *KIND_SERVICES,
+    "intent",
+    "resource_intent",
+    "retained",
+    "deleted",
+    "create_failed",
+    "failed",
+}
 
 
 class Registry:
@@ -32,6 +40,10 @@ class Registry:
         target_kind = fields.get("target_kind")
         if kind == "intent":
             valid = service == "github" and target_kind == "repo" and identity == repo_node_id
+        elif kind == "resource_intent":
+            valid = isinstance(target_kind, str) and service in KIND_SERVICES.get(
+                target_kind, set()
+            )
         elif kind in {"deleted", "retained", "failed", "create_failed"}:
             valid = (
                 isinstance(target_kind, str)
@@ -50,7 +62,8 @@ class Registry:
             "id": identity,
             "repo_node_id": repo_node_id,
             **safe_fields(
-                fields, {"service", "target_kind", "repo_id", "full_name", "name", "org"}
+                fields,
+                {"service", "target_kind", "repo_id", "full_name", "name", "org", "unverified"},
             ),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)

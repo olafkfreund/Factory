@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import sys
 import tempfile
 import time
@@ -11,7 +12,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.e2e.config import HOSTS
+from scripts.e2e.cleanup import LiveDelete, sweep
+from scripts.e2e.config import CAMPAIGN_CAP_USD, HOSTS
 from scripts.e2e.cost import Budget
 from scripts.e2e.evidence import safe_fields
 from scripts.e2e.github import GitHub
@@ -24,7 +26,7 @@ from scripts.e2e.services import Services
 from scripts.e2e.stages import LiveOperations, build
 
 SKIPPED_PROBES = {
-    "c": {"status": "skipped", "reason": "S2 was not reached"},
+    "c": {"status": "skipped", "reason": "tampered ingest is disabled in the live mvr slice"},
     "d": {
         "status": "skipped",
         "reason": "an accepted invalid contract could dispatch an unregistered AIF task",
@@ -90,13 +92,21 @@ def planned_calls(journey: Journey) -> list[str]:
 
 
 def run_live(  # noqa: PLR0915
-    runs: list[Journey], campaign: str, evidence_root: Path
+    runs: list[Journey], campaign: str, evidence_root: Path, cap_usd: float = CAMPAIGN_CAP_USD
 ) -> list[dict[str, Any]]:
     registry = Registry(campaign, evidence_root)
     github = GitHub()
     services = Services(registry=registry)
     guard = Guard(registry, github.read_repo, services.read_resource)
-    budget = Budget(guard)
+    for service, path in {
+        "aifactory": "/api/mcp-stdio/projects",
+        "pfactory": "/api/mcp-stdio/projects",
+        "tfactory": "/api/mcp-stdio/projects",
+        "cfactory": "/api/workitems",
+    }.items():
+        if services._request(service, "GET", path) is None:
+            raise RuntimeError(f"{service} authentication preflight returned no data")
+    budget = Budget(guard, cap_usd)
     rows = []
     day = datetime.now(UTC).strftime("%Y%m%d")
     for journey in runs:
@@ -297,9 +307,16 @@ def run_live(  # noqa: PLR0915
                     "surface": journey.surface,
                     "model": journey.model,
                     "repeat": journey.repeat,
-                    "status": "failed",
+                    "status": "cap_confirmed"
+                    if str(exc) == "journey cap reached; remote stop confirmed"
+                    else "failed",
                     "failure": type(exc).__name__,
                 }
+                if operations.hidden_skip_reason:
+                    result["status"] = "skipped"
+                    result["stage_results"] = {
+                        "S5": {"status": "skipped", "reason": operations.hidden_skip_reason}
+                    }
             result["probes"] = {key: dict(value) for key, value in SKIPPED_PROBES.items()}
             for key, outcome in operations.probes.items():
                 result["probes"][key] = {
@@ -312,21 +329,44 @@ def run_live(  # noqa: PLR0915
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    choice = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument("command", nargs="?", choices=["sweep"])
+    choice = parser.add_mutually_exclusive_group()
     choice.add_argument("--journey", action="append", default=[])
     choice.add_argument("--slice", choices=["mvr"])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--live", action="store_true")
+    parser.add_argument("--cap-usd", type=float, default=CAMPAIGN_CAP_USD)
+    parser.add_argument("--cap-test", action="store_true")
     parser.add_argument("--campaign", default=datetime.now(UTC).strftime("e2e-campaign-%Y-%m-%d"))
     parser.add_argument("--evidence-root", type=Path, default=Path("evidence"))
     args = parser.parse_args(argv)
+    if not math.isfinite(args.cap_usd) or args.cap_usd <= 0:
+        parser.error("--cap-usd must be finite and positive")
+    if args.command == "sweep":
+        registry = Registry(args.campaign, args.evidence_root)
+        github = GitHub()
+        services = Services(registry=registry)
+        guard = Guard(registry, github.read_repo, services.read_resource)
+        actions = sweep(
+            registry, guard, LiveDelete(services, github, registry), dry_run=not args.live
+        )
+        print(json.dumps(actions, indent=2))  # noqa: T201
+        return 0 if all(row["action"] != "failed" for row in actions) else 1
+    if not args.journey and not args.slice and not args.cap_test:
+        parser.error("--journey or --slice is required")
     try:
         runs = selected(args.journey, args.slice)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.cap_test:
+        if not args.live:
+            parser.error("--cap-test requires --live")
+        runs = [Journey("P1", "cli", "Claude", 1)]
     if args.live:
-        live_rows = run_live(runs, args.campaign, args.evidence_root)
+        live_rows = run_live(
+            runs, args.campaign, args.evidence_root, 0.01 if args.cap_test else args.cap_usd
+        )
         path = args.evidence_root / args.campaign / "run.meta.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         evidence = [
@@ -348,7 +388,8 @@ def main(argv: list[str] | None = None) -> int:
         ]
         path.write_text(json.dumps({"journeys": evidence, "hosts": HOSTS}, sort_keys=True) + "\n")
         print(json.dumps(summarize(live_rows), indent=2))  # noqa: T201
-        return 0 if all(row["status"] == "passed" for row in live_rows) else 1
+        expected = "cap_confirmed" if args.cap_test else "passed"
+        return 0 if all(row["status"] == expected for row in live_rows) else 1
     rows: list[dict[str, Any]] = []
     for run in runs:
         for call in planned_calls(run):

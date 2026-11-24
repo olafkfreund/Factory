@@ -1,5 +1,6 @@
 """Minimal GitHub repo client; token is read only for a request."""
 
+import base64
 import json
 import os
 import shutil
@@ -172,11 +173,15 @@ class GitHub:
             "      - run: python -m pytest -q\n",
             encoding="utf-8",
         )
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
         env = {
             **os.environ,
-            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_COUNT": "2",
             "GIT_CONFIG_KEY_0": "http.extraheader",
-            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
+            "GIT_CONFIG_VALUE_0": f"Authorization: basic {basic}",
+            "GIT_CONFIG_KEY_1": "credential.helper",
+            "GIT_CONFIG_VALUE_1": "",
+            "GIT_TERMINAL_PROMPT": "0",
         }
         git_executable = shutil.which("git")
         if git_executable is None:
@@ -256,11 +261,15 @@ class GitHub:
         git_executable = shutil.which("git")
         if not token or git_executable is None:
             raise RuntimeError("GitHub credential or git unavailable")
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
         env = {
             **os.environ,
-            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_COUNT": "2",
             "GIT_CONFIG_KEY_0": "http.extraheader",
-            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
+            "GIT_CONFIG_VALUE_0": f"Authorization: basic {basic}",
+            "GIT_CONFIG_KEY_1": "credential.helper",
+            "GIT_CONFIG_VALUE_1": "",
+            "GIT_TERMINAL_PROMPT": "0",
         }
         subprocess.run(  # noqa: S603
             [git_executable, "fetch", f"https://github.com/{full_name}.git", sha],

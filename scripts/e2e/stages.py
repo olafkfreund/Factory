@@ -4,10 +4,10 @@ The driver supplies service-specific operations. Unknown live routes are deliber
 left unbound rather than inferred from a similar portal's API.
 """
 
-import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -40,6 +40,7 @@ class LiveOperations:
         self.cli = CLI(guard)
         self.projects: dict[str, str] = {}
         self.probes: dict[str, dict[str, Any]] = {}
+        self.hidden_skip_reason: str | None = None
 
     def _surface(
         self,
@@ -77,6 +78,15 @@ class LiveOperations:
 
     def onboard(self, service: str, full_name: str, _surface: str) -> dict[str, Any]:
         url = f"https://github.com/{full_name}.git"
+        registry = self.cli.guard.registry
+        repo = next(
+            row
+            for row in registry.active()
+            if row["kind"] == "repo" and row["full_name"] == full_name
+        )
+        registry.append(
+            "resource_intent", full_name, repo["id"], service=service, target_kind="project"
+        )
         output = self._surface(
             ["project", "add", service, url],
             "factory_project_add",
@@ -87,6 +97,7 @@ class LiveOperations:
             raise RuntimeError(f"{service} project add returned no ID")
         identity = str(row["id"])
         self.projects[service] = identity
+        registry.append("project", identity, repo["id"], service=service, unverified=True)
         return self.services.read_resource(service, "project", identity) or {}
 
     def submit(self, project: str, _full_name: str, _surface: str) -> dict[str, Any]:
@@ -144,7 +155,38 @@ class LiveOperations:
             "/api/mcp-stdio/plan/sessions/ingest-approved",
             payload,
         )
-        created = outcome["body"].get("session_id")
+        body = outcome["body"]
+        created = body.get("session_id")
+        if created:
+            project = self.cli.guard.registry.find("pfactory", "project", self.projects["pfactory"])
+            if project is None:
+                raise RuntimeError("PFactory project missing from registry")
+            self.cli.guard.registry.append(
+                "session",
+                str(created),
+                project["repo_node_id"],
+                service="pfactory",
+                unverified=True,
+            )
+        contract = body.get("contract_result") or {}
+        task_id = str(
+            body.get("aifactory_task_id")
+            or body.get("task_id")
+            or (contract.get("correlation") or {}).get("task_id")
+            or ""
+        ).removeprefix("af:")
+        if task_id:
+            project = self.cli.guard.registry.find(
+                "aifactory", "project", self.projects["aifactory"]
+            )
+            if project is None:
+                raise RuntimeError("AIFactory project missing from registry")
+            self.cli.guard.registry.append(
+                "task", task_id, project["repo_node_id"], service="aifactory", unverified=True
+            )
+            self.cli.guard.mutate("aifactory", "task", task_id, lambda: self.services.stop(task_id))
+            if self.services.stop_status(task_id).get("status") != "stopped":
+                raise RuntimeError("probe c dispatched task stop unconfirmed")
         if created:
             project = self.cli.guard.registry.find("pfactory", "project", self.projects["pfactory"])
             if project is None:
@@ -241,6 +283,10 @@ class LiveOperations:
         return self.services.verdict(identity)
 
     def hidden(self, project: str, full_name: str, sha: str) -> bool:
+        bwrap = shutil.which("bwrap")
+        if bwrap is None:
+            self.hidden_skip_reason = "bubblewrap unavailable"
+            return False
         self.github.fetch_commit(full_name, sha, self.workspace)
         git = shutil.which("git")
         if git is None:
@@ -253,28 +299,58 @@ class LiveOperations:
             stderr=subprocess.DEVNULL,
         )
         suite = Path(__file__).resolve().parents[2] / "tests" / "e2e" / "hidden" / project
-        uv = shutil.which("uv")
-        if uv is None:
-            raise RuntimeError("uv unavailable")
-        result = subprocess.run(  # noqa: S603
-            [
-                uv,
-                "run",
-                "--no-project",
-                "--with",
-                "pytest",
-                "python",
-                "-m",
-                "pytest",
-                str(suite),
-                "-q",
-            ],
-            cwd=self.workspace,
-            env={**os.environ, "PYTHONPATH": str(self.workspace)},
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        python = shutil.which("python3")
+        if python is None:
+            self.hidden_skip_reason = "sandbox interpreter unavailable"
+            return False
+        with tempfile.TemporaryDirectory(prefix="factory-e2e-hidden-") as isolated:
+            hidden = Path(isolated) / "suite"
+            shutil.copytree(suite, hidden)
+            result = subprocess.run(  # noqa: S603
+                [
+                    bwrap,
+                    "--unshare-all",
+                    "--die-with-parent",
+                    "--clearenv",
+                    "--ro-bind",
+                    "/nix/store",
+                    "/nix/store",
+                    "--bind",
+                    str(self.workspace),
+                    "/work",
+                    "--ro-bind",
+                    str(hidden),
+                    "/suite",
+                    "--tmpfs",
+                    "/tmp",  # noqa: S108 - private sandbox tmpfs
+                    "--tmpfs",
+                    "/home",
+                    "--dir",
+                    "/home/sandbox",
+                    "--dev",
+                    "/dev",
+                    "--proc",
+                    "/proc",
+                    "--chdir",
+                    "/work",
+                    "--setenv",
+                    "HOME",
+                    "/home/sandbox",
+                    Path(python).resolve().as_posix(),
+                    "-c",
+                    "import glob, sys; "
+                    "v = f'{sys.version_info.major}.{sys.version_info.minor}'; "
+                    "sys.path.extend(glob.glob("
+                    "f'/nix/store/*-python{v}-*/lib/python{v}/site-packages')); "
+                    "import pytest; "
+                    "sys.exit(pytest.main(['/suite', '-q', '-p', 'no:cacheprovider']))",
+                ],
+                cwd=self.workspace,
+                env={"PATH": "/nix/store", "PYTHONDONTWRITEBYTECODE": "1"},
+                check=False,
+                capture_output=True,
+                text=True,
+            )
         return result.returncode == 0
 
     def timeline(self, card_key: str) -> dict[str, Any]:
@@ -375,12 +451,6 @@ def build(  # noqa: PLR0915
 
     def s2(_deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
         poll()
-        c = guard.mutate(
-            "pfactory",
-            "project",
-            state["pfactory_project"],
-            lambda: operations.probe_c(state["full_name"]),
-        )
         # The submit handler ingests and emits; the PF project is the registered parent.
         result = guard.mutate(
             "pfactory",
@@ -390,6 +460,21 @@ def build(  # noqa: PLR0915
         )
         if not isinstance(result, dict):
             raise RuntimeError("submit returned no structured result")
+        if result.get("session_id"):
+            guard.registry.append(
+                "session",
+                str(result["session_id"]),
+                state["repo_node_id"],
+                service="pfactory",
+                unverified=True,
+            )
+        task_id = result.get("task_id")
+        if task_id:
+            state["task_id"] = str(task_id)
+            guard.registry.append(
+                "task", str(task_id), state["repo_node_id"], service="aifactory", unverified=True
+            )
+            poll(str(task_id))
         for service, kind, field in (
             ("pfactory", "session", "session_id"),
             ("aifactory", "task", "task_id"),
@@ -408,21 +493,9 @@ def build(  # noqa: PLR0915
                     state["repo_node_id"],
                     do_read,
                 )
-        task_id = result.get("task_id")
-        if task_id:
-            poll(task_id)
-            state["task_id"] = str(task_id)
         if result.get("correlation_key"):
             state["correlation_key"] = str(result["correlation_key"])
-        probes = {"c": c}
-        if journey.project == "P1":
-            probes["e"] = guard.mutate(
-                "pfactory",
-                "project",
-                state["pfactory_project"],
-                lambda: operations.probe_e(state["full_name"]),
-            )
-        return {**result, "probes": probes}
+        return result
 
     def s3(deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
         task_id = state["task_id"]
@@ -487,6 +560,10 @@ def build(  # noqa: PLR0915
             "merge_sha": sha,
             "hidden_suite_sha": sha,
             "hidden_green": operations.hidden(journey.project, state["full_name"], sha),
+            "hidden_suite_status": "skipped"
+            if getattr(operations, "hidden_skip_reason", None)
+            else "ran",
+            "hidden_suite_reason": getattr(operations, "hidden_skip_reason", None),
         }
 
     def x(_deadline: float, poll: Callable[..., None]) -> dict[str, Any]:

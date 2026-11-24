@@ -22,13 +22,25 @@ class DeleteClient(Protocol):
 
 
 class LiveDelete:
-    def __init__(self, services: Services, github: GitHub) -> None:
+    def __init__(self, services: Services, github: GitHub, registry: Registry) -> None:
         self.services = services
         self.github = github
+        self.registry = registry
+
+    def _repo_name(self, node_id: str) -> str:
+        if node_id.startswith("Freundcloud/") and any(
+            row["kind"] == "intent" and row["full_name"] == node_id
+            for row in self.registry.entries()
+        ):
+            return node_id
+        row = self.registry.find("github", "repo", node_id)
+        if row is None or row not in self.registry.active():
+            raise ValueError("unregistered repo node ID")
+        return str(row["full_name"])
 
     def delete(self, service: str, kind: str, identity: str) -> object:
         if (service, kind) == ("github", "repo"):
-            return self.github.delete_repo(identity)
+            return self.github.delete_repo(self._repo_name(identity))
         return self.services.delete(service, kind, identity)
 
     def close_session(self, identity: str) -> object:
@@ -36,7 +48,7 @@ class LiveDelete:
 
     def exists(self, service: str, kind: str, identity: str) -> bool:
         if (service, kind) == ("github", "repo"):
-            return self.github.read_repo(identity) is not None
+            return self.github.read_repo(self._repo_name(identity)) is not None
         return self.services.exists(service, kind, identity)
 
 
