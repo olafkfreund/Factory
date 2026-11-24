@@ -122,7 +122,7 @@ def run_live(  # noqa: PLR0915
                 name: str = name,
             ) -> dict[str, Any]:
                 if stage == "S1":
-                    live_repo = operations.github.read_repo(f"Freundcloud/{name}")
+                    live_repo = operations.github.read_repo(f"olafkfreund/{name}")
                     if live_repo is None:
                         raise RuntimeError("campaign repository unavailable")
                     repo = guard.check(
@@ -136,7 +136,7 @@ def run_live(  # noqa: PLR0915
                     return {
                         **surface,
                         "registered": bool(repo),
-                        "branch_protection": bool(github.main_protection(f"Freundcloud/{name}")),
+                        "branch_protection": bool(github.main_protection(f"olafkfreund/{name}")),
                         "projects": dict.fromkeys(operations.projects, 1),
                         "cards": 1,
                     }
@@ -180,8 +180,8 @@ def run_live(  # noqa: PLR0915
                     }
                     coder = models.get("coding") or models.get("coder")
                     reviewer = models.get("qa") or models.get("reviewer")
-                    pr = github.pull_request(f"Freundcloud/{name}")
-                    files = github.pull_files(f"Freundcloud/{name}", pr["number"])
+                    pr = github.pull_request(f"olafkfreund/{name}")
+                    files = github.pull_files(f"olafkfreund/{name}", pr["number"])
                     changed = {row["filename"] for row in files if row.get("status") != "removed"}
                     code = {
                         path
@@ -203,9 +203,9 @@ def run_live(  # noqa: PLR0915
                         "cost_usd": usage.get("cost_usd", 0),
                     }
                 if stage == "S4":
-                    pr = github.pull_request(f"Freundcloud/{name}")
+                    pr = github.pull_request(f"olafkfreund/{name}")
                     sha = pr.get("merge_commit_sha")
-                    checks = github.check_runs(f"Freundcloud/{name}", str(sha))
+                    checks = github.check_runs(f"olafkfreund/{name}", str(sha))
                     successful = [
                         row
                         for row in checks.get("check_runs", [])

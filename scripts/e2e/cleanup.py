@@ -28,7 +28,7 @@ class LiveDelete:
         self.registry = registry
 
     def _repo_name(self, node_id: str) -> str:
-        if node_id.startswith("Freundcloud/") and any(
+        if node_id.startswith("olafkfreund/") and any(
             row["kind"] == "intent" and row["full_name"] == node_id
             for row in self.registry.entries()
         ):

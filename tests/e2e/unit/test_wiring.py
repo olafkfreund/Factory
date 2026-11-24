@@ -105,20 +105,20 @@ def test_service_ownership_fields_and_routes(
 ) -> None:
     registry = Registry("campaign", tmp_path)
     registry.append(
-        "repo", "R1", "R1", service="github", repo_id=1, full_name="Freundcloud/e2e-20261124-P1-1"
+        "repo", "R1", "R1", service="github", repo_id=1, full_name="olafkfreund/e2e-20261124-P1-1"
     )
     client = services.Services({}, registry)
     responses: dict[tuple[str, str], object] = {
         ("aifactory", "/api/mcp-stdio/projects"): [
-            {"id": "a1", "repoIdentity": "github.com/freundcloud/e2e-20261124-p1-1"}
+            {"id": "a1", "repoIdentity": "github.com/olafkfreund/e2e-20261124-p1-1"}
         ],
         ("pfactory", "/api/mcp-stdio/projects"): [{"id": "p1", "repo": None}],
         ("tfactory", "/api/mcp-stdio/projects"): [
-            {"id": "t1", "repoLabel": "Freundcloud/e2e-20261124-P1-1"}
+            {"id": "t1", "repoLabel": "olafkfreund/e2e-20261124-P1-1"}
         ],
         ("pfactory", "/api/mcp-stdio/plan/sessions/s1"): {
             "session_id": "s1",
-            "repo": "Freundcloud/e2e-20261124-P1-1",
+            "repo": "olafkfreund/e2e-20261124-P1-1",
             "org_id": "o1",
         },
         ("aifactory", "/api/mcp-stdio/tasks/a1%3Aspec"): {"id": "a1:spec"},
@@ -129,7 +129,7 @@ def test_service_ownership_fields_and_routes(
             "repository_id": 7,
         },
         ("cfactory", "/api/tenants/default/git-repositories"): {
-            "repositories": [{"id": 7, "project": "Freundcloud/e2e-20261124-P1-1"}]
+            "repositories": [{"id": 7, "project": "olafkfreund/e2e-20261124-P1-1"}]
         },
     }
 
@@ -205,7 +205,7 @@ def test_github_create_and_push_keep_token_out_of_argv(
     monkeypatch.setattr(client, "request", fake_request)
     assert client.create_repo("repo") == {"name": "repo"}
     assert requested == [
-        ("POST", "/orgs/Freundcloud/repos", {"name": "repo", "private": True, "auto_init": False})
+        ("POST", "/user/repos", {"name": "repo", "private": True, "auto_init": False})
     ]
     starter = tmp_path / "starter"
     triple = tmp_path / "triple"
@@ -223,7 +223,7 @@ def test_github_create_and_push_keep_token_out_of_argv(
         calls.append((argv, kwargs["env"]))
 
     monkeypatch.setattr("scripts.e2e.github.subprocess.run", fake_run)
-    client.push_starter(starter, triple, "Freundcloud/repo", tmp_path / "work")
+    client.push_starter(starter, triple, "olafkfreund/repo", tmp_path / "work")
     assert len(calls) == 18
     assert all("test-secret" not in str(argv) for argv, _ in calls)
     basic = base64.b64encode(b"x-access-token:test-secret").decode()
@@ -344,7 +344,7 @@ def test_cf_repository_and_card_creation_routes(
 ) -> None:
     registry = Registry("campaign", tmp_path)
     registry.append(
-        "repo", "R1", "R1", service="github", repo_id=1, full_name="Freundcloud/e2e-20261124-P1-1"
+        "repo", "R1", "R1", service="github", repo_id=1, full_name="olafkfreund/e2e-20261124-P1-1"
     )
     client = services.Services({}, registry)
     calls: list[tuple[object, ...]] = []
@@ -356,7 +356,7 @@ def test_cf_repository_and_card_creation_routes(
         if path.endswith("/repositories") and method == "POST":
             return {"id": 7}
         if path.endswith("/git-repositories"):
-            return {"repositories": [{"id": 7, "project": "Freundcloud/e2e-20261124-P1-1"}]}
+            return {"repositories": [{"id": 7, "project": "olafkfreund/e2e-20261124-P1-1"}]}
         if path == "/api/cards":
             return {"card_key": "C-1"}
         if path == "/api/cards/C-1":
@@ -364,9 +364,9 @@ def test_cf_repository_and_card_creation_routes(
         return None
 
     monkeypatch.setattr(client, "_request", fake_request)
-    repo = client.register_cf_repository("Freundcloud/e2e-20261124-P1-1", "a1")
+    repo = client.register_cf_repository("olafkfreund/e2e-20261124-P1-1", "a1")
     assert repo["repo_node_id"] == "R1"
-    card = client.create_card("C-1", "Freundcloud/e2e-20261124-P1-1", 1)
+    card = client.create_card("C-1", "olafkfreund/e2e-20261124-P1-1", 1)
     assert card["repo_node_id"] == "R1"
     assert (
         "cfactory",
@@ -377,7 +377,7 @@ def test_cf_repository_and_card_creation_routes(
             "title": "C-1",
             "repository_id": 7,
             "correlation_key": "1",
-            "issue_ref": "Freundcloud/e2e-20261124-P1-1#1",
+            "issue_ref": "olafkfreund/e2e-20261124-P1-1#1",
         },
     ) in calls
 
@@ -393,7 +393,7 @@ def test_github_pr_issue_protection_and_delete_routes(monkeypatch: pytest.Monkey
         return {"number": 3}
 
     monkeypatch.setattr(client, "request", fake_request)
-    full = "Freundcloud/e2e-20261124-P1-1"
+    full = "olafkfreund/e2e-20261124-P1-1"
     client.pull_request(full)
     client.pull_files(full, 3)
     client.check_runs(full, "a" * 40)
@@ -463,7 +463,7 @@ def test_stages_use_guard_for_every_mutation() -> None:
 
     class FakeOperations:
         def create_repo(self, name: str) -> dict[str, Any]:
-            return {"node_id": "R1", "full_name": f"Freundcloud/{name}"}
+            return {"node_id": "R1", "full_name": f"olafkfreund/{name}"}
 
         def set_topics(self, *_: object) -> None:
             return None

@@ -39,7 +39,7 @@ class GitHub:
         if (
             not path.startswith("/")
             or "//" in path
-            or not (path.startswith("/repos/Freundcloud/") or path == "/orgs/Freundcloud/repos")
+            or not (path.startswith("/repos/olafkfreund/") or path == "/user/repos")
         ):
             raise ValueError("invalid GitHub path")
         try:
@@ -62,25 +62,26 @@ class GitHub:
             raise RuntimeError(f"GitHub request failed ({type(exc).__name__})") from None
 
     def set_topics(self, full_name: str, topics: list[str]) -> dict[str, Any]:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         return cast(
             dict[str, Any], self.request("PUT", f"/repos/{full_name}/topics", {"names": topics})
         )
 
     def create_repo(self, name: str) -> dict[str, Any]:
-        # GitHub REST: POST /orgs/{org}/repos; Guard.create_repo writes intent first.
+        # GitHub REST: POST /user/repos (personal account, owner decision 2026-11-24);
+        # Guard.create_repo writes intent first.
         return cast(
             dict[str, Any],
             self.request(
                 "POST",
-                "/orgs/Freundcloud/repos",
+                "/user/repos",
                 {"name": name, "private": True, "auto_init": False},
             ),
         )
 
     def read_repo(self, full_name: str) -> dict[str, Any] | None:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         try:
             return cast(dict[str, Any], self.request("GET", f"/repos/{full_name}"))
@@ -90,12 +91,12 @@ class GitHub:
             raise
 
     def delete_repo(self, full_name: str) -> object:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         return self.request("DELETE", f"/repos/{full_name}")
 
     def pull_requests(self, full_name: str) -> list[dict[str, Any]]:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         return cast(
             list[dict[str, Any]], self.request("GET", f"/repos/{full_name}/pulls?state=all")
@@ -110,7 +111,7 @@ class GitHub:
         )
 
     def pull_files(self, full_name: str, number: int) -> list[dict[str, Any]]:
-        if not full_name.startswith("Freundcloud/") or number < 1:
+        if not full_name.startswith("olafkfreund/") or number < 1:
             raise ValueError("unsafe PR")
         # shared/factory-github/gh_client.py:887-906 uses this REST path.
         return cast(
@@ -119,17 +120,17 @@ class GitHub:
         )
 
     def check_runs(self, full_name: str, sha: str) -> dict[str, Any]:
-        if not full_name.startswith("Freundcloud/") or len(sha) != SHA_LENGTH:
+        if not full_name.startswith("olafkfreund/") or len(sha) != SHA_LENGTH:
             raise ValueError("unsafe check target")
         return cast(
             dict[str, Any], self.request("GET", f"/repos/{full_name}/commits/{sha}/check-runs")
         )
 
     def protect_main(self, full_name: str) -> dict[str, Any]:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         # GitHub REST PUT /repos/{owner}/{repo}/branches/{branch}/protection.
-        # shortcut: the Freundcloud org is on the Free plan, where private repos get 403
+        # shortcut: the olafkfreund org is on the Free plan, where private repos get 403
         # "Upgrade to GitHub Pro" for branch protection. Recorded as unavailable rather than
         # failing S1; upgrade when the org plan changes or the test repos go public.
         try:
@@ -155,21 +156,21 @@ class GitHub:
         )
 
     def main_protection(self, full_name: str) -> dict[str, Any]:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         return cast(
             dict[str, Any], self.request("GET", f"/repos/{full_name}/branches/main/protection")
         )
 
     def create_issue(self, full_name: str, title: str) -> dict[str, Any]:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         return cast(
             dict[str, Any], self.request("POST", f"/repos/{full_name}/issues", {"title": title})
         )
 
     def push_starter(self, starter: Path, triple: Path, full_name: str, work: Path) -> None:
-        if not full_name.startswith("Freundcloud/"):
+        if not full_name.startswith("olafkfreund/"):
             raise ValueError("unsafe owner")
         token = self.token_file.read_text(encoding="utf-8").strip()
         if not token:
@@ -266,7 +267,7 @@ class GitHub:
 
     def fetch_commit(self, full_name: str, sha: str, work: Path) -> None:
         if (
-            not full_name.startswith("Freundcloud/")
+            not full_name.startswith("olafkfreund/")
             or len(sha) != SHA_LENGTH
             or any(c not in "0123456789abcdef" for c in sha.lower())
         ):

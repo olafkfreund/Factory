@@ -53,7 +53,7 @@ def test_onboard_records_intent_and_unverified_id_before_failed_readback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = Registry("campaign", tmp_path)
-    full_name = "Freundcloud/e2e-20261124-P1-1"
+    full_name = "olafkfreund/e2e-20261124-P1-1"
     registry.append("repo", "R1", "R1", service="github", repo_id=1, full_name=full_name)
     guard = Guard(registry, lambda _: None, lambda *_: None)
     ops = stages.LiveOperations(
@@ -96,7 +96,7 @@ def test_hidden_suite_uses_minimal_bwrap(tmp_path: Path, monkeypatch: pytest.Mon
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr("scripts.e2e.stages.subprocess.run", fake_run)
-    assert ops.hidden("P1", "Freundcloud/test", "a" * 40)
+    assert ops.hidden("P1", "olafkfreund/test", "a" * 40)
     argv, kwargs = seen[-1]
     assert argv[0].endswith("bwrap")
     assert "--unshare-all" in argv and "--clearenv" in argv
@@ -120,13 +120,13 @@ def test_missing_bwrap_skips_hidden_suite(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(
         "scripts.e2e.stages.subprocess.run", lambda *_a, **_k: pytest.fail("unsandboxed run")
     )
-    assert ops.hidden("P1", "Freundcloud/test", "a" * 40) is False
+    assert ops.hidden("P1", "olafkfreund/test", "a" * 40) is False
     assert ops.hidden_skip_reason == "bubblewrap unavailable"
 
 
 def test_repo_delete_resolves_node_id_from_registry(tmp_path: Path) -> None:
     registry = Registry("campaign", tmp_path)
-    full_name = "Freundcloud/e2e-20261124-P1-1"
+    full_name = "olafkfreund/e2e-20261124-P1-1"
     registry.append("repo", "R1", "R1", service="github", repo_id=1, full_name=full_name)
     seen: list[str] = []
     github = SimpleNamespace(delete_repo=seen.append, read_repo=lambda name: {"full_name": name})
@@ -138,7 +138,7 @@ def test_repo_delete_resolves_node_id_from_registry(tmp_path: Path) -> None:
 
 def test_sweep_deletes_registered_repo_by_node_through_guard(tmp_path: Path) -> None:
     registry = Registry("campaign", tmp_path)
-    full_name = "Freundcloud/e2e-20261124-P1-1"
+    full_name = "olafkfreund/e2e-20261124-P1-1"
     registry.append("repo", "R1", "R1", service="github", repo_id=1, full_name=full_name)
     deleted: list[str] = []
 
@@ -150,7 +150,7 @@ def test_sweep_deletes_registered_repo_by_node_through_guard(tmp_path: Path) -> 
             "id": 1,
             "full_name": name,
             "name": "e2e-20261124-P1-1",
-            "owner": {"login": "Freundcloud"},
+            "owner": {"login": "olafkfreund"},
             "topics": ["factory-e2e"],
         }
 
@@ -192,7 +192,7 @@ def test_nonfinite_cli_cap_rejected_before_any_journey(
 
 def test_one_cent_cap_confirms_remote_stop(tmp_path: Path) -> None:
     registry = Registry("campaign", tmp_path)
-    full_name = "Freundcloud/e2e-20261124-P1-1"
+    full_name = "olafkfreund/e2e-20261124-P1-1"
     registry.append("repo", "R1", "R1", service="github", repo_id=1, full_name=full_name)
     registry.append("task", "a1:t1", "R1", service="aifactory", org="default")
     guard = Guard(
@@ -202,7 +202,7 @@ def test_one_cent_cap_confirms_remote_stop(tmp_path: Path) -> None:
             "id": 1,
             "full_name": full_name,
             "name": "e2e-20261124-P1-1",
-            "owner": {"login": "Freundcloud"},
+            "owner": {"login": "olafkfreund"},
             "topics": ["factory-e2e"],
         },
         lambda _service, _kind, identity: {"id": identity, "repo_node_id": "R1", "org": "default"},
@@ -324,7 +324,7 @@ def test_s2_tracks_dispatched_task_before_ownership_read_fails(tmp_path: Path) -
 
     class Ops:
         def create_repo(self, _name: str) -> dict[str, Any]:
-            return {"node_id": repo_node_id, "full_name": f"Freundcloud/{name}"}
+            return {"node_id": repo_node_id, "full_name": f"olafkfreund/{name}"}
 
         def set_topics(self, *_: object) -> None: ...
         def push_starter(self, *_: object) -> None: ...
@@ -365,13 +365,13 @@ def test_probe_c_stops_accepted_tampered_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = Registry("campaign", tmp_path)
-    full_name = "Freundcloud/e2e-20261124-P1-1"
+    full_name = "olafkfreund/e2e-20261124-P1-1"
     live_repo = {
         "node_id": "R1",
         "id": 1,
         "full_name": full_name,
         "name": full_name.split("/")[1],
-        "owner": {"login": "Freundcloud"},
+        "owner": {"login": "olafkfreund"},
         "topics": ["factory-e2e"],
     }
     registry.append("repo", "R1", "R1", service="github", repo_id=1, full_name=full_name)
@@ -426,7 +426,7 @@ def test_git_fetch_uses_basic_header_and_no_credential_helper(
     monkeypatch.setattr(
         "scripts.e2e.github.subprocess.run", lambda argv, **kwargs: seen.append((argv, kwargs))
     )
-    github.GitHub(token_file).fetch_commit("Freundcloud/e2e-20261124-P1-1", "a" * 40, tmp_path)
+    github.GitHub(token_file).fetch_commit("olafkfreund/e2e-20261124-P1-1", "a" * 40, tmp_path)
     argv, kwargs = seen[0]
     env = kwargs["env"]
     assert "classic-pat" not in str(argv)

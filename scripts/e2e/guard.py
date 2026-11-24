@@ -61,7 +61,7 @@ class Guard:
                 created.tzinfo is None
                 or created < intended
                 or repo.get("full_name") != identity
-                or repo.get("owner", {}).get("login") != "Freundcloud"
+                or repo.get("owner", {}).get("login") != "olafkfreund"
                 or not REPO_NAME.fullmatch(repo.get("name", ""))
                 or "factory-e2e" not in repo.get("topics", [])
             ):
@@ -81,7 +81,7 @@ class Guard:
         ):
             raise GuardRefusalError("repo identity changed or unavailable")
         if (
-            repo.get("owner", {}).get("login") != "Freundcloud"
+            repo.get("owner", {}).get("login") != "olafkfreund"
             or not REPO_NAME.fullmatch(repo.get("name", ""))
             or "factory-e2e" not in repo.get("topics", [])
         ):
@@ -115,7 +115,7 @@ class Guard:
     ) -> dict[str, Any]:
         if not REPO_NAME.fullmatch(name):
             raise GuardRefusalError("unsafe repo name")
-        full_name = f"Freundcloud/{name}"
+        full_name = f"olafkfreund/{name}"
         self.registry.append(
             "intent",
             name,
@@ -132,7 +132,7 @@ class Guard:
             raise
         if (
             repo.get("name") != name
-            or repo.get("owner", {}).get("login") != "Freundcloud"
+            or repo.get("owner", {}).get("login") != "olafkfreund"
             or repo.get("full_name") != full_name
             or not repo.get("node_id")
             or not repo.get("id")
