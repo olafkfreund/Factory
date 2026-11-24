@@ -88,7 +88,10 @@ class Guard:
                 resource is None
                 or str(resource.get("key" if kind == "card" else "id", "")) != identity
                 or resource.get("repo_node_id") != repo_entry["id"]
-                or (service in {"aifactory", "pfactory", "tfactory"} and resource.get("org") != ORG)
+                or (
+                    service in {"aifactory", "pfactory", "tfactory"}
+                    and (not entry.get("org") or resource.get("org") != entry["org"])
+                )
             ):
                 raise GuardRefusalError("resource ownership changed or unavailable")
         return entry
@@ -156,8 +159,13 @@ class Guard:
         if (
             not identity
             or resource.get("repo_node_id") != repo_node_id
-            or (service in {"aifactory", "pfactory", "tfactory"} and resource.get("org") != ORG)
+            or (
+                service in {"aifactory", "pfactory", "tfactory"}
+                and (not resource.get("org") or (ORG and resource.get("org") != ORG))
+            )
         ):
             raise GuardRefusalError("created resource ownership mismatch")
-        self.registry.append(kind, identity, repo_node_id, service=service)
+        self.registry.append(
+            kind, identity, repo_node_id, service=service, org=str(resource.get("org") or "")
+        )
         return resource

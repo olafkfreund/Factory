@@ -91,6 +91,7 @@ def guarded(tmp_path):
                 "spec": "tfactory",
                 "card": "cfactory",
             }[kind],
+            org="factory-e2e",
         )
     live = {"repo": repo(), "resource": {"repo_node_id": "R_42", "org": "factory-e2e"}}
     guard = Guard(
@@ -467,6 +468,21 @@ def test_registry_service_key_validation_and_redaction(guarded):
     assert "acw_secret" not in str(
         redact({"x": "Bearer acw_secret cfk_secret ghp_secret github_pat_secret"})
     )
+
+
+def test_guard_refuses_resource_without_recorded_org(tmp_path):
+    registry = Registry("c", tmp_path)
+    registry.append(
+        "repo", "R_42", "R_42", service="github", repo_id=42, full_name=repo()["full_name"]
+    )
+    registry.append("task", "task-1", "R_42", service="aifactory")
+    guard = Guard(
+        registry,
+        read_repo=lambda _name: repo(),
+        read_resource=lambda *_a: {"id": "task-1", "repo_node_id": "R_42", "org": "any"},
+    )
+    with pytest.raises(GuardRefusalError):
+        guard.check("aifactory", "task", "task-1")
 
 
 def test_guard_requires_org_and_active_repo(guarded):
@@ -864,7 +880,7 @@ def assert_failed_stage_stops(
 
 def test_stage_exception_stops_dispatched_service_resource(guarded):
     registry, _, _ = guarded
-    registry.append("session", "pf-2", "R_42", service="pfactory")
+    registry.append("session", "pf-2", "R_42", service="pfactory", org="factory-e2e")
     stopped: list[str] = []
 
     def stage(_deadline, poll):
@@ -877,7 +893,7 @@ def test_stage_exception_stops_dispatched_service_resource(guarded):
 
 def test_validation_failure_stops_result_dispatched_resource(guarded):
     registry, _, _ = guarded
-    registry.append("session", "pf-2", "R_42", service="pfactory")
+    registry.append("session", "pf-2", "R_42", service="pfactory", org="factory-e2e")
     stopped: list[str] = []
     assert_failed_stage_stops(
         guarded,

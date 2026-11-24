@@ -44,7 +44,9 @@ class Registry:
             "kind": kind,
             "id": identity,
             "repo_node_id": repo_node_id,
-            **safe_fields(fields, {"service", "target_kind", "repo_id", "full_name", "name"}),
+            **safe_fields(
+                fields, {"service", "target_kind", "repo_id", "full_name", "name", "org"}
+            ),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as out:

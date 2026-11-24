@@ -1,12 +1,15 @@
 """Pinned campaign settings; environment and CLI endpoint overrides are ignored."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.parr_regression import DEFAULTS
 
 HOSTS = dict(DEFAULTS)
-ORG = "factory-e2e"
+# Optional org pin (owner amendment 2026-11-24: existing keys, no dedicated org).
+# Empty means each resource must keep the org it was onboarded with.
+ORG = os.environ.get("E2E_ORG", "")
 KEY_FILES = {service: Path(f"/run/agenix/{service}-e2e-key") for service in HOSTS}
 GITHUB_TOKEN_FILE = Path("/run/agenix/api-github-token")
 CAMPAIGN_CAP_USD = 450
