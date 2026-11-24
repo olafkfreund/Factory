@@ -1,2 +1,0 @@
-[console_scripts]
-factory = factory_cli.__main__:main
