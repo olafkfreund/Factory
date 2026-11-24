@@ -10,7 +10,7 @@ HOSTS = dict(DEFAULTS)
 # Optional org pin (owner amendment 2026-11-24: existing keys, no dedicated org).
 # Empty means each resource must keep the org it was onboarded with.
 ORG = os.environ.get("E2E_ORG", "")
-KEY_FILES = {service: Path(f"/run/agenix/{service}-e2e-key") for service in HOSTS}
+KEY_FILES = {service: Path.home() / f".{service}" / ".token" for service in HOSTS}
 GITHUB_TOKEN_FILE = Path("/run/agenix/api-github-token")
 CAMPAIGN_CAP_USD = 450
 MAX_LANES = 3
