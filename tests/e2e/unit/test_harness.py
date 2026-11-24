@@ -5,13 +5,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from scripts.e2e.cleanup import sweep
+from scripts.e2e.cleanup import sweep, unregistered_repos
 from scripts.e2e.config import HOSTS
-from scripts.e2e.cost import Budget, StopUnconfirmedError, poll_usage, registry_costs
+from scripts.e2e.cost import Budget, StopUnconfirmedError, poll_usage, reconcile, registry_costs
+from scripts.e2e.evidence import redact
+from scripts.e2e.github import GitHub
 from scripts.e2e.guard import Guard, GuardRefusalError
 from scripts.e2e.journey import Journey, matrix, validate, write_meta
 from scripts.e2e.probes import PROBES, matches, verify
-from scripts.e2e.readback import Readback, SurfaceMismatchError, pinned_rest
+from scripts.e2e.readback import Readback, SurfaceMismatchError, absent, pinned_rest
 from scripts.e2e.registry import Registry
 from scripts.e2e.report import summarize
 from scripts.e2e.surfaces.cli import CLI
@@ -32,7 +34,9 @@ def repo(name="e2e-20261124-P1-1", owner="Freundcloud", topics=None):
 @pytest.fixture
 def guarded(tmp_path):
     registry = Registry("campaign", tmp_path)
-    registry.append("repo", "R_42", "R_42", repo_id=42, full_name=repo()["full_name"])
+    registry.append(
+        "repo", "R_42", "R_42", service="github", repo_id=42, full_name=repo()["full_name"]
+    )
     for kind, identity in (
         ("project", "aif-1"),
         ("session", "pf-1"),
@@ -40,12 +44,26 @@ def guarded(tmp_path):
         ("spec", "tf-1"),
         ("card", "card-1"),
     ):
-        registry.append(kind, identity, "R_42")
-    live = {"repo": repo(), "resource": {"repo_node_id": "R_42"}}
+        registry.append(
+            kind,
+            identity,
+            "R_42",
+            service={
+                "project": "aifactory",
+                "session": "pfactory",
+                "task": "aifactory",
+                "spec": "tfactory",
+                "card": "cfactory",
+            }[kind],
+        )
+    live = {"repo": repo(), "resource": {"repo_node_id": "R_42", "org": "factory-e2e"}}
     guard = Guard(
         registry,
         lambda _name: live["repo"],
-        lambda kind, identity: {"key" if kind == "card" else "id": identity, **live["resource"]},
+        lambda _service, kind, identity: {
+            "key" if kind == "card" else "id": identity,
+            **live["resource"],
+        },
     )
     return registry, guard, live
 
@@ -63,7 +81,21 @@ def guarded(tmp_path):
 )
 def test_guard_accepts_registered_live_resource(guarded, kind, identity):
     _, guard, _ = guarded
-    assert guard.check(kind, identity)["id"] == identity
+    assert (
+        guard.check(
+            {
+                "repo": "github",
+                "project": "aifactory",
+                "session": "pfactory",
+                "task": "aifactory",
+                "spec": "tfactory",
+                "card": "cfactory",
+            }[kind],
+            kind,
+            identity,
+        )["id"]
+        == identity
+    )
 
 
 @pytest.mark.parametrize(
@@ -91,27 +123,43 @@ def test_guard_refuses_unsafe_repo_for_every_service(guarded, change, kind, iden
     _, guard, live = guarded
     live["repo"] = {**live["repo"], **change}
     with pytest.raises(GuardRefusalError):
-        guard.check(kind, identity)
+        guard.check(
+            {
+                "repo": "github",
+                "project": "aifactory",
+                "session": "pfactory",
+                "task": "aifactory",
+                "spec": "tfactory",
+                "card": "cfactory",
+            }[kind],
+            kind,
+            identity,
+        )
 
 
 def test_guard_refuses_unregistered_and_resource_mismatch(guarded):
     _, guard, live = guarded
     with pytest.raises(GuardRefusalError):
-        guard.check("task", "unknown")
+        guard.check("aifactory", "task", "unknown")
     live["resource"]["repo_node_id"] = "R_other"
     with pytest.raises(GuardRefusalError):
-        guard.check("task", "task-1")
+        guard.check("aifactory", "task", "task-1")
 
 
 def test_created_identity_is_durable_before_return(tmp_path):
     registry = Registry("campaign", tmp_path)
-    guard = Guard(registry, lambda _: repo(), lambda _kind, _id: None)
-    created = guard.create_repo(repo()["name"], lambda: repo())
-    assert registry.find("repo", created["node_id"])["repo_id"] == created["id"]
-    project = guard.create_resource(
-        "project", "aifactory", created["node_id"], lambda: {"id": "aif-1", "repo_node_id": "R_42"}
+    guard = Guard(registry, lambda _: repo(), lambda _service, _kind, _id: None)
+    created = guard.create_repo(
+        repo()["name"], lambda: {**repo(), "topics": []}, lambda _name, _topics: None
     )
-    assert registry.find("project", project["id"])["service"] == "aifactory"
+    assert registry.find("github", "repo", created["node_id"])["repo_id"] == created["id"]
+    project = guard.create_resource(
+        "project",
+        "aifactory",
+        created["node_id"],
+        lambda: {"id": "aif-1", "repo_node_id": "R_42", "org": "factory-e2e"},
+    )
+    assert registry.find("aifactory", "project", project["id"])["service"] == "aifactory"
 
 
 def test_surface_mutations_always_use_guard(guarded):
@@ -120,23 +168,28 @@ def test_surface_mutations_always_use_guard(guarded):
         guard, lambda *_args, **_kwargs: __import__("subprocess").CompletedProcess([], 0, "{}")
     )
     mcp = MCP(guard, lambda _method, _params: {"result": {"ok": True}})
-    assert cli.call("task", "task-1", "retry") == {}
-    assert mcp.call("card", "card-1", "card.move")["ok"]
+    assert cli.call("aifactory", "task", "task-1", "retry") == {}
+    assert mcp.call("cfactory", "card", "card-1", "card.move")["ok"]
     with pytest.raises(GuardRefusalError):
-        cli.call("task", "unknown", "retry")
+        cli.call("aifactory", "task", "unknown", "retry")
     with pytest.raises(GuardRefusalError):
-        mcp.call("card", "unknown", "card.move")
+        mcp.call("cfactory", "card", "unknown", "card.move")
 
 
 def test_cap_requires_confirmed_remote_stop(guarded):
     budget = Budget(guarded[1])
     budget.reserve("lane", 15)
     stopped = []
-    budget.cap("lane", "task-1", stopped.append, lambda _: {"is_running": False})
+    budget.cap("lane", "task-1", stopped.append, lambda _: {"status": "stopped"})
     assert stopped == ["task-1"]
     with pytest.raises(StopUnconfirmedError):
         budget.cap(
-            "lane", "task-1", stopped.append, lambda _: {"is_running": True}, wait=lambda _: None
+            "lane",
+            "task-1",
+            stopped.append,
+            lambda _: {"status": "queued"},
+            timeout=0,
+            wait=lambda _: None,
         )
     assert "lane" in budget.blocked
 
@@ -145,7 +198,7 @@ def test_cap_cannot_stop_unregistered_task(guarded):
     stopped = []
     with pytest.raises(GuardRefusalError):
         Budget(guarded[1]).cap(
-            "lane", "other-task", stopped.append, lambda _: {"is_running": False}
+            "lane", "other-task", stopped.append, lambda _: {"status": "stopped"}
         )
     assert stopped == []
 
@@ -187,13 +240,13 @@ def test_run_meta_records_pinned_hosts(tmp_path):
 def test_journey_cap_stops_before_next_stage(guarded):
     called = []
     stages = {
-        "S1": lambda: {
+        "S1": lambda _deadline, _poll: {
             "registered": True,
             "branch_protection": True,
             "projects": {"aifactory": 1, "pfactory": 1, "tfactory": 1},
             "cards": 1,
         },
-        "S2": lambda: {
+        "S2": lambda _deadline, _poll: {
             "ingested": True,
             "approved": True,
             "emitted": True,
@@ -201,14 +254,15 @@ def test_journey_cap_stops_before_next_stage(guarded):
             "task_id": "task-1",
             "cost_usd": 15,
         },
-        "S3": lambda: called.append("S3"),
+        "S3": lambda _deadline, _poll: called.append("S3"),
     }
     with pytest.raises(ValueError, match="remote stop confirmed"):
         Journey("P1", "cli", "Claude", 1).run(
             stages,
             Budget(guarded[1]),
             "lane",
-            remote=(called.append, lambda _: {"is_running": False}),
+            readback=lambda _stage, row: row,
+            remote=(called.append, lambda _: {"status": "stopped"}),
         )
     assert called == ["task-1"]
 
@@ -254,10 +308,20 @@ def test_rest_readback_pins_hosts(monkeypatch):
     ],
 )
 def test_every_probe_specific_reason(probe, reason):
-    assert matches(probe, 409, reason)
-    for status in (302, 401, 403, 404, 500, 503):
+    assert matches(
+        probe,
+        409,
+        reason,
+        after={"total_tokens": 0, "deadline_reached": True}
+        if probe == "g"
+        else ("left", "right")
+        if probe == "m"
+        else None,
+    )
+    for status in (302, 401, 403, 404, 405, 407, 408, 429, 500, 503):
         assert not matches(probe, status, reason)
-    assert not matches(probe, 409, "unexpected infrastructure failure")
+    if probe not in {"g", "m"}:
+        assert not matches(probe, 409, "unexpected infrastructure failure")
     assert set(PROBES) == set("abcdefghijklm")
 
 
@@ -277,13 +341,18 @@ def test_stage_rejects_auth_error_in_negative_probe():
         "probes": {"b": {"status": 401, "reason": "repository access denied"}},
     }
     with pytest.raises(AssertionError, match="expected repo access denied"):
-        validate("S1", result, "P1")
+        validate("S1", result, "P1", result)
 
 
 def test_p5_requires_review_finding_to_stop():
     with pytest.raises(AssertionError, match="review finding"):
-        validate("S2", {"needs_you": True}, "P5")
-    validate("S2", {"needs_you": True, "review_findings": 1}, "P5")
+        validate("S2", {"needs_you": True}, "P5", {"needs_you": True})
+    validate(
+        "S2",
+        {"needs_you": True, "review_findings": 1},
+        "P5",
+        {"needs_you": True, "review_findings": 1},
+    )
 
 
 def test_sweeper_dry_run_only_old_registered(guarded):
@@ -295,13 +364,13 @@ def test_sweeper_dry_run_only_old_registered(guarded):
     )
 
     class FakeDelete:
-        def delete(self, _kind, _identity):
+        def delete(self, _service, _kind, _identity):
             raise AssertionError("dry run mutated")
 
         def close_session(self, _identity):
             raise AssertionError("dry run mutated")
 
-        def exists(self, _kind, _identity):
+        def exists(self, _service, _kind, _identity):
             return True
 
     actions = sweep(registry, guard, FakeDelete())
@@ -321,16 +390,405 @@ def test_sweeper_live_confirms_absence(guarded):
             self.deleted = set()
             self.closed = []
 
-        def delete(self, kind, identity):
-            self.deleted.add((kind, identity))
+        def delete(self, service, kind, identity):
+            self.deleted.add((service, kind, identity))
 
         def close_session(self, identity):
             self.closed.append(identity)
 
-        def exists(self, kind, identity):
-            return (kind, identity) not in self.deleted
+        def exists(self, service, kind, identity):
+            return (service, kind, identity) not in self.deleted
 
     client = FakeDelete()
     sweep(registry, guard, client, dry_run=False)
     assert client.closed == ["pf-1"]
     assert not registry.active()
+
+
+def test_surface_target_is_constructed_and_other_ids_refused(guarded, tmp_path):
+    seen = []
+    cli = CLI(
+        guarded[1],
+        lambda argv, **kw: (
+            seen.append((argv, kw)) or __import__("subprocess").CompletedProcess(argv, 0, "{}")
+        ),
+        key_files={"aifactory": tmp_path / "key"},
+    )
+    cli.call("aifactory", "task", "task-1", "retry")
+    assert seen[0][0] == ["factory", "retry", "task-1", "--json"]
+    with pytest.raises(GuardRefusalError):
+        cli.call("aifactory", "task", "task-1", "retry", "af:other")
+    seen_mcp = []
+    mcp = MCP(guarded[1], lambda _method, params: seen_mcp.append(params) or {"result": {}})
+    mcp.call("cfactory", "card", "card-1", "card.move", column="Done")
+    assert seen_mcp == [{"column": "Done", "key": "card-1"}]
+    with pytest.raises(GuardRefusalError):
+        mcp.call("cfactory", "card", "card-1", "card.move", key="card-other")
+
+
+def test_cli_environment_is_pinned_and_isolated(guarded, tmp_path, monkeypatch):
+    monkeypatch.setenv("AIFACTORY_API_URL", "https://wrong.invalid")
+    monkeypatch.setenv("AIFACTORY_API_TOKEN_FILE", "/secret/parent")
+    monkeypatch.setenv("HOME", "/secret/home")
+    token = tmp_path / "token"
+    token.write_text("temp-test-token")
+    seen = []
+    CLI(
+        guarded[1],
+        lambda argv, **kw: (
+            seen.append(kw["env"]) or __import__("subprocess").CompletedProcess(argv, 0, "{}")
+        ),
+        {"aifactory": token},
+    ).call("aifactory", "task", "task-1", "retry")
+    env = seen[0]
+    assert env["AIFACTORY_API_URL"] == HOSTS["aifactory"]
+    assert env["AIFACTORY_API_TOKEN_FILE"] == str(token)
+    assert env["HOME"] != "/secret/home" and env["XDG_CONFIG_HOME"] == env["HOME"]
+    assert "PFACTORY_API_TOKEN_FILE" not in env
+
+
+def test_registry_service_key_validation_and_redaction(guarded):
+    registry = guarded[0]
+    registry.append("project", "same", "R_42", service="aifactory", note="acw_secret")
+    registry.append("project", "same", "R_42", service="pfactory")
+    assert registry.find("aifactory", "project", "same")["service"] == "aifactory"
+    assert "note" not in registry.entries()[-2]
+    for fields in ({"service": "wrong"}, {"service": "aifactory", "target_kind": "bogus"}):
+        with pytest.raises(ValueError):
+            registry.append("deleted", "same", "R_42", **fields)
+    assert "acw_secret" not in str(
+        redact({"x": "Bearer acw_secret cfk_secret ghp_secret github_pat_secret"})
+    )
+
+
+def test_guard_requires_org_and_active_repo(guarded):
+    registry, guard, live = guarded
+    live["resource"]["org"] = "another-org"
+    with pytest.raises(GuardRefusalError):
+        guard.check("aifactory", "task", "task-1")
+    live["resource"]["org"] = "factory-e2e"
+    registry.append("deleted", "R_42", "R_42", service="github", target_kind="repo")
+    with pytest.raises(GuardRefusalError):
+        guard.check("aifactory", "task", "task-1")
+
+
+def test_repo_create_records_intent_before_create_and_sets_topic(tmp_path):
+    registry = Registry("c", tmp_path)
+    guard = Guard(registry, lambda _: repo(), lambda *_: None)
+    order = []
+
+    def create():
+        assert registry.find("github", "intent", repo()["name"])
+        order.append("create")
+        return {**repo(), "topics": []}
+
+    def set_topics(name, topics):
+        order.append("topics")
+        assert name == repo()["full_name"] and topics == ["factory-e2e"]
+
+    guard.create_repo(repo()["name"], create, set_topics)
+    assert order == ["create", "topics"]
+
+
+def test_github_client_never_exposes_token(tmp_path):
+    token = tmp_path / "token"
+    token.write_text("github_pat_topsecret")
+    client = GitHub(
+        token,
+        lambda request, **_kwargs: (_ for _ in ()).throw(
+            ValueError(f"bad {request.get_header('Authorization')}")
+        ),
+    )
+    assert "github_pat_topsecret" not in repr(client) + str(client)
+    with pytest.raises(RuntimeError) as caught:
+        client.request("GET", "/repos/Freundcloud/e2e-20261124-P1-1")
+    assert "github_pat_topsecret" not in repr(caught.value) + str(caught.value)
+
+
+def test_stop_exception_blocks_lane_and_queued_is_not_terminal(guarded):
+    budget = Budget(guarded[1])
+    with pytest.raises(RuntimeError):
+        budget.cap(
+            "lane",
+            "task-1",
+            lambda _: (_ for _ in ()).throw(RuntimeError("stop failed")),
+            lambda _: {"status": "stopped"},
+        )
+    assert "lane" in budget.blocked
+    clock = iter([0, 1, 1])
+    with pytest.raises(StopUnconfirmedError):
+        budget.cap(
+            "next",
+            "task-1",
+            lambda _: None,
+            lambda _: {"status": "queued"},
+            timeout=1,
+            now=lambda: next(clock),
+            wait=lambda _: None,
+        )
+    assert "next" in budget.blocked
+
+
+def test_readback_requires_present_nonempty_keys_and_validate_uses_observation():
+    rb = Readback(lambda *_: {}, lambda _: repo())
+    with pytest.raises(SurfaceMismatchError):
+        rb.compare("aifactory", "/task", {}, ())
+    with pytest.raises(SurfaceMismatchError):
+        rb.compare("aifactory", "/task", {}, ("status",))
+    with pytest.raises(AssertionError):
+        validate("S1", {"registered": True}, "P1", {})
+
+
+def test_absence_requires_positive_read_then_404():
+    seen = iter([{"id": "task-1"}, SurfaceMismatchError("aifactory read-back returned HTTP 404")])
+
+    def read(*_):
+        item = next(seen)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    absent(read, "aifactory", "/task", "id", "task-1")
+    with pytest.raises(SurfaceMismatchError):
+        absent(lambda *_: {}, "aifactory", "/task", "id", "task-1")
+
+
+def test_probe_statuses_codes_and_state():
+    for probe in "cdj":
+        assert not matches(probe, 200, PROBES[probe].reason)
+    assert not matches("h", 200, "stale verdict")
+    assert not matches("d", 409, "signed-plan invalid auth error")
+    assert not matches("i", 409, "10 tests")
+    assert not matches("i", 409, "no tests failed")
+    assert not matches("c", 409, "artifact integrity mismatch", code="auth_denied")
+    assert not matches("g", 200, "missing usage")
+    assert not matches("m", 200, "distinct repos isolated")
+    with pytest.raises(AssertionError):
+        verify("g", 200, "missing usage", after={"total_tokens": 10, "deadline_reached": True})
+    with pytest.raises(AssertionError):
+        verify("m", 200, "distinct repos isolated", after=("same", "same"))
+
+
+def test_sweeper_repo_last_includes_young_child(guarded):
+    registry, guard, _ = guarded
+    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    rows = registry.entries()
+    registry.path.write_text(
+        "".join(
+            json.dumps(
+                {**row, "at": old if row["kind"] == "repo" else datetime.now(UTC).isoformat()}
+            )
+            + "\n"
+            for row in rows
+        )
+    )
+
+    class Client:
+        def __init__(self):
+            self.order = []
+
+        def delete(self, _service, kind, _identity):
+            self.order.append(kind)
+
+        def exists(self, _service, _kind, _identity):
+            return False
+
+        def close_session(self, _identity):
+            self.order.append("session")
+
+    client = Client()
+    sweep(registry, guard, client, dry_run=False)
+    assert client.order[-1] == "repo" and "task" in client.order
+
+
+def test_unregistered_repos_reports_only_unknown(guarded):
+    known = repo()
+    unknown = {**repo("e2e-20261124-P1-2"), "full_name": "Freundcloud/e2e-20261124-P1-2"}
+    assert unregistered_repos(guarded[0], lambda: [known, unknown]) == [unknown["full_name"]]
+
+
+def test_budget_reservation_limits_and_blocked_lanes(guarded):
+    budget = Budget(guarded[1])
+    for lane in ("a", "b", "c"):
+        budget.reserve(lane, 1)
+    with pytest.raises(ValueError):
+        budget.reserve("d", 1)
+    with pytest.raises(ValueError):
+        budget.reserve("a", 450)
+    budget.blocked.add("a")
+    with pytest.raises(ValueError):
+        budget.reserve("a", 1)
+
+
+def test_reconcile_findings():
+    assert reconcile([1, 2], 3, {"cf": 3}) == []
+    assert len(reconcile([1, 2], 4, {"cf": 3})) == 2
+
+
+def test_journey_run_happy_deadline_and_p5(guarded):
+    budget = Budget(guarded[1])
+
+    def stages(p5=False):
+        def stage(name):
+            def run(_deadline, poll):
+                poll()
+                if name == "S2" and p5:
+                    return {"needs_you": True, "review_findings": 1}
+                return {}
+
+            return run
+
+        return {name: stage(name) for name in ("S1", "S2", "S3", "S4", "S5", "X")}
+
+    observations = {
+        "S1": {
+            "registered": True,
+            "branch_protection": True,
+            "projects": {"aifactory": 1, "pfactory": 1, "tfactory": 1},
+            "cards": 1,
+        },
+        "S2": {"ingested": True, "approved": True, "emitted": True, "from_plan": True},
+        "S3": {
+            "terminal": True,
+            "green": True,
+            "code_diff": True,
+            "plan_files_only": True,
+            "review_recorded": True,
+            "reviewer_model": "A",
+            "coder_model": "B",
+            "runtime_models": True,
+        },
+        "S4": {
+            "merged_by_service": True,
+            "checks_green": True,
+            "triple_linked": True,
+            "merged_head": "sha",
+            "checked_head": "sha",
+        },
+        "S5": {
+            "verdict_sha": "sha",
+            "merge_sha": "sha",
+            "hidden_suite_sha": "sha",
+            "signals": 5,
+            "hidden_green": True,
+        },
+        "X": {
+            "events_ordered": True,
+            "registry_filtered": True,
+            "cost_reconciled": True,
+            "no_card_anomaly": True,
+        },
+    }
+    assert (
+        len(
+            Journey("P1", "cli", "Claude", 1).run(
+                stages(), budget, "ok", readback=lambda stage, _: observations[stage]
+            )["stage_results"]
+        )
+        == 6
+    )
+    p5 = Journey("P5", "cli", "Claude", 1).run(
+        stages(True),
+        budget,
+        "p5",
+        readback=lambda stage, row: row if stage == "S2" else observations[stage],
+    )
+    assert p5["expected_stop"] and set(p5["stage_results"]) == {"S1", "S2", "X"}
+    with pytest.raises(TimeoutError):
+        Journey("P1", "cli", "Claude", 1).run(
+            stages(),
+            budget,
+            "late",
+            now=iter([0, 3601]).__next__,
+            readback=lambda stage, _: observations[stage],
+        )
+    assert "late" in budget.blocked
+
+
+def test_stage_poll_caps_while_stage_runs(guarded):
+    called = []
+    budget = Budget(guarded[1])
+
+    def stage(_deadline, poll):
+        poll("task-1")
+        called.append("after poll")
+        return {}
+
+    with pytest.raises(ValueError, match="remote stop confirmed"):
+        Journey("P1", "cli", "Claude", 1).run(
+            {"S1": stage},
+            budget,
+            "lane",
+            readback=lambda *_: {},
+            usage=lambda _: {"cost_usd": 15},
+            remote=(lambda _: called.append("stop"), lambda _: {"status": "stopped"}),
+        )
+    assert called == ["stop"]
+
+
+def test_orphan_repo_swept_by_intent_without_topic(tmp_path):
+    registry = Registry("c", tmp_path)
+    name = repo()["name"]
+    registry.append(
+        "intent",
+        name,
+        name,
+        service="github",
+        target_kind="repo",
+        name=name,
+        full_name=repo()["full_name"],
+    )
+    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    registry.path.write_text(json.dumps({**registry.entries()[0], "at": old}) + "\n")
+    guard = Guard(registry, lambda _: {**repo(), "topics": []}, lambda *_: None)
+
+    class Client:
+        def __init__(self):
+            self.deleted = []
+
+        def delete(self, service, kind, identity):
+            self.deleted.append((service, kind, identity))
+
+        def exists(self, _service, _kind, _identity):
+            return False
+
+        def close_session(self, _identity):
+            raise AssertionError("unexpected")
+
+    client = Client()
+    sweep(registry, guard, client, dry_run=False)
+    assert client.deleted == [("github", "repo", repo()["full_name"])]
+    sweep(registry, guard, client, dry_run=False)
+    assert len(client.deleted) == 1
+
+
+def test_evidence_allowlist_in_meta_and_report(tmp_path):
+    path = tmp_path / "meta.json"
+    write_meta(
+        path,
+        {
+            "project": "P1",
+            "secret": "acw_hidden",
+            "stage_results": {"S1": {"registered": True, "secret": "cfk_hidden"}},
+        },
+    )
+    saved = path.read_text()
+    assert "secret" not in saved and "hidden" not in saved
+    record = {
+        "instance_id": "x",
+        "status": "completed",
+        "hidden_green": True,
+        "cost_usd": 1,
+        "stage_results": {"S1": {"secret": "ghp_hidden"}},
+    }
+    assert "ghp_hidden" not in str(summarize([record]))
+
+
+def test_registry_costs_handles_null_cost():
+    assert registry_costs([{"task_id": "task-1", "cost_usd": None}], {"task-1"}) == 0
+
+
+def test_probe_rejection_code_and_field():
+    assert not matches("f", 200, "empty diff")
+    assert matches("c", 409, "generic message", code="artifact_integrity_mismatch")
+    assert matches("d", 422, "generic message", code="signed_plan_invalid")

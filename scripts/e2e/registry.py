@@ -5,8 +5,18 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-SERVICES = ("aifactory", "pfactory", "tfactory", "cfactory")
-KINDS = {"repo", "project", "session", "task", "spec", "card", "retained", "deleted"}
+from scripts.e2e.evidence import safe_fields
+
+SERVICES = ("github", "aifactory", "pfactory", "tfactory", "cfactory")
+KIND_SERVICES = {
+    "repo": {"github"},
+    "project": {"aifactory", "pfactory", "tfactory"},
+    "session": {"pfactory"},
+    "task": {"aifactory"},
+    "spec": {"tfactory"},
+    "card": {"cfactory"},
+}
+KINDS = {*KIND_SERVICES, "intent", "retained", "deleted"}
 
 
 class Registry:
@@ -14,14 +24,23 @@ class Registry:
         self.path = root / campaign / "registry.jsonl"
 
     def append(self, kind: str, identity: str, repo_node_id: str, **fields: object) -> dict:
-        if kind not in KINDS or not identity or not repo_node_id:
+        service = fields.get("service")
+        target_kind = fields.get("target_kind")
+        if kind == "intent":
+            valid = service == "github" and target_kind == "repo" and identity == repo_node_id
+        elif kind in {"deleted", "retained"}:
+            valid = target_kind in KIND_SERVICES and service in KIND_SERVICES[target_kind]
+            valid = valid and (kind != "retained" or target_kind == "session")
+        else:
+            valid = kind in KIND_SERVICES and service in KIND_SERVICES[kind] and target_kind is None
+        if not valid or not identity or not repo_node_id:
             raise ValueError("invalid registry identity")
         entry = {
             "at": datetime.now(UTC).isoformat(),
             "kind": kind,
             "id": identity,
             "repo_node_id": repo_node_id,
-            **fields,
+            **safe_fields(fields, {"service", "target_kind", "repo_id", "full_name", "name"}),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as out:
@@ -35,12 +54,12 @@ class Registry:
             return []
         return [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines()]
 
-    def find(self, kind: str, identity: str) -> dict | None:
+    def find(self, service: str, kind: str, identity: str) -> dict | None:
         return next(
             (
                 entry
                 for entry in reversed(self.entries())
-                if entry["kind"] == kind and entry["id"] == identity
+                if entry["service"] == service and entry["kind"] == kind and entry["id"] == identity
             ),
             None,
         )
@@ -48,13 +67,13 @@ class Registry:
     def active(self) -> list[dict]:
         entries = self.entries()
         ended = {
-            (entry["repo_node_id"], entry["target_kind"], entry["id"])
+            (entry["service"], entry["repo_node_id"], entry["target_kind"], entry["id"])
             for entry in entries
             if entry["kind"] in {"deleted", "retained"}
         }
         active = {}
         for entry in entries:
-            key = (entry["repo_node_id"], entry["kind"], entry["id"])
-            if entry["kind"] not in {"deleted", "retained"} and key not in ended:
+            key = (entry["service"], entry["repo_node_id"], entry["kind"], entry["id"])
+            if entry["kind"] in KIND_SERVICES and key not in ended:
                 active[key] = entry
         return list(active.values())

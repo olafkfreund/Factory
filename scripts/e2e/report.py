@@ -5,6 +5,7 @@ import statistics
 from pathlib import Path
 
 from scripts.benchmarks.report import load_file, to_run
+from scripts.e2e.evidence import safe_fields
 
 GAPS = (
     "Surface and model are not crossed on one fixture",
@@ -16,6 +17,24 @@ GAPS = (
 
 
 def summarize(records: list[dict]) -> dict:
+    records = [
+        safe_fields(
+            row,
+            {
+                "instance_id",
+                "project",
+                "surface",
+                "model",
+                "status",
+                "stage_results",
+                "billing_mode",
+                "total_tokens",
+                "cost_usd",
+                "hidden_green",
+            },
+        )
+        for row in records
+    ]
     costs = [
         to_run(row).cost_usd
         for row in records

@@ -40,7 +40,10 @@ class Readback:
 
     def compare(self, service: str, path: str, surface: dict, keys: tuple[str, ...]) -> dict:
         observed = self.rest(service, path)
-        if any(surface.get(key) != observed.get(key) for key in keys):
+        if not keys or any(
+            key not in surface or key not in observed or surface[key] != observed[key]
+            for key in keys
+        ):
             raise SurfaceMismatchError(f"{service} surface disagrees with REST on {keys}")
         return observed
 
@@ -49,3 +52,19 @@ class Readback:
         if observed.get("node_id") != node_id:
             raise SurfaceMismatchError("GitHub repo identity differs")
         return observed
+
+
+def absent(
+    read: Callable[[str, str], object], service: str, path: str, key: str, expected: object
+) -> None:
+    """A positive read of this key must precede a 404 absence check."""
+    present = read(service, path)
+    if not isinstance(present, dict) or present.get(key) != expected:
+        raise SurfaceMismatchError("positive read failed before absence check")
+    try:
+        read(service, path)
+    except SurfaceMismatchError as exc:
+        if str(exc) == f"{service} read-back returned HTTP 404":
+            return
+        raise
+    raise SurfaceMismatchError("resource still present")

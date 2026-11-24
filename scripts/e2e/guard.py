@@ -3,17 +3,11 @@
 import re
 from collections.abc import Callable
 
-from scripts.e2e.registry import Registry
+from scripts.e2e.config import ORG
+from scripts.e2e.registry import KIND_SERVICES, Registry
 
 REPO_NAME = re.compile(r"^e2e-\d{8}-P[1-5]-\d+$")
-RESOURCE_KINDS = {"repo", "project", "session", "task", "spec", "card"}
-KIND_SERVICES = {
-    "project": {"aifactory", "pfactory", "tfactory"},
-    "session": {"pfactory"},
-    "task": {"aifactory"},
-    "spec": {"tfactory"},
-    "card": {"cfactory"},
-}
+RESOURCE_KINDS = set(KIND_SERVICES)
 
 
 class GuardRefusalError(Exception):
@@ -25,21 +19,21 @@ class Guard:
         self,
         registry: Registry,
         read_repo: Callable[[str], dict | None],
-        read_resource: Callable[[str, str], dict | None],
+        read_resource: Callable[[str, str, str], dict | None],
     ) -> None:
         self.registry = registry
         self.read_repo = read_repo
         self.read_resource = read_resource
 
-    def check(self, kind: str, identity: str) -> dict:
-        if kind not in RESOURCE_KINDS:
-            raise GuardRefusalError("unknown resource kind")
-        entry = self.registry.find(kind, identity)
+    def check(self, service: str, kind: str, identity: str) -> dict:
+        if service not in KIND_SERVICES.get(kind, set()):
+            raise GuardRefusalError("unknown resource service or kind")
+        entry = self.registry.find(service, kind, identity)
         if entry is None or entry not in self.registry.active():
             raise GuardRefusalError("unregistered target")
-        repo_entry = self.registry.find("repo", entry["repo_node_id"])
-        if repo_entry is None:
-            raise GuardRefusalError("unregistered repo")
+        repo_entry = self.registry.find("github", "repo", entry["repo_node_id"])
+        if repo_entry is None or repo_entry not in self.registry.active():
+            raise GuardRefusalError("unregistered or inactive repo")
         repo = self.read_repo(repo_entry["full_name"])
         if (
             repo is None
@@ -55,37 +49,54 @@ class Guard:
         ):
             raise GuardRefusalError("repo safety predicates failed")
         if kind != "repo":
-            resource = self.read_resource(kind, identity)
+            resource = self.read_resource(service, kind, identity)
             if (
                 resource is None
                 or str(resource.get("key" if kind == "card" else "id", "")) != identity
                 or resource.get("repo_node_id") != repo_entry["id"]
+                or (service in {"aifactory", "pfactory", "tfactory"} and resource.get("org") != ORG)
             ):
                 raise GuardRefusalError("resource ownership changed or unavailable")
         return entry
 
-    def mutate(self, kind: str, identity: str, operation: Callable[[], object]) -> object:
-        self.check(kind, identity)
+    def mutate(
+        self, service: str, kind: str, identity: str, operation: Callable[[], object]
+    ) -> object:
+        self.check(service, kind, identity)
         return operation()
 
-    def create_repo(self, name: str, create: Callable[[], dict]) -> dict:
+    def create_repo(
+        self, name: str, create: Callable[[], dict], set_topics: Callable[[str, list[str]], object]
+    ) -> dict:
         if not REPO_NAME.fullmatch(name):
             raise GuardRefusalError("unsafe repo name")
+        full_name = f"Freundcloud/{name}"
+        self.registry.append(
+            "intent",
+            name,
+            name,
+            service="github",
+            target_kind="repo",
+            name=name,
+            full_name=full_name,
+        )
         repo = create()
         if (
             repo.get("name") != name
             or repo.get("owner", {}).get("login") != "Freundcloud"
-            or "factory-e2e" not in repo.get("topics", [])
+            or repo.get("full_name") != full_name
             or not repo.get("node_id")
             or not repo.get("id")
         ):
             raise GuardRefusalError("created repo failed safety predicates")
+        set_topics(full_name, ["factory-e2e"])
         self.registry.append(
             "repo",
             repo["node_id"],
             repo["node_id"],
+            service="github",
             repo_id=repo["id"],
-            full_name=repo["full_name"],
+            full_name=full_name,
         )
         return repo
 
@@ -94,10 +105,14 @@ class Guard:
     ) -> dict:
         if service not in KIND_SERVICES.get(kind, set()):
             raise GuardRefusalError("invalid resource service")
-        self.check("repo", repo_node_id)
+        self.check("github", "repo", repo_node_id)
         resource = create()
         identity = str(resource.get("key" if kind == "card" else "id", ""))
-        if not identity or resource.get("repo_node_id") != repo_node_id:
+        if (
+            not identity
+            or resource.get("repo_node_id") != repo_node_id
+            or (service in {"aifactory", "pfactory", "tfactory"} and resource.get("org") != ORG)
+        ):
             raise GuardRefusalError("created resource ownership mismatch")
         self.registry.append(kind, identity, repo_node_id, service=service)
         return resource

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.e2e.config import HOSTS, LIMITS
 from scripts.e2e.cost import Budget
+from scripts.e2e.evidence import safe_fields
 from scripts.e2e.probes import PROBES, verify
 
 STAGES = ("S1", "S2", "S3", "S4", "S5", "X")
@@ -22,12 +23,14 @@ class Journey:
     repeat: int
     ablation: bool = False
 
-    def run(
+    def run(  # noqa: PLR0913
         self,
-        stages: dict[str, Callable[[], dict]],
+        stages: dict[str, Callable[[float, Callable[..., None]], dict]],
         budget: Budget,
         lane: str,
         *,
+        readback: Callable[[str, dict], dict],
+        usage: Callable[[str], dict] | None = None,
         now: Callable[[], float] = time.monotonic,
         remote: tuple[Callable[[str], object], Callable[[str], dict]] | None = None,
     ) -> dict:
@@ -39,18 +42,47 @@ class Journey:
             raise ValueError("invalid journey")
         budget.reserve(lane, LIMITS[self.project].usd)
         deadline = now() + LIMITS[self.project].minutes * 60
-        results = {}
+        results: dict[str, dict] = {}
+        current_task: str | None = None
+        spent = 0.0
+
+        def poll(task_id: str | None = None, cost_usd: float | None = None) -> None:
+            nonlocal current_task, spent
+            if task_id:
+                current_task = task_id
+            if usage is not None and current_task:
+                spent = max(spent, float(usage(current_task).get("cost_usd") or 0))
+            if cost_usd is not None:
+                spent = max(spent, cost_usd)
+            timed_out = now() >= deadline
+            capped = spent >= LIMITS[self.project].usd
+            if timed_out or capped:
+                if remote is None or current_task is None:
+                    budget.blocked.add(lane)
+                    raise TimeoutError("deadline or cap reached without a confirmable remote stop")
+                budget.cap(lane, current_task, *remote)
+                if timed_out:
+                    raise TimeoutError("deadline reached; remote stop confirmed")
+                raise ValueError("journey cap reached; remote stop confirmed")
+
         for stage in STAGES:
-            if now() >= deadline:
-                if remote is not None and results.get("S2", {}).get("task_id"):
-                    budget.cap(lane, results["S2"]["task_id"], *remote)
-                raise TimeoutError(f"{stage} deadline reached")
-            result = stages[stage]()
-            validate(stage, result, self.project)
-            results[stage] = result
-            if self.project == "P5" and result.get("needs_you"):
-                results["X"] = stages["X"]()
-                validate("X", results["X"], self.project)
+            poll()
+            result = stages[stage](deadline, poll)
+            if result.get("task_id"):
+                current_task = result["task_id"]
+            spent = max(
+                spent, sum(float(row.get("cost_usd") or 0) for row in (*results.values(), result))
+            )
+            poll()
+            observed = readback(stage, result)
+            validate(stage, result, self.project, observed)
+            results[stage] = observed
+            if self.project == "P5" and observed.get("needs_you"):
+                result = stages["X"](deadline, poll)
+                poll()
+                observed = readback("X", result)
+                validate("X", result, self.project, observed)
+                results["X"] = observed
                 return {
                     "project": self.project,
                     "surface": self.surface,
@@ -59,19 +91,6 @@ class Journey:
                     "stage_results": results,
                     "expected_stop": True,
                 }
-            if now() >= deadline and stage != "X":
-                if remote is None or not results.get("S2", {}).get("task_id"):
-                    budget.blocked.add(lane)
-                    raise TimeoutError("deadline reached without a confirmable remote stop")
-                budget.cap(lane, results["S2"]["task_id"], *remote)
-                raise TimeoutError(f"{stage} deadline reached; remote stop confirmed")
-            spent = sum(row.get("cost_usd", 0) for row in results.values())
-            if spent >= LIMITS[self.project].usd and stage != "X":
-                if remote is None or not results.get("S2", {}).get("task_id"):
-                    budget.blocked.add(lane)
-                    raise ValueError("cap reached without a confirmable remote stop")
-                budget.cap(lane, results["S2"]["task_id"], *remote)
-                raise ValueError("journey cap reached; remote stop confirmed")
         return {
             "project": self.project,
             "surface": self.surface,
@@ -103,10 +122,37 @@ def matrix() -> list[Journey]:
 def write_meta(path: Path, result: dict) -> None:
     """Record the pinned endpoints alongside one journey's evidence."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({**result, "hosts": HOSTS}, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                **safe_fields(
+                    result,
+                    {
+                        "project",
+                        "surface",
+                        "model",
+                        "repeat",
+                        "ablation",
+                        "stage_results",
+                        "expected_stop",
+                        "billing_mode",
+                        "cost_usd",
+                        "total_tokens",
+                    },
+                ),
+                "hosts": HOSTS,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
-def validate(stage: str, result: dict, project: str) -> None:
+def validate(stage: str, result: dict, project: str, observed: dict | None = None) -> None:
+    if observed is None:
+        raise AssertionError("independent read-back required")
+    result = observed
     for name, outcome in result.get("probes", {}).items():
         if name not in PROBES or PROBES[name].stage != stage:
             raise AssertionError(f"probe {name} belongs to another stage")

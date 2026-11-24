@@ -1,26 +1,57 @@
 """Factory CLI surface with an injected subprocess runner."""
 
 import json
+import os
+import re
 import subprocess
+import tempfile
 from collections.abc import Callable
+from pathlib import Path
 
-from scripts.e2e.guard import Guard
+from scripts.e2e.config import HOSTS, KEY_FILES
+from scripts.e2e.guard import Guard, GuardRefusalError
+
+ID_SHAPED = re.compile(r"(?:\b(?:af|pf|tf):\S+|\b(?:task|card)-[\w-]+|\b[A-Z]+-\d+\b)")
 
 
 class CLI:
     def __init__(
-        self, guard: Guard, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run
+        self,
+        guard: Guard,
+        run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        key_files: dict[str, Path] | None = None,
     ) -> None:
         self.guard = guard
         self.run = run
+        self.key_files = KEY_FILES if key_files is None else key_files
 
-    def call(self, kind: str, identity: str, *args: str) -> dict:
+    def call(self, service: str, kind: str, identity: str, verb: str, *args: str) -> dict:
+        if any(
+            ID_SHAPED.search(arg)
+            or arg.startswith(("--config", "--api-url", "--token", "--key", "--home"))
+            for arg in (verb, *args)
+        ):
+            raise GuardRefusalError("caller supplied another target")
+
         def action() -> dict:
-            result = self.run(
-                ["factory", *args, "--json"], capture_output=True, text=True, check=False
-            )
+            with tempfile.TemporaryDirectory(prefix="factory-e2e-") as home:
+                env = {
+                    "PATH": os.environ.get("PATH", os.defpath),
+                    "HOME": home,
+                    "XDG_CONFIG_HOME": home,
+                    **{f"{name.upper()}_API_URL": url for name, url in HOSTS.items()},
+                }
+                if service in self.key_files:
+                    env[f"{service.upper()}_API_TOKEN_FILE"] = str(self.key_files[service])
+                result = self.run(
+                    ["factory", verb, identity, *args, "--json"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=env,
+                )
             if result.returncode:
                 raise RuntimeError(f"factory CLI failed with exit {result.returncode}")
             return json.loads(result.stdout)
 
-        return self.guard.mutate(kind, identity, action)
+        return self.guard.mutate(service, kind, identity, action)

@@ -1,11 +1,14 @@
 """Pinned campaign settings; environment and CLI endpoint overrides are ignored."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from scripts.parr_regression import DEFAULTS
 
 HOSTS = dict(DEFAULTS)
 ORG = "factory-e2e"
+KEY_FILES = {service: Path(f"/run/agenix/{service}-e2e-key") for service in HOSTS}
+GITHUB_TOKEN_FILE = Path("/run/agenix/api-github-token")
 CAMPAIGN_CAP_USD = 450
 MAX_LANES = 3
 CAMPAIGN_HOURS = 8

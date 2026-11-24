@@ -6,7 +6,8 @@ from collections.abc import Callable
 from scripts.e2e.config import CAMPAIGN_CAP_USD, CAMPAIGN_HOURS, MAX_LANES
 from scripts.e2e.guard import Guard
 
-STOP_RETRIES = 3
+STOP_TIMEOUT = 60
+TERMINAL_STOPS = {"cancelled", "stopped"}
 
 
 class StopUnconfirmedError(Exception):
@@ -33,23 +34,29 @@ class Budget:
         self.reserved += amount
         self.lanes.add(lane)
 
-    def cap(
+    def cap(  # noqa: PLR0913
         self,
         lane: str,
         task_id: str,
         stop: Callable[[str], object],
         status: Callable[[str], dict],
         *,
+        timeout: float = STOP_TIMEOUT,
+        now: Callable[[], float] = time.monotonic,
         wait: Callable[[float], None] = time.sleep,
     ) -> None:
-        self.guard.mutate("task", task_id, lambda: stop(task_id))
-        for attempt in range(STOP_RETRIES):
-            if status(task_id).get("is_running") is False:
-                return
-            if attempt < STOP_RETRIES - 1:
-                wait(1)
-        self.blocked.add(lane)
-        raise StopUnconfirmedError("remote stop unconfirmed; lane blocked")
+        try:
+            self.guard.mutate("aifactory", "task", task_id, lambda: stop(task_id))
+            deadline = now() + timeout
+            while True:
+                if status(task_id).get("status") in TERMINAL_STOPS:
+                    return
+                if now() >= deadline:
+                    raise StopUnconfirmedError("remote stop unconfirmed; lane blocked")
+                wait(min(1, max(0, deadline - now())))
+        except Exception:
+            self.blocked.add(lane)
+            raise
 
 
 def poll_usage(
@@ -71,7 +78,6 @@ def poll_usage(
 
 
 def registry_costs(rows: list[dict], registered_ids: set[str]) -> float:
-    """Filter CFactory token and rollup rows before summing their costs."""
     return sum(
         float(row.get("cost_usd") or 0) for row in rows if row.get("task_id") in registered_ids
     )
