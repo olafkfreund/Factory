@@ -224,7 +224,7 @@ def test_github_create_and_push_keep_token_out_of_argv(
 
     monkeypatch.setattr("scripts.e2e.github.subprocess.run", fake_run)
     client.push_starter(starter, triple, "olafkfreund/repo", tmp_path / "work")
-    assert len(calls) == 18
+    assert len(calls) == 20  # push, then origin remote and origin/main for factory submit
     assert all("test-secret" not in str(argv) for argv, _ in calls)
     basic = base64.b64encode(b"x-access-token:test-secret").decode()
     assert all(env["GIT_CONFIG_VALUE_0"] == f"Authorization: basic {basic}" for _, env in calls)

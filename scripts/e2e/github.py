@@ -267,7 +267,12 @@ class GitHub:
             "-m",
             "test: pin e2e execution profile",
         )
-        git("push", f"https://github.com/{full_name}.git", "HEAD:main")
+        url = f"https://github.com/{full_name}.git"
+        git("push", url, "HEAD:main")
+        # `factory submit` reads the triple from this checkout and needs an `origin`
+        # remote and origin/main; the URL carries no credential (auth is header-only).
+        git("remote", "add", "origin", url)
+        git("update-ref", "refs/remotes/origin/main", "HEAD")
 
     def fetch_commit(self, full_name: str, sha: str, work: Path) -> None:
         if (
