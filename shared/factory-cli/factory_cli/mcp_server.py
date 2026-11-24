@@ -1,4 +1,10 @@
-"""Stdio MCP server for `factory_submit`, `factory_test`, `factory_status`, `factory_doctor`."""
+"""Stdio MCP server for submit, test, status, doctor, project, action, and card tools.
+
+Tools: factory_submit, factory_test, factory_status, factory_doctor,
+factory_project_list, factory_project_add, factory_approve, factory_reject,
+factory_retry, factory_archive, factory_card_create, factory_card_move,
+factory_card_list, factory_card_run.
+"""
 
 from __future__ import annotations
 

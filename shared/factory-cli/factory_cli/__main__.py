@@ -117,16 +117,14 @@ def build_parser() -> argparse.ArgumentParser:
     create_p = card_sub.add_parser("create")
     create_p.add_argument("title")
     create_p.add_argument("--card-key")
-    create_p.add_argument("--tier", choices=("low", "medium", "hard"))
-    create_p.add_argument(
-        "--status", choices=("backlog", "ready", "in_progress", "blocked", "done")
-    )
+    create_p.add_argument("--tier")
+    create_p.add_argument("--status")
     move_p = card_sub.add_parser("move")
     move_p.add_argument("card_key")
-    move_p.add_argument("status", choices=("backlog", "ready", "in_progress", "blocked", "done"))
+    move_p.add_argument("status")
     list_p = card_sub.add_parser("list")
-    list_p.add_argument("--status", choices=("backlog", "ready", "in_progress", "blocked", "done"))
-    list_p.add_argument("--tier", choices=("low", "medium", "hard"))
+    list_p.add_argument("--status")
+    list_p.add_argument("--tier")
     card_sub.add_parser("run").add_argument("card_key")
 
     sub.add_parser(
@@ -179,10 +177,10 @@ def _portals_for_command(args: argparse.Namespace) -> tuple[PortalName, ...]:
         return static_map[cmd]
     target = str(getattr(args, "target", "")).strip()
     if target.startswith("pf:"):
-        return ("pfactory", "aifactory")
+        return ("pfactory",)
     if target.startswith("af:"):
         return ("aifactory",)
-    return ("tfactory",) if target.startswith("tf:") else ("cfactory",)
+    return ("tfactory",) if target.startswith("tf:") else ()
 
 
 def _dispatch_command(
@@ -211,8 +209,8 @@ def _dispatch_command(
     try:
         for portal in portals:
             resolve_portal_key(portal, env=rt.env, home=rt.home)
-    except ValueError as exc:
-        _emit(f"error: {exc}", err=True, secrets=secrets)
+    except ValueError:
+        _emit("error: invalid portal MCP_KEY or API_KEY", err=True, secrets=secrets)
         return EXIT_PRECONDITION
 
     if cmd == "submit":

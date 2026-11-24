@@ -2059,3 +2059,183 @@ def test_action_client_errors_and_unknown_mutation(
         run_action("archive", "af:bare", ctx=RuntimeContext(env={}, home=tmp_path)).exit_code
         == EXIT_PRECONDITION
     )
+
+
+def _registered_tools(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    from factory_cli import mcp_server  # noqa: PLC0415
+
+    tools: dict[str, Any] = {}
+
+    class _Server:
+        def add_tool(self, fn: Any, *, name: str, description: str) -> None:
+            _ = description
+            tools[name] = fn
+
+    monkeypatch.setattr(mcp_server, "_create_mcp_server", lambda _name: _Server())
+    build_mcp_server()
+    return tools
+
+
+@pytest.mark.parametrize(
+    ("argv", "tool", "args"),
+    [
+        (["approve", "pf:s1"], "factory_approve", ("pf:s1",)),
+        (["reject", "pf:s1", "--feedback", "revise"], "factory_reject", ("pf:s1", "revise")),
+        (["retry", "af:p1:t1"], "factory_retry", ("af:p1:t1",)),
+        (["archive", "af:p1:t1"], "factory_archive", ("af:p1:t1",)),
+        (["card", "run", "FCT-1"], "factory_card_run", ("FCT-1",)),
+    ],
+)
+def test_cli_and_registered_action_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    tool: str,
+    args: tuple[str, ...],
+) -> None:
+    calls: list[str] = []
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        calls.append(req.path)
+        _read_req_json(req)
+        if req.path == "/mcp":
+            _send_json(
+                req, 200, {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"text": "{}"}]}}
+            )
+        else:
+            _send_json(req, 200, {"data": {"autoRestarted": True}})
+
+    with _fake_http_server(_handler) as url:
+        env = {f"{p}_MCP_KEY": CANARY_KEY for p in ("PFACTORY", "AIFACTORY")}
+        if args[0].startswith("pf:"):
+            del env["AIFACTORY_MCP_KEY"]
+        env["CFACTORY_API_KEY"] = CANARY_KEY
+        env.update({f"{p}_API_URL": url for p in ("PFACTORY", "AIFACTORY", "CFACTORY")})
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        assert main(argv, env=env, home=tmp_path) == EXIT_OK
+        assert json.loads(_registered_tools(monkeypatch)[tool](*args))["outcome"] == "ok"
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("http_code", "body", "expected"),
+    [
+        (400, {"detail": "bad request"}, EXIT_REJECTED),
+        (503, {"detail": "unavailable"}, EXIT_UNKNOWN),
+        (200, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32602}}, EXIT_REJECTED),
+        (
+            200,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"isError": True, "content": [{"text": "failed"}]},
+            },
+            EXIT_REJECTED,
+        ),
+        (200, {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603}}, EXIT_UNKNOWN),
+    ],
+)
+def test_card_cli_mcp_error_parity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    http_code: int,
+    body: dict[str, Any],
+    expected: int,
+) -> None:
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        _read_req_json(req)
+        _send_json(req, http_code, body)
+
+    with _fake_http_server(_handler) as url:
+        env = {"CFACTORY_API_URL": url, "CFACTORY_API_KEY": CANARY_KEY}
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        cli_code = main(["card", "create", "Example"], env=env, home=tmp_path)
+        mcp = json.loads(_registered_tools(monkeypatch)["factory_card_create"]("Example"))
+    assert cli_code == expected
+    assert mcp["outcome"] == {EXIT_REJECTED: "rejected", EXIT_UNKNOWN: "unknown"}[expected]
+
+
+@pytest.mark.parametrize("target", ["tf:p1/", "tf:/s1", "af:p1:", "af::t1"])
+def test_action_rejects_empty_id_parts_before_http(tmp_path: Path, target: str) -> None:
+    calls: list[str] = []
+
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        calls.append(req.path)
+        _send_json(req, 200, {})
+
+    with _fake_http_server(_handler) as url:
+        env = {f"{p}_API_URL": url for p in ("AIFACTORY", "TFACTORY")}
+        env.update({f"{p}_MCP_KEY": CANARY_KEY for p in ("AIFACTORY", "TFACTORY")})
+        assert main(["retry", target], env=env, home=tmp_path) == EXIT_PRECONDITION
+    assert not calls
+
+
+def test_invalid_action_prefix_needs_no_portal_key(tmp_path: Path) -> None:
+    assert main(["retry", "bad:p1"], env={}, home=tmp_path) == EXIT_PRECONDITION
+
+
+@pytest.mark.parametrize(
+    ("argv", "tool", "args"),
+    [
+        (["card", "create", "   "], "factory_card_create", ("   ",)),
+        (
+            ["card", "create", "Example", "--tier", "invalid"],
+            "factory_card_create",
+            ("Example", None, "invalid"),
+        ),
+        (["card", "move", "FCT-1", "invalid"], "factory_card_move", ("FCT-1", "invalid")),
+    ],
+)
+def test_card_validation_matches_registered_tool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    tool: str,
+    args: tuple[str | None, ...],
+) -> None:
+    env = {"CFACTORY_API_KEY": CANARY_KEY}
+    monkeypatch.setenv("CFACTORY_API_KEY", CANARY_KEY)
+    assert main(argv, env=env, home=tmp_path) == EXIT_PRECONDITION
+    assert json.loads(_registered_tools(monkeypatch)[tool](*args))["outcome"] == "rejected"
+
+
+@pytest.mark.parametrize("action", ["create", "move", "run"])
+def test_malformed_card_mutations_are_unknown(tmp_path: Path, action: str) -> None:
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        _read_req_json(req)
+        _send_json(req, 200, {"id": 1, "result": {"content": [{"text": "{}"}]}})
+
+    with _fake_http_server(_handler) as url:
+        ctx = RuntimeContext(
+            env={"CFACTORY_API_URL": url, "CFACTORY_API_KEY": CANARY_KEY}, home=tmp_path
+        )
+        assert (
+            run_card(action, title="Example", card_key="FCT-1", status="ready", ctx=ctx).exit_code
+            == EXIT_UNKNOWN
+        )
+        assert run_card("list", ctx=ctx).exit_code == EXIT_REJECTED
+
+
+def test_retry_requires_auto_restart_and_project_list_failure(tmp_path: Path) -> None:
+    def _handler(req: http.server.BaseHTTPRequestHandler) -> None:
+        if req.command == "POST":
+            _read_req_json(req)
+            _send_json(req, 200, {"data": {"autoRestarted": False}})
+        else:
+            _send_json(req, 503 if req.headers.get("Authorization") == "Bearer pf-key" else 200, {})
+
+    with _fake_http_server(_handler) as url:
+        env = {f"{p}_API_URL": url for p in ("AIFACTORY", "PFACTORY", "TFACTORY")}
+        env.update(
+            {
+                "AIFACTORY_MCP_KEY": "af-key",
+                "PFACTORY_MCP_KEY": "pf-key",
+                "TFACTORY_MCP_KEY": "tf-key",
+            }
+        )
+        ctx = RuntimeContext(env=env, home=tmp_path)
+        assert run_action("retry", "af:p1:t1", ctx=ctx).exit_code == EXIT_UNKNOWN
+        assert main(["project", "list"], env=env, home=tmp_path) == EXIT_REJECTED
+        assert json.loads(handle_factory_project_list(ctx=ctx))["outcome"] == "rejected"
