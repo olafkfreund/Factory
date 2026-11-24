@@ -13,7 +13,15 @@ HOSTS["cfactory"] = "https://cfactory-mcp.freundcloud.org.uk"
 # Optional org pin (owner amendment 2026-11-24: existing keys, no dedicated org).
 # Empty means each resource must keep the org it was onboarded with.
 ORG = os.environ.get("E2E_ORG", "")
-KEY_FILES = {service: Path.home() / f".{service}" / ".token" for service in HOSTS}
+
+
+def _key_file(service: str) -> Path:
+    # A user-bound key (needed for PFactory live emit) wins over the legacy key.
+    user_key = Path.home() / f".{service}" / ".e2e-token"
+    return user_key if user_key.is_file() else Path.home() / f".{service}" / ".token"
+
+
+KEY_FILES = {service: _key_file(service) for service in HOSTS}
 GITHUB_TOKEN_FILE = Path("/run/agenix/api-github-token")
 CAMPAIGN_CAP_USD = 60
 MAX_LANES = 3
