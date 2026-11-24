@@ -149,6 +149,7 @@ def run_action(  # noqa: PLR0912 - action routing validates each supported ID sh
         or (action in ("retry", "archive") and prefix == "pf")
     ):
         return _outcome(action, "invalid target for action", secrets, exit_code=EXIT_PRECONDITION)
+    spec = ""
     try:
         if prefix == "tf":
             project, slash, spec = ident.partition("/")
