@@ -1057,3 +1057,16 @@ def test_s3_models_without_evidence_or_phases():
 
 def test_s3_models_stale_head():
     assert not s3_models(usage_payload(), "c" * 40)["qa_approved"]
+
+
+def test_s3_models_ignores_planning_identity() -> None:
+    usage = usage_payload(
+        phaseModels={
+            "planning": ["claude-opus-5-5"],
+            "coding": ["claude-sonnet-5-5"],
+        }
+    )
+    models = s3_models(usage, HEAD)
+    assert models["reviewer_model"] == "claude-opus-5-5"
+    assert models["coder_model"] == "claude-sonnet-5-5"
+    assert models["qa_approved"]
