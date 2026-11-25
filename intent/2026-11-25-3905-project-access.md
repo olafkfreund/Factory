@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3905
 author: olafkfreund
 epic: 3857
@@ -140,13 +140,16 @@ cleanup (#3882 sweeper), not access.
 4. **CFactory#575 is delivered inside this work,** after CFactory gains user
    identity on cockpit requests.
 
+## Decisions on the review questions (owner approved the recommendations, 2026-11-25)
+
+5. **Who can change access:** org admins and owners for their org; team
+   admins for their own team only.
+6. **What the access page edits:** team membership, not single-project
+   grants, matching today's model. The page shows which projects each change
+   affects.
+7. **Unmapped CFactory items:** work items or cards that map to no AIFactory
+   project are visible to org admins and owners only.
+
 ## Open questions
 
-1. **Who can change whose access.** Recommended: org admins and owners for
-   their org; team admins for their own team only.
-2. **What the access page edits.** Should an edit change team membership,
-   which affects every project of that team, or grant access to one project?
-   Recommended: team membership only, matching today's model, with the page
-   showing which projects a change affects.
-3. **Unmapped CFactory items.** Who sees CFactory work items or cards that do
-   not map to any AIFactory project? Recommended: org admins and owners only.
+None.
