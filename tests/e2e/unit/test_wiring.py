@@ -500,7 +500,8 @@ def test_stages_use_guard_for_every_mutation() -> None:
         def register_cf_repository(self, *_: object) -> dict[str, Any]:
             return {"id": 7}
 
-        def enable_pr_endgame(self, *_: object) -> None: ...
+        def enable_pr_endgame(self, *_: object) -> None:
+            return None
 
         def onboard(self, service: str, *_: object) -> dict[str, Any]:
             return {"id": service + "-1"}
