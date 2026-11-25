@@ -63,6 +63,13 @@ def canonical(model: str) -> str:
     return ALIASES.get(low, low)
 
 
+# The emitted plan requires a CI secret-scan, and AIFactory adds .gitignore
+# itself so parallel waves merge cleanly; both are in scope (Factory#3882).
+P1_PLAN_FILES = frozenset(
+    {"wordfreq/cli.py", "tests/test_wordfreq.py", ".github/workflows/tests.yml", ".gitignore"}
+)
+
+
 def s3_models(usage: dict[str, Any], head_sha: str) -> dict[str, Any]:
     """Coder and reviewer identities from the usage payload (plan step 8, D7)."""
     phases = usage.get("phaseModels") or {}
@@ -223,7 +230,7 @@ def run_live(  # noqa: PLR0915
                         and bool(report)
                         and models["qa_approved"],
                         "code_diff": bool(code),
-                        "plan_files_only": code <= {"wordfreq/cli.py", "tests/test_wordfreq.py"},
+                        "plan_files_only": code <= P1_PLAN_FILES,
                         "review_recorded": bool(report and report.get("exists"))
                         and models["qa_approved"],
                         "runtime_models": models["runtime_models"],
