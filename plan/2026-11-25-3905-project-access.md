@@ -10,9 +10,9 @@ coders:
   5: codex   # TFactory, same as 4 (separate repo, same contract)
   6: codex   # CFactory principal contract, nginx/ingress, editor credential: security
   7: codex   # CFactory project_id on both writers + backfill: data correctness
-  8: agy     # CFactory filter dependency on every route/MCP/Copilot + coverage test: broad wiring
+  8: codex   # CFactory authorization decisions + filtered computed data: security
   9: codex   # stream grant expiry + revocation across four portals: subtle
-  10: coder  # search/count proxy cutover in three portals: small
+  10: codex  # delegated identity on proxies + failure path: security
   11: agy    # Access page, My access, account-menu links, switcher role badge: UI breadth
   12: codex  # E2E D7 with all negative cases: guarded live test
 reviewers:
@@ -212,6 +212,196 @@ branch.
 - **Step 10** ships only after step 8 is live in prod, with the flag still
   off.
 - **Step 12** runs with the flag on for the E2E tenant only.
+
+
+### Revision 2 corrections (from the plan reviews; part of this plan)
+
+These override the steps below wherever they disagree.
+
+**Gates.**
+
+- **AIFactory steps 1-3** start only after AIFactory#2233 **and then**
+  #3906's AIFactory steps 1-7 have merged to AIFactory `dev`.
+- **CFactory steps 6-8** start only after #3906 step 8 has merged to
+  CFactory `dev`. Keep its pause guard at execute time and its adapter
+  fields.
+- **Steps 4-6 go live** only after the owner has created the `acs_`
+  credentials (as sealed secrets) and set `CFACTORY_OIDC_AUDIENCE`. These
+  are release prerequisites, not after-steps.
+- **The vendored switcher PRs** start only after the hub switcher change
+  has merged to Factory `main`.
+- **Step 10** depends on step 8 being live. It does not depend on step 9.
+- **Step 12** also depends on #3906's E2E harness changes, which touch the
+  same `scripts/e2e` files. Rebase on them.
+
+**Step 1.**
+
+- Reserve the two scopes in **every** key-validation path: `auth.py`,
+  `mcp_stdio/auth.py:97` and the remote MCP auth.
+- Audit both issuing and revoking.
+- Test that an `acs_` principal is confined to its routes: the access
+  routes, plus search and count for `act-as`. Everything else returns 403.
+
+**Step 2.**
+
+- `/access/resolve` returns exactly the `/me/projects` shape, including
+  `orgs`.
+- The `orgs` entries are also intersected with the credential boundary.
+- The `issuer` is checked against the configured Keycloak issuer before
+  `oidc_sub` is resolved. An unknown issuer returns 400.
+
+**Step 3: change the shared grant calculation.**
+
+- `_team_grant` (`project_authz.py` ~75-125) ignores tombstone rows.
+- On a default-team project, the effective role is the **higher** of the
+  team row and the org role, so an existing lower row cannot mask the org
+  role. The list, the detail view, delegated resolution and the preview then
+  all agree.
+- Add a migration with a `tombstone` flag on `team_memberships`.
+- The routes are exactly as the spec gives them:
+  - `GET /api/orgs/{org}/teams`;
+  - `GET /api/teams/{team}/members`;
+  - `PUT` and `DELETE /api/teams/{team}/members/{user}`;
+  - `POST /api/teams/{team}/members/{user}/preview`.
+
+**Steps 4 and 5: binding rules.**
+
+- **The backfill source** is an admin-scoped `/api/me/projects`, using the
+  owner's session. A project binds only on a unique, full canonical match.
+- **A local project without a binding** cannot be used by non-admins until
+  it is bound.
+- **A new project** binds at creation, either to an existing AIFactory
+  project or through successful onboarding.
+- **Keep** the existing local ids, role thresholds and 404/403 meanings.
+
+Separate file lists:
+
+| Repo | Files |
+|---|---|
+| PFactory | `apps/web-server/server/routes/project_authz.py`, `routes/projects.py`, the plan-session routes, the unmatched-intake routes, `auth_routes.py` and `oidc_routes.py` (login linking), new `services/access_client.py` |
+| TFactory | `apps/web-server/server/routes/project_authz.py`, `routes/projects.py` (the DB-backed list), the spec-intake route, `auth_routes.py` and `oidc_routes.py`, new `services/access_client.py`, and the Copilot token path, which stays unchanged |
+
+PFactory's plan-session work is not part of TFactory.
+
+**Step 6.** In `nginx.conf.template`, **every** `location` that proxies to
+the backend strips any `X-Forwarded-Id-Token` the client sent and sets it
+from oauth2-proxy. That includes `/connect/`, which misses it today. Test
+the `/connect/` path.
+
+**Step 7.**
+
+- Both writers take `projectId` only from the trusted AIFactory adapter.
+- Dispatch replaces a provisional card binding.
+- A later conflict keeps the stored id unless an explicit rebind happens,
+  and raises an anomaly.
+
+**Step 8: the CFactory rules, written out.**
+
+- `services/access_resolver.py` calls AIFactory `/api/access/resolve` with
+  CFactory's `acs_` credential, caches with an absolute expiry of 60 s, and
+  returns 503 on failure.
+- `CFACTORY_USER_AUTHZ` has a global default of `off`, with an override per
+  tenant.
+- Filtering happens **before** every read, aggregation, ranking, truncation,
+  outbound call and mutation.
+- Copilot gets a filtered store.
+- The principal reaches both MCP contexts.
+- **Tests:** besides the route-coverage test, add a behavioural test for
+  each path family:
+  - work items and drill-downs;
+  - aggregates;
+  - search and count;
+  - actions and audit;
+  - Copilot;
+  - cards;
+  - investigations;
+  - live agents;
+  - git config;
+  - MCP.
+
+  Each test asserts that hidden data never appears in the response body.
+
+**Step 9: idle streams.**
+
+- Each connection schedules a wakeup at `expires_at` and re-resolves its
+  grants then, even when no frame is waiting.
+- **On a failed renewal:**
+  - WebSocket: close with code 4403 and reason `authz_expired`;
+  - SSE: send `event: revoked`, then close;
+  - client: clear the project's state when it gets `revoked` or that close.
+- **Tests:**
+  - a failed renewal closes the stream;
+  - an idle connection is revoked within 60 s;
+  - AIFactory's 300 s key and org timer still runs.
+
+**Step 10: `act-as` is always scoped.**
+
+- In CFactory, every accepted `act-as` request is filtered to the acting
+  user, or fails closed. This holds **even when `CFACTORY_USER_AUTHZ` is
+  off**, so no proxy cutover can return results from the whole fleet.
+- **Tests:**
+  - the flag off;
+  - mixed versions: an old proxy with a new CFactory, and the other way
+    round;
+  - a rollback of this step.
+- Rolling back the proxies drops the `act-as` header. It never turns
+  fleet-wide results back on for a user.
+
+**Step 11.**
+
+- Wire the role into each portal's switcher data. In CFactory that is
+  `apps/frontend-web/src/useDashboard.ts:207`, which today maps only the
+  slug and the name.
+- Add the Access link to AIFactory's own account menu too.
+- Group the grid by team, and show the preview before an edit is confirmed.
+- When the count pollers in the three portals get a 503, they show an
+  error state instead of a stale count.
+
+**Step 12: the live proof, written out.**
+
+- **Owner setup:** the test user, a membership in V's team only, and the
+  flag turned on for the E2E tenant.
+- **The harness** runs from a Factory worktree:
+
+  ```bash
+  python3 -m scripts.e2e.run --journey ACCESS:ui+api:1 --live --campaign <id>
+  ```
+
+- **H must be absent, or return 404, in all of:**
+  - lists and the switcher;
+  - legacy and canonical deep links, and task and card ids;
+  - search and count;
+  - every stream, including queued frames;
+  - MCP;
+  - CFactory drill-downs, actions and Copilot.
+- **V must work** with the role `member`.
+- **Revocation:** revoke right after a cache fill. V must disappear within
+  60 s on both an active and an idle connection, and stay gone after a
+  reconnect.
+- **Default-team inheritance** gets its own case.
+- **Negative cases:** each one maps to the repo that owns its unit test.
+- **Fixtures** are created only through the guarded registry, then swept.
+
+**Verify commands** (these replace "Repo traps" where the two disagree):
+
+- **AIFactory web tests** run the way CI runs them, from the repo root with
+  the **backend** venv:
+
+  ```bash
+  /mnt/code/Source-home/GitHub/AIFactory/apps/backend/.venv/bin/pytest apps/web-server/tests/<file> -o asyncio_mode=auto -q
+  ```
+
+- **PFactory and TFactory:** the same pattern, with each repo's backend
+  venv.
+- **Every step** names its exact test files in its first commit message.
+
+**Security review:** steps 1, 2, 6, 8, 9 and 10.
+
+**Who does what:**
+
+- **The lead:** commits.
+- **The owner:** live config, credentials, tenant flag changes and prod
+  deploy approval.
 
 ## Repo traps (every step)
 
