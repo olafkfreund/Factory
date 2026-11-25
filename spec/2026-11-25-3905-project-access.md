@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3905
 intent: intent/2026-11-25-3905-project-access.md
 ---
