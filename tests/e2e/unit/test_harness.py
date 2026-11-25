@@ -21,6 +21,7 @@ from scripts.e2e.probes import PROBES, matches, verify
 from scripts.e2e.readback import Readback, SurfaceMismatchError, absent, pinned_rest
 from scripts.e2e.registry import Registry
 from scripts.e2e.report import summarize
+from scripts.e2e.run import s3_models
 from scripts.e2e.surfaces.cli import CLI
 from scripts.e2e.surfaces.mcp import MCP
 
@@ -999,3 +1000,60 @@ def test_redaction_includes_github_token_families():
     assert safe_fields(
         {"probes": {"ab": {"reason": "leak"}, "a": {"reason": "kept"}}}, {"probes"}
     ) == {"probes": {"a": {"reason": "kept"}}}
+
+
+HEAD = "a" * 40
+
+
+def usage_payload(**over: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "phaseModels": {
+            "coding": ["claude-sonnet-5-5"],
+            "planning": ["claude-sonnet-5-5"],
+            "qa_fixer": ["claude-sonnet-5-5"],
+            "qa": ["claude-opus-5-5"],
+        },
+        "qaEvidence": {
+            "status": "approved",
+            "reviewer": {
+                "model": "claude-opus-5-5",
+                "provider": "claude",
+                "served_model": "claude-opus-5-5",
+            },
+            "reviewed_head": HEAD,
+            "report_sha256": "b" * 64,
+            "qa_cycle": 1,
+            "override": False,
+            "at": "2026-11-25T10:00:00Z",
+        },
+    }
+    return {**payload, **over}
+
+
+def test_s3_models_pass():
+    got = s3_models(usage_payload(), HEAD)
+    assert got == {
+        "runtime_models": True,
+        "coder_model": "claude-sonnet-5-5",
+        "reviewer_model": "claude-opus-5-5",
+        "qa_approved": True,
+    }
+
+
+def test_s3_models_alias_equals_coder():
+    evidence = usage_payload()["qaEvidence"] | {"reviewer": {"model": "sonnet"}}
+    got = s3_models(usage_payload(qaEvidence=evidence), HEAD)
+    assert got["reviewer_model"] == got["coder_model"] == "claude-sonnet-5-5"
+
+
+def test_s3_models_without_evidence_or_phases():
+    got = s3_models(usage_payload(qaEvidence=None), HEAD)
+    assert not got["runtime_models"]
+    assert not got["qa_approved"]
+    got = s3_models({"qaEvidence": usage_payload()["qaEvidence"]}, HEAD)
+    assert not got["runtime_models"]
+    assert got["coder_model"] is None
+
+
+def test_s3_models_stale_head():
+    assert not s3_models(usage_payload(), "c" * 40)["qa_approved"]

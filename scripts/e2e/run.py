@@ -50,6 +50,42 @@ SKIPPED_PROBES = {
 }
 
 
+ALIASES = {
+    "opus": "claude-opus-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "haiku": "claude-haiku-5-5",
+    "fable": "claude-fable-5-2",
+}
+
+
+def canonical(model: str) -> str:
+    low = model.strip().lower()
+    return ALIASES.get(low, low)
+
+
+def s3_models(usage: dict[str, Any], head_sha: str) -> dict[str, Any]:
+    """Coder and reviewer identities from the usage payload (plan step 8, D7)."""
+    phases = usage.get("phaseModels") or {}
+    ids = {
+        canonical(str(m))
+        for phase in ("coding", "planning", "qa_fixer")
+        for m in phases.get(phase) or []
+        if m
+    }
+    evidence = usage.get("qaEvidence") or {}
+    raw = (evidence.get("reviewer") or {}).get("model")
+    reviewer = canonical(str(raw)) if raw else None
+    # On overlap coder_model becomes the reviewer id, so validate's inequality check fails.
+    overlap = reviewer is not None and reviewer in ids
+    return {
+        "runtime_models": bool(ids and reviewer),
+        "coder_model": reviewer if overlap else ",".join(sorted(ids)) or None,
+        "reviewer_model": reviewer,
+        "qa_approved": evidence.get("status") == "approved"
+        and evidence.get("reviewed_head") == head_sha,
+    }
+
+
 def selected(journeys: list[str], slice_name: str | None) -> list[Journey]:
     if slice_name == "mvr":
         return [
@@ -172,14 +208,6 @@ def run_live(  # noqa: PLR0915
                     if task.get("id") != task_id:
                         raise RuntimeError("AIF task read-back mismatch")
                     usage = services.usage(task_id)
-                    workers = usage.get("workers") or {}
-                    models = {
-                        row.get("phase"): row.get("model")
-                        for row in workers.values()
-                        if isinstance(row, dict) and row.get("model") and row.get("provider")
-                    }
-                    coder = models.get("coding") or models.get("coder")
-                    reviewer = models.get("qa") or models.get("reviewer")
                     pr = github.pull_request(f"olafkfreund/{name}")
                     files = github.pull_files(f"olafkfreund/{name}", pr["number"])
                     changed = {row["filename"] for row in files if row.get("status") != "removed"}
@@ -190,16 +218,20 @@ def run_live(  # noqa: PLR0915
                         and not path.endswith(".lock")
                     }
                     report = services.qa_report(task_id)
+                    models = s3_models(usage, str(pr["head"]["sha"]))
                     return {
                         **surface,
                         "terminal": surface.get("status") == "completed",
-                        "green": task.get("status") in {"done", "human_review"} and bool(report),
+                        "green": task.get("status") in {"done", "human_review"}
+                        and bool(report)
+                        and models["qa_approved"],
                         "code_diff": bool(code),
                         "plan_files_only": code <= {"wordfreq/cli.py", "tests/test_wordfreq.py"},
-                        "review_recorded": bool(report and report.get("exists")),
-                        "runtime_models": bool(coder and reviewer),
-                        "coder_model": coder,
-                        "reviewer_model": reviewer,
+                        "review_recorded": bool(report and report.get("exists"))
+                        and models["qa_approved"],
+                        "runtime_models": models["runtime_models"],
+                        "coder_model": models["coder_model"],
+                        "reviewer_model": models["reviewer_model"],
                         "cost_usd": usage.get("cost_usd", 0),
                     }
                 if stage == "S4":
