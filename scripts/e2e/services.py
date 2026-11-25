@@ -362,6 +362,16 @@ class Services:
             raise RuntimeError("CFactory card create returned no body")
         return self.read_resource("cfactory", "card", card_key) or {}
 
+    def enable_pr_endgame(self, project_id: str) -> object:
+        # AIF routes/projects.py update_project_settings: autoPr opens the PR,
+        # autoMerge merges it on the review engine's approval.
+        return self._request(
+            "aifactory",
+            "PATCH",
+            f"/api/projects/{project_id}/settings",
+            {"autoPr": True, "autoMerge": True},
+        )
+
     def register_cf_repository(self, full_name: str, aif_project_id: str) -> dict[str, Any]:
         # CF routes_git_config.py:289-314,606-631 and
         # git_connections.py:213-245,274-285.

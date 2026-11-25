@@ -347,6 +347,9 @@ def test_s2_tracks_dispatched_task_before_ownership_read_fails(tmp_path: Path) -
         def register_cf_repository(self, *_: object) -> dict[str, str]:
             return {"id": "cf"}
 
+        def enable_pr_endgame(self, *_: object) -> None:
+            return None
+
         def create_card(self, *_: object) -> dict[str, str]:
             return {"key": name}
 

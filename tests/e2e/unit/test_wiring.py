@@ -344,6 +344,21 @@ def test_emitted_pf_session_is_retained_without_discard(monkeypatch: pytest.Monk
     assert client.close_session("s1") == {"retained": True}
 
 
+def test_enable_pr_endgame_turns_on_auto_pr_and_merge(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = services.Services({})
+    calls: list[tuple[object, ...]] = []
+
+    def fake_request(*args: object) -> dict[str, Any]:
+        calls.append(args)
+        return {}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    client.enable_pr_endgame("a1")
+    assert calls == [
+        ("aifactory", "PATCH", "/api/projects/a1/settings", {"autoPr": True, "autoMerge": True})
+    ]
+
+
 def test_cf_repository_and_card_creation_routes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -485,6 +500,9 @@ def test_stages_use_guard_for_every_mutation() -> None:
         def register_cf_repository(self, *_: object) -> dict[str, Any]:
             return {"id": 7}
 
+        def enable_pr_endgame(self, *_: object) -> None:
+            return None
+
         def onboard(self, service: str, *_: object) -> dict[str, Any]:
             return {"id": service + "-1"}
 
@@ -516,6 +534,7 @@ def test_stages_use_guard_for_every_mutation() -> None:
         ("aifactory", "project"),
         ("pfactory", "project"),
         ("tfactory", "project"),
+        ("aifactory", "project"),
         ("cfactory", "repository"),
         ("cfactory", "card"),
         ("pfactory", "project"),
