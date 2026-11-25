@@ -1,6 +1,7 @@
 """Offline safety and oracle tests for the campaign harness."""
 
 import json
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.message import Message
@@ -1070,3 +1071,40 @@ def test_s3_models_ignores_planning_identity() -> None:
     assert models["reviewer_model"] == "claude-opus-5-5"
     assert models["coder_model"] == "claude-sonnet-5-5"
     assert models["qa_approved"]
+
+
+def test_github_waits_for_rate_limit_reset_then_retries(tmp_path):
+    token = tmp_path / "t"
+    token.write_text("x")
+    limited = cast(
+        Message,
+        {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(time.time()) + 30)},
+    )
+    calls: list[str] = []
+
+    def open_url(request, *_args, **_kw):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise HTTPError("", 403, "", limited, None)
+        return BytesIO(b'{"ok": true}')
+
+    client = GitHub(token_file=token, open_url=open_url)
+    slept: list[float] = []
+    client.sleep = slept.append
+    assert client.request("GET", "/repos/olafkfreund/x") == {"ok": True}
+    assert len(calls) == 2
+    assert 1 <= slept[0] <= 31
+
+
+def test_github_plain_403_is_not_retried(tmp_path):
+    token = tmp_path / "t"
+    token.write_text("x")
+    calls: list[int] = []
+
+    def open_url(*_args, **_kw):
+        calls.append(1)
+        raise HTTPError("", 403, "", cast(Message, {}), None)
+
+    with pytest.raises(HTTPError):
+        GitHub(token_file=token, open_url=open_url).request("GET", "/repos/olafkfreund/x")
+    assert calls == [1]

@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -38,17 +39,44 @@ def _git_auth_env(token: str) -> dict[str, str]:
     }
 
 
+RATE_LIMIT_MAX_WAIT_S = 900
+
+
+def _rate_limit_wait(exc: HTTPError) -> float | None:
+    """Seconds until the core limit resets, or None when this is not a rate limit."""
+    headers = exc.headers
+    if headers is None or exc.code not in {403, 429} or headers.get("X-RateLimit-Remaining") != "0":
+        return None
+    try:
+        wait = int(headers.get("X-RateLimit-Reset", "")) - time.time() + 1
+    except ValueError:
+        return None
+    return min(max(wait, 1.0), RATE_LIMIT_MAX_WAIT_S)
+
+
 class GitHub:
     def __init__(
         self, token_file: Path = GITHUB_TOKEN_FILE, open_url: Callable[..., Any] | None = None
     ) -> None:
         self.token_file = token_file
         self.open_url = open_url or build_opener(NoRedirect).open
+        self.sleep: Callable[[float], None] = time.sleep
 
     def __repr__(self) -> str:
         return "GitHub()"
 
     def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+        try:
+            return self._request(method, path, payload)
+        except HTTPError as exc:
+            wait = _rate_limit_wait(exc)
+            if wait is None:
+                raise
+            # A rate-limited request was not executed, so one retry after reset is safe.
+            self.sleep(wait)
+            return self._request(method, path, payload)
+
+    def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         if (
             not path.startswith("/")
             or "//" in path
