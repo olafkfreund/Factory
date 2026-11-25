@@ -67,10 +67,7 @@ def s3_models(usage: dict[str, Any], head_sha: str) -> dict[str, Any]:
     """Coder and reviewer identities from the usage payload (plan step 8, D7)."""
     phases = usage.get("phaseModels") or {}
     ids = {
-        canonical(str(m))
-        for phase in ("coding", "planning", "qa_fixer")
-        for m in phases.get(phase) or []
-        if m
+        canonical(str(m)) for phase in ("coding", "qa_fixer") for m in phases.get(phase) or [] if m
     }
     evidence = usage.get("qaEvidence") or {}
     raw = (evidence.get("reviewer") or {}).get("model")
