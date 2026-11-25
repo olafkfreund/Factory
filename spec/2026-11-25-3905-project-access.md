@@ -6,300 +6,415 @@ intent: intent/2026-11-25-3905-project-access.md
 
 # Spec: show each user only their projects, with their role, in every portal
 
+Revision 2 follows the Codex and agy spec reviews. Compared with the first
+draft:
+
+- **Service credentials** are now a separate, reserved type.
+- **Projects are bound** explicitly across portals, instead of matched by
+  repository name.
+- **CFactory** gets a principal contract for every way in, and a full list
+  of the data paths to filter.
+- **Stream revocation** now has an absolute deadline.
+- **Delivery order:** CFactory enforcement lands before the search proxies
+  switch over.
+
 ## Approved intent decisions
 
-1. Today's AIFactory grant model stays exactly as it is:
-   - default-team projects inherit the org role;
-   - other teams' projects need a team membership.
-2. There is one access page, in AIFactory, linked from every portal.
-3. The other portals ask AIFactory with the caller's identity. They cache
-   the answer for at most 60 s, fail closed when AIFactory is unreachable
-   (503), and never fall back to local tables.
-4. CFactory#575 is part of this work, once CFactory knows who the user is.
-5. Who may edit access:
-   - org admins and owners for their org;
-   - team admins for their own team.
-6. Edits change team membership, and the page shows which projects each
-   edit affects.
-7. CFactory items that map to no project are visible to org admins and
-   owners only.
+1. **Today's AIFactory grant model stays exactly as it is.** Default-team
+   projects inherit the org role. Other teams' projects need a team
+   membership.
+2. **One access page,** in AIFactory, linked from every portal.
+3. **The other portals ask AIFactory** with the caller's identity. They
+   cache for at most 60 s, fail closed (503) and never fall back to local
+   tables.
+4. **CFactory#575 is part of this work,** once CFactory knows who the user
+   is.
+5. **Who edits access:** org admins and owners for their org, and team
+   admins for their own team.
+6. **Edits change team membership,** and the page shows which projects each
+   change affects.
+7. **Unmapped CFactory items** are visible to org admins and owners only.
 
-The intent also fixes these:
+The intent also fixes these points:
 
-- an invisible project returns 404, and a role that is too low returns 403;
-- AIFactory is the only store of permissions;
-- service tokens and MCP keys keep their scopes.
+- an invisible project returns 404, and a visible one with too low a role
+  returns 403;
+- AIFactory is the only permission store;
+- service tokens and MCP keys keep their scoped behaviour;
+- this work comes after the earlier #3857 phases;
+- #575 lands before #574.
 
 ## Facts this design builds on
 
-Taken from `origin/dev` on 2026-11-25.
+Taken from `origin/dev` on 2026-11-25, and checked by both reviews.
 
-### Login
+### Login and identity
 
-- **One Keycloak realm, one client per portal.** Each portal mints its own
-  HS256 JWT after the OIDC callback (`oidc_routes.py:209-273`,
-  `auth_routes.py:97-111`) and accepts it in a cookie or a bearer header
-  (`auth.py:334-361`).
-- **A portal JWT cannot be forwarded to another portal.** Each portal signs
-  with its own secret.
-- **The shared user key is `users.oidc_sub`** (the Keycloak `sub`).
-  AIFactory, PFactory and TFactory all have it. `TeamMembership.user_id` is
-  AIFactory's local user id.
+- Each portal mints its own HS256 JWT, whose `sub` is that portal's local
+  `User.id`.
+- `users.oidc_sub` is the shared Keycloak subject in AIFactory, PFactory
+  and TFactory.
+- Local registration creates users with no `oidc_sub`.
 
-### AIFactory access logic
+### AIFactory keys and access helpers
 
-- `_team_grant` returns the role and the team (`project_authz.py:75-125`).
-- `_effective_role` clamps that role by the scope ceiling (`:128-144`).
-- `accessible_project_ids` returns ids only and drops the role (`:226-258`).
-- **No endpoint returns the caller's projects with their roles.** There is
-  no route to list or create team memberships; only SSO provisioning writes
-  them. There is no access UI.
-- **The legacy shared token** (`APP_API_TOKEN`, with
-  `LEGACY_SHARED_TOKEN_FULL_ACCESS` on by default) sees every project.
-  PFactory, TFactory and CFactory all call AIFactory with it, or with
-  per-org `acw_` keys. Neither carries a user.
+- Any org member can create a personal `acw_` key and choose arbitrary
+  scope strings. Personal keys with `api` scope authenticate as their owner.
+- `ApiKey` cannot represent an ownerless key or a fleet-wide service key.
+- `resolve_project_id("owner/repo")` can match a project by repository name
+  alone, across owners and orgs.
+- Deleting a default-team `TeamMembership` falls back to the org role. The
+  next SSO login can recreate the row.
+- The stream key and org re-check runs every **300 s**. Tagged events are
+  checked on every delivery.
 
 ### PFactory and TFactory
 
-Their `visible_project_ids` uses their own local `OrgMember` table
-(PFactory `project_authz.py:215-241`, TFactory `:262-300`).
+Both still authorize with their local `OrgMember` table in places beyond the
+two shared helpers:
+
+- the TFactory DB-backed list and spec intake;
+- PFactory project creation, unmatched-repo intake and plan sessions.
 
 ### CFactory
 
-- **Request auth:** API keys with read and write scopes only.
-- **The browser path:**
-  - oauth2-proxy adds the Keycloak ID token;
-  - nginx swaps `Authorization` for the API key and forwards the ID token
-    as `X-Forwarded-Id-Token` (`nginx.conf.template:40-66`);
-  - `enterprise.oidc_actor` verifies that token against JWKS, but only to
-    record the audit actor (`enterprise.py:124-201`).
-- **A `WorkItem` has no project id,** only a repo per service and a
-  correlation key.
-
-### Paths that leak
-
-- **Search and the needs-you count.** The search proxies in AIFactory,
-  PFactory and TFactory (`routes/search.py`) call CFactory with a shared
-  read key and drop the user. CFactory's `/api/search`,
-  `/api/needs-you/count`, `/api/workitems`, rollups, tokens, anomalies and
-  cards take no principal (`routes_workitems.py:35-195`).
-- **Streams.**
-  - **CFactory `/api/ws`** sends the full snapshot to any key; it filters by
-    tenant only.
-  - **AIFactory `/ws/events`** already checks each event that carries a
-    `projectId` or `taskId` (`event_bus.py:319-330`,
-    `task_access.py:21-32`). The gaps are events with no project and the
-    60 s re-check, which does not re-check grants.
-  - **PFactory and TFactory sockets and SSE** have not been audited.
+- **Browser path.** nginx replaces `Authorization` with a shared key and
+  copies the incoming value into `X-Forwarded-Id-Token`. The Helm ingress
+  can also send `/api` straight to the backend.
+- **Audit verifier.** It falls back to the key actor when verification
+  fails.
+- **Key hand-out.** `/api/settings/token` and `/connect/vscode` hand out
+  `preferred_key()` from the shared key pool.
+- **Tenant.** It comes straight from `X-Tenant-Id`.
+- **Project data.** `WorkItem` and cards carry no project id. Two writers
+  feed them: `upsert_from_event` for webhooks and the WS relay, and
+  `upsert_snapshot` for poll and refresh.
 
 ## Design
 
-### D1. The access API in AIFactory
+### D1. AIFactory: reserved service credentials and access reads
 
-**Two reads, one shape.** Each returns
-`[{project_id, slug, name, org_id, team_id, role}]`, built from
-`_team_grant` plus `_effective_role`:
+**A new `ServiceCredential` type** with its own table and its own `acs_`
+prefix. It is not an `ApiKey`.
 
-1. **`GET /api/me/projects`** returns the caller's own projects.
-2. **`GET /api/access/projects?oidc_sub=<sub>`** returns another user's
-   projects, on behalf of a sibling portal. It accepts only an `acw_`
-   service key with the new scope `access:read`.
-   - The key may resolve users only in its own org, or in every org for a
-     fleet key that has been explicitly flagged.
-   - The **legacy shared token is refused** on this route: 403, whatever
-     `LEGACY_SHARED_TOKEN_FULL_ACCESS` says.
-   - An unknown `sub` returns `[]`.
+- **Owner:** none. A service credential belongs to no user.
+- **Scopes:** `access:read`, `act-as`, and both.
+- **Boundary:** one org, or an explicit `fleet: true` flag.
+- **Who issues it:** only an org owner, or the instance owner for a fleet
+  credential, through an admin route. The secret is shown once.
+- **Audit:** every issue and every revoke is audited.
+- **Reserved scopes:** personal and org `ApiKey` issuance and validation
+  reject `access:read` and `act-as`.
 
-**Roles everywhere.** `GET /api/projects` and the `project_to_response`
-fields gain `role`, the caller's effective role.
+**`GET /api/me/projects`** returns the caller's own projects, as
+`[{project_id, slug, name, org_id, team_id, role, binding}]`.
 
-**Writes for team membership** (decision 6):
+- `binding` is the canonical repository identity:
+  `{provider, host, owner, name}`.
+- It also returns `orgs: [{org_id, role}]`, which decision 7 needs.
 
-- `GET /api/orgs/{org}/teams`;
-- `GET /api/teams/{team}/members`;
-- `PUT /api/teams/{team}/members/{user}` with `{role}`;
-- `DELETE /api/teams/{team}/members/{user}`.
+**`POST /api/access/resolve`** takes `{issuer, sub}` in the body, never in
+the URL, so the subject stays out of URL logs.
 
-Who may call them follows decision 5. Each change records `provenance:
-"manual"` and is audited. SSO-provisioned rows can be changed. The writes
-return the list of projects each change affects.
+- **Credential:** only an `acs_` credential with `access:read` may call it.
+- **Subject:** the subject must be an active AIFactory user. An unknown,
+  inactive or unprovisioned subject returns `[]`.
+- **Computation:**
+  1. grants are computed as **the target user's principal**, built
+     separately from the credential;
+  2. each returned grant is intersected with the credential's boundary,
+     including for a subject who belongs to several orgs;
+  3. the result has the same shape as `/me/projects`.
+- **Audit:** credential id, subject hash, org, and the decision.
 
-### D2. PFactory and TFactory ask AIFactory
+**Roles in every list.** `GET /api/projects` and `project_to_response` gain
+`role` and `binding`.
 
-**The resolver.** Their `visible_project_ids` and `require_project_role`
-resolve through a shared client, `access_client`:
+**Team membership**, under decisions 5 and 6:
 
-- it calls D1.2 with the portal's `access:read` key and the caller's
-  `oidc_sub`;
-- it caches per `sub` for 60 s;
-- on a timeout or a 5xx it raises 503 (fail closed).
+- list routes for teams and their members;
+- `PUT` and `DELETE /api/teams/{team}/members/{user}`;
+- `POST …/preview`, a dry run that returns, for each project, the
+  effective role before and after the change, inherited roles included.
+  The page shows that preview before it confirms.
 
-**Mapping projects.** Local projects map to AIFactory projects by repo
-`owner/name`, the same key AIFactory's `resolve_project_id` uses. A local
-project with no AIFactory match is visible only to local org owners and
-admins (decision 7, applied here too).
+**Default-team rule.** A default-team membership cannot restrict below the
+org role. The preview says so, and points the admin to the org role
+instead.
 
-**Local accounts** without an `oidc_sub` get no projects. A legacy shared
-token or a service caller keeps today's behaviour on non-user routes.
+**SSO sync** only adds rows. It never overwrites or recreates a row marked
+`provenance: "manual"`, including a deleted manual row, which is kept as a
+tombstone.
 
-**No local fallback.** The `OrgMember` path is removed as a fallback, which
-keeps AIFactory the only permission store.
+**Allowed roles.** Assignments are limited to viewer, member and admin, and
+may not exceed the editor's own role. The target must be a member of the
+org.
 
-**Roles in the lists.** The project-list responses gain `role` from the
-resolver.
+### D2. PFactory and TFactory: explicit bindings and delegated resolution
 
-### D3. Search, counts and streams
+**Binding.** Each local project stores `aifactory_project_id`.
 
-- **Search and the needs-you count.** The three proxies (`routes/search.py`)
-  send the caller's `oidc_sub` to CFactory as `X-Acting-User`, together with
-  the read key. CFactory acts on that header only from keys with the new
-  scope `act-as` (D4). The proxies drop results with no project.
-- **AIFactory `/ws/events`.**
-  - Events with no project are sent only to org admins and owners.
-  - The 60 s re-check re-resolves project grants for every connection.
-  - Tests prove that an org member with no grant on team B receives no
-    team-B event.
-- **PFactory and TFactory** `/ws/events`, the logs sockets, `agent-console`
-  and SSE each get the same per-project check through the D2 resolver, at
-  connect and at every re-check.
+- Existing projects are backfilled by matching the full canonical binding
+  (provider, host, owner, name) against AIFactory's `/me/projects` bindings
+  for an admin-scoped run.
+- A unique match binds. An ambiguous match or no match leaves the project
+  unbound and reports it.
+- **New projects bind at creation.** They take an AIFactory project, or
+  create one there through the existing onboarding, before the creator uses
+  them.
 
-### D4. CFactory user identity and project authorization (#575)
+**Visibility of a bound project** comes from the user's AIFactory grant on
+`aifactory_project_id`.
 
-**Who is asking.** A new dependency, `principal_dep`, decides this per
-request:
+**Unbound projects** are visible to local org owners and admins only
+(decision 7). A missing grant on a bound project means hidden. The two cases
+are never confused.
 
-- **Browser path:** `X-Forwarded-Id-Token`, verified with JWKS. The audience
-  check becomes required (`CFACTORY_OIDC_AUDIENCE` must be set when user
-  mode is on).
-- **A proxied path from a sibling portal:** a key with scope `act-as` plus
-  `X-Acting-User`.
-- **A key-only caller** (MCP, editor) with no user sees everything only if
-  its key has the new scope `all-projects`. Otherwise it sees nothing that is
-  scoped to a project.
+**Resolving the caller.** The caller is resolved from the authenticated
+local user.
 
-**Which projects.** The visible projects come from AIFactory D1.2, using
-CFactory's `access:read` key and the user's `sub`, cached for 60 s and
-failing closed.
+- **Human session:** `oidc_sub` together with the issuer goes to
+  `/api/access/resolve` with the portal's `acs_` credential. The result is
+  cached until an **absolute expiry**, the fetch time plus 60 s. On a
+  timeout or a 5xx the request fails closed with 503.
+- **Human with no `oidc_sub`:**
+  - at login, link it by verified email to the AIFactory user's subject;
+  - if that fails, the user sees no bound projects.
 
-**Project on every item.** `WorkItem` and cards gain `project_id`, resolved
-at ingest from the AIFactory project id or the repo through AIFactory's
-mapping. A migration backfills existing rows. Items that stay unmapped are
-visible to org admins and owners only.
+  The plan inventories these accounts before the switch.
 
-**Where the filter applies:**
+**Keys and tokens keep their own identity.**
 
-- the work-item list and detail (404 for invisible items);
-- rollups, tokens, anomalies and cost;
+| Caller | Rule |
+|---|---|
+| A **user-owned key** | Resolves its owner's grants, clamped by the key's own scope and org ceiling |
+| **Ownerless org keys, legacy tokens and TFactory's Copilot token** | Keep today's service behaviour on the routes that use them today: MCP, hand-offs and service feeds. A rule for a missing subject never touches them |
+
+**One project-authorization helper** replaces every local `OrgMember`
+check:
+
+- TFactory's DB-backed list and spec intake;
+- PFactory project creation, unmatched-repo intake and plan sessions.
+
+A plan session with no project is visible to its creator and to org admins
+only. The helper keeps the existing role thresholds, the local ids and the
+404/403 meanings for every caller.
+
+### D3. CFactory: principal contract, bindings and filters (#575)
+
+**One principal per transport.**
+
+| Transport | What CFactory accepts |
+|---|---|
+| **Browser HTTP and WebSocket** (through nginx) | nginx **strips** any client-supplied `X-Forwarded-Id-Token` and sets it only from oauth2-proxy's verified upstream header. The backend requires a valid ID token: verified issuer, required audience (`CFACTORY_OIDC_AUDIENCE` is mandatory in user mode), unexpired, non-empty `sub`. With a missing or invalid token it **refuses**, with no fallback to the key. The tenant comes from the principal's org, and `X-Tenant-Id` must match it |
+| **Sibling proxies** | An `acs_` credential with `act-as`, plus `X-Acting-User: <issuer>|<sub>`. Allowed only on search and the needs-you count, as read |
+| **Direct REST, editor and MCP** | Per-client keys. A key without `all-projects` sees nothing project-scoped |
+| **Event producers** | Ingest keys only. No reads |
+
+**Locking down the edges.**
+
+- **Ingress:** the Helm ingress routes `/api` only through nginx in user
+  mode, and a direct backend route is removed.
+- **Key hand-out:** `/api/settings/token` and `/connect/vscode` issue a
+  dedicated, read-only client credential for each user. Privileged keys
+  (`act-as`, `all-projects`, write) are never in `preferred_key()`'s pool.
+
+**Which projects the user can see** comes from AIFactory
+`/api/access/resolve`, with CFactory's `acs_` credential. Each grant carries
+an absolute expiry, and the request fails closed.
+
+**Project binding on items.** `WorkItem` and cards gain `project_id`.
+
+- **Source:** it is set by both writers (`upsert_from_event` and
+  `upsert_snapshot`) from the trusted AIFactory task `projectId` that the
+  adapter carries. It is never set from repository strings alone.
+- **Cards:** a card takes its project when dispatched. Before dispatch it
+  takes the tenant's bound default repository, and is marked
+  `project_provisional`.
+- **Conflicts:** once set, `project_id` changes only through an explicit
+  rebind. A conflicting update keeps the old value and raises an anomaly.
+- **Backfill:** a job resolves historical rows through AIFactory task
+  lookups. Unresolved or ambiguous rows stay `project_id: null`, which is
+  admin-only, and the job reports the count.
+
+**Roles for CFactory actions:**
+
+| Action | Minimum role |
+|---|---|
+| Reads | viewer |
+| Card edits, comments, sync and import | member |
+| Card stage actions (plan, code, test, run) and HITL `propose`/`execute` | member |
+| Destructive actions (`delete_task`) | admin |
+| The fleet-wide audit chain | org owner or admin |
+
+**The filter runs before every read, aggregation, outbound call and
+mutation**, on each of these:
+
+- **Work items and their drill-downs:**
+  - list and detail (404 when hidden);
+  - timeline, process and evidence media;
+  - worker progress, cost routing, and `/api/progress` with its in-memory
+    hub;
+  - tokens (including by worker), rollups, anomalies and cost.
+- **Search and counts:** search and the needs-you count, filtered at the
+  source before ranking and truncation.
+- **Actions and history:** propose and execute, activity, audit and chain.
+- **Copilot:** its board context and tools are built from the filtered
+  store, never the process-wide one.
+- **Cards:** list, detail, comments, sync-state, `PATCH`, `DELETE`, import,
+  `sync-github` and stage actions.
+- **Investigations:** context, runs, recovery and logs.
+- **Live agents:** the list, and the console WebSocket proxy. The role
+  check runs before any upstream service credential is used.
+- **Git connections and repository metadata.**
+- **MCP:** every tool, including detail, timeline, anomalies, card,
+  investigation, git-config and action tools. The principal is carried into
+  both MCP contexts.
+
+**Rollout flag.** `CFACTORY_USER_AUTHZ` can be set per tenant
+(`off`, `on`), plus a global default.
+
+### D4. Streams: revocation within 60 s (all portals)
+
+**Each connection holds its grants** with an absolute `expires_at`, the time
+the grant was fetched plus 60 s.
+
+- Before every frame is sent, an expired set is re-resolved.
+- If renewal fails, the connection closes with an authz close code.
+- When a project is revoked, the server drops any frames already queued for
+  that project and sends a `revoked` control message, so the client clears
+  its local state.
+
+**Untagged events** (no project) are delivered only to the user they target.
+Examples are GitHub authorization completion and personal notices. They are
+never broadcast to the org.
+
+**This applies to every stream:**
+
+- **AIFactory:** `/ws/events`, its task and log sockets, terminal and rmux,
+  and SSE.
+- **PFactory and TFactory:** `/ws/events` (PFactory's gate is org-based
+  today), and their log, progress, console and rmux sockets and SSE.
+- **CFactory:** `/api/ws`, the REST-ingest and progress broadcasts (each
+  gets a tenant and a project), `LiveProgress` (gains `project_id`), and
+  the live-agent console.
+
+AIFactory's 300 s key and org timer stays for the key checks. The grant
+expiry above is added next to it.
+
+### D5. Search and count proxies (AIFactory, PFactory, TFactory)
+
+- The proxies send `act-as` plus `X-Acting-User` to CFactory.
+- A failure upstream now returns an error to the UI (503). It is no longer
+  turned into empty results or a zero count.
+- A caller with no subject (a service key) gets a 403 from these
+  user-facing routes.
+
+### D6. Access page and roles in the switcher
+
+**The AIFactory Access page.**
+
+- **Admins** see a grid of users × projects × roles, grouped by team, and
+  edit it through D1 with the preview shown first.
+- **Everyone** sees "My access".
+- **The other portals** link to it from their account menu.
+
+**The shared `ProjectSwitcher`.** `SwitcherProject` gains an optional
+`role`, shown as a badge. It is vendored to each portal with a
+`HUB_PIN_SHA` bump.
+
+### D7. E2E proof (Factory)
+
+**Setup.** The owner creates the non-admin Keycloak test user. Projects V
+and H are in the same tenant, under **different, non-default teams**. The
+user is a member of V's team only.
+
+**What must hold in all four portals, with `CFACTORY_USER_AUTHZ=on` for the
+E2E tenant:** H must not appear in, or be served by, any of these:
+
+- lists and the switcher;
+- deep links (legacy and canonical, task and card ids), which return 404;
 - search and the needs-you count;
-- cards;
-- the live-agent proxy;
-- MCP list and rollup;
-- `/api/ws`, with a per-connection filter on the snapshot and on every
-  broadcast, re-checked every 60 s.
-
-**The switcher list** comes from D1.2 (each with its role) instead of being
-derived from git connections. Git connections stay the source of repo
-details.
-
-**Rollout.** A flag, `CFACTORY_USER_AUTHZ=on`, switches user mode on.
-
-### D5. Access page and roles in the switcher
-
-**AIFactory "Access" page** (in settings):
-
-- **Admins** see a grid of users × projects × roles, grouped by team.
-  Editing a team membership through D1 shows the projects that change will
-  affect before it is confirmed.
-- **Everyone else** sees "My access", their own list from D1.1.
-
-**The other portals** link to it from their account menu.
-
-**The shared `ProjectSwitcher`:**
-
-- `SwitcherProject` gains an optional `role`, shown as a small badge;
-- a project that is no longer visible is dropped from the recent list (as
-  today), so a revoked project disappears.
-
-The change is vendored to the portals with a `HUB_PIN_SHA` bump.
-
-### D6. E2E proof (Factory)
-
-**The setup.**
-
-- The owner creates the non-admin Keycloak test user (#3882 G5).
-- The harness gives that user, through D1 writes, member access to one team
-  that owns project V. Project H stays in another team **in the same
-  tenant**.
-
-**The checks, in all four portals.** The test fails if H appears in, or is
-served by, any of these:
-
-- the project list or the switcher;
-- a deep link (legacy and canonical URLs; task and card ids) — this must
-  return 404;
-- search or the needs-you count;
-- the WebSocket or SSE stream;
-- MCP.
+- every stream, including queued frames;
+- MCP;
+- CFactory drill-downs, actions and Copilot.
 
 V must work with the role `member`.
 
-**Revocation.** After D1 removes the user's access, V disappears within
-60 s, including from an open stream.
+**Revocation.** Remove access just after a cache fill. V must disappear
+within 60 s on active and idle connections, and stay gone after a reconnect.
+
+**Default-team inheritance** is tested separately.
+
+**Negative cases:**
+
+- an `ApiKey` carrying a reserved scope;
+- a personal key versus an ownerless key;
+- cross-org delegation for a multi-org subject;
+- an inactive subject;
+- spoofed and conflicting principal headers;
+- the editor hand-out returning only its dedicated credential;
+- duplicate repository names across hosts and orgs;
+- a hidden project versus an unbound one;
+- a poll and event backfill race;
+- an upstream 503 through the real search and count proxies.
 
 ## Order of delivery
 
-```
-D1 (AIFactory API + roles)
-  → D2 (PFactory/TFactory)
-  → D3 (proxies + AIFactory/PFactory/TFactory streams)
-  → D4 (CFactory)
-  → D5 (UI)
-  → D6 (E2E)
+```mermaid
+flowchart LR
+  D1[D1 AIFactory credentials + access API + team writes] --> D2[D2 PFactory/TFactory bindings + resolver]
+  D1 --> D3[D3 CFactory principal + bindings + filters, flag off]
+  D2 --> D4[D4 streams]
+  D3 --> D4
+  D3 --> D5[D5 proxy cutover]
+  D4 --> D6[D6 UI]
+  D5 --> D7[D7 E2E with flag on for E2E tenant]
+  D6 --> D7
+  D7 --> ON[flag on in prod per tenant]
 ```
 
-Each repo ships behind its own release. D4 starts with the flag off, and
-the flag is switched on after D6 passes.
+- **#3857 phases.** This work starts after the earlier #3857 phases.
+- **The proxy cutover (D5)** ships only once D3 is live, so search and the
+  count never fall back to fleet-wide results.
+- **Version skew.** Until D5 ships, the proxies keep today's behaviour.
+- **Rollback.** Set `CFACTORY_USER_AUTHZ=off` for the tenant.
 
 ## Alternatives rejected
 
-- **Forwarding portal JWTs to AIFactory.** Each portal signs with its own
-  secret. Sharing one secret would let any portal forge users for all the
-  others.
-- **Verifying Keycloak access tokens in AIFactory for sibling calls.** The
-  sibling portals hold their own session cookies, not Keycloak access
-  tokens, so they have nothing to forward. That would need a token exchange
-  per request.
-- **Copying grants into each portal.** That would be a second permission
-  store (constraint).
-- **Using the legacy shared token for access reads.** It is all-or-nothing.
-- **Filtering only in the frontends.** It leaves the APIs, streams and MCP
-  open.
+- **Forwarding portal JWTs, or one shared JWT secret.** That forges users
+  across portals.
+- **Matching by `owner/repo` at request time.** It collides across owners
+  and hosts.
+- **Using `ApiKey` with new scopes for delegation.** Members can mint those
+  keys themselves.
+- **Copying grants into each portal.** That is a second permission store.
+- **The legacy shared token.** It is all-or-nothing.
+- **Filtering only in the frontends.** The APIs stay open.
 
 ## Risks
 
-- **`act-as` and `access:read` keys are powerful.** They are scoped to one
-  org (or flagged fleet keys), held only by the portals' control planes as
-  sealed secrets, never handed to agents, and audited per call.
+- **The `acs_` credentials are powerful.**
+  - Mitigation: they are reserved, ownerless, bound to an org (or flagged
+    fleet), held only in the portals' control planes as sealed secrets, and
+    audited on every call.
+  - Remaining exposure: a compromised portal can resolve subjects only
+    within its own boundary.
 - **Fail-closed means an AIFactory outage blanks the other portals.** This
-  is accepted (decision 3). Health checks and alerts cover it.
-- **Local accounts with no `oidc_sub` lose project visibility** in
-  PFactory, TFactory and CFactory. Today that is only the bootstrap owner,
-  and the plan checks this.
-- **The CFactory backfill** may leave items unmapped. Those go to admins
-  only, which is safe; the plan reports the count.
+  is accepted (decision 3), with alerting.
+- **Accounts with no `oidc_sub`.** The plan inventories them first and links
+  them by email at login.
+- **Unbound or unresolved items** go to admins only. The plan reports the
+  counts.
+- **Breadth.** This touches four repos, every stream and every CFactory
+  route. The flag per tenant and a staged order limit the blast radius.
 - **Hosts:** prod k3s through gitops only. No p510.
 
 ## Verification
 
-- **Unit tests per repo** for each D item:
-  - roles from D1.1 and D1.2;
-  - the legacy token refused on D1.2;
-  - team-member writes, with both permission levels;
-  - the resolver: caching, fail-closed and mapping;
-  - the 404 and 403 behaviour;
-  - the proxies sending `X-Acting-User`;
-  - CFactory: the principal per path, the filter on every listed route, and
-    the stream filter;
-  - the switcher role badge.
-- **Live:** the D6 E2E check, before `CFACTORY_USER_AUTHZ` is switched on in
-  prod.
+- **Unit tests per repository** for every D item, including every negative
+  case in D7.
+- **CFactory:** a route-coverage test that enumerates the FastAPI routes and
+  MCP tools and fails if any project-bearing one lacks the authz dependency.
+- **Live:** D7 runs with the flag on for the E2E tenant, before the flag is
+  turned on for any other tenant.
