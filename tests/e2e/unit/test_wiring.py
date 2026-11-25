@@ -347,7 +347,12 @@ def test_emitted_pf_session_is_retained_without_discard(monkeypatch: pytest.Monk
 def test_enable_pr_endgame_turns_on_auto_pr_and_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     client = services.Services({})
     calls: list[tuple[object, ...]] = []
-    monkeypatch.setattr(client, "_request", lambda *args: calls.append(args) or {})
+
+    def fake_request(*args: object) -> dict[str, Any]:
+        calls.append(args)
+        return {}
+
+    monkeypatch.setattr(client, "_request", fake_request)
     client.enable_pr_endgame("a1")
     assert calls == [
         ("aifactory", "PATCH", "/api/projects/a1/settings", {"autoPr": True, "autoMerge": True})
