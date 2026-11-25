@@ -76,6 +76,9 @@ class LiveOperations:
     def register_cf_repository(self, full_name: str, aif_project_id: str) -> dict[str, Any]:
         return self.services.register_cf_repository(full_name, aif_project_id)
 
+    def enable_pr_endgame(self, aif_project_id: str) -> object:
+        return self.services.enable_pr_endgame(aif_project_id)
+
     def onboard(self, service: str, full_name: str, _surface: str) -> dict[str, Any]:
         url = f"https://github.com/{full_name}.git"
         registry = self.cli.guard.registry
@@ -370,6 +373,7 @@ class Operations(Protocol):
     def create_issue(self, full_name: str, title: str) -> dict[str, Any]: ...
     def create_card(self, full_name: str, card_key: str, issue_number: int) -> dict[str, Any]: ...
     def register_cf_repository(self, full_name: str, aif_project_id: str) -> dict[str, Any]: ...
+    def enable_pr_endgame(self, aif_project_id: str) -> object: ...
     def onboard(self, service: str, full_name: str, surface: str) -> dict[str, Any]: ...
     def submit(self, project: str, full_name: str, surface: str) -> dict[str, Any]: ...
     def probe_c(self, full_name: str) -> dict[str, Any]: ...
@@ -382,6 +386,9 @@ class Operations(Protocol):
     def hidden(self, project: str, full_name: str, sha: str) -> bool: ...
     def timeline(self, card_key: str) -> dict[str, Any]: ...
     def read_resource(self, service: str, kind: str, identity: str) -> dict[str, Any]: ...
+
+
+GITHUB_POLL_S = 30
 
 
 def build(  # noqa: PLR0915
@@ -429,6 +436,13 @@ def build(  # noqa: PLR0915
                 do_onboard,
             )
             state[f"{service}_project"] = str(project["id"])
+        # S4 needs the service to merge; AIFactory's autoPr/autoMerge default OFF (#3882).
+        guard.mutate(
+            "aifactory",
+            "project",
+            state["aifactory_project"],
+            lambda: operations.enable_pr_endgame(state["aifactory_project"]),
+        )
         guard.create_resource(
             "repository",
             "cfactory",
@@ -526,7 +540,8 @@ def build(  # noqa: PLR0915
                 return pr
             if time.monotonic() >= deadline:
                 raise TimeoutError("PR merge deadline reached")
-            time.sleep(1)
+            # Each pass costs several GitHub calls; 1 s exhausted the hourly limit (#3882).
+            time.sleep(GITHUB_POLL_S)
 
     def s5(deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
         poll(state.get("task_id"))
