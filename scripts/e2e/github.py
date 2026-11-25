@@ -44,8 +44,8 @@ RATE_LIMIT_MAX_WAIT_S = 900
 
 def _rate_limit_wait(exc: HTTPError) -> float | None:
     """Seconds until the core limit resets, or None when this is not a rate limit."""
-    headers = exc.headers or {}
-    if exc.code not in {403, 429} or headers.get("X-RateLimit-Remaining") != "0":
+    headers = exc.headers
+    if headers is None or exc.code not in {403, 429} or headers.get("X-RateLimit-Remaining") != "0":
         return None
     try:
         wait = int(headers.get("X-RateLimit-Reset", "")) - time.time() + 1
@@ -60,7 +60,7 @@ class GitHub:
     ) -> None:
         self.token_file = token_file
         self.open_url = open_url or build_opener(NoRedirect).open
-        self.sleep = time.sleep
+        self.sleep: Callable[[float], None] = time.sleep
 
     def __repr__(self) -> str:
         return "GitHub()"
