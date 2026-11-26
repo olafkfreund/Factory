@@ -229,9 +229,12 @@ def run_live(  # noqa: PLR0915
                         )
                         return {**surface, "status": status}
                     if journey.ask_human and journey.project == "P1":
+                        answer = surface.get("answer")
+                        logs = services.task_logs(task_id)
                         return {
                             **surface,
-                            "terminal": task.get("status") == "done",
+                            "terminal": task.get("status") in {"done", "human_review"},
+                            "answer_delivered": isinstance(answer, str) and answer in str(logs),
                             "question_answered": surface.get("question_answered"),
                         }
                     usage = services.usage(task_id)
@@ -267,8 +270,13 @@ def run_live(  # noqa: PLR0915
                     sha = pr.get("merge_commit_sha")
                     squashed = None
                     if journey.ask_human and journey.project == "P1" and sha:
-                        commit = github.request("GET", f"/repos/olafkfreund/{name}/commits/{sha}")
-                        squashed = len(commit.get("parents", [])) == 1
+                        commits = github.default_branch_commits(f"olafkfreund/{name}")
+                        squashed = not any(
+                            str(row.get("commit", {}).get("message", "")).startswith(
+                                "wip: paused for question"
+                            )
+                            for row in commits
+                        )
                     checks = github.check_runs(f"olafkfreund/{name}", str(sha))
                     successful = [
                         row
@@ -431,6 +439,8 @@ def main(argv: list[str] | None = None) -> int:
         runs = selected(args.journey, args.slice)
     except ValueError as exc:
         parser.error(str(exc))
+    if any(run.project == "P5" and run.ask_human for run in runs) and len(runs) != 1:
+        parser.error("P5 ask-human merger sweep requires a campaign with only that journey")
     if args.cap_test:
         if not args.live:
             parser.error("--cap-test requires --live")

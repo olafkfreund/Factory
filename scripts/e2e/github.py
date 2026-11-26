@@ -17,6 +17,7 @@ from scripts.e2e.config import GITHUB_TOKEN_FILE
 
 HTTP_NOT_FOUND = 404
 SHA_LENGTH = 40
+COMMITS_PAGE_SIZE = 100
 
 
 HTTP_FORBIDDEN = 403
@@ -155,6 +156,23 @@ class GitHub:
             dict[str, Any],
             self.request("GET", f"/repos/{full_name}/commits/{quote(branch, safe='')}"),
         )
+
+    def default_branch_commits(self, full_name: str) -> list[dict[str, Any]]:
+        if not full_name.startswith("olafkfreund/"):
+            raise ValueError("unsafe owner")
+        commits: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            rows = self.request(
+                "GET",
+                f"/repos/{full_name}/commits?sha=main&per_page={COMMITS_PAGE_SIZE}&page={page}",
+            )
+            if not isinstance(rows, list):
+                raise RuntimeError("GitHub commits have an unknown shape")
+            commits.extend(rows)
+            if len(rows) < COMMITS_PAGE_SIZE:
+                return commits
+            page += 1
 
     def pull_request(self, full_name: str) -> dict[str, Any]:
         pulls = self.pull_requests(full_name)

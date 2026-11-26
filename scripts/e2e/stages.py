@@ -4,6 +4,7 @@ The driver supplies service-specific operations. Unknown live routes are deliber
 left unbound rather than inferred from a similar portal's API.
 """
 
+import secrets
 import shutil
 import subprocess
 import sys
@@ -125,10 +126,10 @@ class LiveOperations:
         if project == "P1":
             spec += (
                 "\n## External feed decision\n"
-                "The upstream report uses either TAB or comma as its field delimiter. "
-                "The repository cannot determine which. Before coding, ask the owner "
-                "with ask_human, offering TAB and comma. Use the answer in a small "
-                "example in the final task notes.\n"
+                "The upstream feed needs an owner supplied identifier for its example. "
+                "The repository cannot determine this identifier. Before coding, ask "
+                "the owner with ask_human for a free-text identifier, without choices. "
+                "Use the exact answer in the final task notes.\n"
             )
         created = self.services.create_question_task(project_id, f"E2E {project} question", spec)
         if not created.get("id"):
@@ -276,6 +277,13 @@ class LiveOperations:
         return self.services.questions(task_id)
 
     def answer_question(self, task_id: str, qid: str, answer: str) -> dict[str, Any]:
+        question = next((q for q in self.questions(task_id) if q.get("id") == qid), None)
+        if (
+            question is None
+            or question.get("task_id") != task_id
+            or question.get("needs_approval") is not False
+        ):
+            raise AssertionError("approval question requires the human portal")
         return mcp_answer_question(task_id, qid, answer, cwd=self.workspace)
 
     def merger_tick(self) -> dict[str, Any]:
@@ -444,6 +452,7 @@ class Operations(Protocol):
 
 
 GITHUB_POLL_S = 30
+AIF_POLL_S = 1
 QUESTION_BUDGET_PER_RUN = 3
 QUESTION_BUDGET_PER_TASK = 10
 
@@ -604,38 +613,54 @@ def build(  # noqa: PLR0915
         while True:
             poll(task_id)
             task = operations.task(task_id)
+            questions = operations.questions(task_id) if journey.ask_human else []
+            if len(questions) > QUESTION_BUDGET_PER_TASK:
+                raise AssertionError("question task budget exceeded")
             if journey.ask_human and task.get("status") == "needs_input" and answered is None:
-                questions = operations.questions(task_id)
                 open_questions = [q for q in questions if q.get("status") == "open"]
-                if len(open_questions) != 1 or len(questions) > QUESTION_BUDGET_PER_TASK:
-                    raise AssertionError("expected one open question within the run budget")
-                question = open_questions[0]
-                run_id = question.get("run_id")
-                if (
-                    run_id
-                    and sum(q.get("run_id") == run_id for q in questions) > QUESTION_BUDGET_PER_RUN
-                ):
+                if not 1 <= len(questions) <= QUESTION_BUDGET_PER_RUN:
                     raise AssertionError("question run budget exceeded")
-                if question.get("task_id") not in {None, task_id}:
+                if journey.project == "P1" and len(open_questions) != 1:
+                    raise AssertionError("expected exactly one open question")
+                if (
+                    journey.project == "P5"
+                    and not 1 <= len(open_questions) <= QUESTION_BUDGET_PER_RUN
+                ):
+                    raise AssertionError("expected one to three open questions")
+                if any(q.get("task_id") != task_id for q in questions):
                     raise AssertionError("question belongs to another task")
-                if question.get("needs_approval"):
+                if any(q.get("needs_approval") is not False for q in open_questions):
                     raise AssertionError("approval question requires the human portal")
+                question = open_questions[0]
                 if journey.project == "P5":
-                    text = str(question.get("question") or question.get("text") or "").lower()
-                    if "11.76" not in text or not any(
-                        phrase in text for phrase in ("11.75", "additiv", "net + vat")
+                    if not any(
+                        "11.76" in str(q.get("question") or "").lower()
+                        and any(
+                            phrase in str(q.get("question") or "").lower()
+                            for phrase in ("11.75", "additiv", "net + vat")
+                        )
+                        for q in open_questions
                     ):
                         raise AssertionError("P5 question did not cite the contradiction")
                     before = operations.tf_task_ids(state["tfactory_project"])
                     if before:
                         raise AssertionError("paused work already reached TFactory")
-                    operations.merger_tick()
+                    sweep_result = operations.merger_tick()
+                    if (
+                        not isinstance(sweep_result, dict)
+                        or "results" not in sweep_result
+                        or ("dry_run" in sweep_result and sweep_result["dry_run"] is not False)
+                    ):
+                        raise AssertionError("merger sweep did not run live")
                     after = operations.task(task_id)
+                    after_questions = operations.questions(task_id)
                     if after.get("status") != "needs_input" or not any(
                         q.get("id") == question["id"] and q.get("status") == "open"
-                        for q in operations.questions(task_id)
+                        for q in after_questions
                     ):
                         raise AssertionError("merger tick changed the paused question")
+                    if len(after_questions) > QUESTION_BUDGET_PER_TASK:
+                        raise AssertionError("question task budget exceeded")
                     if operations.pull_requests(state["full_name"]):
                         raise AssertionError("merger opened a PR for paused work")
                     if operations.tf_task_ids(state["tfactory_project"]) != before:
@@ -651,10 +676,10 @@ def build(  # noqa: PLR0915
                         "question_id": question["id"],
                         "expected_stop": True,
                     }
-                answered = "TAB"
-                if question.get("choices") and answered not in question["choices"]:
-                    raise AssertionError("factual answer is not an offered choice")
-                guard.mutate(
+                if question.get("choices") is not None:
+                    raise AssertionError("expected a free-text question")
+                answered = "e2e-answer-" + secrets.token_hex(6)
+                response = guard.mutate(
                     "aifactory",
                     "task",
                     task_id,
@@ -662,6 +687,16 @@ def build(  # noqa: PLR0915
                         task_id, qid, answer
                     ),
                 )
+                result_question = response.get("question") if isinstance(response, dict) else None
+                if not isinstance(result_question, dict) or any(
+                    result_question.get(key) != value
+                    for key, value in (
+                        ("status", "answered"),
+                        ("channel", "mcp"),
+                        ("answer", answered),
+                    )
+                ):
+                    raise AssertionError("MCP answer response did not confirm exact answer")
                 poll(task_id)
             if task.get("status") in {
                 "completed",
@@ -674,20 +709,20 @@ def build(  # noqa: PLR0915
                 if task.get("status") == "needs_input":
                     if time.monotonic() >= deadline:
                         raise TimeoutError("AIF answer resume deadline reached")
-                    time.sleep(1)
+                    time.sleep(AIF_POLL_S)
                     continue
                 if answered and answered not in str(operations.task_logs(task_id)):
                     raise AssertionError("exact answer absent from resumed task logs")
                 return {
                     **task,
                     "task_id": task_id,
-                    "answer_delivered": bool(answered),
+                    "answer": answered,
                     "question_answered": bool(answered),
                 }
             if time.monotonic() >= deadline:
                 poll(task_id)
                 raise TimeoutError("AIF task deadline reached")
-            time.sleep(1)
+            time.sleep(AIF_POLL_S)
 
     def s4(deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
         while True:

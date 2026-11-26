@@ -263,10 +263,14 @@ class Services:
 
     def questions(self, task_id: str) -> list[dict[str, Any]]:
         response = self._request("aifactory", "GET", f"/api/tasks/{_segment(task_id)}/questions")
-        rows = response if isinstance(response, list) else (response or {}).get("questions", [])
-        if not isinstance(rows, list):
+        if (
+            not isinstance(response, dict)
+            or not isinstance(response.get("questions"), list)
+            or set(response) - {"questions", "task_id", "review_reason"}
+            or ("task_id" in response and response["task_id"] != task_id)
+        ):
             raise RuntimeError("AIFactory questions have an unknown shape")
-        return cast(list[dict[str, Any]], rows)
+        return cast(list[dict[str, Any]], response["questions"])
 
     def create_question_task(self, project_id: str, title: str, description: str) -> dict[str, Any]:
         return cast(
@@ -290,7 +294,7 @@ class Services:
                 "aifactory",
                 "POST",
                 f"/api/tasks/{_segment(task_id)}/start",
-                {"mode": "quick", "auto_handover_tfactory": False},
+                {"mode": "quick", "auto_handover_tfactory": True},
             ),
         )
 
