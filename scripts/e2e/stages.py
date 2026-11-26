@@ -19,7 +19,7 @@ from scripts.e2e.journey import Journey
 from scripts.e2e.probes import verify
 from scripts.e2e.services import Services
 from scripts.e2e.surfaces.cli import CLI, CLI_ROOT
-from scripts.e2e.surfaces.mcp import invoke
+from scripts.e2e.surfaces.mcp import answer_question as mcp_answer_question, invoke
 
 Stage = Callable[[float, Callable[..., None]], dict[str, Any]]
 
@@ -119,6 +119,24 @@ class LiveOperations:
             "correlation_key": output.get("correlation_key"),
             "outcome": output.get("outcome", "ok"),
         }
+
+    def create_question_task(self, project: str, project_id: str) -> dict[str, Any]:
+        spec = next((self.workspace / "spec").glob("*.md")).read_text(encoding="utf-8")
+        if project == "P1":
+            spec += (
+                "\n## External feed decision\n"
+                "The upstream report uses either TAB or comma as its field delimiter. "
+                "The repository cannot determine which. Before coding, ask the owner "
+                "with ask_human, offering TAB and comma. Use the answer in a small "
+                "example in the final task notes.\n"
+            )
+        created = self.services.create_question_task(project_id, f"E2E {project} question", spec)
+        if not created.get("id"):
+            raise RuntimeError("AIFactory question task returned no ID")
+        return created
+
+    def start_task(self, task_id: str) -> dict[str, Any]:
+        return self.services.start_task(task_id)
 
     def _approved_payload(self, full_name: str) -> dict[str, Any]:
         # PF mcp_stdio/router.py:559-567,598-608,719-748.
@@ -243,11 +261,37 @@ class LiveOperations:
         detail = self.services.read_resource("aifactory", "task", identity) or {}
         execution = self.services.task_status(identity)
         if not execution.get("is_running") and not execution.get("queued"):
+            if (
+                detail.get("status") == "human_review"
+                and detail.get("reviewReason") == "needs_input"
+            ):
+                return {**detail, "status": "needs_input"}
             if detail.get("status") in {"done", "human_review"}:
                 return {**detail, "status": "completed"}
             if detail.get("status") == "backlog":
                 return {**detail, "status": "cancelled"}
         return detail
+
+    def questions(self, task_id: str) -> list[dict[str, Any]]:
+        return self.services.questions(task_id)
+
+    def answer_question(self, task_id: str, qid: str, answer: str) -> dict[str, Any]:
+        return mcp_answer_question(task_id, qid, answer, cwd=self.workspace)
+
+    def merger_tick(self) -> dict[str, Any]:
+        return self.services.merger_tick()
+
+    def branch_commit(self, full_name: str, branch: str) -> dict[str, Any]:
+        return self.github.branch_commit(full_name, branch)
+
+    def pull_requests(self, full_name: str) -> list[dict[str, Any]]:
+        return self.github.pull_requests(full_name)
+
+    def task_logs(self, task_id: str) -> dict[str, Any]:
+        return self.services.task_logs(task_id)
+
+    def tf_task_ids(self, project_id: str) -> set[str]:
+        return self.services.task_ids(project_id, "tfactory")
 
     def pull_request(self, full_name: str, _task_id: str) -> dict[str, Any]:
         return self.github.pull_request(full_name)
@@ -378,9 +422,18 @@ class Operations(Protocol):
 
     def onboard(self, service: str, full_name: str, surface: str) -> dict[str, Any]: ...
     def submit(self, project: str, full_name: str, surface: str) -> dict[str, Any]: ...
+    def create_question_task(self, project: str, project_id: str) -> dict[str, Any]: ...
+    def start_task(self, task_id: str) -> dict[str, Any]: ...
     def probe_c(self, full_name: str) -> dict[str, Any]: ...
     def probe_e(self, full_name: str) -> dict[str, Any]: ...
     def task(self, identity: str) -> dict[str, Any]: ...
+    def questions(self, task_id: str) -> list[dict[str, Any]]: ...
+    def answer_question(self, task_id: str, qid: str, answer: str) -> dict[str, Any]: ...
+    def merger_tick(self) -> dict[str, Any]: ...
+    def branch_commit(self, full_name: str, branch: str) -> dict[str, Any]: ...
+    def pull_requests(self, full_name: str) -> list[dict[str, Any]]: ...
+    def task_logs(self, task_id: str) -> dict[str, Any]: ...
+    def tf_task_ids(self, project_id: str) -> set[str]: ...
     def pull_request(self, full_name: str, task_id: str) -> dict[str, Any]: ...
     def checks_green(self, full_name: str, sha: str) -> bool: ...
     def test(self, full_name: str, sha: str, surface: str) -> dict[str, Any]: ...
@@ -391,6 +444,8 @@ class Operations(Protocol):
 
 
 GITHUB_POLL_S = 30
+QUESTION_BUDGET_PER_RUN = 3
+QUESTION_BUDGET_PER_TASK = 10
 
 
 def build(  # noqa: PLR0915
@@ -472,6 +527,31 @@ def build(  # noqa: PLR0915
 
     def s2(_deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
         poll()
+        if journey.ask_human:
+            created = guard.mutate(
+                "aifactory",
+                "project",
+                state["aifactory_project"],
+                lambda: operations.create_question_task(
+                    journey.project, state["aifactory_project"]
+                ),
+            )
+            if not isinstance(created, dict) or not created.get("id"):
+                raise RuntimeError("question task creation returned no ID")
+            task_id = str(created["id"])
+            state["task_id"] = task_id
+            guard.registry.append(
+                "task", task_id, state["repo_node_id"], service="aifactory", unverified=True
+            )
+            guard.create_resource(
+                "task",
+                "aifactory",
+                state["repo_node_id"],
+                lambda: operations.read_resource("aifactory", "task", task_id),
+            )
+            guard.mutate("aifactory", "task", task_id, lambda: operations.start_task(task_id))
+            poll(task_id)
+            return {"task_id": task_id, "question_task": True}
         # The submit handler ingests and emits; the PF project is the registered parent.
         result = guard.mutate(
             "pfactory",
@@ -518,13 +598,92 @@ def build(  # noqa: PLR0915
             state["correlation_key"] = str(result["correlation_key"])
         return result
 
-    def s3(deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
+    def s3(deadline: float, poll: Callable[..., None]) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
         task_id = state["task_id"]
+        answered: str | None = None
         while True:
             poll(task_id)
             task = operations.task(task_id)
-            if task.get("status") in {"completed", "failed", "cancelled", "stopped", "needs_you"}:
-                return {**task, "task_id": task_id}
+            if journey.ask_human and task.get("status") == "needs_input" and answered is None:
+                questions = operations.questions(task_id)
+                open_questions = [q for q in questions if q.get("status") == "open"]
+                if len(open_questions) != 1 or len(questions) > QUESTION_BUDGET_PER_TASK:
+                    raise AssertionError("expected one open question within the run budget")
+                question = open_questions[0]
+                run_id = question.get("run_id")
+                if (
+                    run_id
+                    and sum(q.get("run_id") == run_id for q in questions) > QUESTION_BUDGET_PER_RUN
+                ):
+                    raise AssertionError("question run budget exceeded")
+                if question.get("task_id") not in {None, task_id}:
+                    raise AssertionError("question belongs to another task")
+                if question.get("needs_approval"):
+                    raise AssertionError("approval question requires the human portal")
+                if journey.project == "P5":
+                    text = str(question.get("question") or question.get("text") or "").lower()
+                    if "11.76" not in text or not any(
+                        phrase in text for phrase in ("11.75", "additiv", "net + vat")
+                    ):
+                        raise AssertionError("P5 question did not cite the contradiction")
+                    before = operations.tf_task_ids(state["tfactory_project"])
+                    if before:
+                        raise AssertionError("paused work already reached TFactory")
+                    operations.merger_tick()
+                    after = operations.task(task_id)
+                    if after.get("status") != "needs_input" or not any(
+                        q.get("id") == question["id"] and q.get("status") == "open"
+                        for q in operations.questions(task_id)
+                    ):
+                        raise AssertionError("merger tick changed the paused question")
+                    if operations.pull_requests(state["full_name"]):
+                        raise AssertionError("merger opened a PR for paused work")
+                    if operations.tf_task_ids(state["tfactory_project"]) != before:
+                        raise AssertionError("paused work reached TFactory")
+                    slug = task_id.partition(":")[2]
+                    commit = operations.branch_commit(state["full_name"], f"aifactory/{slug}")
+                    message = str(commit.get("commit", {}).get("message", ""))
+                    if f"wip: paused for question {question['id']}" not in message:
+                        raise AssertionError("WIP checkpoint missing on task branch")
+                    return {
+                        **after,
+                        "task_id": task_id,
+                        "question_id": question["id"],
+                        "expected_stop": True,
+                    }
+                answered = "TAB"
+                if question.get("choices") and answered not in question["choices"]:
+                    raise AssertionError("factual answer is not an offered choice")
+                guard.mutate(
+                    "aifactory",
+                    "task",
+                    task_id,
+                    lambda qid=str(question["id"]), answer=answered: operations.answer_question(
+                        task_id, qid, answer
+                    ),
+                )
+                poll(task_id)
+            if task.get("status") in {
+                "completed",
+                "failed",
+                "cancelled",
+                "stopped",
+                "needs_you",
+                "needs_input",
+            }:
+                if task.get("status") == "needs_input":
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("AIF answer resume deadline reached")
+                    time.sleep(1)
+                    continue
+                if answered and answered not in str(operations.task_logs(task_id)):
+                    raise AssertionError("exact answer absent from resumed task logs")
+                return {
+                    **task,
+                    "task_id": task_id,
+                    "answer_delivered": bool(answered),
+                    "question_answered": bool(answered),
+                }
             if time.monotonic() >= deadline:
                 poll(task_id)
                 raise TimeoutError("AIF task deadline reached")
@@ -533,7 +692,11 @@ def build(  # noqa: PLR0915
     def s4(deadline: float, poll: Callable[..., None]) -> dict[str, Any]:
         while True:
             poll(state.get("task_id"))
-            pr = operations.pull_request(state["full_name"], state["task_id"])
+            pr = (
+                {}
+                if journey.ask_human and not operations.pull_requests(state["full_name"])
+                else operations.pull_request(state["full_name"], state["task_id"])
+            )
             if (
                 pr.get("merged")
                 and pr.get("merge_commit_sha")

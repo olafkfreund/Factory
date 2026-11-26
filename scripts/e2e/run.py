@@ -101,18 +101,22 @@ def selected(journeys: list[str], slice_name: str | None) -> list[Journey]:
             Journey("P5", "cli", "Claude", 1),
         ]
     result = []
+    variant_parts = len(("project", "surface", "repeat", "variant"))
     for item in journeys:
         parts = item.split(":")
         if (
-            len(parts) != len(("project", "surface", "repeat"))
+            len(parts) not in {3, 4}
             or parts[0] not in {"P1", "P5"}
             or parts[1] not in {"cli", "mcp"}
+            or (len(parts) == variant_parts and parts[3] != "ask-human")
         ):
-            raise ValueError("journey must be P1|P5:cli|mcp:repeat")
+            raise ValueError("journey must be P1|P5:cli|mcp:repeat[:ask-human]")
         repeat = int(parts[2])
         if repeat < 1:
             raise ValueError("repeat must be positive")
-        result.append(Journey(parts[0], parts[1], "Claude", repeat))
+        result.append(
+            Journey(parts[0], parts[1], "Claude", repeat, ask_human=len(parts) == variant_parts)
+        )
     return result
 
 
@@ -155,11 +159,12 @@ def run_live(  # noqa: PLR0915
             operations = LiveOperations(journey, guard, services, github, Path(temp) / name)
             stages = build(journey, guard, operations, name)
 
-            def readback(  # noqa: PLR0911
+            def readback(  # noqa: PLR0911, PLR0912, PLR0915
                 stage: str,
                 surface: dict[str, Any],
                 operations: LiveOperations = operations,
                 name: str = name,
+                journey: Journey = journey,
             ) -> dict[str, Any]:
                 if stage == "S1":
                     live_repo = operations.github.read_repo(f"olafkfreund/{name}")
@@ -181,6 +186,11 @@ def run_live(  # noqa: PLR0915
                         "cards": 1,
                     }
                 if stage == "S2":
+                    if journey.ask_human:
+                        task = services.read_resource(
+                            "aifactory", "task", str(surface.get("task_id", ""))
+                        )
+                        return {**surface, "question_task": bool(task)}
                     session = services.read_resource(
                         "pfactory", "session", str(surface.get("session_id", ""))
                     )
@@ -211,6 +221,19 @@ def run_live(  # noqa: PLR0915
                     task = services.read_resource("aifactory", "task", task_id) or {}
                     if task.get("id") != task_id:
                         raise RuntimeError("AIF task read-back mismatch")
+                    if journey.ask_human and journey.project == "P5":
+                        status = (
+                            "needs_input"
+                            if task.get("reviewReason") == "needs_input"
+                            else task.get("status")
+                        )
+                        return {**surface, "status": status}
+                    if journey.ask_human and journey.project == "P1":
+                        return {
+                            **surface,
+                            "terminal": task.get("status") == "done",
+                            "question_answered": surface.get("question_answered"),
+                        }
                     usage = services.usage(task_id)
                     pr = github.pull_request(f"olafkfreund/{name}")
                     files = github.pull_files(f"olafkfreund/{name}", pr["number"])
@@ -237,10 +260,15 @@ def run_live(  # noqa: PLR0915
                         "coder_model": models["coder_model"],
                         "reviewer_model": models["reviewer_model"],
                         "cost_usd": usage.get("cost_usd", 0),
+                        "answer_delivered": surface.get("answer_delivered"),
                     }
                 if stage == "S4":
                     pr = github.pull_request(f"olafkfreund/{name}")
                     sha = pr.get("merge_commit_sha")
+                    squashed = None
+                    if journey.ask_human and journey.project == "P1" and sha:
+                        commit = github.request("GET", f"/repos/olafkfreund/{name}/commits/{sha}")
+                        squashed = len(commit.get("parents", [])) == 1
                     checks = github.check_runs(f"olafkfreund/{name}", str(sha))
                     successful = [
                         row
@@ -262,6 +290,8 @@ def run_live(  # noqa: PLR0915
                         ),
                         "merged_head": sha,
                         "checked_head": sha if successful else None,
+                        "squashed": squashed,
+                        "question_variant": journey.ask_human,
                     }
                 if stage == "S5":
                     verdict = services.verdict(str(surface["spec_id"]))

@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from scripts.e2e.config import GITHUB_TOKEN_FILE
@@ -145,6 +146,14 @@ class GitHub:
             raise ValueError("unsafe owner")
         return cast(
             list[dict[str, Any]], self.request("GET", f"/repos/{full_name}/pulls?state=all")
+        )
+
+    def branch_commit(self, full_name: str, branch: str) -> dict[str, Any]:
+        if not full_name.startswith("olafkfreund/") or not branch.startswith("aifactory/"):
+            raise ValueError("unsafe repository or task branch")
+        return cast(
+            dict[str, Any],
+            self.request("GET", f"/repos/{full_name}/commits/{quote(branch, safe='')}"),
         )
 
     def pull_request(self, full_name: str) -> dict[str, Any]:

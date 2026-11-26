@@ -250,16 +250,61 @@ class Services:
         )
         return cast(dict[str, Any], result or {})
 
-    def task_ids(self, project_id: str) -> set[str]:
+    def task_ids(self, project_id: str, service: str = "aifactory") -> set[str]:
         # AIF mcp_stdio/router.py:237-257 accepts project_id and returns
         # routes/task_models.py:164-168's tasks list.
         result = self._request(
-            "aifactory", "GET", f"/api/mcp-stdio/tasks?project_id={_segment(project_id)}"
+            service, "GET", f"/api/mcp-stdio/tasks?project_id={_segment(project_id)}"
         )
         if result is None:
             return set()
         rows = result if isinstance(result, list) else result.get("tasks", result.get("items", []))
         return {str(row["id"]) for row in rows} if rows else set()
+
+    def questions(self, task_id: str) -> list[dict[str, Any]]:
+        response = self._request("aifactory", "GET", f"/api/tasks/{_segment(task_id)}/questions")
+        rows = response if isinstance(response, list) else (response or {}).get("questions", [])
+        if not isinstance(rows, list):
+            raise RuntimeError("AIFactory questions have an unknown shape")
+        return cast(list[dict[str, Any]], rows)
+
+    def create_question_task(self, project_id: str, title: str, description: str) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            self._request(
+                "aifactory",
+                "POST",
+                f"/api/projects/{_segment(project_id)}/tasks",
+                {
+                    "title": title,
+                    "description": description,
+                    "metadata": {"mode": "quick", "requireReviewBeforeCoding": False},
+                },
+            ),
+        )
+
+    def start_task(self, task_id: str) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            self._request(
+                "aifactory",
+                "POST",
+                f"/api/tasks/{_segment(task_id)}/start",
+                {"mode": "quick", "auto_handover_tfactory": False},
+            ),
+        )
+
+    def merger_tick(self) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            self._request("aifactory", "POST", "/api/maintenance/merger/run?dry_run=false"),
+        )
+
+    def task_logs(self, task_id: str) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            self._request("aifactory", "GET", f"/api/tasks/{_segment(task_id)}/logs") or {},
+        )
 
     def stop_status(self, task_id: str) -> dict[str, Any]:
         # AIF routes/execution.py:329-365 reports is_running/queued after

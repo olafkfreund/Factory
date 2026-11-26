@@ -23,8 +23,9 @@ class Journey:
     model: str
     repeat: int
     ablation: bool = False
+    ask_human: bool = False
 
-    def run(  # noqa: PLR0913, PLR0915
+    def run(  # noqa: PLR0912, PLR0913, PLR0915
         self,
         stages: dict[str, Callable[[float, Callable[..., None]], dict[str, Any]]],
         budget: Budget,
@@ -92,7 +93,34 @@ class Journey:
                 observed = readback(stage, result)
                 validate(stage, result, self.project, observed)
                 results[stage] = observed
-                if self.project == "P5" and observed.get("needs_you"):
+                if (
+                    self.ask_human
+                    and self.project == "P1"
+                    and stage == "S3"
+                    and not observed.get("answer_delivered")
+                ):
+                    raise AssertionError("P1 never delivered its factual answer")
+                if (
+                    self.ask_human
+                    and self.project == "P1"
+                    and stage == "S4"
+                    and not observed.get("squashed")
+                ):
+                    raise AssertionError("WIP checkpoint was not squashed into the merge")
+                if self.project == "P5" and self.ask_human and stage == "S3":
+                    if not observed.get("expected_stop"):
+                        raise AssertionError("P5 did not stop for a question")
+                    completed = True
+                    return {
+                        "project": self.project,
+                        "surface": self.surface,
+                        "model": self.model,
+                        "repeat": self.repeat,
+                        "ask_human": True,
+                        "stage_results": results,
+                        "expected_stop": True,
+                    }
+                if self.project == "P5" and observed.get("needs_you") and not self.ask_human:
                     result = stages["X"](deadline, poll)
                     poll()
                     observed = readback("X", result)
@@ -132,6 +160,7 @@ class Journey:
             "model": self.model,
             "repeat": self.repeat,
             "ablation": self.ablation,
+            "ask_human": self.ask_human,
             "stage_results": results,
         }
 
@@ -168,6 +197,7 @@ def write_meta(path: Path, result: dict[str, Any]) -> None:
                         "model",
                         "repeat",
                         "ablation",
+                        "ask_human",
                         "stage_results",
                         "expected_stop",
                         "billing_mode",
@@ -184,12 +214,36 @@ def write_meta(path: Path, result: dict[str, Any]) -> None:
     )
 
 
-def validate(
+def validate(  # noqa: PLR0912
     stage: str, result: dict[str, Any], project: str, observed: dict[str, Any] | None = None
 ) -> None:
     if observed is None:
         raise AssertionError("independent read-back required")
     result = observed
+    if stage == "S2" and result.get("question_task"):
+        if not result.get("task_id"):
+            raise AssertionError("question task was not created")
+        return
+    if project == "P5" and stage == "S3" and result.get("expected_stop"):
+        if result.get("status") != "needs_input" or not result.get("question_id"):
+            raise AssertionError("P5 pause evidence incomplete")
+        return
+    if project == "P1" and stage == "S3" and result.get("question_answered"):
+        if (
+            result.get("status") != "completed"
+            or not result.get("terminal")
+            or not result.get("answer_delivered")
+        ):
+            raise AssertionError("P1 factual answer did not finish the task")
+        return
+    if stage == "S4" and result.get("question_variant"):
+        if not (
+            result.get("merged_by_service")
+            and result.get("checks_green")
+            and result.get("squashed")
+        ):
+            raise AssertionError("question task merge evidence incomplete")
+        return
     for name, outcome in result.get("probes", {}).items():
         if name not in PROBES or PROBES[name].stage != stage:
             raise AssertionError(f"probe {name} belongs to another stage")

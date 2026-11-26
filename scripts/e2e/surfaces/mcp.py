@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from scripts.e2e.config import KEY_FILES
+from scripts.e2e.config import HOSTS, KEY_FILES
 from scripts.e2e.guard import Guard, GuardRefusalError
 from scripts.e2e.surfaces.cli import CLI_ROOT, ID_SHAPED, isolated_env, resolve_uv
 
@@ -28,6 +28,77 @@ async def main():
                                           if hasattr(item, "text")]}))
 asyncio.run(main())
 """
+
+_AIF_ANSWER_CALL = """
+import asyncio, json, sys
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+async def main():
+    request = json.load(sys.stdin)
+    with open(request["key_file"], encoding="utf-8") as key_file:
+        token = key_file.read().strip()
+    if not token:
+        raise RuntimeError("AIFactory key is empty")
+    async with sse_client(
+        request["url"], headers={"Authorization": "Bearer " + token}
+    ) as (reader, writer):
+        async with ClientSession(reader, writer) as session:
+            await session.initialize()
+            result = await session.call_tool("aifactory.answer_question", request["arguments"])
+            print(json.dumps({
+                "error": result.isError,
+                "content": [item.text for item in result.content if hasattr(item, "text")],
+            }))
+asyncio.run(main())
+"""
+
+
+def answer_question(  # noqa: PLR0913
+    task_id: str,
+    qid: str,
+    answer: str,
+    *,
+    cwd: Path,
+    key_files: dict[str, Path] | None = None,
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    uv = resolve_uv()
+    files = KEY_FILES if key_files is None else key_files
+    with tempfile.TemporaryDirectory(prefix="factory-e2e-") as home:
+        result = run(
+            [
+                uv,
+                "run",
+                "--no-project",
+                "--with-editable",
+                str(CLI_ROOT),
+                "python",
+                "-c",
+                _AIF_ANSWER_CALL,
+            ],
+            input=json.dumps(
+                {
+                    "url": f"{HOSTS['aifactory']}/api/mcp-remote/sse",
+                    "key_file": str(files["aifactory"]),
+                    "arguments": {"task_id": task_id, "qid": qid, "answer": answer},
+                }
+            ),
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=cwd,
+            env=isolated_env(home, files),
+            timeout=120,
+        )
+    if result.returncode:
+        raise RuntimeError(f"AIFactory MCP transport failed with exit {result.returncode}")
+    envelope = json.loads(result.stdout)
+    if envelope["error"] or not envelope["content"]:
+        raise RuntimeError("AIFactory answer_question failed")
+    payload = json.loads(envelope["content"][0])
+    if payload.get("isError") or payload.get("error"):
+        raise RuntimeError("AIFactory answer_question rejected")
+    return cast(dict[str, Any], payload)
 
 
 def invoke(  # noqa: PLR0913
