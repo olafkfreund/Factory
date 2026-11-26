@@ -69,7 +69,8 @@ class Budget:
                 return stop(identity)
             except RuntimeError as exc:
                 # A finished task has nothing to stop; AIF's 404 hid the real timeout (#3882).
-                if str(exc).endswith("HTTP 404") and status(identity).get("status") in TERMINAL_STOPS:
+                finished = status(identity).get("status") in TERMINAL_STOPS
+                if str(exc).endswith("HTTP 404") and finished:
                     return None
                 raise
 

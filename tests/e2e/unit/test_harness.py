@@ -292,7 +292,7 @@ def test_journey_cap_stops_before_next_stage(guarded):
             remote=(called.append, lambda _: {"status": "stopped"}),
         )
     assert called == ["task-1"]
-    assert err.value.e2e_stage == "S2"  # type: ignore[attr-defined]
+    assert err.value.e2e_stage == "S2"
 
 
 def test_independent_readback_disagreement():
