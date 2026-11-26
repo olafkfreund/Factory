@@ -293,6 +293,8 @@ def test_journey_cap_stops_before_next_stage(guarded):
         )
     assert called == ["task-1"]
     assert getattr(err.value, "e2e_stage", None) == "S2"
+    assert set(getattr(err.value, "e2e_stage_results", {})) == {"S1"}
+    assert getattr(err.value, "e2e_cost_usd", None) == 15
 
 
 def test_independent_readback_disagreement():

@@ -350,6 +350,8 @@ def run_live(  # noqa: PLR0915
                     # Redacted message only (tokens, bearer values); needed to triage live runs.
                     "failure_detail": str(redact(str(exc)))[:700],
                     "failure_stage": getattr(exc, "e2e_stage", None),
+                    "stage_results": getattr(exc, "e2e_stage_results", None),
+                    "cost_usd": getattr(exc, "e2e_cost_usd", None),
                 }
                 if operations.hidden_skip_reason:
                     result["status"] = "skipped"
