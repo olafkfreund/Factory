@@ -73,46 +73,67 @@ reviewers:
    scratchpad):
    - Copy `Factory/scripts/job_dispatch.py` byte-identical to `apps/backend/core/job_dispatch.py`.
    - In `apps/web-server/server/services/build_backend.py`:
-     - Split `_job_outcome` (~line 2110) so the reaper can get `(outcome, job)` from one read.
-     - In `_resolve_row_ref` (~line 1860), check `job_owner(job) == row["job_id"]` on that object
-       whenever the outcome is not `gone`, for stored and reconstructed refs alike. On a mismatch,
-       return `None`. Keep the dispatch-grace handling for `gone`.
-     - Remove `_reconstructed_job_is_ours`, and `_job_id_label` if it has no other caller.
-     - In `sweep_orphan_jobs` (~line 1974), compute the owned job ids from the active rows. Have
-       `_sweep_candidates` skip a Job whose `job_owner` is in that set, and return `(name, uid)`.
-     - Delete with `V1DeleteOptions(preconditions=V1Preconditions(uid=uid))` and treat a 409 like
-       a 404.
+     - Add `_read_job(batch, namespace, job_name) -> tuple[str, Any | None]`, which does the single
+       `read_namespaced_job` and returns `("gone", None)` on a 404, `("running", None)` on any other
+       error (logged as today), or `(outcome, job)`. `_job_outcome` (~line 2110) becomes
+       `return (await _read_job(...))[0]`, so `job_gone` (~line 1732) keeps comparing a string and
+       is still true only on a 404.
+     - In `_resolve_row_ref` (~line 1860), use `_read_job`. When `job is not None`, require
+       `job_owner(job) == row["job_id"]` for stored and reconstructed refs alike; on a mismatch, log
+       with `sanitize_log` that the Job belongs to another task and return `None`. When `job is
+       None` (404 or read error), keep today's handling unchanged: grace for a reconstructed `gone`,
+       "running" for a read error. Call `_repair_worker_ref` for a reconstructed ref only after the
+       owner check passes.
+     - Remove `_reconstructed_job_is_ours`, and `_job_id_label` if nothing else calls it.
+     - In `sweep_orphan_jobs` (~line 1974), build `owned_ids = {row["job_id"] for row in rows}`
+       next to the owned names. Pass it to `_sweep_candidates` (~line 290), which skips a Job whose
+       name is owned or whose `job_owner(job)` is in `owned_ids`, skips a Job with no
+       `metadata.uid`, and returns `(name, uid)` pairs for both the unfinished-past-grace path and
+       the finished-beyond-cap path. Sort finished Jobs on `(time, name)` only.
+     - Delete with `batch.delete_namespaced_job(name, namespace,
+       body=client.V1DeleteOptions(preconditions=client.V1Preconditions(uid=uid)),
+       propagation_policy="Background")`. Import `client` lazily from `kubernetes_asyncio`, as
+       `_batch_api` (~line 1533) does.
+     - On a 409 (the precondition failed: the Job was replaced), log it and `continue` without
+       adding the Job to `swept`. A 404 keeps today's behaviour.
      - Update the "last 20 characters" comments.
    - Tests (`apps/web-server/tests/`, next to the existing `build_backend` reaper and sweeper
-     tests):
-     - the reaper leaves a row alone on a mismatched or unstamped Job, for both stored and
-       reconstructed refs;
-     - the reaper applies the verdict on a matching Job;
-     - the sweeper keeps an id-owned Job;
-     - the sweeper deletes with the uid precondition;
-     - existing Job fixtures gain the annotation.
+     tests). Existing Job fixtures gain the annotation and a `metadata.uid`.
+     - `job_gone` is true only on a 404, whatever the owner.
+     - A reconstructed row reads the Job exactly once (assert one `read_namespaced_job` call).
+     - The reaper leaves a row alone on a mismatched or unstamped Job, for both stored and
+       reconstructed refs, and applies the verdict on a matching Job.
+     - On a non-404 read error, the row is treated as running, with no ownership warning.
+     - The sweeper keeps an id-owned Job, deletes with the uid precondition on both paths, skips a
+       Job without a uid, and on a 409 skips that Job and moves on to the next.
 
    Verify:
+   - `python3 apps/backend/core/job_dispatch.py` (the vendored self-test) exits 0.
+   - `cmp apps/backend/core/job_dispatch.py <Factory worktree>/scripts/job_dispatch.py` reports no
+     difference.
    - `cd apps/web-server && ../backend/.venv/bin/pytest -q tests -k "build_backend or reap or sweep" -p no:cacheprovider`
-     passes, comparing against a clean `origin/dev` run for any failures that already exist.
-   - The vendored-file drift check passes: `cmp` against the Factory copy.
+     shows no new failures against a clean `origin/dev` run.
 
    Traps:
-   - The local venv may lack pytest-asyncio. Compare against the dev baseline, and rely on CI for
-     async tests.
-   - Don't log ids without `sanitize_log`.
-   - The kubernetes client symbols are imported lazily in this file, so follow the existing pattern
-     for `V1DeleteOptions`.
+   - The local venv may lack pytest-asyncio, so rely on CI for the async tests.
+   - Never log an id without `sanitize_log`.
+   - `V1DeleteOptions` is not used in this file yet, so follow the lazy `client` import from
+     `_batch_api`.
 
 3. **TFactory** (new branch `fix/3922-job-name-collision` from `origin/dev`):
-   - Copy the file byte-identical to `apps/backend/tools/runners/job_dispatch.py`.
+   - Copy the Factory file byte-identical to `apps/backend/tools/runners/job_dispatch.py`.
    - In `apps/backend/agents/verify_dispatch.py`:
-     - In `build_verify_job_manifest` (~line 903), add the annotation as the spec describes.
-     - Give `_probe_job` (~line 1533) the keyword `expected_job_id` and the owner check on the
-       default probe only.
+     - In `build_verify_job_manifest` (starts ~line 700), in the label block (~line 903), add
+       `manifest["metadata"].setdefault("annotations", {}).update(job_dispatch.job_annotations(cfg.job_id))`.
+     - Add `*, expected_job_id: str | None = None` to `_probe_job` (~line 1533). On the default
+       probe only, after a successful `read_namespaced_job`, if `expected_job_id` is set and
+       `job_dispatch.job_owner(job) != expected_job_id`, log it (sanitized) and return
+       `(True, True, False)`. A 404 still returns `(False, False, False)`. When an injected
+       `probe_fn` is given, call it exactly as today with `(namespace, job_name)` and keep both
+       tuple shapes.
      - The reaper loop (~line 1708) always passes `expected_job_id=job_id`.
-     - Update the `_short` wrapper docstring (~line 524).
-   - Tests: on the default probe with a fake k8s client:
+     - Update the `_short` wrapper docstring (~line 524) to describe the hashed suffix.
+   - Tests, on the default probe with a fake k8s client:
      - a matching terminal Job is reconciled;
      - a mismatched or unstamped Job is left alone;
      - a 404 is reaped;
@@ -120,23 +141,45 @@ reviewers:
 
      Existing tests that inject `probe_fn` stay unchanged.
 
-   Verify: `apps/backend/.venv/bin/pytest -q tests -k "verify_dispatch" -p no:cacheprovider`
-   (or the repo's documented runner) passes against the dev baseline, and the vendored-file
-   drift check passes.
+   Verify:
+   - `python3 apps/backend/tools/runners/job_dispatch.py` (the vendored self-test) exits 0.
+   - `cmp` against the Factory copy reports no difference.
+   - `cd apps/backend && .venv/bin/pytest -q tests -k verify_dispatch -p no:cacheprovider` shows no
+     new failures against a clean `origin/dev` run. Use the repo's documented test runner if this
+     command does not match it.
 
    Traps:
-   - TFactory's own drift gate compares against the Factory canonical, so copy the file and don't
-     edit it by hand.
-   - Keep both `probe_fn` tuple shapes.
+   - TFactory's drift gate compares the vendored copy against Factory `main`, so don't edit the
+     copy by hand.
 
 4. **Lead only** (not part of any handoff):
-   - review each diff;
-   - open PRs: Factory to `main`, and AIFactory and TFactory to `dev`;
-   - merge after CI with `--match-head-commit`;
-   - release AIFactory and TFactory;
-   - quiesce, as in the spec rollout steps 1 to 4, and post on the agent bus before syncing;
-   - confirm both health versions;
-   - run two P1 journeys at the same time and check that neither gets a 409.
+   - Review each diff against this plan.
+   - Merge order (the drift gates compare against Factory `main`):
+     1. Merge the Factory PR to `main` after CI passes.
+     2. Open the AIFactory and TFactory PRs to `dev`, or rerun their CI, and merge each with
+        `--match-head-commit` after CI passes.
+   - Release AIFactory and TFactory (their normal release PRs to `main`), but don't sync them on
+     prod yet.
+   - Cutover:
+     1. Post on the agent bus.
+     2. **Hold** submissions: no E2E campaign, no CFactory card runs, and no task starts from a
+        portal or the CLI.
+     3. **Drain:** in the `factory` namespace, every Job labelled `factory.io/kind` has a condition
+        `Complete=True` or `Failed=True`. Check this with a `kubectl -o json` query.
+     4. **Empty queues:** AIFactory has no `queued` or `running` build rows, and TFactory has no
+        queued or in-flight verify rows.
+
+        Steps 3 and 4 are hard gates: if either fails, wait and don't sync.
+     5. Sync both Argo apps.
+     6. Wait until both `/api/health` endpoints report the new versions.
+     7. **Resume** submissions.
+     8. Run two P1 journeys at the same time and check that neither gets a 409.
+   - Leftover legacy Job found after the cutover (an unstamped Job in the `factory` namespace):
+     - Check whether a live row still points at it.
+     - If no row does, delete it by hand.
+     - If a row does, fail that row from its Job status by hand, then delete the Job.
+     - Don't wait for the sweeper, which may delete the Job under its usual grace or retention
+       rules once nothing owns it by name.
 
 ## Tests
 
@@ -147,7 +190,15 @@ reviewers:
 
 ## Rollback
 
-Revert the AIFactory and TFactory PRs and release patches, quiescing first in the same way.
-Revert the Factory PR so the canonical copy matches. Jobs created under the new names have
-annotations, and the old code ignores them, so they reconcile under their stored refs. Rows with
-rebuilt refs need the quiesce.
+1. Revert the Factory PR first, because the drift gates compare the copies against Factory `main`.
+2. Revert the AIFactory and TFactory PRs.
+3. Release patches for AIFactory and TFactory.
+4. Cut over with the same hold, drain, empty-queue, sync, health-check and resume sequence as in
+   step 4. Both rollback versions must report healthy before submissions resume.
+
+The drain is what makes the rollback safe:
+
+- The old reaper trusts a stored name without checking the full id.
+- A rebuilt ref uses the reverted naming rule, so it would miss a Job created under the new rule.
+
+With no Jobs or rows in flight at the cutover, neither case can happen.
