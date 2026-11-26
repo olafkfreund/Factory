@@ -63,8 +63,19 @@ class Budget:
         service, kind, identity = (
             task_id if isinstance(task_id, tuple) else ("aifactory", "task", task_id)
         )
+
+        def stop_once() -> object:
+            try:
+                return stop(identity)
+            except RuntimeError as exc:
+                # A finished task has nothing to stop; AIF's 404 hid the real timeout (#3882).
+                finished = status(identity).get("status") in TERMINAL_STOPS
+                if str(exc).endswith("HTTP 404") and finished:
+                    return None
+                raise
+
         try:
-            self.guard.mutate(service, kind, identity, lambda: stop(identity))
+            self.guard.mutate(service, kind, identity, stop_once)
             deadline = now() + timeout
             while True:
                 if status(identity).get("status") in TERMINAL_STOPS:

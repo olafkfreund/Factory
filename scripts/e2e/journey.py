@@ -74,8 +74,10 @@ class Journey:
                 raise ValueError("journey cap reached; remote stop confirmed")
 
         completed = False
+        current_stage: str | None = None
         try:
             for stage in STAGES:
+                current_stage = stage
                 poll()
                 result = stages[stage](deadline, poll)
                 if result.get("dispatched"):
@@ -106,6 +108,11 @@ class Journey:
                         "expected_stop": True,
                     }
             completed = True
+        except Exception as exc:
+            # run.py reports this as failure_stage; it was always None.
+            if not hasattr(exc, "e2e_stage"):
+                exc.e2e_stage = current_stage  # type: ignore[attr-defined]
+            raise
         finally:
             if not completed and current_task is not None:
                 if remote is None:

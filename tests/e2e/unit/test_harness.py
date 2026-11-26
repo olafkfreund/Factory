@@ -209,6 +209,18 @@ def test_cap_requires_confirmed_remote_stop(guarded):
     assert "lane" in budget.blocked
 
 
+def test_cap_accepts_stop_error_on_finished_task(guarded):
+    budget = Budget(guarded[1])
+    budget.reserve("lane", 15)
+
+    def gone(_task: str) -> object:
+        raise RuntimeError("aifactory HTTP 404")
+
+    budget.cap("lane", "task-1", gone, lambda _: {"status": "stopped"})
+    with pytest.raises(RuntimeError):
+        budget.cap("lane", "task-1", gone, lambda _: {"status": "running"})
+
+
 def test_cap_cannot_stop_unregistered_task(guarded):
     stopped: list[str] = []
     with pytest.raises(GuardRefusalError):
@@ -271,7 +283,7 @@ def test_journey_cap_stops_before_next_stage(guarded):
         },
         "S3": lambda _deadline, _poll: record(called, "S3", None),
     }
-    with pytest.raises(ValueError, match="remote stop confirmed"):
+    with pytest.raises(ValueError, match="remote stop confirmed") as err:
         Journey("P1", "cli", "Claude", 1).run(
             stages,
             Budget(guarded[1]),
@@ -280,6 +292,7 @@ def test_journey_cap_stops_before_next_stage(guarded):
             remote=(called.append, lambda _: {"status": "stopped"}),
         )
     assert called == ["task-1"]
+    assert getattr(err.value, "e2e_stage", None) == "S2"
 
 
 def test_independent_readback_disagreement():
