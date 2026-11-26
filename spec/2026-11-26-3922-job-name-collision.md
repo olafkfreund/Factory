@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3922
 intent: intent/2026-11-26-3922-job-name-collision.md
 ---
