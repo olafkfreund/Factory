@@ -78,5 +78,5 @@ verify Jobs have the same collision.
    I propose (a): it needs no compatibility code, and the factories are idle between E2E runs.
 2. **Suffix shape.** The proposal: the last 13 characters of the slug, `-`, then 12 hex characters
    of `sha256(job_id)`. That is at most 26 characters, so the longest name is 44, within 63. With
-   no usable slug, the hash alone is used. Is a 12-hex hash, roughly 1 in 10^7 odds of a collision
+   no usable slug, the hash alone is used. Is a 12-hex hash, about 2 in a billion odds of a collision
    among 1,000 Jobs with the same tail, acceptable?
