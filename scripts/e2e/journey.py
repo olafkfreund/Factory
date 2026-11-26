@@ -112,6 +112,9 @@ class Journey:
             # run.py reports this as failure_stage; it was always None.
             if not hasattr(exc, "e2e_stage"):
                 exc.e2e_stage = current_stage  # type: ignore[attr-defined]
+            # A failed journey keeps what it measured: run.meta.json had no cost or stages.
+            exc.e2e_stage_results = dict(results)  # type: ignore[attr-defined]
+            exc.e2e_cost_usd = spent  # type: ignore[attr-defined]
             raise
         finally:
             if not completed and current_task is not None:
