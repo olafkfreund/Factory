@@ -32,6 +32,7 @@ _HEADING_RE = re.compile(r"^\s*(#{1,6})\s+(.+?)\s*$")
 _BULLET_RE = re.compile(r"^(\s*)(?:[-*+]|\d+[.)])\s+(.+?)\s*$")
 _AC_PREFIX_RE = re.compile(r"^(?:\*\*AC#?\d+:?\*\*|AC#?\d+:)\s*", re.IGNORECASE)
 _SLUG_SAFE_RE = re.compile(r"[^a-z0-9-]+")
+_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127}")
 _MAX_RUN_ID_LEN = 64
 _VERIFICATION_HEADING_LEVEL = 2
 
@@ -125,6 +126,15 @@ def build_run_id(stem: str, head_sha: str, *, rand_hex: str | None = None) -> st
     max_stem_len = _MAX_RUN_ID_LEN - len(suffix)
     trimmed_stem = clean_stem[:max_stem_len].rstrip("-") or "spec"
     return f"{trimmed_stem}{suffix}"
+
+
+def validate_correlation_key(value: str | None) -> str | None:
+    """Accept a nonnumeric Factory correlation key without changing it."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not _KEY.fullmatch(value) or value.isdigit():
+        raise InputRejectedError("--correlation-key is not a valid correlation key")
+    return value
 
 
 def _qualify_repo(provider: str, repo: str) -> str:
@@ -270,9 +280,14 @@ def run_test(  # noqa: PLR0913
     spec_slug: str | None = None,
     criteria_file: str | None = None,
     pr_number: int | None = None,
+    correlation_key: str | None = None,
     ctx: config.RuntimeContext | None = None,
 ) -> TestOutcome:
     """Execute `factory test` against TFactory's scoped ingest endpoint."""
+    try:
+        key = validate_correlation_key(correlation_key)
+    except InputRejectedError as exc:
+        return _rejected_test(str(exc), exit_code=EXIT_PRECONDITION)
     rt = ctx or config.RuntimeContext()
     secrets = config.collect_known_secrets(env=rt.env, home=rt.home, portals=("tfactory",))
     work_dir = rt.cwd or Path.cwd()
@@ -309,18 +324,21 @@ def run_test(  # noqa: PLR0913
     try:
         transport = PortalTransport(tf_url, token=tf_key.value, secrets=secrets)
         spec_id = build_run_id(stem, local_sha)
+        body = {
+            "project_id": clean_proj,
+            "spec_id": spec_id,
+            "spec_text": format_acceptance_criteria_markdown(stem, criteria),
+            "source_branch": clean_branch,
+            "repo": _qualify_repo(identity.provider, identity.repo),
+            "pr_number": pr_number,
+            "no_register": True,
+        }
+        if key is not None:
+            body["correlation_key"] = key
         resp = transport.request(
             "POST",
             "/api/mcp-stdio/specs/ingest",
-            body={
-                "project_id": clean_proj,
-                "spec_id": spec_id,
-                "spec_text": format_acceptance_criteria_markdown(stem, criteria),
-                "source_branch": clean_branch,
-                "repo": _qualify_repo(identity.provider, identity.repo),
-                "pr_number": pr_number,
-                "no_register": True,
-            },
+            body=body,
         )
     except InputRejectedError as exc:
         return _rejected_test(str(exc), exit_code=EXIT_PRECONDITION, secrets=secrets)

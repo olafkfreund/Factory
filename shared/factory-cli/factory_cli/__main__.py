@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
+from factory_cli._vendor.factory_common.client_errors import InputRejectedError
 from factory_cli.actions import PROJECT_PORTALS, run_action, run_card, run_project
 from factory_cli.config import (
     PORTAL_NAMES,
@@ -21,7 +22,7 @@ from factory_cli.doctor import run_doctor
 from factory_cli.mcp_config import AGENTS, AgentName, run_mcp_config
 from factory_cli.status import run_status
 from factory_cli.submit import EXIT_PRECONDITION, run_submit
-from factory_cli.testrun import run_test
+from factory_cli.testrun import run_test, validate_correlation_key
 from factory_cli.transport import redact_text
 
 _PARSE_CTX: contextvars.ContextVar[tuple[dict[str, str] | None, Path | None, bool]] = (
@@ -84,6 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     test_p.add_argument("--branch", required=True, help="Branch to verify")
     test_p.add_argument("--pr", dest="pr_number", type=int, default=None, help="Optional PR number")
+    test_p.add_argument(
+        "--correlation-key",
+        dest="correlation_key",
+        default=None,
+        help="Correlation key from the PFactory submit result",
+    )
 
     status_p = sub.add_parser(
         "status",
@@ -183,7 +190,7 @@ def _portals_for_command(args: argparse.Namespace) -> tuple[PortalName, ...]:
     return ("tfactory",) if target.startswith("tf:") else ()
 
 
-def _dispatch_command(
+def _dispatch_command(  # noqa: PLR0912
     args: argparse.Namespace,
     rt: RuntimeContext,
 ) -> int:
@@ -203,6 +210,13 @@ def _dispatch_command(
         )
         _emit(cfg_out.text.rstrip("\n"), err=cfg_out.exit_code != 0, secrets=())
         return cfg_out.exit_code
+
+    if cmd == "test":
+        try:
+            validate_correlation_key(args.correlation_key)
+        except InputRejectedError as exc:
+            _emit(f"error: {exc}", err=True, secrets=())
+            return EXIT_PRECONDITION
 
     portals = _portals_for_command(args)
     secrets = collect_known_secrets(env=rt.env, home=rt.home, portals=portals)
@@ -228,6 +242,7 @@ def _dispatch_command(
             spec_slug=args.spec_slug,
             criteria_file=args.criteria_file,
             pr_number=args.pr_number,
+            correlation_key=args.correlation_key,
             ctx=rt,
         )
     elif cmd == "status":
