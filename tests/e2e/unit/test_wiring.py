@@ -127,7 +127,14 @@ def test_service_ownership_fields_and_routes(
             "org_id": "o1",
         },
         ("aifactory", "/api/mcp-stdio/tasks/a1%3Aspec"): {"id": "a1:spec"},
-        ("tfactory", "/api/mcp-stdio/tasks/t1%3Aspec"): {"task_id": "t1:spec"},
+        ("tfactory", "/api/tfactory/tasks/spec?project_id=t1"): {
+            "task_id": "spec",
+            "project_id": "t1",
+        },
+        ("tfactory", "/api/tfactory/tasks/other?project_id=t1"): {
+            "task_id": "other",
+            "project_id": "t2",
+        },
         ("cfactory", "/api/cards/C-1"): {
             "card_key": "C-1",
             "tenant_id": "default",
@@ -154,6 +161,8 @@ def test_service_ownership_fields_and_routes(
     ):
         resource = client.read_resource(service, kind, identity)
         assert resource is not None and resource[field] == expected
+    # #3937: a TF spec echoing another project is not ours.
+    assert client.read_resource("tfactory", "spec", "t1:other") is None
 
 
 @pytest.mark.parametrize(  # type: ignore[untyped-decorator, unused-ignore]

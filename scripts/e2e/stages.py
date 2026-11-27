@@ -280,6 +280,11 @@ class LiveOperations:
         identity = str(output.get("tf_id") or "").removeprefix("tf:").replace("/", ":", 1)
         if not identity:
             raise RuntimeError("factory test returned no TF spec")
+        # Evidence for S5 triage: which TF spec and source SHA the CLI reported (#3937).
+        print(  # noqa: T201
+            f"factory test: tf_id={identity} source_sha={output.get('tfactory_source_sha')}",
+            file=sys.stderr,
+        )
         return {"spec_id": identity, "verdict_sha": output.get("tfactory_source_sha")}
 
     def verdict(self, identity: str) -> dict[str, Any] | None:
