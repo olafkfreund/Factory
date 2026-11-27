@@ -109,3 +109,13 @@ worktree was unchanged.
 ## Rollback
 
 Revert the PR. The option goes away, and the harness stops sending the key.
+
+## Deviations (diff review, 2026-11-27)
+
+- **No code change.** Codex found no issues. The fresh Opus review and agy both noted that the
+  MCP response serializer (`dump_mcp_json`) still reads local key files for redaction after a
+  rejected key. The plan allows this, because nothing is fetched. The rejection test stubs the
+  serializer, so a comment now says it isolates `run_test` and does not prove that nothing is
+  read.
+- **Open:** the schema test uses a fake server, not the real MCP SDK schema. It is left as a
+  coverage gap, and the live P1 run exercises the real MCP surface.

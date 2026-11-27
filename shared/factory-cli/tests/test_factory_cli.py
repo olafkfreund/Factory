@@ -745,6 +745,9 @@ def test_factory_test_rejects_bad_correlation_key_before_lookup(
     monkeypatch.setattr(config, "collect_known_secrets", _forbid)
     monkeypatch.setattr(config, "resolve_portal_key", _forbid)
     monkeypatch.setattr(PortalTransport, "request", _forbid)
+    # The real dump_mcp_json still reads local key files to redact output (plan:
+    # allowed, nothing is fetched); this stub isolates run_test, it is not proof
+    # that the MCP path reads no secrets at all (#3939 review).
     monkeypatch.setattr(mcp_server, "dump_mcp_json", lambda payload, **_kw: json.dumps(payload))
 
     argv = [
