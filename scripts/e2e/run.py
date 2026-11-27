@@ -65,8 +65,17 @@ def canonical(model: str) -> str:
 
 # The emitted plan requires a CI secret-scan, and AIFactory adds .gitignore
 # itself so parallel waves merge cleanly; both are in scope (Factory#3882).
+# The RFC-0005 nix provisioner commits flake.nix/flake.lock from the contract's
+# toolchain manifest as a platform deliverable, not a coder edit.
 P1_PLAN_FILES = frozenset(
-    {"wordfreq/cli.py", "tests/test_wordfreq.py", ".github/workflows/tests.yml", ".gitignore"}
+    {
+        "wordfreq/cli.py",
+        "tests/test_wordfreq.py",
+        ".github/workflows/tests.yml",
+        ".gitignore",
+        "flake.nix",
+        "flake.lock",
+    }
 )
 
 
