@@ -131,6 +131,10 @@ def test_service_ownership_fields_and_routes(
             "task_id": "spec",
             "project_id": "t1",
         },
+        ("tfactory", "/api/tfactory/tasks/orphan?project_id=t9"): {
+            "task_id": "orphan",
+            "project_id": "t9",
+        },
         ("tfactory", "/api/tfactory/tasks/other?project_id=t1"): {
             "task_id": "other",
             "project_id": "t2",
@@ -163,6 +167,8 @@ def test_service_ownership_fields_and_routes(
         assert resource is not None and resource[field] == expected
     # #3937: a TF spec echoing another project is not ours.
     assert client.read_resource("tfactory", "spec", "t1:other") is None
+    orphan = client.read_resource("tfactory", "spec", "t9:orphan")
+    assert orphan is not None and orphan["repo_node_id"] is None
 
 
 @pytest.mark.parametrize(  # type: ignore[untyped-decorator, unused-ignore]

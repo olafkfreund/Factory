@@ -430,6 +430,8 @@ def test_sweeper_live_confirms_absence(guarded):
     client = FakeDelete()
     sweep(registry, guard, client, dry_run=False)
     assert client.closed == ["pf-1"]
+    # #3937: the TF spec is retained, never archived.
+    assert not any(kind == "spec" for _service, kind, _identity in client.deleted)
     assert not registry.active()
 
 

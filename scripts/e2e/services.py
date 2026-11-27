@@ -98,7 +98,7 @@ class Services:
                 else None
             )
         # AIF mcp_stdio/router.py:281-287; PF mcp_stdio/router.py:655-665;
-        # TF mcp_stdio/router.py:202-208; CF routes_cards.py:212-221.
+        # CF routes_cards.py:212-221; TF specs: tfactory_tasks.py get_task (#3937).
         routes = {
             ("aifactory", "task"): f"/api/mcp-stdio/tasks/{value}",
             ("pfactory", "session"): f"/api/mcp-stdio/plan/sessions/{value}",

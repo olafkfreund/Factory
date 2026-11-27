@@ -93,9 +93,11 @@ def sweep(  # noqa: PLR0912
             if not repo_due and datetime.fromisoformat(entry["at"]) >= cutoff:
                 continue
             service, kind, identity = entry["service"], entry["kind"], entry["id"]
+            # TF verify specs are retained (#3937): TF's archive looks in the project clone
+            # and 400s on them, and its task detail carries no archivedAt to confirm.
             action = (
                 "retain"
-                if kind == "session"
+                if kind == "session" or (service, kind) == ("tfactory", "spec")
                 else "archive"
                 if kind in {"task", "spec"}
                 else "delete"
@@ -105,13 +107,14 @@ def sweep(  # noqa: PLR0912
                 actions.append({"service": service, "kind": kind, "id": identity, "action": action})
                 if dry_run:
                     continue
-                if kind == "session":
-                    guard.mutate(
-                        service,
-                        kind,
-                        identity,
-                        partial(delete.close_session, identity),
-                    )
+                if action == "retain":
+                    if kind == "session":
+                        guard.mutate(
+                            service,
+                            kind,
+                            identity,
+                            partial(delete.close_session, identity),
+                        )
                     registry.append(
                         "retained",
                         identity,
