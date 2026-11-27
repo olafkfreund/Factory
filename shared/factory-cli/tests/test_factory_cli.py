@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import http.server
+import inspect
 import json
 import os
 import subprocess
@@ -665,11 +666,48 @@ def test_factory_test_ingest_and_404_parity(tmp_path: Path) -> None:
         assert ok_out.exit_code == EXIT_OK
         assert received[-1]["no_register"] is True
         assert received[-1]["pr_number"] == 42
+        assert "correlation_key" not in received[-1]
         assert "## Acceptance Criteria" in received[-1]["spec_text"]
         assert "- AC1: check one" in received[-1]["spec_text"]
         assert ok_out.payload["planner_reason"] == "auto_plan_disabled"
         assert ok_out.payload["sha_mismatch"] is True
         assert any("warning:" in ln for ln in ok_out.lines)
+
+        keyed_out = run_test(
+            "my-proj",
+            "feat/3865-demo",
+            spec_slug=SLUG,
+            correlation_key="pf-337-x",
+            ctx=ctx,
+        )
+        assert keyed_out.exit_code == EXIT_OK
+        assert received[-1]["correlation_key"] == "pf-337-x"
+
+        argv = [
+            "test",
+            "--project",
+            "my-proj",
+            "--spec",
+            SLUG,
+            "--branch",
+            "feat/3865-demo",
+            "--correlation-key",
+            "pf-337-x",
+        ]
+        assert main(argv, cwd=repo, env=env, home=tmp_path) == EXIT_OK
+        assert received[-1]["correlation_key"] == "pf-337-x"
+
+        mcp_out = json.loads(
+            handle_factory_test(
+                "my-proj",
+                "feat/3865-demo",
+                spec=SLUG,
+                correlation_key="pf-337-x",
+                ctx=ctx,
+            )
+        )
+        assert mcp_out["outcome"] == "ok"
+        assert received[-1]["correlation_key"] == "pf-337-x"
 
         # Unknown and invisible project both produce identical "project not found" and exit 1
         unk_out = run_test("unknown-proj", "feat/3865-demo", spec_slug=SLUG, ctx=ctx)
@@ -685,6 +723,88 @@ def test_factory_test_ingest_and_404_parity(tmp_path: Path) -> None:
             }
         )
         assert unk_out.lines == inv_out.lines == ("error: project not found",)
+
+
+@pytest.mark.parametrize("key", ["42", "", "a b", "a" * 129])
+def test_factory_test_rejects_bad_correlation_key_before_lookup(
+    key: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from factory_cli import __main__, config, mcp_server  # noqa: PLC0415
+
+    calls: list[str] = []
+
+    def _forbid(*_args: Any, **_kwargs: Any) -> Any:
+        calls.append("lookup or request")
+        raise AssertionError("invalid key must be rejected before lookup or request")
+
+    monkeypatch.setattr(__main__, "collect_known_secrets", _forbid)
+    monkeypatch.setattr(__main__, "resolve_portal_key", _forbid)
+    monkeypatch.setattr(config, "collect_known_secrets", _forbid)
+    monkeypatch.setattr(config, "resolve_portal_key", _forbid)
+    monkeypatch.setattr(PortalTransport, "request", _forbid)
+    monkeypatch.setattr(mcp_server, "dump_mcp_json", lambda payload, **_kw: json.dumps(payload))
+
+    argv = [
+        "test",
+        "--project",
+        "proj",
+        "--spec",
+        SLUG,
+        "--branch",
+        "feat/3865-demo",
+        "--correlation-key",
+        key,
+    ]
+    assert main(argv, cwd=tmp_path, env={}, home=tmp_path) == EXIT_PRECONDITION
+    assert "--correlation-key is not a valid correlation key" in capsys.readouterr().err
+    result = json.loads(
+        handle_factory_test(
+            "proj",
+            "feat/3865-demo",
+            spec=SLUG,
+            correlation_key=key,
+            ctx=RuntimeContext(cwd=tmp_path, env={}, home=tmp_path),
+        )
+    )
+    assert result == {
+        "outcome": "rejected",
+        "detail": "--correlation-key is not a valid correlation key",
+    }
+    assert calls == []
+
+
+def test_registered_factory_test_accepts_optional_correlation_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from factory_cli import mcp_server  # noqa: PLC0415
+
+    tools: dict[str, Any] = {}
+    descriptions: dict[str, str] = {}
+
+    class _Server:
+        def add_tool(self, fn: Any, *, name: str, description: str) -> None:
+            tools[name] = fn
+            descriptions[name] = description
+
+    monkeypatch.setattr(mcp_server, "_create_mcp_server", lambda _name: _Server())
+    seen: dict[str, Any] = {}
+
+    def _handle(*_args: Any, **kwargs: Any) -> str:
+        seen.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(mcp_server, "handle_factory_test", _handle)
+    build_mcp_server()
+    tool = tools["factory_test"]
+    param = inspect.signature(tool).parameters["correlation_key"]
+    assert param.default is None
+    assert param.annotation == "str | None"
+    assert "correlation_key" in descriptions["factory_test"]
+    assert tool("proj", "main", correlation_key="pf-337-x") == "ok"
+    assert seen["correlation_key"] == "pf-337-x"
 
 
 def test_run_id_bounds_and_criteria_rewriting() -> None:

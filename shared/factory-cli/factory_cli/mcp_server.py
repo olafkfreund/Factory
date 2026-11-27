@@ -92,6 +92,7 @@ def handle_factory_test(  # noqa: PLR0913
     spec: str | None = None,
     criteria: str | None = None,
     pr_number: int | None = None,
+    correlation_key: str | None = None,
     ctx: RuntimeContext | None = None,
 ) -> str:
     """MCP handler for `factory_test`."""
@@ -101,6 +102,7 @@ def handle_factory_test(  # noqa: PLR0913
         spec_slug=spec,
         criteria_file=criteria,
         pr_number=pr_number,
+        correlation_key=correlation_key,
         ctx=ctx,
     )
     return dump_mcp_json(outcome.payload, ctx=ctx)
@@ -189,12 +191,13 @@ def build_mcp_server() -> McpServerProtocol:
             dry_run=dry_run,
         )
 
-    def factory_test(
+    def factory_test(  # noqa: PLR0913
         project_id: str,
         branch: str,
         spec: str | None = None,
         criteria: str | None = None,
         pr_number: int | None = None,
+        correlation_key: str | None = None,
     ) -> str:
         return handle_factory_test(
             project_id=project_id,
@@ -202,6 +205,7 @@ def build_mcp_server() -> McpServerProtocol:
             spec=spec,
             criteria=criteria,
             pr_number=pr_number,
+            correlation_key=correlation_key,
         )
 
     def factory_status(target: str) -> str:
@@ -223,7 +227,8 @@ def build_mcp_server() -> McpServerProtocol:
         name="factory_test",
         description=(
             "Schedule a TFactory verification run for an existing registered project "
-            "from spec/<slug>.md Verification bullets or a criteria file."
+            "from spec/<slug>.md Verification bullets or a criteria file. "
+            "Optional correlation_key links the run to a PFactory submit result."
         ),
     )
     server.add_tool(
