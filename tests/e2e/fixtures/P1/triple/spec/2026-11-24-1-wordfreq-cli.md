@@ -23,6 +23,7 @@ Implement the word frequency engine and command-line interface in `wordfreq/cli.
    - Positional `path` is optional and defaults to `"-"` when omitted; when `path` is omitted or `"-"`, read UTF-8 text from `sys.stdin`, otherwise read the given file path as UTF-8 text.
    - `--case-sensitive` preserves token case (`ignore_case=False`); when omitted, tokens are lowercased (`ignore_case=True`).
    - `--min-len M` defaults to `1`; `--top N` defaults to `None` (all words).
+   - `--top 0` is valid, not an error: it returns `0` and prints no rows (empty stdout in TSV mode, `[]\n` with `--json`). Only `--top` below `0` is invalid.
    - Output format:
      - Default TSV mode: write `format_table(rows)` followed by a single final newline (`\n`) to `sys.stdout` when `rows` is non-empty; write nothing (`""`, no newline) when `rows` is empty.
      - `--json` mode: write a single-line JSON array of `{"word": word, "count": count}` objects (`json.dumps(...)`) followed by a single final newline (`\n`) to `sys.stdout` (including `[]\n` when `rows` is empty).
@@ -41,5 +42,5 @@ Implement the word frequency engine and command-line interface in `wordfreq/cli.
 
 - `count_words` extracts `[A-Za-z0-9]+` tokens, lowercases by default, preserves case when `ignore_case=False`, filters by `min_len`, sorts by `(-count, word)`, and raises `ValueError("min_len must be >= 1")` when `min_len < 1` or `ValueError("top must be >= 0")` when `top < 0`.
 - `format_table` formats `(word, count)` rows as `word\tcount` lines separated by `\n` and returns `""` for empty input.
-- `main` and `python -m wordfreq` read from `sys.stdin` by default when no `path` argument is given (or when `path` is `"-"`), honor `--case-sensitive`, `--top`, `--min-len`, and `--json`, terminate non-empty TSV output and `--json` output with a final `\n` (writing nothing for empty TSV output), and return `0` on success or `2` with non-empty `stderr` on invalid arguments or missing files.
+- `main` and `python -m wordfreq` read from `sys.stdin` by default when no `path` argument is given (or when `path` is `"-"`), honor `--case-sensitive`, `--top`, `--min-len`, and `--json`, terminate non-empty TSV output and `--json` output with a final `\n` (writing nothing for empty TSV output), and return `0` on success or `2` with non-empty `stderr` on invalid arguments or missing files. `--top 0` succeeds with exit `0` and no rows; only a negative `--top` exits `2`.
 - `pytest -q` passes across `tests/test_wordfreq.py`.
