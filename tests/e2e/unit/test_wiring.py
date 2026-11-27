@@ -465,62 +465,45 @@ def test_probe_request_keeps_rejection_status_and_reason(
     assert seen[0] == "Bearer test-secret"
 
 
+class _S1Operations:
+    """S1 onboarding fakes shared by the stage-wiring tests (jscpd clone budget)."""
+
+    def create_repo(self, name: str) -> dict[str, Any]:
+        return {"node_id": "R1", "full_name": f"olafkfreund/{name}"}
+
+    def set_topics(self, *_: object) -> None:
+        return None
+
+    def push_starter(self, *_: object) -> None:
+        return None
+
+    def protect_main(self, *_: object) -> None:
+        return None
+
+    def create_issue(self, *_: object) -> dict[str, Any]:
+        return {"number": 1}
+
+    def create_card(self, *_: object) -> dict[str, Any]:
+        return {"key": "c1"}
+
+    def register_cf_repository(self, *_: object) -> dict[str, Any]:
+        return {"id": 7}
+
+    def enable_pr_endgame(self, *_: object) -> None:
+        return None
+
+    def onboard(self, service: str, *_: object) -> dict[str, Any]:
+        return {"id": service + "-1"}
+
+    def read_resource(self, _service: str, kind: str, identity: str) -> dict[str, Any]:
+        return {"key" if kind == "card" else "id": identity}
+
+
 def test_stages_use_guard_for_every_mutation() -> None:
     calls: list[tuple[str, str]] = []
     recorded: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
-    class FakeGuard:
-        registry = SimpleNamespace(append=lambda *args, **kwargs: recorded.append((args, kwargs)))
-
-        def create_repo(
-            self,
-            _name: str,
-            create: Callable[[], dict[str, Any]],
-            set_topics: Callable[[str, list[str]], object],
-        ) -> dict[str, Any]:
-            calls.append(("github", "create"))
-            repo = create()
-            set_topics(repo["full_name"], ["factory-e2e"])
-            return repo
-
-        def create_resource(
-            self, kind: str, service: str, _repo: str, create: Callable[[], dict[str, Any]]
-        ) -> dict[str, Any]:
-            calls.append((service, kind))
-            return create()
-
-        def mutate(self, service: str, kind: str, _identity: str, action: Any) -> Any:
-            calls.append((service, kind))
-            return action()
-
-    class FakeOperations:
-        def create_repo(self, name: str) -> dict[str, Any]:
-            return {"node_id": "R1", "full_name": f"olafkfreund/{name}"}
-
-        def set_topics(self, *_: object) -> None:
-            return None
-
-        def push_starter(self, *_: object) -> None:
-            return None
-
-        def protect_main(self, *_: object) -> None:
-            return None
-
-        def create_issue(self, *_: object) -> dict[str, Any]:
-            return {"number": 1}
-
-        def create_card(self, *_: object) -> dict[str, Any]:
-            return {"key": "c1"}
-
-        def register_cf_repository(self, *_: object) -> dict[str, Any]:
-            return {"id": 7}
-
-        def enable_pr_endgame(self, *_: object) -> None:
-            return None
-
-        def onboard(self, service: str, *_: object) -> dict[str, Any]:
-            return {"id": service + "-1"}
-
+    class FakeOperations(_S1Operations):
         def submit(self, *_: object) -> dict[str, Any]:
             return {"session_id": "s1", "task_id": "t1"}
 
@@ -530,12 +513,9 @@ def test_stages_use_guard_for_every_mutation() -> None:
         def probe_e(self, *_: object) -> dict[str, Any]:
             return {"status": 200, "reason": "deduplicated", "before": 1, "after": 1}
 
-        def read_resource(self, _service: str, kind: str, identity: str) -> dict[str, Any]:
-            return {"key" if kind == "card" else "id": identity}
-
     built = stages.build(
         Journey("P1", "cli", "Claude", 1),
-        cast(Guard, FakeGuard()),
+        cast(Guard, _fake_guard(calls, recorded)),
         cast(stages.Operations, FakeOperations()),
         "e2e-20261124-P1-1",
     )
@@ -559,11 +539,17 @@ def test_stages_use_guard_for_every_mutation() -> None:
     assert [row[0][0:2] for row in recorded] == [("session", "s1"), ("task", "t1")]
 
 
-def _fake_guard() -> Any:
+def _fake_guard(
+    calls: list[tuple[str, str]] | None = None,
+    recorded: list[tuple[tuple[object, ...], dict[str, object]]] | None = None,
+) -> Any:
+    seen = calls if calls is not None else []
+    rows = recorded if recorded is not None else []
+
     class FakeGuard:
         def __init__(self) -> None:
             self.registry = SimpleNamespace(
-                append=lambda *_, **__: None,
+                append=lambda *args, **kwargs: rows.append((args, kwargs)),
                 active=lambda: [{"kind": "repo", "id": "R1", "full_name": "olafkfreund/repo"}],
             )
 
@@ -573,16 +559,19 @@ def _fake_guard() -> Any:
             create: Callable[[], dict[str, Any]],
             set_topics: Callable[[str, list[str]], object],
         ) -> dict[str, Any]:
+            seen.append(("github", "create"))
             repo = create()
             set_topics(repo["full_name"], ["factory-e2e"])
             return repo
 
         def create_resource(
-            self, _kind: str, _service: str, _repo: str, create: Callable[[], dict[str, Any]]
+            self, kind: str, service: str, _repo: str, create: Callable[[], dict[str, Any]]
         ) -> dict[str, Any]:
+            seen.append((service, kind))
             return create()
 
-        def mutate(self, _service: str, _kind: str, _identity: str, action: Any) -> Any:
+        def mutate(self, service: str, kind: str, _identity: str, action: Any) -> Any:
+            seen.append((service, kind))
             return action()
 
     return FakeGuard()
@@ -643,34 +632,7 @@ def test_live_operations_test_passes_correlation_key_per_surface(
 def test_s5_passes_state_correlation_key_to_test(submit_key: str | None) -> None:
     seen_keys: list[str | None] = []
 
-    class FakeOperations:
-        def create_repo(self, name: str) -> dict[str, Any]:
-            return {"node_id": "R1", "full_name": f"olafkfreund/{name}"}
-
-        def set_topics(self, *_: object) -> None:
-            return None
-
-        def push_starter(self, *_: object) -> None:
-            return None
-
-        def protect_main(self, *_: object) -> None:
-            return None
-
-        def create_issue(self, *_: object) -> dict[str, Any]:
-            return {"number": 1}
-
-        def create_card(self, *_: object) -> dict[str, Any]:
-            return {"key": "c1"}
-
-        def register_cf_repository(self, *_: object) -> dict[str, Any]:
-            return {"id": 7}
-
-        def enable_pr_endgame(self, *_: object) -> None:
-            return None
-
-        def onboard(self, service: str, *_: object) -> dict[str, Any]:
-            return {"id": service + "-1"}
-
+    class FakeOperations(_S1Operations):
         def submit(self, *_: object) -> dict[str, Any]:
             out: dict[str, Any] = {"session_id": "s1", "task_id": "t1"}
             if submit_key is not None:
@@ -695,9 +657,6 @@ def test_s5_passes_state_correlation_key_to_test(submit_key: str | None) -> None
 
         def hidden(self, *_: object) -> bool:
             return True
-
-        def read_resource(self, _service: str, kind: str, identity: str) -> dict[str, Any]:
-            return {"key" if kind == "card" else "id": identity}
 
     built = stages.build(
         Journey("P1", "cli", "Claude", 1),
