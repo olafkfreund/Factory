@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 3939
 intent: intent/2026-11-27-3939-test-correlation-key.md
 ---
