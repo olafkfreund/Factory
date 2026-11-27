@@ -557,3 +557,246 @@ def test_stages_use_guard_for_every_mutation() -> None:
         ("aifactory", "task"),
     ]
     assert [row[0][0:2] for row in recorded] == [("session", "s1"), ("task", "t1")]
+
+
+def _fake_guard() -> Any:
+    class FakeGuard:
+        def __init__(self) -> None:
+            self.registry = SimpleNamespace(
+                append=lambda *_, **__: None,
+                active=lambda: [{"kind": "repo", "id": "R1", "full_name": "olafkfreund/repo"}],
+            )
+
+        def create_repo(
+            self,
+            _name: str,
+            create: Callable[[], dict[str, Any]],
+            set_topics: Callable[[str, list[str]], object],
+        ) -> dict[str, Any]:
+            repo = create()
+            set_topics(repo["full_name"], ["factory-e2e"])
+            return repo
+
+        def create_resource(
+            self, _kind: str, _service: str, _repo: str, create: Callable[[], dict[str, Any]]
+        ) -> dict[str, Any]:
+            return create()
+
+        def mutate(self, _service: str, _kind: str, _identity: str, action: Any) -> Any:
+            return action()
+
+    return FakeGuard()
+
+
+def test_live_operations_test_passes_correlation_key_per_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "spec").mkdir()
+    (tmp_path / "spec" / "2026-11-27-1-demo.md").write_text("---\nstatus: approved\n---\n")
+    cli_calls: list[list[str]] = []
+    mcp_calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_cli(command: list[str], **_kwargs: Any) -> dict[str, Any]:
+        cli_calls.append(command)
+        return {"tf_id": "tf:t1/s1", "tfactory_source_sha": "a" * 40}
+
+    def fake_mcp(tool: str, arguments: dict[str, object], **_kwargs: Any) -> dict[str, Any]:
+        mcp_calls.append((tool, arguments))
+        return {"tf_id": "tf:t1/s1", "tfactory_source_sha": "a" * 40}
+
+    monkeypatch.setattr(stages, "invoke", fake_mcp)
+    fake_github = SimpleNamespace(fetch_commit=lambda *_: None)
+    fake_services = SimpleNamespace()
+
+    for surface in ("cli", "mcp"):
+        ops = stages.LiveOperations(
+            Journey("P1", surface, "Claude", 1),
+            cast(Guard, _fake_guard()),
+            cast(services.Services, fake_services),
+            cast(github.GitHub, fake_github),
+            tmp_path,
+        )
+        ops.projects["tfactory"] = "t1"
+        monkeypatch.setattr(ops.cli, "execute", fake_cli)
+        ops.test("olafkfreund/repo", "a" * 40, surface, "pf-337-x")
+        ops.test("olafkfreund/repo", "a" * 40, surface, None)
+
+    assert cli_calls[0][-2:] == ["--correlation-key", "pf-337-x"]
+    assert "--correlation-key" not in cli_calls[1]
+    assert mcp_calls[0] == (
+        "factory_test",
+        {
+            "project_id": "t1",
+            "criteria": "spec/2026-11-27-1-demo.md",
+            "branch": "a" * 40,
+            "correlation_key": "pf-337-x",
+        },
+    )
+    assert mcp_calls[1][0] == "factory_test"
+    assert "correlation_key" not in mcp_calls[1][1]
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator, unused-ignore]
+    "submit_key",
+    ["pf-337-x", None],
+)
+def test_s5_passes_state_correlation_key_to_test(submit_key: str | None) -> None:
+    seen_keys: list[str | None] = []
+
+    class FakeOperations:
+        def create_repo(self, name: str) -> dict[str, Any]:
+            return {"node_id": "R1", "full_name": f"olafkfreund/{name}"}
+
+        def set_topics(self, *_: object) -> None:
+            return None
+
+        def push_starter(self, *_: object) -> None:
+            return None
+
+        def protect_main(self, *_: object) -> None:
+            return None
+
+        def create_issue(self, *_: object) -> dict[str, Any]:
+            return {"number": 1}
+
+        def create_card(self, *_: object) -> dict[str, Any]:
+            return {"key": "c1"}
+
+        def register_cf_repository(self, *_: object) -> dict[str, Any]:
+            return {"id": 7}
+
+        def enable_pr_endgame(self, *_: object) -> None:
+            return None
+
+        def onboard(self, service: str, *_: object) -> dict[str, Any]:
+            return {"id": service + "-1"}
+
+        def submit(self, *_: object) -> dict[str, Any]:
+            out: dict[str, Any] = {"session_id": "s1", "task_id": "t1"}
+            if submit_key is not None:
+                out["correlation_key"] = submit_key
+            return out
+
+        def pull_request(self, *_: object) -> dict[str, Any]:
+            return {"merged": True, "merge_commit_sha": "a" * 40}
+
+        def test(
+            self,
+            _full_name: str,
+            _sha: str,
+            _surface: str,
+            correlation_key: str | None = None,
+        ) -> dict[str, Any]:
+            seen_keys.append(correlation_key)
+            return {"spec_id": "t1:s1", "verdict_sha": "a" * 40}
+
+        def verdict(self, _identity: str) -> dict[str, Any]:
+            return {"verdict_sha": "a" * 40}
+
+        def hidden(self, *_: object) -> bool:
+            return True
+
+        def read_resource(self, _service: str, kind: str, identity: str) -> dict[str, Any]:
+            return {"key" if kind == "card" else "id": identity}
+
+    built = stages.build(
+        Journey("P1", "cli", "Claude", 1),
+        cast(Guard, _fake_guard()),
+        cast(stages.Operations, FakeOperations()),
+        "repo",
+    )
+    built["S1"](999, lambda *_: None)
+    built["S2"](999, lambda *_: None)
+    built["S5"](999, lambda *_: None)
+    assert seen_keys == [submit_key]
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator, unused-ignore]
+    "surface",
+    ["cli", "mcp"],
+)
+def test_submit_to_test_handoff_preserves_correlation_key_per_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, surface: str
+) -> None:
+    (tmp_path / "plan").mkdir()
+    (tmp_path / "spec").mkdir()
+    (tmp_path / "plan" / "2026-11-27-1-demo.md").write_text("---\nstatus: approved\n---\n")
+    (tmp_path / "spec" / "2026-11-27-1-demo.md").write_text("---\nstatus: approved\n---\n")
+
+    cli_calls: list[list[str]] = []
+    mcp_calls: list[tuple[str, dict[str, object]]] = []
+
+    def handle_surface(kind: str) -> dict[str, Any]:
+        if kind == "project_add":
+            return {"result": {"id": "proj-1"}}
+        if kind == "submit":
+            return {
+                "session_id": "pf:s1",
+                "aifactory_task_id": "af:t1",
+                "correlation_key": "pf-337-x",
+                "outcome": "ok",
+            }
+        return {"tf_id": "tf:t1/s1", "tfactory_source_sha": "a" * 40}
+
+    def fake_cli(command: list[str], **_kwargs: Any) -> dict[str, Any]:
+        cli_calls.append(command)
+        if command[:2] == ["project", "add"]:
+            return handle_surface("project_add")
+        if command[0] == "submit":
+            return handle_surface("submit")
+        return handle_surface("test")
+
+    def fake_mcp(tool: str, arguments: dict[str, object], **_kwargs: Any) -> dict[str, Any]:
+        mcp_calls.append((tool, arguments))
+        if tool == "factory_project_add":
+            return handle_surface("project_add")
+        if tool == "factory_submit":
+            return handle_surface("submit")
+        return handle_surface("test")
+
+    fake_github = SimpleNamespace(
+        create_repo=lambda name: {"node_id": "R1", "full_name": f"olafkfreund/{name}"},
+        set_topics=lambda *_: None,
+        push_starter=lambda *_: None,
+        protect_main=lambda *_: None,
+        create_issue=lambda *_: {"number": 1},
+        pull_request=lambda *_: {"merged": True, "merge_commit_sha": "a" * 40},
+        fetch_commit=lambda *_: None,
+    )
+    fake_services = SimpleNamespace(
+        read_resource=lambda _service, kind, identity: {
+            "key" if kind == "card" else "id": identity
+        },
+        enable_pr_endgame=lambda *_: None,
+        register_cf_repository=lambda *_: {"id": 7},
+        create_card=lambda *_: {"key": "c1"},
+        verdict=lambda *_: {"verdict_sha": "a" * 40},
+    )
+
+    monkeypatch.setattr(stages, "invoke", fake_mcp)
+    ops = stages.LiveOperations(
+        Journey("P1", surface, "Claude", 1),
+        cast(Guard, _fake_guard()),
+        cast(services.Services, fake_services),
+        cast(github.GitHub, fake_github),
+        tmp_path,
+    )
+    monkeypatch.setattr(ops.cli, "execute", fake_cli)
+    monkeypatch.setattr(ops, "hidden", lambda *_: True)
+
+    built = stages.build(
+        Journey("P1", surface, "Claude", 1),
+        cast(Guard, _fake_guard()),
+        cast(stages.Operations, ops),
+        "repo",
+    )
+    built["S1"](999, lambda *_: None)
+    built["S2"](999, lambda *_: None)
+    built["S5"](999, lambda *_: None)
+
+    if surface == "cli":
+        test_argv = next(cmd for cmd in cli_calls if cmd[0] == "test")
+        assert test_argv[-2:] == ["--correlation-key", "pf-337-x"]
+    else:
+        _, test_args = next(call for call in mcp_calls if call[0] == "factory_test")
+        assert test_args["correlation_key"] == "pf-337-x"

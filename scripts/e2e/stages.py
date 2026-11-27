@@ -261,22 +261,29 @@ class LiveOperations:
             for row in runs
         )
 
-    def test(self, full_name: str, sha: str, _surface: str) -> dict[str, Any]:
+    def test(
+        self, full_name: str, sha: str, _surface: str, correlation_key: str | None = None
+    ) -> dict[str, Any]:
         self.github.fetch_commit(full_name, sha, self.workspace)
         slug = next((self.workspace / "spec").glob("*.md")).name
-        output = self._surface(
-            [
-                "test",
-                "--project",
-                self.projects["tfactory"],
-                "--criteria",
-                f"spec/{slug}",
-                "--branch",
-                sha,
-            ],
-            "factory_test",
-            {"project_id": self.projects["tfactory"], "criteria": f"spec/{slug}", "branch": sha},
-        )
+        command = [
+            "test",
+            "--project",
+            self.projects["tfactory"],
+            "--criteria",
+            f"spec/{slug}",
+            "--branch",
+            sha,
+        ]
+        arguments: dict[str, Any] = {
+            "project_id": self.projects["tfactory"],
+            "criteria": f"spec/{slug}",
+            "branch": sha,
+        }
+        if correlation_key is not None:
+            command.extend(["--correlation-key", correlation_key])
+            arguments["correlation_key"] = correlation_key
+        output = self._surface(command, "factory_test", arguments)
         identity = str(output.get("tf_id") or "").removeprefix("tf:").replace("/", ":", 1)
         if not identity:
             raise RuntimeError("factory test returned no TF spec")
@@ -388,7 +395,9 @@ class Operations(Protocol):
     def task(self, identity: str) -> dict[str, Any]: ...
     def pull_request(self, full_name: str, task_id: str) -> dict[str, Any]: ...
     def checks_green(self, full_name: str, sha: str) -> bool: ...
-    def test(self, full_name: str, sha: str, surface: str) -> dict[str, Any]: ...
+    def test(
+        self, full_name: str, sha: str, surface: str, correlation_key: str | None = None
+    ) -> dict[str, Any]: ...
     def verdict(self, identity: str) -> dict[str, Any] | None: ...
     def hidden(self, project: str, full_name: str, sha: str) -> bool: ...
     def timeline(self, card_key: str) -> dict[str, Any]: ...
@@ -558,7 +567,9 @@ def build(  # noqa: PLR0915
             "tfactory",
             "project",
             state["tfactory_project"],
-            lambda: operations.test(state["full_name"], sha, journey.surface),
+            lambda: operations.test(
+                state["full_name"], sha, journey.surface, state.get("correlation_key")
+            ),
         )
         if not isinstance(result, dict):
             raise RuntimeError("test returned no structured result")
