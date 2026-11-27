@@ -98,12 +98,11 @@ class Services:
                 else None
             )
         # AIF mcp_stdio/router.py:281-287; PF mcp_stdio/router.py:655-665;
-        # TF mcp_stdio/router.py:202-208; CF routes_cards.py:212-221.
+        # CF routes_cards.py:212-221; TF specs: tfactory_tasks.py get_task (#3937).
         routes = {
             ("aifactory", "task"): f"/api/mcp-stdio/tasks/{value}",
             ("pfactory", "session"): f"/api/mcp-stdio/plan/sessions/{value}",
             ("cfactory", "card"): f"/api/cards/{value}",
-            ("tfactory", "spec"): f"/api/mcp-stdio/tasks/{value}",
         }
         if kind == "project" and service in {"aifactory", "pfactory", "tfactory"}:
             result = self._request(service, "GET", "/api/mcp-stdio/projects")
@@ -135,6 +134,24 @@ class Services:
                 **row,
                 "repo_node_id": self._repo_node_id(repo),
                 "org": row.get("org_id") or "default",
+            }
+        if (service, kind) == ("tfactory", "spec"):
+            # The MCP task route reads the project's clone and 404s on a verify
+            # spec, which lives under workspaces/<project>/specs (#3937). Same
+            # route as verdict(); TF echoes the owning project_id.
+            project_id, sep, spec = identity.partition(":")
+            if not sep:
+                raise ValueError("TF spec requires project:spec")
+            query = f"?project_id={_segment(project_id)}"
+            row = self._request("tfactory", "GET", f"/api/tfactory/tasks/{_segment(spec)}{query}")
+            if row is None or str(row.get("project_id")) != project_id:
+                return None
+            project = self.read_resource("tfactory", "project", project_id)
+            return {
+                **row,
+                "id": identity,
+                "repo_node_id": project.get("repo_node_id") if project else None,
+                "org": project.get("org") if project else "default",
             }
         if (service, kind) not in routes:
             raise NotImplementedError(f"no confirmed {service} {kind} read route")

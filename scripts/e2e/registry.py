@@ -50,7 +50,11 @@ class Registry:
                 and target_kind in KIND_SERVICES
                 and service in KIND_SERVICES[target_kind]
             )
-            valid = valid and (kind != "retained" or target_kind == "session")
+            valid = valid and (
+                kind != "retained"
+                or target_kind == "session"
+                or (target_kind, service) == ("spec", "tfactory")  # #3937
+            )
             valid = valid and (kind != "create_failed" or target_kind == "repo")
         else:
             valid = kind in KIND_SERVICES and service in KIND_SERVICES[kind] and target_kind is None
