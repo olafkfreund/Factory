@@ -109,6 +109,9 @@ def test_hidden_suite_uses_minimal_bwrap(tmp_path: Path, monkeypatch: pytest.Mon
     argv, kwargs = seen[-1]
     assert argv[0].endswith("bwrap")
     assert "--unshare-all" in argv and "--clearenv" in argv
+    # #3882: an unrelated store plugin must not be auto-loaded into the hidden suite.
+    i = argv.index("PYTEST_DISABLE_PLUGIN_AUTOLOAD")
+    assert argv[i - 1] == "--setenv" and argv[i + 1] == "1"
     assert [argv[i + 1] for i, item in enumerate(argv[:-1]) if item == "--bind"] == [str(tmp_path)]
     hidden_source = Path(argv[argv.index("/suite") - 1])
     assert hidden_source.parent.parent == Path(tempfile.gettempdir())
