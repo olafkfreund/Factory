@@ -24,7 +24,7 @@ class Journey:
     repeat: int
     ablation: bool = False
 
-    def run(  # noqa: PLR0913, PLR0915
+    def run(  # noqa: PLR0912, PLR0913, PLR0915
         self,
         stages: dict[str, Callable[[float, Callable[..., None]], dict[str, Any]]],
         budget: Budget,
@@ -90,7 +90,12 @@ class Journey:
                 )
                 poll()
                 observed = readback(stage, result)
-                validate(stage, result, self.project, observed)
+                try:
+                    validate(stage, result, self.project, observed)
+                except AssertionError:
+                    # Keep what the failing oracle saw, so a red stage can be triaged (#3882).
+                    results[stage] = {**(observed or {}), "validated": False}
+                    raise
                 results[stage] = observed
                 if self.project == "P5" and observed.get("needs_you"):
                     result = stages["X"](deadline, poll)
