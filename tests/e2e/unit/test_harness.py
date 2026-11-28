@@ -1125,3 +1125,25 @@ def test_github_plain_403_is_not_retried(tmp_path):
     with pytest.raises(HTTPError):
         GitHub(token_file=token, open_url=open_url).request("GET", "/repos/olafkfreund/x")
     assert calls == [1]
+
+
+def test_failed_oracle_keeps_what_it_saw(guarded):
+    # #3882: a red stage keeps its observed result, marked unvalidated, for triage.
+    stages = {
+        "S1": lambda _deadline, _poll: {
+            "registered": True,
+            "branch_protection": True,
+            "projects": {"aifactory": 1, "pfactory": 1, "tfactory": 1},
+            "cards": 0,
+        },
+    }
+    with pytest.raises(AssertionError, match="S1 onboarding incomplete") as err:
+        Journey("P1", "cli", "Claude", 1).run(
+            stages,
+            Budget(guarded[1]),
+            "lane",
+            readback=lambda _stage, row: row,
+            remote=(lambda _: None, lambda _: {"status": "stopped"}),
+        )
+    kept = getattr(err.value, "e2e_stage_results", {})["S1"]
+    assert kept["validated"] is False and kept["cards"] == 0
