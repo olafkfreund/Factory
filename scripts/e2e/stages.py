@@ -351,6 +351,11 @@ class LiveOperations:
                     "--setenv",
                     "HOME",
                     "/home/sandbox",
+                    # The /nix/store glob below finds every pytest plugin in the store; an
+                    # unrelated one (pytest-homeassistant) crashed collection (#3882).
+                    "--setenv",
+                    "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+                    "1",
                     Path(python).resolve().as_posix(),
                     "-c",
                     (
